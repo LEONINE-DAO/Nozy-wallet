@@ -1,0 +1,47 @@
+﻿[package]
+name = "nozy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.0", features = ["full"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# HTTP client
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+
+# Crypto utilities
+hex = "0.4"
+rand = "0.8"
+sha2 = "0.10"
+aes-gcm = "0.10"
+bech32 = "0.9"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# CLI
+clap = { version = "4.0", features = ["derive"] }
+dialoguer = "0.11"
+
+# Error handling
+thiserror = "1.0"
+
+# HD wallet
+bip32 = "0.5"
+bip39 = "2.1"
+
+# Official Zcash libraries - using compatible versions that work together
+zcash_primitives = "0.24.0"
+zcash_protocol = "0.6.0"
+zcash_address = "0.9.0"
+zcash_note_encryption = "0.4.0"
+orchard = "0.11.0"
+
+[[bin]]
+name = "nozy"
+path = "src/main.rs"
