@@ -70,7 +70,7 @@ orchard = "0.11.0"                 # Orchard shielded pool implementation
 ### **Prerequisites**
 1. **Running Zebra Node**: 
    ```bash
-   # Your Zebra node should be running on:
+   # Zebra node is running on:
    # RPC Endpoint: http://127.0.0.1:8232
    # Network: Mainnet
    ```
@@ -152,3 +152,4 @@ This wallet is built using patterns from these proven repositories [[memory:8070
 ---
 
 *Built with ❤️ using real Zcash libraries and tested on mainnet.*
+
