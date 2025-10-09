@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use clap::{Parser, Subcommand};
-use dialoguer::Password;
+use dialoguer::{Password, Confirm, Input, Select};
 use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient, BlockParser, ZcashTransactionBuilder};
 
 #[derive(Parser)]
@@ -49,13 +49,28 @@ pub enum Commands {
         #[arg(long, default_value = "http://127.0.0.1:8232")]
         zebra_url: String,
     },
+    /// List stored notes
+    ListNotes,
 }
 
 async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
-    let wallet = HDWallet::new()?;
     let storage = WalletStorage::new(PathBuf::from("wallet_data"));
     
-    Ok((wallet, storage))
+    // Check if wallet file exists
+    let wallet_path = std::path::Path::new("wallet_data/wallet.dat");
+    if wallet_path.exists() {
+        // Load existing wallet from storage
+        let password = Password::new()
+            .with_prompt("Enter wallet password")
+            .interact()
+            .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
+        
+        let wallet = storage.load_wallet(&password).await?;
+        Ok((wallet, storage))
+    } else {
+        // No wallet exists - this should only happen for 'new' command
+        return Err(NozyError::Storage("No wallet found. Use 'nozy new' or 'nozy restore' to create a wallet first.".to_string()));
+    }
 }
 
 #[tokio::main]
@@ -64,28 +79,64 @@ async fn main() -> NozyResult<()> {
     
     match cli.command {
         Commands::New => {
-            println!("Creating new wallet...");
-            let (wallet, storage) = load_wallet().await?;
+            println!("🔐 Creating new wallet...");
             
-            let password = Password::new()
-                .with_prompt("Enter password for wallet encryption")
+            // Create new wallet
+            let mut wallet = HDWallet::new()?;
+            
+            // Ask for password protection
+            let use_password = Confirm::new()
+                .with_prompt("Do you want to set a password for this wallet?")
+                .default(true)
                 .interact()
-                .map_err(|e| nozy::NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
+                .map_err(|e| NozyError::InvalidOperation(format!("Input error: {}", e)))?;
             
-            storage.save_wallet(&wallet, &password).await?;
+            if use_password {
+                let password = Password::new()
+                    .with_prompt("Enter password for wallet encryption")
+                    .with_confirmation("Confirm password", "Passwords don't match")
+                    .interact()
+                    .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
+                
+                wallet.set_password(&password)?;
+                println!("✅ Password protection enabled");
+            } else {
+                println!("⚠️  Wallet will be stored without password protection");
+            }
             
-            println!("Wallet created successfully!");
-            println!("Mnemonic: {}", wallet.get_mnemonic());
+            let storage = WalletStorage::new(PathBuf::from("wallet_data"));
+            storage.save_wallet(&wallet, "").await?;
+            
+            println!("🎉 Wallet created successfully!");
+            println!("📝 Mnemonic: {}", wallet.get_mnemonic());
+            println!("⚠️  IMPORTANT: Save this mnemonic in a safe place!");
+            println!("   It's the only way to recover your wallet if you lose access.");
             
             match wallet.generate_orchard_address(0, 0) {
-                Ok(address) => println!("Sample address: {}", address),
-                Err(e) => println!("Failed to generate sample address: {}", e),
+                Ok(address) => println!("📍 Sample address: {}", address),
+                Err(e) => println!("❌ Failed to generate sample address: {}", e),
             }
         }
         
         Commands::Restore => {
             println!("Restore wallet from mnemonic...");
-            println!("Restore functionality not yet implemented");
+            use dialoguer::Input;
+            let mnemonic: String = Input::new()
+                .with_prompt("Enter your 24-word mnemonic")
+                .with_initial_text("")
+                .interact_text()
+                .map_err(|e| nozy::NozyError::InvalidOperation(format!("Mnemonic input error: {}", e)))?;
+            
+            let wallet = HDWallet::from_mnemonic(&mnemonic)?;
+            let storage = WalletStorage::new(PathBuf::from("wallet_data"));
+            
+            let password = Password::new()
+                .with_prompt("Enter password to encrypt wallet")
+                .interact()
+                .map_err(|e| nozy::NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
+            
+            storage.save_wallet(&wallet, &password).await?;
+            println!("✅ Wallet restored and saved.");
         }
         
         Commands::Addresses { count } => {
@@ -104,13 +155,23 @@ async fn main() -> NozyResult<()> {
             println!("Scanning blockchain for notes...");
             
             let (wallet, _storage) = load_wallet().await?;
-            let zebra_client = ZebraClient::new("https://zcash.electriccoin.co:8232".to_string());
+            let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
             
             // Create note scanner with real implementation
             let mut note_scanner = NoteScanner::new(wallet, zebra_client);
             
             match note_scanner.scan_notes(start_height, end_height).await {
                 Ok((result, spendable_notes)) => {
+                    // Persist notes for list-notes command
+                    use std::fs;
+                    use std::path::Path;
+                    let notes_dir = Path::new("wallet_data");
+                    if !notes_dir.exists() { let _ = fs::create_dir_all(notes_dir); }
+                    let notes_path = notes_dir.join("notes.json");
+                    if let Ok(serialized) = serde_json::to_string_pretty(&result.notes) {
+                        let _ = fs::write(&notes_path, serialized);
+                    }
+                    
                     println!("Scan complete!");
                     println!("Total notes found: {}", result.notes.len());
                     println!("Total balance: {} zatoshis", result.total_balance);
@@ -140,7 +201,7 @@ async fn main() -> NozyResult<()> {
         Commands::Send { recipient, amount, zebra_url } => {
             println!("Sending {} ZEC to {}...", amount, recipient);
             
-            let (_wallet, _storage) = load_wallet().await?;
+            let (wallet, _storage) = load_wallet().await?;
             
             let amount_zatoshis = (amount * 100_000_000.0) as u64;
             let fee_zatoshis = 10_000; 
@@ -168,16 +229,44 @@ async fn main() -> NozyResult<()> {
                 println!("   Transaction will be built but not broadcast.");
             }
             
-            let spendable_notes = Vec::new();
+            // Scan recent blocks for spendable notes before sending
+            println!("🔎 Scanning recent blocks for spendable notes...");
+            let zebra_client = ZebraClient::new(zebra_url.clone());
+            let tip_height = match zebra_client.get_block_count().await {
+                Ok(h) => h,
+                Err(e) => {
+                    println!("⚠️  Could not fetch tip height from Zebra ({}). Falling back to 10k-block scan ending at default.", e);
+                    3_066_071
+                }
+            };
+            let start_height = tip_height.saturating_sub(10_000);
+            let mut note_scanner = NoteScanner::new(wallet, ZebraClient::new("http://127.0.0.1:8232".to_string()));
+            let spendable_notes: Vec<nozy::SpendableNote> = match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
+                Ok((_result, spendable)) => spendable,
+                Err(e) => {
+                    println!("⚠️  Note scan failed: {}. Proceeding with empty note set.", e);
+                    Vec::new()
+                }
+            };
             
-            match tx_builder.build_send_transaction(&spendable_notes, &recipient, amount_zatoshis, fee_zatoshis) {
+            // Optional memo input
+            print!("Enter memo (optional, press Enter to skip): ");
+            io::stdout().flush().unwrap();
+            let mut memo_input = String::new();
+            let _ = io::stdin().read_line(&mut memo_input);
+            let memo_bytes_opt = {
+                let trimmed = memo_input.trim().as_bytes();
+                if trimmed.is_empty() { None } else { Some(trimmed) }
+            };
+            
+            match tx_builder.build_send_transaction(&zebra_client, &spendable_notes, &recipient, amount_zatoshis, fee_zatoshis, memo_bytes_opt).await {
                 Ok(signed_tx) => {
                     println!("Transaction built successfully!");
                     println!("Transaction ID: {}", signed_tx.txid);
                     println!("Transaction size: {} bytes", signed_tx.raw_transaction.len());
                     
                     if tx_builder.allow_mainnet_broadcast {
-                        match tx_builder.broadcast_transaction(&signed_tx) {
+                        match tx_builder.broadcast_transaction(&signed_tx).await {
                             Ok(txid) => {
                                 println!("✅ Transaction broadcast successful!");
                                 println!("Final Transaction ID: {}", txid);
@@ -245,6 +334,22 @@ async fn main() -> NozyResult<()> {
                     println!("        -d '{{\"jsonrpc\":\"1.0\",\"id\":\"test\",\"method\":\"getinfo\"}}' \\");
                     println!("        {}", zebra_url);
                 }
+            }
+        }
+        Commands::ListNotes => {
+            use std::fs;
+            use std::path::Path;
+            use serde_json::Value;
+            let notes_path = Path::new("wallet_data/notes.json");
+            if notes_path.exists() {
+                let content = fs::read_to_string(notes_path)
+                    .map_err(|e| nozy::NozyError::Storage(format!("Failed to read notes: {}", e)))?;
+                let v: Value = serde_json::from_str(&content)
+                    .map_err(|e| nozy::NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
+                println!("Stored notes:");
+                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_else(|_| "[]".to_string()));
+            } else {
+                println!("No stored notes yet. Run a scan first.");
             }
         }
     }

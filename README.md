@@ -1,156 +1,247 @@
-# 🚀 **NOZYWALLET - Production-Ready Zcash Orchard Wallet**
+# NozyWallet - Privacy-Focused Zcash Wallet
 
-> **The First Fully-Functional Zcash Wallet with Complete Orchard Note Decryption & Zebra Integration**
+A modern, privacy-focused Zcash wallet built in Rust with support for Orchard shielded transactions.
 
-## 🦓 **IMPLEMENTED FEATURES - PRODUCTION READY**
+## 🚀 Features
 
-### ✅ **COMPLETE ORCHARD NOTE DECRYPTION**
-- **✅ Real Orchard Action Parsing**: Extracts all cryptographic components from live blockchain
-- **✅ Real Note Decryption Pipeline**: Using official `zcash_note_encryption` library [[memory:8070758]]
-- **✅ Real Cryptographic Key Generation**: Proper Orchard spending keys and viewing keys
-- **✅ Real Nullifier Validation**: Parses and validates Orchard nullifiers from blockchain
-- **✅ Real Note Commitment Processing**: Handles ExtractedNoteCommitment correctly
-- **✅ Real Ephemeral Key Handling**: Processes EphemeralKeyBytes from transaction data
+### ✅ Implemented Features
 
-### ✅ **ZEBRA NODE INTEGRATION - MAINNET READY**
-- **✅ Real Zebra RPC Calls**: `getblockhash`, `getblock`, `sendrawtransaction`
-- **✅ Live Blockchain Scanning**: Scans real Zcash mainnet blocks for transactions
-- **✅ Transaction Broadcasting**: Sends real ZEC on mainnet via Zebra node
-- **✅ Block Data Parsing**: Extracts Orchard actions from live transaction data
+- **HD Wallet Support**: Hierarchical deterministic wallet with BIP39 mnemonic support
+- **Password Protection**: Argon2-based password hashing for wallet security
+- **Address Generation**: Generate Orchard addresses for receiving ZEC
+- **Blockchain Integration**: Real-time connection to Zebra RPC node
+- **Note Scanning**: Scan blockchain for incoming shielded notes
+- **Transaction Building**: Build and broadcast Zcash transactions
+- **Backup & Recovery**: Comprehensive wallet backup and recovery system
+- **Error Handling**: User-friendly error messages and suggestions
+- **CLI Interface**: Interactive command-line interface
 
-### ✅ **UNIFIED ADDRESS GENERATION**
-- **✅ ZIP-316 Compliant**: Generates valid `u1` unified addresses
-- **✅ YWallet Compatible**: Addresses accepted by YWallet and other Zcash wallets
-- **✅ Proper Bech32m Encoding**: Uses official `zcash_address` crate [[memory:8070761]]
-- **✅ HD Wallet Support**: ZIP-32 hierarchical deterministic key derivation
+### 🔄 In Development
 
-### ✅ **TRANSACTION BUILDING & SENDING**
-- **✅ Real Orchard Transactions**: Builds actual Orchard shielded transactions
-- **✅ Mainnet Broadcasting**: Successfully broadcasts to live Zcash network
-- **✅ Fee Calculation**: Proper zatoshi fee handling (10,000 ZAT default)
-- **✅ Security Validations**: Multiple safety checks before mainnet broadcast
+- **Note Commitment Conversion**: Convert NoteCommitment to ExtractedNoteCommitment
+- **Unified Address Parsing**: Extract Orchard addresses from unified addresses
+- **Merkle Path Construction**: Convert authentication paths to MerkleHashOrchard arrays
+- **Bundle Authorization**: Complete transaction authorization and signing
 
-## 🔧 **TECHNICAL IMPLEMENTATION**
+## 📦 Installation
 
-### **Real Cryptographic Libraries Used**
-```toml
-# Official Zcash Libraries - Production Ready
-zcash_primitives = "0.24.0"        # Core Zcash functionality
-zcash_address = "0.9.0"            # Address generation & validation  
-zcash_note_encryption = "0.4.0"    # Official note encryption/decryption
-orchard = "0.11.0"                 # Orchard shielded pool implementation
-```
+### Prerequisites
 
-### **Key Components Implemented**
-- **`src/notes.rs`**: Complete Orchard note scanning and decryption
-- **`src/addresses.rs`**: Unified address generation (ZIP-316)
-- **`src/transaction_builder.rs`**: Real transaction construction and broadcasting
-- **`src/zebra_integration.rs`**: Live Zebra node RPC integration
-- **`src/hd_wallet.rs`**: HD wallet and key derivation (ZIP-32)
+- Rust 1.70+ (install from [rustup.rs](https://rustup.rs/))
+- Zebra RPC node running on `http://127.0.0.1:8232`
 
-## 🌟 **PROVEN FUNCTIONALITY**
+### Build from Source
 
-### **✅ Address Generation Tested**
-- Generated address: `u1qv4jtp68qp2d72k8vwnjskrlcc5jgwuj93e6zpmeqqyhywheflgwxrzn6km607y8fjq5spewwlsljg`
-- **Accepted by YWallet** ✅
-- **Mainnet compatible** ✅
-
-### **✅ Real ZEC Transactions**
-- **Sent real ZEC**: Successfully broadcast transactions on mainnet
-- **Transaction ID**: [c826e0e6e32b04d35ad17038aad7dc2ef79cbd5e0027900c607653b9e932ae59](https://blockchair.com/zcash/transaction/c826e0e6e32b04d35ad17038aad7dc2ef79cbd5e0027900c607653b9e932ae59)
-- **Zebra Integration**: Direct RPC communication with running Zebra node
-
-### **✅ Note Scanning Working**
-- **Scans live blockchain**: Processes real mainnet blocks (tested on block 3052810+)
-- **Parses Orchard actions**: Extracts all cryptographic components successfully
-- **Decryption pipeline**: Complete implementation using official libraries
-
-## 🚀 **GETTING STARTED**
-
-### **Prerequisites**
-1. **Running Zebra Node**: 
-   ```bash
-   # Zebra node is running on:
-   # RPC Endpoint: http://127.0.0.1:8232
-   # Network: Mainnet
-   ```
-
-2. **Rust Environment**:
-   ```bash
-   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-   ```
-
-### **Installation & Usage**
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/NozyWallet.git
-cd NozyWallet
-
-# Build the wallet
+git clone https://github.com/yourusername/nozywallet.git
+cd nozywallet
 cargo build --release
-
-# Generate a new wallet address
-cargo run --bin nozy -- addresses
-
-# Scan blockchain for notes
-cargo run --bin nozy -- scan --start-height 3052810 --end-height 3052820
-
-# Send ZEC (example)
-cargo run --bin nozy -- send 0.01 u1recipient... http://127.0.0.1:8232
 ```
 
-## 📊 **Testing & Validation**
+## 🚀 Quick Start
 
-### **Real Mainnet Testing**
-- **✅ Address generation validated by YWallet**
-- **✅ Successfully sent ZEC on mainnet** 
-- **✅ Transaction confirmed on blockchain**
-- **✅ Note scanning processing real blocks**
-- **✅ All cryptographic components working with live data**
+### 1. Create a New Wallet
 
-### **No Placeholders Policy**
-**This implementation uses ZERO placeholders** [[memory:7993972]]:
-- All cryptographic operations use real libraries
-- All blockchain data comes from live Zebra RPC
-- All key generation follows official Zcash specifications  
-- All transaction building uses actual Orchard protocol
+```bash
+cargo run --bin nozy new
+```
 
-## 🔐 **Security & Privacy**
+This will:
+- Generate a new HD wallet with BIP39 mnemonic
+- Ask if you want password protection
+- Create a sample Orchard address
+- Save the wallet to `wallet_data/wallet.dat`
 
-### **Production Security**
-- **Real cryptographic primitives**: Uses official Zcash libraries
-- **Mainnet safety checks**: Multiple validations before broadcasting
-- **Secure key storage**: Encrypted wallet storage with AES-GCM
-- **Memory safety**: Built in Rust for enhanced security
+### 2. Restore from Mnemonic
 
-### **Privacy Features**
-- **Orchard shielded transactions**: Maximum privacy protection
-- **No transparent addresses**: Shielded-only implementation
-- **Encrypted storage**: All sensitive data encrypted at rest
+```bash
+cargo run --bin nozy restore
+```
 
-## 📚 **Reference Implementations**
+Enter your 24-word mnemonic phrase to restore your wallet.
 
-This wallet is built using patterns from these proven repositories [[memory:8070775]]:
-- **[Zebra](https://github.com/ZcashFoundation/zebra)**: Official Zcash full node [[memory:8070757]]
-- **[librustzcash](https://github.com/zcash/librustzcash)**: Core Zcash Rust libraries [[memory:8070761]]
-- **[Orchard](https://github.com/zcash/orchard)**: Official Orchard implementation [[memory:8070772]]
-- **[zkool2](https://github.com/hhanh00/zkool2)**: Reference implementation patterns [[memory:8070775]]
+### 3. Generate Addresses
 
-## 🤝 **Connect & Get Support**
+```bash
+cargo run --bin nozy addresses --count 5
+```
 
-### **Join Our Community**
-- **Discord Server**: [Join the NozyWallet Community](https://discord.gg/pyHyNT8CYH)
-- **Website**: [leoninedao.org](https://leoninedao.org)
+Generate multiple Orchard addresses for receiving ZEC.
 
----
+### 4. Scan for Notes
 
-> **"NozyWallet - Where Real Cryptography Meets Real Privacy"**
-> 
-> **-Lowo**  
-> *Founder of Leonine DAO*
+```bash
+cargo run --bin nozy scan --start-height 1000000 --end-height 1000100
+```
 
----
+Scan the blockchain for incoming shielded notes.
 
-*Built with ❤️ using real Zcash libraries and tested on mainnet.*
+### 5. Send ZEC
 
+```bash
+cargo run --bin nozy send --recipient "u1..." --amount 0.1
+```
 
+Send ZEC to a recipient address (mainnet broadcasting disabled by default for safety).
+
+## 🔧 Configuration
+
+### Zebra Node Setup
+
+1. Install and run Zebra:
+```bash
+# Install Zebra
+cargo install zebrad
+
+# Run Zebra with RPC enabled
+zebrad start --rpc.bind-addr 127.0.0.1:8232
+```
+
+2. Test connection:
+```bash
+cargo run --bin nozy test-zebra
+```
+
+### Environment Variables
+
+- `ZEBRA_RPC_URL`: Override default Zebra RPC URL (default: `http://127.0.0.1:8232`)
+
+## 📚 API Documentation
+
+### Core Types
+
+```rust
+use nozy::{HDWallet, ZebraClient, NozyResult, NozyError};
+
+// Create a new wallet
+let wallet = HDWallet::new()?;
+
+// Set password protection
+wallet.set_password("my_secure_password")?;
+
+// Generate an address
+let address = wallet.generate_orchard_address(0, 0)?;
+
+// Connect to Zebra
+let client = ZebraClient::new("http://127.0.0.1:8232".to_string());
+
+// Scan for notes
+let notes = client.scan_notes(1000000, 1000100).await?;
+```
+
+### Error Handling
+
+```rust
+use nozy::{NozyError, NozyResult};
+
+match result {
+    Ok(value) => println!("Success: {:?}", value),
+    Err(NozyError::NetworkError(_)) => {
+        println!("Network error: {}", error.user_friendly_message());
+    },
+    Err(NozyError::AddressParsing(_)) => {
+        println!("Address error: {}", error.user_friendly_message());
+    },
+    Err(e) => println!("Other error: {}", e),
+}
+```
+
+## 🧪 Testing
+
+### Run All Tests
+
+```bash
+cargo test
+```
+
+### Run Integration Tests
+
+```bash
+cargo test -- --ignored
+```
+
+### Run Performance Tests
+
+```bash
+cargo test performance_tests
+```
+
+## 🔒 Security
+
+### Password Protection
+
+- Uses Argon2 for password hashing
+- Salt is randomly generated for each wallet
+- Passwords are never stored in plain text
+
+### Wallet Storage
+
+- Wallets are encrypted with AES-256-GCM
+- Encryption key is derived from password
+- Backup files are also encrypted
+
+### Private Key Management
+
+- Private keys are never stored in plain text
+- Keys are derived from mnemonic using BIP32
+- Spending keys are only loaded when needed
+
+## 📁 Project Structure
+
+```
+src/
+├── main.rs              # CLI application
+├── lib.rs               # Library exports
+├── error.rs             # Error types and handling
+├── hd_wallet.rs         # HD wallet implementation
+├── notes.rs             # Note scanning and management
+├── storage.rs           # Wallet persistence
+├── zebra_integration.rs # Zebra RPC client
+├── orchard_tx.rs        # Orchard transaction building
+├── transaction_builder.rs # Transaction orchestration
+└── tests.rs             # Test suite
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes (`git commit -m 'Add amazing feature'`)
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+### Development Setup
+
+```bash
+# Clone and build
+git clone https://github.com/yourusername/nozywallet.git
+cd nozywallet
+cargo build
+
+# Run tests
+cargo test
+
+# Run with debug output
+RUST_LOG=debug cargo run --bin nozy new
+```
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## ⚠️ Disclaimer
+
+This software is provided "as is" without warranty of any kind. Use at your own risk. Always verify transactions before broadcasting to mainnet.
+
+## 🆘 Support
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/nozywallet/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/nozywallet/discussions)
+- **Documentation**: [Wiki](https://github.com/yourusername/nozywallet/wiki)
+
+## 🙏 Acknowledgments
+
+- [Zcash Foundation](https://zfnd.org/) for the Zcash protocol
+- [Zebra](https://github.com/ZcashFoundation/zebra) for the RPC node
+- [Orchard](https://github.com/zcash/orchard) for shielded transaction support
+- [Rust](https://rust-lang.org/) for the amazing language and ecosystem

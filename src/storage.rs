@@ -6,6 +6,8 @@ use std::path::PathBuf;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
 use aes_gcm::aead::Aead;
 use rand::RngCore;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletData {
@@ -13,16 +15,36 @@ pub struct WalletData {
     pub addresses: Vec<String>,
     pub transactions: Vec<TransactionDetails>,
     pub balance: u64,
+    pub created_at: u64,
+    pub last_updated: u64,
+    pub version: String,
+    pub password_protected: bool,
 }
 
 impl WalletData {
     pub fn new(mnemonic: String) -> Self {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
         Self {
             mnemonic,
             addresses: Vec::new(),
             transactions: Vec::new(),
             balance: 0,
+            created_at: now,
+            last_updated: now,
+            version: env!("CARGO_PKG_VERSION").to_string(),
+            password_protected: false,
         }
+    }
+    
+    pub fn update_timestamp(&mut self) {
+        self.last_updated = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
     }
 }
 
@@ -96,5 +118,73 @@ impl WalletStorage {
         
         String::from_utf8(plaintext)
             .map_err(|e| NozyError::Storage(format!("Invalid UTF-8: {}", e)))
+    }
+    
+    /// Create a backup of the wallet
+    pub async fn create_backup(&self, backup_path: &str) -> NozyResult<()> {
+        let wallet_path = self.data_dir.join("wallet.dat");
+        if !wallet_path.exists() {
+            return Err(NozyError::Storage("No wallet found to backup".to_string()));
+        }
+        
+        let backup_dir = PathBuf::from(backup_path);
+        if !backup_dir.exists() {
+            fs::create_dir_all(&backup_dir)
+                .map_err(|e| NozyError::Storage(format!("Failed to create backup directory: {}", e)))?;
+        }
+        
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        
+        let backup_file = backup_dir.join(format!("wallet_backup_{}.dat", timestamp));
+        
+        fs::copy(&wallet_path, &backup_file)
+            .map_err(|e| NozyError::Storage(format!("Failed to create backup: {}", e)))?;
+        
+        println!("✅ Wallet backup created: {}", backup_file.display());
+        Ok(())
+    }
+    
+    /// Restore wallet from backup
+    pub async fn restore_from_backup(&self, backup_path: &str) -> NozyResult<()> {
+        let backup_file = PathBuf::from(backup_path);
+        if !backup_file.exists() {
+            return Err(NozyError::Storage("Backup file not found".to_string()));
+        }
+        
+        let wallet_path = self.data_dir.join("wallet.dat");
+        
+        // Create backup of current wallet if it exists
+        if wallet_path.exists() {
+            let current_backup = self.data_dir.join("wallet_current_backup.dat");
+            fs::copy(&wallet_path, &current_backup)
+                .map_err(|e| NozyError::Storage(format!("Failed to backup current wallet: {}", e)))?;
+            println!("📦 Current wallet backed up to: {}", current_backup.display());
+        }
+        
+        fs::copy(&backup_file, &wallet_path)
+            .map_err(|e| NozyError::Storage(format!("Failed to restore from backup: {}", e)))?;
+        
+        println!("✅ Wallet restored from backup: {}", backup_file.display());
+        Ok(())
+    }
+    
+    /// List available backups
+    pub fn list_backups(&self) -> NozyResult<Vec<String>> {
+        let mut backups = Vec::new();
+        
+        // Check in data directory
+        if let Ok(entries) = fs::read_dir(&self.data_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.file_name().unwrap().to_string_lossy().starts_with("wallet_backup_") {
+                    backups.push(path.to_string_lossy().to_string());
+                }
+            }
+        }
+        
+        Ok(backups)
     }
 }

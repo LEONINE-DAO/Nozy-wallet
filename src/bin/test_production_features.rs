@@ -1,66 +1,76 @@
 use nozy::{
-    HDWallet, AddressManager, ZebraClient, BlockParser, 
-    ZcashKeyDerivation, ZcashKeyAddressType, ZcashSpendingKey,
-    NoteDataParser, NoteStorage, StorageStats
+    HDWallet, ZebraClient, NoteScanner
 };
+
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🚀 Testing NozyWallet Production Features...\n");
+    println!("🧪 NozyWallet - Production Features Test\n");
 
-    let hd_wallet = HDWallet::new("test_password")?;
-    let address_manager = AddressManager::new();
-    let zebra_client = ZebraClient::new("http://127.0.0.1:18232".to_string());
-    let block_parser = BlockParser::new(zebra_client.clone());
-    let key_derivation = ZcashKeyDerivation::new(hd_wallet.clone());
-    let note_parser = NoteDataParser::new(key_derivation.clone());
-    let note_storage = NoteStorage::new("nozy_storage".to_string())?;
+    // Create new wallet
+    let hd_wallet = HDWallet::new()?;
+    let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
+    let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
 
-    println!("📊 Testing Enhanced Note Scanning...");
-    let recent_blocks = vec![3567174, 3568174];
-    for &height in &recent_blocks {
-        if let Ok(transactions) = block_parser.parse_block(height).await {
-            println!("   📍 Block {}: {} transactions", height, transactions.len());
+    // Test wallet creation
+    println!("✅ Wallet created successfully");
+    println!("📝 Mnemonic: {}", hd_wallet.get_mnemonic());
+    
+    // Generate addresses
+    let mut addresses = Vec::new();
+for i in 0..5 {
+    let addr = hd_wallet.generate_orchard_address(0, i)?;
+    addresses.push(addr);
+}
+    println!("🏠 Generated {} addresses:", addresses.len());
+    for (i, addr) in addresses.iter().enumerate() {
+        println!("  {}: {}", i + 1, addr);
+    }
+
+    // Test Zebra connection
+    println!("\n🔗 Testing Zebra connection...");
+    match zebra_client.get_block_count().await {
+        Ok(height) => {
+            println!("✅ Connected to Zebra node");
+            println!("📊 Current block height: {}", height);
+        },
+        Err(e) => {
+            println!("❌ Failed to connect to Zebra: {}", e);
+            return Ok(());
         }
     }
 
-    println!("\n🔑 Testing Real Zcash Key Derivation...");
-    let address_types = [
-        ZcashKeyAddressType::Orchard,
-        ZcashKeyAddressType::Sapling,
-        ZcashKeyAddressType::Transparent,
-        ZcashKeyAddressType::Unified,
-    ];
+    // Test note scanning
+    println!("\n🔍 Testing note scanning...");
+    let tip_height = match zebra_client.get_block_count().await {
+        Ok(h) => h,
+        Err(_) => 3_066_071
+    };
+    let start_height = tip_height.saturating_sub(100); // Scan last 100 blocks
     
-    for address_type in &address_types {
-        let path = key_derivation.generate_derivation_path(*address_type, 0, 0);
-        let path_string = key_derivation.path_to_string(&path);
-        println!("   📍 {:?}: {}", address_type, path_string);
-        
-        if let Ok(spending_key) = key_derivation.derive_spending_key(&path, "test_password") {
-            println!("      ✅ Generated spending key for {}", spending_key.address);
+    match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
+        Ok((result, spendable)) => {
+            println!("✅ Note scanning completed");
+            println!("📊 Total notes found: {}", result.notes.len());
+            println!("💰 Total balance: {} ZAT", result.total_balance);
+            println!("💸 Spendable notes: {}", spendable.len());
+            
+            if result.total_balance > 0 {
+                println!("🎉 Found ZEC in wallet!");
+                for (i, note) in result.notes.iter().enumerate() {
+                    if !note.spent {
+                        println!("  Note {}: {} ZAT (Block: {})", i + 1, note.value, note.block_height);
+                    }
+                }
+            } else {
+                println!("💡 No ZEC found in scanned blocks");
+            }
+        },
+        Err(e) => {
+            println!("❌ Note scanning failed: {}", e);
         }
     }
 
-    println!("\n📝 Testing Real Note Data Parsing...");
-    let test_commitment = key_derivation.generate_note_commitment(1300000, b"test_recipient", b"test_rseed")?;
-    let test_nullifier = key_derivation.generate_note_nullifier(b"test_key", &test_commitment)?;
-    println!("   📍 Generated note commitment: {}", hex::encode(&test_commitment[..8]));
-    println!("   📍 Generated note nullifier: {}", hex::encode(&test_nullifier[..8]));
-
-    println!("\n💾 Testing Persistent Storage...");
-    let stats = note_storage.get_stats();
-    println!("   📍 Storage stats: {} notes, {} keys, {} transactions", 
-             stats.total_notes, stats.total_spending_keys, stats.total_transactions);
-    
-    note_storage.save_all()?;
-    println!("   ✅ Data saved to disk");
-
-    println!("\n🎉 All Production Features Tested Successfully!");
-    println!("   • Enhanced Note Scanning: ✅");
-    println!("   • Real Zcash Key Derivation: ✅");
-    println!("   • Real Note Data Parsing: ✅");
-    println!("   • Persistent Storage: ✅");
-    
+    println!("\n🎯 All production features tested!");
     Ok(())
-} 
+}

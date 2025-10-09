@@ -1,131 +1,122 @@
 use nozy::{
-    HDWallet, AddressManager, ZebraClient, ZcashTransactionBuilder, 
-    ZcashKeyDerivation, NoteScanner, NoteStorage
+    HDWallet, ZebraClient, ZcashTransactionBuilder, NoteScanner
 };
 use std::io::{self, Write};
+use std::path::PathBuf;
+use dialoguer::Password;
+use nozy::{WalletStorage, NozyResult, NozyError};
+
+async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
+    let storage = WalletStorage::new(PathBuf::from("wallet_data"));
+    let wallet_path = std::path::Path::new("wallet_data/wallet.dat");
+    if wallet_path.exists() {
+        let password = Password::new()
+            .with_prompt("Enter wallet password")
+            .interact()
+            .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
+        let wallet = storage.load_wallet(&password).await?;
+        Ok((wallet, storage))
+    } else {
+        Err(NozyError::Storage("No wallet found. Use 'nozy new' or 'nozy restore' to create a wallet first.".to_string()))
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 NozyWallet - Send ZEC Transaction\n");
 
-    
-    let password = "your_wallet_password";
-    let hd_wallet = HDWallet::new(password)?;
-    let address_manager = AddressManager::new();
-    let zebra_client = ZebraClient::new("http://127.0.0.1:18232".to_string());
+    // Load existing wallet
+    let (hd_wallet, _storage) = load_wallet().await?;
+    let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
     let mut transaction_builder = ZcashTransactionBuilder::new();
-    let key_derivation = ZcashKeyDerivation::new(hd_wallet.clone());
-    let note_storage = NoteStorage::new("nozy_storage".to_string())?;
+    let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
 
-    
-    transaction_builder.set_zebra_client(zebra_client.clone());
-    transaction_builder.set_key_derivation(key_derivation.clone());
+    // Set up transaction builder
+    transaction_builder.set_zebra_url("http://127.0.0.1:8232");
+    transaction_builder.enable_mainnet_broadcast();
 
-    let mut note_scanner = NoteScanner::new();
-    note_scanner.set_zebra_client(zebra_client.clone());
-    note_scanner.set_note_storage(note_storage.clone());
-    note_scanner.set_key_derivation(key_derivation.clone());
-
-    transaction_builder.setup_note_scanner()?;
-
-    
-    print!("Enter source address: ");
+    // Get user input
+    print!("Enter recipient address: ");
     io::stdout().flush()?;
-    let mut source_address = String::new();
-    io::stdin().read_line(&mut source_address)?;
-    let source_address = source_address.trim();
-
-    print!("Enter destination address: ");
-    io::stdout().flush()?;
-    let mut dest_address = String::new();
-    io::stdin().read_line(&mut dest_address)?;
-    let dest_address = dest_address.trim();
+    let mut recipient = String::new();
+    io::stdin().read_line(&mut recipient)?;
+    let recipient = recipient.trim().to_string();
 
     print!("Enter amount in ZEC: ");
     io::stdout().flush()?;
-    let mut amount_input = String::new();
-    io::stdin().read_line(&mut amount_input)?;
-    let amount: f64 = amount_input.trim().parse()?;
+    let mut amount_str = String::new();
+    io::stdin().read_line(&mut amount_str)?;
+    let amount: f64 = amount_str.trim().parse()?;
 
-    println!("\n📊 Checking wallet balance...");
-    
-    let balance = note_scanner.get_address_balance(source_address, password)?;
-    let balance_zec = balance as f64 / 100_000_000.0;
-    
-    println!("💰 Available balance: {:.8} ZEC", balance_zec);
-    
-    if balance < (amount * 100_000_000.0) as u64 {
-        println!("❌ Insufficient funds!");
-        return Ok(());
-    }
+    // Optional memo
+    print!("Enter memo (optional, press Enter to skip): ");
+    io::stdout().flush()?;
+    let mut memo_input = String::new();
+    io::stdin().read_line(&mut memo_input)?;
+    let memo_bytes_opt: Option<Vec<u8>> = {
+        let trimmed = memo_input.trim();
+        if trimmed.is_empty() { None } else { Some(trimmed.as_bytes().to_vec()) }
+    };
 
-    println!("\n🔍 Scanning for spendable notes...");
+    // Scan for spendable notes
+    println!("🔎 Scanning for spendable notes...");
+    let tip_height = match zebra_client.get_block_count().await {
+        Ok(h) => h,
+        Err(e) => {
+            println!("⚠️  Could not fetch tip height: {}. Using default.", e);
+            3_066_071
+        }
+    };
+    let start_height = tip_height.saturating_sub(10_000);
     
-    
-    let spendable_notes = note_scanner.get_spendable_notes(source_address, password)?;
-    println!("📝 Found {} spendable notes", spendable_notes.len());
+    let spendable_notes = match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
+        Ok((_result, spendable)) => spendable,
+        Err(e) => {
+            println!("⚠️  Note scan failed: {}. Proceeding with empty note set.", e);
+            Vec::new()
+        }
+    };
 
     if spendable_notes.is_empty() {
         println!("❌ No spendable notes found!");
         return Ok(());
     }
 
-    println!("\n🏗️ Building transaction...");
-    
-    
-    let transaction = transaction_builder.build_send_transaction(
-        source_address,
-        dest_address,
-        amount,
-        password,
-    )?;
-
-    println!("✅ Transaction built successfully!");
-    println!("🆔 Transaction hex: {}", transaction.hex);
-    println!("📏 Transaction size: {} bytes", transaction.hex.len() / 2);
-
-    
-    print!("\n❓ Confirm transaction? (y/N): ");
-    io::stdout().flush()?;
-    let mut confirm = String::new();
-    io::stdin().read_line(&mut confirm)?;
-    
-    if confirm.trim().to_lowercase() != "y" {
-        println!("❌ Transaction cancelled");
-        return Ok(());
+    println!("✅ Found {} spendable notes", spendable_notes.len());
+    for (i, note) in spendable_notes.iter().enumerate() {
+        println!("  Note {}: {} ZAT", i + 1, note.orchard_note.value);
     }
 
-    println!("\n📡 Broadcasting transaction...");
-    
-    
-    if let Some(client) = transaction_builder.get_zebra_client() {
-        match client.broadcast_transaction(&hex::decode(&transaction.hex)?).await {
-            Ok(txid) => {
-                println!("✅ Transaction broadcast successfully!");
-                println!("🆔 Transaction ID: {}", txid);
-                println!("🔗 View on explorer: https://explorer.zcha.in/tx/{}", txid);
-                
-                
-                
-                let parsed_transaction = nozy::block_parser::ParsedTransaction {
-                    txid: txid.clone(),
-                    version: 5,
-                    orchard_actions: vec![],
-                    sapling_spends: vec![],
-                    sapling_outputs: vec![],
-                    transparent_inputs: vec![],
-                    transparent_outputs: vec![],
-                };
-                note_storage.store_transaction(parsed_transaction, 0, chrono::Utc::now())?;
-                println!("💾 Transaction saved to local storage");
-            }
-            Err(e) => {
-                println!("❌ Failed to broadcast transaction: {}", e);
-            }
+    // Build transaction
+    let amount_zatoshis = (amount * 100_000_000.0) as u64;
+    let fee_zatoshis = 10_000;
+
+    println!("🔧 Building transaction...");
+    let transaction = transaction_builder.build_send_transaction(
+        &zebra_client,
+        &spendable_notes,
+        &recipient,
+        amount_zatoshis,
+        fee_zatoshis,
+        memo_bytes_opt.as_deref(),
+    ).await?;
+
+    println!("✅ Transaction built successfully!");
+    println!("🆔 Transaction ID: {}", transaction.txid);
+    println!("📏 Transaction size: {} bytes", transaction.raw_transaction.len());
+
+    // Broadcast transaction
+    println!("🚀 Broadcasting transaction...");
+    match transaction_builder.broadcast_transaction(&transaction).await {
+        Ok(txid) => {
+            println!("✅ Transaction broadcast successful!");
+            println!("🌐 Network TXID: {}", txid);
+            println!("🔗 Explorer: https://zcashblockexplorer.com/transactions/{}", txid);
+        },
+        Err(e) => {
+            println!("❌ Broadcast failed: {}", e);
         }
-    } else {
-        println!("❌ Zebra client not available");
     }
 
     Ok(())
-} 
+}
