@@ -1,0 +1,36 @@
+--- src/notes.rs.orig
++++ src/notes.rs
+@@ -232,7 +232,25 @@
+         match try_note_decryption(&domain, &prepared_ivk, &compact_action) {
+             Ok(Some((note, address, memo))) => {
+-                println!(
+-        Ok(None)
++                println!("🎉 Successfully decrypted note: {} ZAT", note.value());
++                println!("   Address: {:?}", address);
++                println!("   Memo: {:?}", memo);
++                
++                let orchard_note = OrchardNote {
++                    note: note.clone(),
++                    value: note.value(),
++                    address: address.clone(),
++                    nullifier: action.nullifier.into(),
++                    block_height,
++                    txid: txid.to_string(),
++                    spent: false,
++                    memo: memo.to_vec(),
++                };
++                
++                Ok(Some(orchard_note))
++            },
++            Ok(None) => {
++                println!("   No note decrypted for this action");
++                Ok(None)
++            },
++            Err(e) => {
++                println!("   Decryption failed: {:?}", e);
++                Ok(None)
++            }
++        }
+     }
+     
+     fn extract_orchard_actions_from_tx(&self, tx: &ParsedTransaction) -> Option<Vec<OrchardActionData>> {

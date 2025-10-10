@@ -17,6 +17,7 @@ pub struct SignedTransaction {
 }
 
 pub struct TransactionBuilder {
+    #[allow(dead_code)]
     wallet: HDWallet,
 }
 

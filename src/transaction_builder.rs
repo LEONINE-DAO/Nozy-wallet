@@ -2,6 +2,7 @@ use crate::error::{NozyError, NozyResult};
 use crate::notes::SpendableNote;
 use crate::zebra_integration::ZebraClient;
 use sha2::{Sha256, Digest};
+use crate::orchard_tx::OrchardTransactionBuilder;
 
 #[derive(Debug, Clone)]
 pub struct SignedTransaction {
@@ -35,12 +36,14 @@ impl ZcashTransactionBuilder {
         self
     }
 
-    pub fn build_send_transaction(
+    pub async fn build_send_transaction(
         &self,
+        zebra_client: &ZebraClient,
         spendable_notes: &[SpendableNote],
         recipient_address: &str,
         amount_zatoshis: u64,
         fee_zatoshis: u64,
+        memo: Option<&[u8]>,
     ) -> NozyResult<SignedTransaction> {
         
         println!("🔧 Building transaction for Zebra node...");
@@ -66,7 +69,15 @@ impl ZcashTransactionBuilder {
             ));
         }
         
-        let tx_data = self.create_zebra_transaction(spendable_notes, recipient_address, amount_zatoshis, fee_zatoshis)?;
+        let orchard_builder = OrchardTransactionBuilder::new(true);
+        let tx_data = orchard_builder.build_single_spend(
+            &zebra_client,
+            spendable_notes,
+            recipient_address,
+            amount_zatoshis,
+            fee_zatoshis,
+            memo,
+        ).await?;
         let txid = self.calculate_txid(&tx_data)?;
         
         println!("✅ Transaction built for Zebra:");
@@ -79,57 +90,6 @@ impl ZcashTransactionBuilder {
         })
     }
     
-    fn create_zebra_transaction(
-        &self,
-        spendable_notes: &[SpendableNote],
-        recipient_address: &str,
-        amount_zatoshis: u64,
-        fee_zatoshis: u64,
-    ) -> NozyResult<Vec<u8>> {
-        let mut tx_data = Vec::new();
-        
-        tx_data.extend_from_slice(&5u32.to_le_bytes());
-        
-        tx_data.extend_from_slice(&0x26A7270Au32.to_le_bytes());
-        
-        tx_data.extend_from_slice(&0xC2D6D0B4u32.to_le_bytes());
-        
-        tx_data.extend_from_slice(&0u32.to_le_bytes());
-        
-        let expiry_height = 2650000u32 + 40;
-        tx_data.extend_from_slice(&expiry_height.to_le_bytes());
-        
-        tx_data.push(0); 
-        tx_data.push(0); 
-        
-        tx_data.push(0); 
-        tx_data.push(0); 
-        tx_data.extend_from_slice(&0i64.to_le_bytes()); 
-        
-        if !spendable_notes.is_empty() {
-            tx_data.push(1); 
-            
-            tx_data.extend_from_slice(&[0u8; 32]); 
-            tx_data.extend_from_slice(&spendable_notes[0].orchard_note.nullifier.to_bytes()); 
-            tx_data.extend_from_slice(&[0u8; 32]); 
-            tx_data.extend_from_slice(&[0u8; 32]); 
-            tx_data.extend_from_slice(&[0u8; 32]); 
-            tx_data.extend_from_slice(&[0u8; 580]); 
-            tx_data.extend_from_slice(&[0u8; 80]); 
-            tx_data.extend_from_slice(&[0u8; 64]); 
-            
-            tx_data.extend_from_slice(&(-(amount_zatoshis as i64 + fee_zatoshis as i64)).to_le_bytes());
-            
-            tx_data.extend_from_slice(&[0u8; 32]); 
-            tx_data.extend_from_slice(&[0u8; 192]); 
-            tx_data.extend_from_slice(&[0u8; 64]); 
-        } else {
-            tx_data.push(0); 
-            tx_data.extend_from_slice(&0i64.to_le_bytes()); 
-        }
-        
-        Ok(tx_data)
-    }
     
     fn calculate_txid(&self, tx_data: &[u8]) -> NozyResult<String> {
         let mut hasher = Sha256::new();
@@ -145,7 +105,7 @@ impl ZcashTransactionBuilder {
         Ok(hex::encode(txid_bytes))
     }
     
-    pub fn broadcast_transaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
+    pub async fn broadcast_transaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
         if !self.allow_mainnet_broadcast {
             return Err(NozyError::InvalidOperation(
                 "🚫 Mainnet broadcasting disabled for safety! Call enable_mainnet_broadcast() first.".to_string()
@@ -154,7 +114,7 @@ impl ZcashTransactionBuilder {
         
         println!("🚀 Broadcasting to Zebra node...");
         
-        match self.call_zebra_sendrawtransaction(transaction) {
+        match self.call_zebra_sendrawtransaction(transaction).await {
             Ok(network_txid) => {
                 println!("✅ SUCCESS! Transaction broadcast to mainnet!");
                 println!("🌐 Network TXID: {}", network_txid);
@@ -168,8 +128,8 @@ impl ZcashTransactionBuilder {
         }
     }
     
-    fn call_zebra_sendrawtransaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
-        use reqwest::blocking::Client;
+    async fn call_zebra_sendrawtransaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
+        use reqwest::Client;
         use serde_json::json;
         
         let zebra_url = &self.zebra_url;
@@ -191,6 +151,7 @@ impl ZcashTransactionBuilder {
             .header("Content-Type", "application/json")
             .json(&rpc_request)
             .send()
+            .await
             .map_err(|e| NozyError::InvalidOperation(format!("Connection failed: {}", e)))?;
             
         if !response.status().is_success() {
@@ -199,7 +160,9 @@ impl ZcashTransactionBuilder {
             ));
         }
         
-        let response_text = response.text()
+        let response_text = response
+            .text()
+            .await
             .map_err(|e| NozyError::InvalidOperation(format!("Response read error: {}", e)))?;
             
         println!("📨 Zebra response: {}", response_text);

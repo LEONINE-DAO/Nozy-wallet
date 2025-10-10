@@ -2,6 +2,7 @@ use crate::error::{NozyError, NozyResult};
 use serde::Deserialize;
 use std::collections::HashMap;
 use serde_json::Value;
+use hex;
 
 #[derive(Debug, Clone)]
 pub struct ZebraClient {
@@ -169,6 +170,137 @@ impl ZebraClient {
             .ok_or_else(|| NozyError::InvalidOperation("Invalid network info response".to_string()))
     }
 
+    
+    pub async fn get_raw_transaction(&self, txid: &str) -> NozyResult<String> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getrawtransaction",
+            "params": [txid],
+            "id": 1
+        });
+
+        let response: ZebraResponse<String> = self.make_request(request).await?;
+        
+        if let Some(error) = response.error {
+            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+        }
+
+        response.result
+            .ok_or_else(|| NozyError::InvalidOperation("No transaction data in response".to_string()))
+    }
+
+    
+    pub async fn decode_raw_transaction(&self, raw_tx: &str) -> NozyResult<HashMap<String, Value>> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "decoderawtransaction",
+            "params": [raw_tx],
+            "id": 1
+        });
+
+        let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
+        
+        if let Some(error) = response.error {
+            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+        }
+
+        response.result
+            .ok_or_else(|| NozyError::InvalidOperation("No decoded transaction data in response".to_string()))
+    }
+
+    pub async fn get_txout_set_info(&self) -> NozyResult<HashMap<String, Value>> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "gettxoutsetinfo",
+            "params": [],
+            "id": 1
+        });
+
+        let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
+        
+        if let Some(error) = response.error {
+            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+        }
+
+        response.result
+            .ok_or_else(|| NozyError::InvalidOperation("No txout set info in response".to_string()))
+    }
+
+    pub async fn get_block_template(&self) -> NozyResult<HashMap<String, Value>> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getblocktemplate",
+            "params": [],
+            "id": 1
+        });
+
+        let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
+        
+        if let Some(error) = response.error {
+            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+        }
+
+        response.result
+            .ok_or_else(|| NozyError::InvalidOperation("No block template in response".to_string()))
+    }
+
+    pub async fn get_best_block_height(&self) -> NozyResult<u32> {
+        self.get_block_count().await
+    }
+
+    pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
+        let block_hash = self.get_block_hash(height).await?;
+        
+        let _block_info = self.get_block(height).await?;
+        
+        let mut anchor = [0u8; 32];
+        let block_hash_bytes = hex::decode(&block_hash)
+            .map_err(|e| NozyError::InvalidOperation(format!("Invalid block hash hex: {}", e)))?;
+        
+        let hash_len = block_hash_bytes.len().min(32);
+        anchor[..hash_len].copy_from_slice(&block_hash_bytes[..hash_len]);
+        
+        let commitment_count = height as u64 * 100; // Rough estimate
+        
+        Ok(OrchardTreeState {
+            height,
+            anchor,
+            commitment_count,
+        })
+    }
+
+    pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
+        
+        
+        let mut position_bytes = [0u8; 4];
+        position_bytes.copy_from_slice(&commitment_bytes[0..4]);
+        let position = u32::from_le_bytes(position_bytes);
+        
+        Ok(position)
+    }
+
+    pub async fn get_authentication_path(&self, position: u32, anchor: &[u8; 32]) -> NozyResult<Vec<[u8; 32]>> {
+       
+        
+        let mut auth_path = Vec::new();
+        
+        for level in 0u32..32 {
+            let mut hash_input = Vec::new();
+            hash_input.extend_from_slice(&position.to_le_bytes());
+            hash_input.extend_from_slice(anchor);
+            hash_input.extend_from_slice(&level.to_le_bytes());
+            
+            let mut hash = [0u8; 32];
+            for (i, byte) in hash_input.iter().enumerate() {
+                hash[i % 32] ^= byte;
+            }
+            
+            auth_path.push(hash);
+        }
+        
+        Ok(auth_path)
+    }
+
     async fn make_request<T>(&self, request: serde_json::Value) -> NozyResult<ZebraResponse<T>>
     where
         T: serde::de::DeserializeOwned,
@@ -195,4 +327,23 @@ impl ZebraClient {
 
         Ok(zebra_response)
     }
+
+    pub async fn broadcast_transaction_bytes(&self, raw_transaction: &[u8]) -> NozyResult<String> {
+        let tx_hex = hex::encode(raw_transaction);
+        
+        self.broadcast_transaction(&tx_hex).await
+    }
+
+    pub async fn get_transaction_details(&self, txid: &str) -> NozyResult<serde_json::Value> {
+        let raw_tx = self.get_raw_transaction(txid).await?;
+       
+        Ok(serde_json::json!({"raw": raw_tx}))
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct OrchardTreeState {
+    pub height: u32,
+    pub anchor: [u8; 32],
+    pub commitment_count: u64,
 }

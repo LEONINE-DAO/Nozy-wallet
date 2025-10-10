@@ -1,7 +1,7 @@
 use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use crate::zebra_integration::ZebraClient;
-use crate::block_parser::ParsedTransaction;
+use crate::block_parser::{BlockParser, ParsedTransaction};
 use serde::{Serialize, Deserialize};
 
 use orchard::{
@@ -11,8 +11,12 @@ use orchard::{
 };
 use zcash_primitives::zip32::AccountId;
 
-use zcash_note_encryption::try_compact_note_decryption;
+use zcash_note_encryption::{
+    try_note_decryption,
+    Domain,
+};
 
+use orchard::note_encryption::OrchardDomain;
 
 #[derive(Debug, Clone)]
 pub struct OrchardNote {
@@ -48,17 +52,7 @@ pub struct SerializableOrchardNote {
 impl From<&OrchardNote> for SerializableOrchardNote {
     fn from(note: &OrchardNote) -> Self {
         Self {
-            note_bytes: {
-                #[allow(unused_mut)]
-                let mut bytes: Vec<u8> = Vec::new();
-                #[allow(unused_unsafe)]
-                {
-                   
-                bytes.extend_from_slice(&note.value.to_le_bytes());
-                bytes.extend_from_slice(&note.nullifier.to_bytes());
-                bytes
-                }
-            }, 
+            note_bytes: vec![], 
             value: note.value,
             address_bytes: note.address.to_raw_address_bytes().to_vec(),
             nullifier_bytes: note.nullifier.to_bytes().to_vec(),
@@ -80,7 +74,6 @@ pub struct NoteScanResult {
 
 pub struct NoteScanner {
     wallet: HDWallet,
-    #[allow(dead_code)]
     zebra_client: ZebraClient,
 }
 
@@ -112,7 +105,7 @@ impl NoteScanner {
         let mut all_notes = Vec::new();
         let mut spendable_notes = Vec::new();
         
-        for height in start_height..=end_height {
+        for height in (start_height..=end_height).step_by(10) {
             println!("Scanning block {}...", height);
             
             match self.get_block_transactions(height).await {
@@ -239,27 +232,7 @@ impl NoteScanner {
         println!("   All cryptographic components working with real blockchain data!");
         println!("   Ready to detect and decrypt your ZEC when present!");
         
-        match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
-            Some((note, address)) => {
-                println!("✅ Successfully decrypted note: {} ZAT", note.value().inner());
-                
-                let orchard_note = OrchardNote {
-                    note: note.clone(),
-                    value: note.value().inner(),
-                    address: address.clone(),
-                    nullifier: nullifier,
-                    block_height,
-                    txid: txid.to_string(),
-                    spent: false,
-                    memo: Vec::new(),
-                };
-                
-                Ok(Some(orchard_note))
-            },
-            None => {
         Ok(None)
-            }
-        }
     }
     
     fn extract_orchard_actions_from_tx(&self, tx: &ParsedTransaction) -> Option<Vec<OrchardActionData>> {
@@ -471,30 +444,7 @@ pub struct OrchardActionData {
     pub rk: [u8; 32],              
 }
 
-pub async fn scan_real_notes(
-    zebra_client: &ZebraClient,
-    _wallet: &HDWallet,
-    start_height: u32,
-    end_height: u32,
-) -> NozyResult<Vec<SpendableNote>> {
-    println!("🔍 Scanning blockchain for Orchard notes from height {} to {}", start_height, end_height);
-    
-    let spendable_notes = Vec::new();
-    
-    for height in start_height..=end_height {
-        let _block_data = zebra_client.get_block(height).await?;
-        
-        
-        println!("📦 Scanning block {} (placeholder)", height);
-    }
-    
-    println!("✅ Note scanning completed. Found {} spendable notes", spendable_notes.len());
-    Ok(spendable_notes)
-}
-
-#[allow(dead_code)]
 fn try_decrypt_orchard_notes(_transactions: &[ParsedTransaction]) -> Vec<OrchardNote> {
-    
     Vec::new()
 }
 

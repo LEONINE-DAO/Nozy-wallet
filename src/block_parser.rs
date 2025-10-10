@@ -1,8 +1,6 @@
 use crate::error::{NozyError, NozyResult};
 use crate::zebra_integration::ZebraClient;
-use crate::notes::OrchardNote;
 use serde_json::Value;
-use std::collections::HashMap;
 use hex;
 use serde::{Serialize, Deserialize};
 

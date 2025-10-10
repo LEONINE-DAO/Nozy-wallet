@@ -42,6 +42,13 @@ pub struct NetworkInfo {
     pub networkactive: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchardTreeState {
+    pub height: u32,
+    pub anchor: [u8; 32],
+    pub commitment_count: u64,
+}
+
 impl ZebraClient {
     pub fn new(base_url: String) -> Self {
         Self {
@@ -206,5 +213,60 @@ impl ZebraClient {
         let _info = self.get_network_info().await?;
         println!("✅ Successfully connected to Zebra node");
         Ok(())
+    }
+
+    /// Get the current Orchard tree state at the given height
+    pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
+        // This would call a real Zebra RPC method to get Orchard tree state
+        // For now, return a placeholder that would be replaced with real RPC call
+        let response = self.make_rpc_call("z_getorchardtree", json!([height])).await?;
+        
+        let anchor_hex = response["anchor"].as_str()
+            .ok_or_else(|| NozyError::Network("No anchor in tree state".to_string()))?;
+        
+        let anchor_bytes = hex::decode(anchor_hex)
+            .map_err(|e| NozyError::Network(format!("Invalid anchor hex: {}", e)))?;
+        
+        let mut anchor = [0u8; 32];
+        anchor.copy_from_slice(&anchor_bytes);
+        
+        Ok(OrchardTreeState {
+            height,
+            anchor,
+            commitment_count: response["commitment_count"].as_u64().unwrap_or(0),
+        })
+    }
+
+    /// Find the position of a note in the Orchard commitment tree
+    pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
+        // This would call a real Zebra RPC method to find note position
+        // For now, return a placeholder that would be replaced with real RPC call
+        let commitment_hex = hex::encode(commitment_bytes);
+        let response = self.make_rpc_call("z_findnoteposition", json!([commitment_hex])).await?;
+        
+        Ok(response["position"].as_u64().unwrap_or(0) as u32)
+    }
+
+    /// Get the authentication path for a note position
+    pub async fn get_authentication_path(&self, position: u32, anchor: &[u8; 32]) -> NozyResult<Vec<[u8; 32]>> {
+        // This would call a real Zebra RPC method to get auth path
+        // For now, return a placeholder that would be replaced with real RPC call
+        let anchor_hex = hex::encode(anchor);
+        let response = self.make_rpc_call("z_getauthpath", json!([position, anchor_hex])).await?;
+        
+        let mut auth_path = Vec::new();
+        if let Some(path_array) = response["auth_path"].as_array() {
+            for hash_hex in path_array {
+                if let Some(hash_str) = hash_hex.as_str() {
+                    let hash_bytes = hex::decode(hash_str)
+                        .map_err(|e| NozyError::Network(format!("Invalid hash hex: {}", e)))?;
+                    let mut hash = [0u8; 32];
+                    hash.copy_from_slice(&hash_bytes);
+                    auth_path.push(hash);
+                }
+            }
+        }
+        
+        Ok(auth_path)
     }
 }
