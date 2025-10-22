@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use dialoguer::{Password, Confirm};
 use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient};
+use nozy::local_analytics::LocalAnalytics;
 use nozy::cli_helpers::{load_wallet, scan_notes_for_sending, build_and_broadcast_transaction, handle_insufficient_funds_error};
 
 #[derive(Parser)]
@@ -57,6 +58,8 @@ pub enum Commands {
         #[arg(long)]
         status: bool,
     },
+                        
+    Analytics,
 }
 
 
@@ -356,6 +359,35 @@ async fn main() -> NozyResult<()> {
             if !status && !download {
                 println!("\n💡 Use --status to check proving parameters");
                 println!("💡 Use --download to download placeholder parameters");
+            }
+        }
+        
+        Commands::Analytics => {
+            let analytics_path = PathBuf::from("wallet_data/analytics.json");
+            let mut analytics = LocalAnalytics::load_from_file(&analytics_path)?;
+            
+            analytics.track_command("analytics");
+            analytics.save_to_file(&analytics_path)?;
+            
+            println!("{}", analytics.generate_summary());
+            
+            if Confirm::new()
+                .with_prompt("Export anonymized data for development insights? (completely anonymous)")
+                .interact()
+                .unwrap_or(false) {
+                
+                match analytics.export_anonymized() {
+                    Ok(anonymized_json) => {
+                        std::fs::write("anonymized_analytics.json", &anonymized_json)
+                            .map_err(|e| NozyError::Storage(format!("Failed to write anonymized analytics: {}", e)))?;
+                        println!("✅ Anonymized data exported to anonymized_analytics.json");
+                        println!("💡 This data contains NO personal information");
+                        println!("💡 You can share this with developers to help improve NozyWallet");
+                    },
+                    Err(e) => {
+                        println!("❌ Failed to export anonymized data: {}", e);
+                    }
+                }
             }
         }
     }
