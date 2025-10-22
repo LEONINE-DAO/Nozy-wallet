@@ -3,8 +3,7 @@ use std::path::PathBuf;
 use std::fs;
 use std::collections::HashMap;
 
-/// Orchard proving parameters manager
-/// Handles downloading, caching, and loading of Orchard proving parameters
+
 #[derive(Debug)]
 pub struct OrchardProvingManager {
     params_dir: PathBuf,
@@ -12,7 +11,6 @@ pub struct OrchardProvingManager {
 }
 
 impl OrchardProvingManager {
-    /// Create a new proving parameters manager
     pub fn new(params_dir: PathBuf) -> Self {
         Self {
             params_dir,
@@ -20,7 +18,7 @@ impl OrchardProvingManager {
         }
     }
 
-    /// Initialize the proving parameters manager
+    
     /// Orchard uses Halo 2 - no external parameters needed
     pub async fn initialize(&mut self) -> NozyResult<()> {
         println!("🔧 Initializing Orchard proving system...");
@@ -30,7 +28,7 @@ impl OrchardProvingManager {
         Ok(())
     }
 
-    /// Check if proving parameters exist
+    #[allow(dead_code)]
     async fn check_existing_parameters(&self) -> NozyResult<bool> {
         let required_files = vec![
             "orchard-spend.params",
@@ -49,7 +47,7 @@ impl OrchardProvingManager {
         Ok(true)
     }
 
-    /// Load proving parameters from disk
+    #[allow(dead_code)]
     async fn load_parameters(&mut self) -> NozyResult<()> {
         let files = vec![
             "orchard-spend.params",
@@ -71,7 +69,6 @@ impl OrchardProvingManager {
         Ok(())
     }
 
-    /// Get proving parameters for a specific operation
     pub fn get_proving_params(&self, operation: &str) -> NozyResult<&[u8]> {
         let key = match operation {
             "spend" => "orchard-spend.params",
@@ -97,13 +94,11 @@ impl OrchardProvingManager {
             .ok_or_else(|| NozyError::InvalidOperation(format!("Verifying key not loaded for {}", operation)))
     }
 
-    /// Check if parameters are available for proving
     pub fn can_prove(&self) -> bool {
         // Orchard uses Halo 2 - always ready for proving
         true
     }
 
-    /// Get parameters status
     pub fn get_status(&self) -> ProvingStatus {
         // Orchard uses Halo 2 - always ready
         ProvingStatus {
@@ -115,22 +110,54 @@ impl OrchardProvingManager {
         }
     }
 
-    /// Orchard proving is ready - no external parameters needed
     pub async fn download_parameters(&mut self) -> NozyResult<()> {
-        println!("✅ Orchard Proving Ready!");
-        println!("🌿 Orchard uses Halo 2 proving system - no external parameters required");
-        println!("💡 Proving parameters are generated at runtime using cryptographic libraries");
+        use reqwest::Client;
+        use std::io::Write;
+        
+        let client = Client::new();
+        
+        let urls = vec![
+            ("orchard-spend.params", "https://download.z.cash/downloads/sapling-spend.params"),
+            ("orchard-output.params", "https://download.z.cash/downloads/sapling-output.params"),
+            ("orchard-spend-verifying.key", "https://download.z.cash/downloads/sapling-spend-verifying.key"),
+            ("orchard-output-verifying.key", "https://download.z.cash/downloads/sapling-output-verifying.key"),
+        ];
+        
+        for (filename, url) in urls {
+            println!("📥 Downloading {} from {}", filename, url);
+            
+            let response = client.get(url)
+                .send()
+                .await
+                .map_err(|e| NozyError::NetworkError(format!("Failed to download {}: {}", filename, e)))?;
+            
+            if !response.status().is_success() {
+                return Err(NozyError::NetworkError(format!("Failed to download {}: HTTP {}", filename, response.status())));
+            }
+            
+            let data = response.bytes()
+                .await
+                .map_err(|e| NozyError::NetworkError(format!("Failed to read response for {}: {}", filename, e)))?;
+            
+            let path = self.params_dir.join(filename);
+            let mut file = fs::File::create(&path)
+                .map_err(|e| NozyError::Storage(format!("Failed to create {}: {}", filename, e)))?;
+            
+            file.write_all(&data)
+                .map_err(|e| NozyError::Storage(format!("Failed to write {}: {}", filename, e)))?;
+            
+            self.parameters.insert(filename.to_string(), data.to_vec());
+            
+            println!("✅ Downloaded {} ({} bytes)", filename, data.len());
+        }
+        
+        println!("🎉 All proving parameters downloaded successfully!");
         println!("🚀 Your wallet is ready for Orchard shielded transactions!");
-        
-        // Mark as ready for proving
-        self.parameters.insert("orchard-ready".to_string(), b"halo2-proving-ready".to_vec());
-        
         Ok(())
     }
 
 }
 
-/// Status of proving parameters
 #[derive(Debug, Clone)]
 pub struct ProvingStatus {
     pub spend_params: bool,
@@ -141,13 +168,11 @@ pub struct ProvingStatus {
 }
 
 impl ProvingStatus {
-    /// Get a human-readable status message
     pub fn status_message(&self) -> String {
         "✅ Orchard proving ready (Halo 2 - no external parameters required)".to_string()
     }
 }
 
-/// Proving key wrapper for Orchard operations
 #[derive(Debug)]
 pub struct OrchardProvingKey {
     pub spend_params: Vec<u8>,
@@ -157,7 +182,6 @@ pub struct OrchardProvingKey {
 }
 
 impl OrchardProvingKey {
-    /// Create a new proving key from parameters
     pub fn new(
         spend_params: Vec<u8>,
         output_params: Vec<u8>,
@@ -172,7 +196,6 @@ impl OrchardProvingKey {
         }
     }
 
-    /// Load proving key from manager
     pub fn from_manager(manager: &OrchardProvingManager) -> NozyResult<Self> {
         let spend_params = manager.get_proving_params("spend")?.to_vec();
         let output_params = manager.get_proving_params("output")?.to_vec();
@@ -182,12 +205,10 @@ impl OrchardProvingKey {
         Ok(Self::new(spend_params, output_params, spend_vk, output_vk))
     }
 
-    /// Check if this is a placeholder key
     pub fn is_placeholder(&self) -> bool {
         false // Orchard uses Halo 2 - no external parameters
     }
 
-    /// Get key info for debugging
     pub fn info(&self) -> String {
         "Orchard Halo 2 proving system - ready for production use".to_string()
     }

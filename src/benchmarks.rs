@@ -32,6 +32,7 @@ mod duration_serde {
         serializer.serialize_u64(duration.as_nanos() as u64)
     }
 
+    #[allow(dead_code)]
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
     where
         D: Deserializer<'de>,

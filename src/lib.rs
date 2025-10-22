@@ -10,6 +10,8 @@ pub mod orchard_tx;
 pub mod proving;
 pub mod benchmarks;
 pub mod rpc_test;
+pub mod cli_helpers;
+pub mod groth16_prover_simple;
 #[cfg(test)]
 pub mod tests;
 

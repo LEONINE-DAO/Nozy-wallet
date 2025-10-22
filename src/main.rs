@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use dialoguer::{Password, Confirm};
-use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient, ZcashTransactionBuilder};
+use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient};
+use nozy::cli_helpers::{load_wallet, scan_notes_for_sending, build_and_broadcast_transaction, handle_insufficient_funds_error};
 
 #[derive(Parser)]
 #[command(name = "nozy")]
@@ -13,107 +14,51 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Create a new wallet
-    /// 
-    /// Example:
-    ///   nozy new
+    
     New,
-    /// Restore wallet from mnemonic
-    /// 
-    /// Example:
-    ///   nozy restore
+
     Restore,
-    /// Generate new addresses
-    /// 
-    /// Examples:
-    ///   nozy addresses                    # Generate 1 address
-    ///   nozy addresses --count 5         # Generate 5 addresses
+    
     Addresses {
         #[arg(short, long, default_value_t = 1)]
         count: u32,
     },
-    /// Scan for notes
-    /// 
-    /// Examples:
-    ///   nozy scan                                    # Scan recent blocks
-    ///   nozy scan --start-height 2800000            # Scan from specific height
-    ///   nozy scan --start-height 2800000 --end-height 2900000  # Scan specific range
+    
     Scan {
         #[arg(long)]
         start_height: Option<u32>,
         #[arg(long)]
         end_height: Option<u32>,
     },
-    /// Send ZEC
-    /// 
-    /// Examples:
-    ///   nozy send --recipient u1abc123... --amount 0.001                    # Send 0.001 ZEC
-    ///   nozy send --recipient u1abc123... --amount 0.001 --zebra-url http://127.0.0.1:18232  # Use testnet
+   
     Send {
-        /// Recipient address (u1, zs1, or t1 format)
         #[arg(long)]
         recipient: String,
-        /// Amount in ZEC
         #[arg(long)]
         amount: f64,
-        /// Custom Zebra node URL (optional)
         #[arg(long, default_value = "http://127.0.0.1:8232")]
         zebra_url: String,
     },
-    /// Show wallet info
-    /// 
-    /// Example:
-    ///   nozy info
+   
     Info,
-    /// Test Zebra node connection
-    /// 
-    /// Examples:
-    ///   nozy test-zebra                           # Test default node
-    ///   nozy test-zebra --zebra-url http://127.0.0.1:18232  # Test testnet node
+    
     TestZebra {
-        /// Zebra node URL to test
+        
         #[arg(long, default_value = "http://127.0.0.1:8232")]
         zebra_url: String,
     },
-    /// List stored notes
-    /// 
-    /// Example:
-    ///   nozy list-notes
+    
     ListNotes,
-    /// Manage Orchard proving parameters
-    /// 
-    /// Examples:
-    ///   nozy proving --status                    # Check proving status
-    ///   nozy proving --download                  # Download proving parameters
+    
     Proving {
-        /// Download proving parameters
+        
         #[arg(long)]
         download: bool,
-        /// Show proving status
         #[arg(long)]
         status: bool,
     },
 }
 
-async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
-    let storage = WalletStorage::new(PathBuf::from("wallet_data"));
-    
-    // Check if wallet file exists
-    let wallet_path = std::path::Path::new("wallet_data/wallet.dat");
-    if wallet_path.exists() {
-        // Load existing wallet from storage
-        let password = Password::new()
-            .with_prompt("Enter wallet password")
-            .interact()
-            .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
-        
-        let wallet = storage.load_wallet(&password).await?;
-        Ok((wallet, storage))
-    } else {
-        // No wallet exists - this should only happen for 'new' command
-        return Err(NozyError::Storage("No wallet found. Use 'nozy new' or 'nozy restore' to create a wallet first.".to_string()));
-    }
-}
 
 #[tokio::main]
 async fn main() -> NozyResult<()> {
@@ -123,10 +68,8 @@ async fn main() -> NozyResult<()> {
         Commands::New => {
             println!("🔐 Creating new wallet...");
             
-            // Create new wallet
             let mut wallet = HDWallet::new()?;
             
-            // Ask for password protection
             let use_password = Confirm::new()
                 .with_prompt("Do you want to set a password for this wallet?")
                 .default(true)
@@ -185,7 +128,6 @@ async fn main() -> NozyResult<()> {
             println!("Generating {} addresses...", count);
             let (wallet, _storage) = load_wallet().await?;
             
-            // Use bulk generation for better performance
             match wallet.generate_multiple_addresses(0, 0, count) {
                 Ok(addresses) => {
                     for (i, address) in addresses.iter().enumerate() {
@@ -211,12 +153,10 @@ async fn main() -> NozyResult<()> {
             let (wallet, _storage) = load_wallet().await?;
             let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
             
-            // Create note scanner with real implementation
             let mut note_scanner = NoteScanner::new(wallet, zebra_client);
             
             match note_scanner.scan_notes(start_height, end_height).await {
                 Ok((result, spendable_notes)) => {
-                    // Persist notes for list-notes command
                     use std::fs;
                     use std::path::Path;
                     let notes_dir = Path::new("wallet_data");
@@ -257,11 +197,6 @@ async fn main() -> NozyResult<()> {
             
             let (wallet, _storage) = load_wallet().await?;
             
-            let amount_zatoshis = (amount * 100_000_000.0) as u64;
-            let fee_zatoshis = 10_000; 
-            let mut tx_builder = ZcashTransactionBuilder::new();
-            tx_builder.set_zebra_url(&zebra_url);
-            
             println!("🚨 MAINNET TRANSACTION DETECTED! 🚨");
             println!("   This will send REAL ZEC on the mainnet blockchain!");
             println!("   Zebra node: {}", zebra_url);
@@ -273,37 +208,19 @@ async fn main() -> NozyResult<()> {
             
             let mut input = String::new();
             io::stdin().read_line(&mut input).unwrap();
-            let input = input.trim().to_lowercase();
+            let enable_broadcast = input.trim().to_lowercase() == "yes" || input.trim().to_lowercase() == "y";
             
-            if input == "yes" || input == "y" {
-                tx_builder.enable_mainnet_broadcast();
+            if enable_broadcast {
                 println!("✅ Mainnet broadcasting enabled!");
             } else {
                 println!("❌ Mainnet broadcasting disabled for safety.");
                 println!("   Transaction will be built but not broadcast.");
             }
             
-            // Scan recent blocks for spendable notes before sending
             println!("🔎 Scanning recent blocks for spendable notes...");
-            let zebra_client = ZebraClient::new(zebra_url.clone());
-            let tip_height = match zebra_client.get_block_count().await {
-                Ok(h) => h,
-                Err(e) => {
-                    println!("⚠️  Could not fetch tip height from Zebra ({}). Falling back to 10k-block scan ending at default.", e);
-                    3_066_071
-                }
-            };
-            let start_height = tip_height.saturating_sub(10_000);
-            let mut note_scanner = NoteScanner::new(wallet, ZebraClient::new("http://127.0.0.1:8232".to_string()));
-            let spendable_notes: Vec<nozy::SpendableNote> = match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
-                Ok((_result, spendable)) => spendable,
-                Err(e) => {
-                    println!("⚠️  Note scan failed: {}. Proceeding with empty note set.", e);
-                    Vec::new()
-                }
-            };
+            let spendable_notes = scan_notes_for_sending(wallet, &zebra_url).await?;
             
-            // Optional memo input
+            // leave a memo they can't be Nozy anyway lol. 
             print!("Enter memo (optional, press Enter to skip): ");
             io::stdout().flush().unwrap();
             let mut memo_input = String::new();
@@ -313,32 +230,24 @@ async fn main() -> NozyResult<()> {
                 if trimmed.is_empty() { None } else { Some(trimmed) }
             };
             
-            match tx_builder.build_send_transaction(&zebra_client, &spendable_notes, &recipient, amount_zatoshis, fee_zatoshis, memo_bytes_opt).await {
-                Ok(signed_tx) => {
-                    println!("Transaction built successfully!");
-                    println!("Transaction ID: {}", signed_tx.txid);
-                    println!("Transaction size: {} bytes", signed_tx.raw_transaction.len());
-                    
-                    if tx_builder.allow_mainnet_broadcast {
-                        match tx_builder.broadcast_transaction(&signed_tx).await {
-                            Ok(txid) => {
-                                println!("✅ Transaction broadcast successful!");
-                                println!("Final Transaction ID: {}", txid);
-                            },
-                            Err(e) => {
-                                println!("❌ Broadcast failed: {}", e);
-                            }
-                        }
-                    } else {
-                        println!("💡 Transaction ready for broadcast (broadcasting disabled)");
-                    }
-                },
+            let amount_zatoshis = (amount * 100_000_000.0) as u64;
+            let fee_zatoshis = 10_000;
+            let zebra_client = ZebraClient::new(zebra_url.clone());
+            
+            match build_and_broadcast_transaction(
+                &zebra_client,
+                &spendable_notes,
+                &recipient,
+                amount_zatoshis,
+                fee_zatoshis,
+                memo_bytes_opt,
+                enable_broadcast,
+                &zebra_url,
+            ).await {
+                Ok(_) => {},
                 Err(e) => {
                     println!("Failed to build transaction: {}", e);
-                    if e.to_string().contains("Insufficient funds") {
-                        println!("💡 Tip: You need to receive some ZEC first before you can send it.");
-                        println!("   Use the 'scan' command to check for received notes.");
-                    }
+                    handle_insufficient_funds_error(&e);
                 }
             }
         }
