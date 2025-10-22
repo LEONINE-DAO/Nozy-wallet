@@ -42,6 +42,12 @@ cd nozywallet
 cargo build --release
 ```
 
+## 📚 Documentation
+
+- **[Command Help Guide](COMMAND_HELP.md)** - Complete command reference with examples
+- **[Send ZEC Guide](SEND_ZEC_GUIDE.md)** - Step-by-step sending guide
+- **[API Documentation](API_DOCUMENTATION.md)** - Technical API reference
+
 ## 🚀 Quick Start
 
 ### 1. Create a New Wallet
