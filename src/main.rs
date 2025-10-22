@@ -14,15 +14,30 @@ pub struct Cli {
 #[derive(Subcommand)]
 pub enum Commands {
     /// Create a new wallet
+    /// 
+    /// Example:
+    ///   nozy new
     New,
     /// Restore wallet from mnemonic
+    /// 
+    /// Example:
+    ///   nozy restore
     Restore,
     /// Generate new addresses
+    /// 
+    /// Examples:
+    ///   nozy addresses                    # Generate 1 address
+    ///   nozy addresses --count 5         # Generate 5 addresses
     Addresses {
         #[arg(short, long, default_value_t = 1)]
         count: u32,
     },
     /// Scan for notes
+    /// 
+    /// Examples:
+    ///   nozy scan                                    # Scan recent blocks
+    ///   nozy scan --start-height 2800000            # Scan from specific height
+    ///   nozy scan --start-height 2800000 --end-height 2900000  # Scan specific range
     Scan {
         #[arg(long)]
         start_height: Option<u32>,
@@ -30,6 +45,10 @@ pub enum Commands {
         end_height: Option<u32>,
     },
     /// Send ZEC
+    /// 
+    /// Examples:
+    ///   nozy send --recipient u1abc123... --amount 0.001                    # Send 0.001 ZEC
+    ///   nozy send --recipient u1abc123... --amount 0.001 --zebra-url http://127.0.0.1:18232  # Use testnet
     Send {
         /// Recipient address (u1, zs1, or t1 format)
         #[arg(long)]
@@ -42,16 +61,30 @@ pub enum Commands {
         zebra_url: String,
     },
     /// Show wallet info
+    /// 
+    /// Example:
+    ///   nozy info
     Info,
     /// Test Zebra node connection
+    /// 
+    /// Examples:
+    ///   nozy test-zebra                           # Test default node
+    ///   nozy test-zebra --zebra-url http://127.0.0.1:18232  # Test testnet node
     TestZebra {
         /// Zebra node URL to test
         #[arg(long, default_value = "http://127.0.0.1:8232")]
         zebra_url: String,
     },
     /// List stored notes
+    /// 
+    /// Example:
+    ///   nozy list-notes
     ListNotes,
     /// Manage Orchard proving parameters
+    /// 
+    /// Examples:
+    ///   nozy proving --status                    # Check proving status
+    ///   nozy proving --download                  # Download proving parameters
     Proving {
         /// Download proving parameters
         #[arg(long)]
