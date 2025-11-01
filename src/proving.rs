@@ -19,7 +19,6 @@ impl OrchardProvingManager {
     }
 
     
-    /// Orchard uses Halo 2 - no external parameters needed
     pub async fn initialize(&mut self) -> NozyResult<()> {
         println!("🔧 Initializing Orchard proving system...");
         println!("✅ Orchard Halo 2 proving ready - no external parameters required");
@@ -81,7 +80,7 @@ impl OrchardProvingManager {
             .ok_or_else(|| NozyError::InvalidOperation(format!("Proving parameters not loaded for {}", operation)))
     }
 
-    /// Get verifying key for a specific operation
+    
     pub fn get_verifying_key(&self, operation: &str) -> NozyResult<&[u8]> {
         let key = match operation {
             "spend" => "orchard-spend-verifying.key",
@@ -95,12 +94,12 @@ impl OrchardProvingManager {
     }
 
     pub fn can_prove(&self) -> bool {
-        // Orchard uses Halo 2 - always ready for proving
+        
         true
     }
 
     pub fn get_status(&self) -> ProvingStatus {
-        // Orchard uses Halo 2 - always ready
+        
         ProvingStatus {
             spend_params: true,
             output_params: true,
@@ -206,7 +205,7 @@ impl OrchardProvingKey {
     }
 
     pub fn is_placeholder(&self) -> bool {
-        false // Orchard uses Halo 2 - no external parameters
+        false 
     }
 
     pub fn info(&self) -> String {

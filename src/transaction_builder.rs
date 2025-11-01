@@ -25,13 +25,12 @@ impl ZcashTransactionBuilder {
     
     pub fn set_zebra_url(&mut self, url: &str) -> &mut Self {
         self.zebra_url = url.to_string();
-        println!("🔗 Zebra URL set to: {}", self.zebra_url);
+        // No user-facing output - this is internal
         self
     }
     
     pub fn enable_mainnet_broadcast(&mut self) -> &mut Self {
-        println!("🚨 WARNING: Mainnet broadcasting enabled!");
-        println!("   This will send REAL ZEC transactions!");
+        // No user-facing output - confirmation handled in main.rs
         self.allow_mainnet_broadcast = true;
         self
     }
@@ -46,10 +45,7 @@ impl ZcashTransactionBuilder {
         memo: Option<&[u8]>,
     ) -> NozyResult<SignedTransaction> {
         
-        println!("🔧 Building transaction for Zebra node...");
-        println!("   Recipient: {}", recipient_address);
-        println!("   Amount: {} ZAT ({} ZEC)", amount_zatoshis, amount_zatoshis as f64 / 100_000_000.0);
-        
+        // Hide technical details - building happens silently
         if !recipient_address.starts_with("u1") && !recipient_address.starts_with("zs1") && !recipient_address.starts_with("t1") {
             return Err(NozyError::InvalidOperation(
                 "Invalid address format! Must be u1, zs1, or t1".to_string()
@@ -64,8 +60,10 @@ impl ZcashTransactionBuilder {
         let total_needed = amount_zatoshis + fee_zatoshis;
         
         if total_available < total_needed {
+            let amount_zec = amount_zatoshis as f64 / 100_000_000.0;
+            let available_zec = total_available as f64 / 100_000_000.0;
             return Err(NozyError::InvalidOperation(
-                format!("Insufficient funds: need {} ZAT, have {} ZAT", total_needed, total_available)
+                format!("Insufficient funds: need {:.8} ZEC, have {:.8} ZEC", amount_zec, available_zec)
             ));
         }
         
@@ -80,9 +78,7 @@ impl ZcashTransactionBuilder {
         ).await?;
         let txid = self.calculate_txid(&tx_data)?;
         
-        println!("✅ Transaction built for Zebra:");
-        println!("   TXID: {}", txid);
-        println!("   Size: {} bytes", tx_data.len());
+        // No user-facing output - building happens silently
         
         Ok(SignedTransaction {
             raw_transaction: tx_data,
@@ -108,21 +104,16 @@ impl ZcashTransactionBuilder {
     pub async fn broadcast_transaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
         if !self.allow_mainnet_broadcast {
             return Err(NozyError::InvalidOperation(
-                "🚫 Mainnet broadcasting disabled for safety! Call enable_mainnet_broadcast() first.".to_string()
+                "Broadcasting disabled".to_string()
             ));
         }
         
-        println!("🚀 Broadcasting to Zebra node...");
         
         match self.call_zebra_sendrawtransaction(transaction).await {
             Ok(network_txid) => {
-                println!("✅ SUCCESS! Transaction broadcast to mainnet!");
-                println!("🌐 Network TXID: {}", network_txid);
-                println!("🔗 Explorer: https://zcashblockexplorer.com/transactions/{}", network_txid);
                 Ok(network_txid)
             },
             Err(e) => {
-                println!("❌ Zebra RPC failed: {}", e);
                 Err(e)
             }
         }
@@ -135,8 +126,6 @@ impl ZcashTransactionBuilder {
         let zebra_url = &self.zebra_url;
         let raw_tx_hex = hex::encode(&transaction.raw_transaction);
         
-        println!("📡 Calling Zebra RPC: sendrawtransaction");
-        println!("🔗 URL: {}", zebra_url);
         
         let rpc_request = json!({
             "jsonrpc": "2.0",
@@ -165,7 +154,6 @@ impl ZcashTransactionBuilder {
             .await
             .map_err(|e| NozyError::InvalidOperation(format!("Response read error: {}", e)))?;
             
-        println!("📨 Zebra response: {}", response_text);
         
         let json_response: serde_json::Value = serde_json::from_str(&response_text)
             .map_err(|e| NozyError::InvalidOperation(format!("JSON parse error: {}", e)))?;

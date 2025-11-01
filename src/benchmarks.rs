@@ -49,33 +49,32 @@ impl BenchmarkSuite {
         }
     }
 
-    /// Run all benchmarks
+    
     pub async fn run_all(&mut self) -> NozyResult<()> {
         println!("🚀 Starting NozyWallet Performance Benchmarks");
         println!("=============================================");
 
-        // Wallet operations
+       
         self.benchmark_wallet_creation().await?;
         self.benchmark_address_generation().await?;
         self.benchmark_password_hashing().await?;
         self.benchmark_wallet_storage().await?;
 
-        // Proving operations
+        
         self.benchmark_proving_initialization().await?;
         self.benchmark_proving_parameters_loading().await?;
 
-        // Transaction operations
+        
         self.benchmark_transaction_building().await?;
         self.benchmark_note_scanning().await?;
 
-        // Network operations
+        
         self.benchmark_zebra_connection().await?;
 
         self.print_summary();
         Ok(())
     }
 
-    /// Benchmark wallet creation performance
     pub async fn benchmark_wallet_creation(&mut self) -> NozyResult<()> {
         let name = "Wallet Creation";
         println!("\n📊 Benchmarking: {}", name);
@@ -116,7 +115,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark address generation performance
     pub async fn benchmark_address_generation(&mut self) -> NozyResult<()> {
         let name = "Address Generation";
         println!("\n📊 Benchmarking: {}", name);
@@ -158,14 +156,13 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark password hashing performance
     pub async fn benchmark_password_hashing(&mut self) -> NozyResult<()> {
         let name = "Password Hashing";
         println!("\n📊 Benchmarking: {}", name);
 
         let mut wallet = HDWallet::new()?;
         let mut total_duration = Duration::new(0, 0);
-        let iterations = 10; // Reduced due to Argon2 being slow
+        let iterations = 10; 
 
         for i in 0..iterations {
             let start = Instant::now();
@@ -198,7 +195,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark wallet storage performance
     pub async fn benchmark_wallet_storage(&mut self) -> NozyResult<()> {
         let name = "Wallet Storage";
         println!("\n📊 Benchmarking: {}", name);
@@ -206,7 +202,6 @@ impl BenchmarkSuite {
         let wallet = HDWallet::new()?;
         let storage = crate::storage::WalletStorage::new(PathBuf::from("benchmark_wallet_data"));
         
-        // Create directory
         std::fs::create_dir_all("benchmark_wallet_data").unwrap();
 
         let mut total_duration = Duration::new(0, 0);
@@ -248,7 +243,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark proving initialization performance
     pub async fn benchmark_proving_initialization(&mut self) -> NozyResult<()> {
         let name = "Proving Initialization";
         println!("\n📊 Benchmarking: {}", name);
@@ -288,12 +282,10 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark proving parameters loading performance
     pub async fn benchmark_proving_parameters_loading(&mut self) -> NozyResult<()> {
         let name = "Proving Parameters Loading";
         println!("\n📊 Benchmarking: {}", name);
 
-        // Create test parameters first
         let mut manager = OrchardProvingManager::new(PathBuf::from("benchmark_params"));
         manager.download_parameters().await?;
 
@@ -337,7 +329,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark transaction building performance
     pub async fn benchmark_transaction_building(&mut self) -> NozyResult<()> {
         let name = "Transaction Building";
         println!("\n📊 Benchmarking: {}", name);
@@ -376,7 +367,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark note scanning performance
     pub async fn benchmark_note_scanning(&mut self) -> NozyResult<()> {
         let name = "Note Scanning";
         println!("\n📊 Benchmarking: {}", name);
@@ -386,7 +376,7 @@ impl BenchmarkSuite {
         let mut scanner = crate::notes::NoteScanner::new(wallet, zebra_client);
 
         let mut total_duration = Duration::new(0, 0);
-        let iterations = 5; // Reduced due to network dependency
+        let iterations = 5; 
 
         for i in 0..iterations {
             let start = Instant::now();
@@ -396,7 +386,6 @@ impl BenchmarkSuite {
             if result.is_ok() {
                 total_duration += duration;
             } else {
-                // Note: This might fail if Zebra is not running
                 println!("  ⚠️  Iteration {} failed (Zebra may not be running)", i + 1);
                 continue;
             }
@@ -433,7 +422,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Benchmark Zebra connection performance
     pub async fn benchmark_zebra_connection(&mut self) -> NozyResult<()> {
         let name = "Zebra Connection";
         println!("\n📊 Benchmarking: {}", name);
@@ -450,7 +438,6 @@ impl BenchmarkSuite {
             if result.is_ok() {
                 total_duration += duration;
             } else {
-                // Note: This might fail if Zebra is not running
                 println!("  ⚠️  Iteration {} failed (Zebra may not be running)", i + 1);
                 continue;
             }
@@ -487,7 +474,6 @@ impl BenchmarkSuite {
         Ok(())
     }
 
-    /// Print benchmark summary
     fn print_summary(&self) {
         println!("\n📊 Benchmark Summary");
         println!("===================");
@@ -522,12 +508,10 @@ impl BenchmarkSuite {
         println!("  - Consider parallel operations for large datasets");
     }
 
-    /// Get benchmark results
     pub fn get_results(&self) -> &[BenchmarkResult] {
         &self.results
     }
 
-    /// Export results to JSON
     pub fn export_json(&self) -> NozyResult<String> {
         let json = serde_json::to_string_pretty(&self.results)
             .map_err(|e| crate::error::NozyError::InvalidOperation(format!("JSON serialization failed: {}", e)))?;
@@ -535,7 +519,6 @@ impl BenchmarkSuite {
     }
 }
 
-/// Memory usage tracking utilities
 pub struct MemoryTracker {
     start_memory: Option<usize>,
 }
@@ -561,13 +544,11 @@ impl MemoryTracker {
     }
 
     fn get_current_memory(&self) -> usize {
-        // This is a simplified memory tracking
-        // In a real implementation, you'd use more sophisticated methods
+       
         std::process::id() as usize
     }
 }
 
-/// Performance monitoring utilities
 pub struct PerformanceMonitor {
     start_time: Instant,
     checkpoints: Vec<(String, Instant)>,
@@ -621,7 +602,6 @@ mod tests {
     async fn test_memory_tracker() {
         let mut tracker = MemoryTracker::new();
         tracker.start();
-        // Simulate some work
         std::thread::sleep(Duration::from_millis(1));
         let usage = tracker.stop();
         assert!(usage.is_some());

@@ -61,8 +61,3 @@ path = "src/main.rs"
 [[bin]]
 name = "benchmark"
 path = "src/bin/benchmark.rs"
-
-
-
-   ark-bls12-381 = "0.3"
-   ark-std = "0.3"

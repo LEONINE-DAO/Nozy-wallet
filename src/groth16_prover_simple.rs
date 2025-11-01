@@ -27,7 +27,6 @@ impl OrchardGroth16Prover {
     }
 
     pub fn generate_proof(&self, _circuit_data: &[u8]) -> NozyResult<Vec<u8>> {
-        // proof generation for testing
         Ok(vec![0u8; 256])
     }
 

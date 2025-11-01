@@ -4,6 +4,8 @@ use dialoguer::{Password, Confirm};
 use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient};
 use nozy::local_analytics::LocalAnalytics;
 use nozy::cli_helpers::{load_wallet, scan_notes_for_sending, build_and_broadcast_transaction, handle_insufficient_funds_error};
+use nozy::{load_config, save_config, update_last_scan_height};
+use zcash_address::unified::{Encoding, Container};
 
 #[derive(Parser)]
 #[command(name = "nozy")]
@@ -20,16 +22,15 @@ pub enum Commands {
 
     Restore,
     
-    Addresses {
-        #[arg(short, long, default_value_t = 1)]
-        count: u32,
-    },
+    Receive,
     
-    Scan {
+    Sync {
         #[arg(long)]
         start_height: Option<u32>,
         #[arg(long)]
         end_height: Option<u32>,
+        #[arg(long)]
+        zebra_url: Option<String>,
     },
    
     Send {
@@ -37,19 +38,28 @@ pub enum Commands {
         recipient: String,
         #[arg(long)]
         amount: f64,
-        #[arg(long, default_value = "http://127.0.0.1:8232")]
-        zebra_url: String,
+        #[arg(long)]
+        zebra_url: Option<String>,
+        #[arg(long)]
+        memo: Option<String>,
     },
    
     Info,
     
-    TestZebra {
-        
-        #[arg(long, default_value = "http://127.0.0.1:8232")]
-        zebra_url: String,
+    Balance,
+    
+    Config {
+        #[arg(long)]
+        set_zebra_url: Option<String>,
+        #[arg(long)]
+        set_network: Option<String>,
     },
     
-    ListNotes,
+    TestZebra {
+        #[arg(long)]
+        zebra_url: Option<String>,
+    },
+    
     
     Proving {
         
@@ -101,8 +111,12 @@ async fn main() -> NozyResult<()> {
             println!("   It's the only way to recover your wallet if you lose access.");
             
             match wallet.generate_orchard_address(0, 0) {
-                Ok(address) => println!("📍 Sample address: {}", address),
-                Err(e) => println!("❌ Failed to generate sample address: {}", e),
+                Ok(address) => {
+                    println!("📍 Your wallet address:");
+                    println!("{}", address);
+                    println!("\n💡 Share this address to receive ZEC.");
+                },
+                Err(e) => println!("❌ Failed to generate address: {}", e),
             }
         }
         
@@ -127,39 +141,37 @@ async fn main() -> NozyResult<()> {
             println!("✅ Wallet restored and saved.");
         }
         
-        Commands::Addresses { count } => {
-            println!("Generating {} addresses...", count);
+        Commands::Receive => {
             let (wallet, _storage) = load_wallet().await?;
             
-            match wallet.generate_multiple_addresses(0, 0, count) {
-                Ok(addresses) => {
-                    for (i, address) in addresses.iter().enumerate() {
-                        println!("Address {}: {}", i, address);
-                    }
+            match wallet.generate_orchard_address(0, 0) {
+                Ok(address) => {
+                    println!("Your wallet address:");
+                    println!("{}", address);
+                    println!("\n💡 Share this address to receive ZEC.");
+                    println!("   All funds go to your wallet automatically.");
                 },
                 Err(e) => {
-                    println!("Failed to generate addresses: {}", e);
-                    // Fallback to individual generation
-                    for i in 0..count {
-                        match wallet.generate_orchard_address(0, i) {
-                            Ok(address) => println!("Address {}: {}", i, address),
-                            Err(e) => println!("Failed to generate address {}: {}", i, e),
-                        }
-                    }
+                    println!("❌ Failed to generate address: {}", e);
                 }
             }
         }
         
-        Commands::Scan { start_height, end_height } => {
-            println!("Scanning blockchain for notes...");
+        Commands::Sync { start_height, end_height, zebra_url } => {
+            let config = load_config();
+            let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+            
+            println!("Updating your wallet balance...");
             
             let (wallet, _storage) = load_wallet().await?;
-            let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
+            let zebra_client = ZebraClient::new(zebra_url);
             
-            let mut note_scanner = NoteScanner::new(wallet, zebra_client);
+            let effective_start = start_height.or(config.last_scan_height);
             
-            match note_scanner.scan_notes(start_height, end_height).await {
-                Ok((result, spendable_notes)) => {
+            let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
+            
+            match note_scanner.scan_notes(effective_start, end_height).await {
+                Ok((result, _spendable_notes)) => {
                     use std::fs;
                     use std::path::Path;
                     let notes_dir = Path::new("wallet_data");
@@ -169,73 +181,108 @@ async fn main() -> NozyResult<()> {
                         let _ = fs::write(&notes_path, serialized);
                     }
                     
-                    println!("Scan complete!");
-                    println!("Total notes found: {}", result.notes.len());
-                    println!("Total balance: {} zatoshis", result.total_balance);
-                    println!("Unspent notes: {}", result.unspent_count);
-                    println!("Spendable notes: {}", spendable_notes.len());
+                    if let Some(end) = end_height {
+                        let _ = update_last_scan_height(end);
+                    } else {
+                        if let Ok(block_count) = zebra_client.get_block_count().await {
+                            let _ = update_last_scan_height(block_count);
+                        }
+                    }
+                    
+                    let balance_zec = result.total_balance as f64 / 100_000_000.0;
                     
                     if result.total_balance > 0 {
-                        println!("🎉 Found ZEC in your wallet!");
-                        println!("💰 Balance: {} ZEC", result.total_balance as f64 / 100_000_000.0);
-                        
-                        for (i, note) in result.notes.iter().enumerate() {
-                            if !note.spent {
-                                println!("  Note {}: {} ZAT (Block: {})", i + 1, note.value, note.block_height);
-                            }
-                        }
+                        println!("✅ Your balance: {:.8} ZEC", balance_zec);
                     } else {
-                        println!("💡 No ZEC found in scanned blocks");
-                        println!("   Try scanning a wider range or different heights");
+                        println!("💰 Your balance: 0.00000000 ZEC");
+                        println!("   Sync completed. Balance will update when you receive ZEC.");
                     }
                 },
                 Err(e) => {
-                    println!("Error scanning notes: {}", e);
+                    println!("❌ Error updating wallet: {}", e);
                 }
             }
         }
         
-        Commands::Send { recipient, amount, zebra_url } => {
-            println!("Sending {} ZEC to {}...", amount, recipient);
+        Commands::Send { recipient, amount, zebra_url, memo } => {
+            let config = load_config();
+            let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
             
             let (wallet, _storage) = load_wallet().await?;
             
-            println!("🚨 MAINNET TRANSACTION DETECTED! 🚨");
-            println!("   This will send REAL ZEC on the mainnet blockchain!");
-            println!("   Zebra node: {}", zebra_url);
-            println!("   Do you want to enable mainnet broadcasting? (y/N)");
+            match zcash_address::unified::Address::decode(&recipient) {
+                Ok((_, ua)) => {
+                    let mut has_orchard = false;
+                    for item in ua.items() {
+                        if let zcash_address::unified::Receiver::Orchard(_) = item { has_orchard = true; break; }
+                    }
+                    if !has_orchard {
+                        return Err(NozyError::AddressParsing("Recipient must include an Orchard receiver".to_string()));
+                    }
+                },
+                Err(e) => {
+                    return Err(NozyError::AddressParsing(format!("Invalid recipient address: {}", e)));
+                }
+            }
+            
+            println!("Sending {} ZEC to {}", amount, recipient);
+            println!("⚠️  This will send REAL ZEC. Continue? (y/N)");
             
             use std::io::{self, Write};
-            print!("Enter 'yes' to enable: ");
+            print!("> ");
             io::stdout().flush().unwrap();
             
             let mut input = String::new();
             io::stdin().read_line(&mut input).unwrap();
-            let enable_broadcast = input.trim().to_lowercase() == "yes" || input.trim().to_lowercase() == "y";
+            let enable_broadcast = input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes";
             
-            if enable_broadcast {
-                println!("✅ Mainnet broadcasting enabled!");
-            } else {
-                println!("❌ Mainnet broadcasting disabled for safety.");
-                println!("   Transaction will be built but not broadcast.");
+            if !enable_broadcast {
+                println!("❌ Cancelled.");
+                return Ok(());
             }
             
-            println!("🔎 Scanning recent blocks for spendable notes...");
             let spendable_notes = scan_notes_for_sending(wallet, &zebra_url).await?;
             
-            // leave a memo they can't be Nozy anyway lol. 
-            print!("Enter memo (optional, press Enter to skip): ");
-            io::stdout().flush().unwrap();
-            let mut memo_input = String::new();
-            let _ = io::stdin().read_line(&mut memo_input);
-            let memo_bytes_opt = {
-                let trimmed = memo_input.trim().as_bytes();
-                if trimmed.is_empty() { None } else { Some(trimmed) }
+            let memo_bytes_opt = if let Some(m) = memo.as_ref() {
+                let trimmed = m.trim();
+                if trimmed.is_empty() { None } else { Some(trimmed.as_bytes().to_vec()) }
+            } else {
+                print!("Enter memo (optional, press Enter to skip): ");
+                io::stdout().flush().unwrap();
+                let mut memo_input = String::new();
+                let _ = io::stdin().read_line(&mut memo_input);
+                let trimmed = memo_input.trim();
+                if trimmed.is_empty() { None } else { Some(trimmed.as_bytes().to_vec()) }
             };
             
             let amount_zatoshis = (amount * 100_000_000.0) as u64;
             let fee_zatoshis = 10_000;
             let zebra_client = ZebraClient::new(zebra_url.clone());
+            
+            use std::fs;
+            use std::path::Path;
+            let notes_path = Path::new("wallet_data/notes.json");
+            let balance_before = if notes_path.exists() {
+                match fs::read_to_string(notes_path) {
+                    Ok(content) => {
+                        match serde_json::from_str::<serde_json::Value>(&content) {
+                            Ok(parsed) => {
+                                parsed.as_array()
+                                    .unwrap_or(&vec![])
+                                    .iter()
+                                    .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
+                                    .sum::<u64>()
+                            },
+                            Err(_) => 0,
+                        }
+                    },
+                    Err(_) => 0,
+                }
+            } else {
+                0
+            };
+            
+            println!("Processing...");
             
             match build_and_broadcast_transaction(
                 &zebra_client,
@@ -243,14 +290,51 @@ async fn main() -> NozyResult<()> {
                 &recipient,
                 amount_zatoshis,
                 fee_zatoshis,
-                memo_bytes_opt,
+                memo_bytes_opt.as_deref(),
                 enable_broadcast,
                 &zebra_url,
             ).await {
-                Ok(_) => {},
+                Ok(_) => {
+                    let amount_with_fee = amount_zatoshis + fee_zatoshis;
+                    let balance_after = balance_before.saturating_sub(amount_with_fee);
+                    
+                    println!("✅ Sent {} ZEC", amount);
+                    println!("💰 Your balance: {:.8} ZEC", balance_after as f64 / 100_000_000.0);
+                },
                 Err(e) => {
-                    println!("Failed to build transaction: {}", e);
+                    println!("❌ Failed to send: {}", e);
                     handle_insufficient_funds_error(&e);
+                }
+            }
+        }
+        
+        Commands::Balance => {
+            use std::fs;
+            use std::path::Path;
+            let notes_path = Path::new("wallet_data/notes.json");
+            if !notes_path.exists() {
+                println!("💰 Your balance: 0.00000000 ZEC");
+                println!("   Run 'sync' to update your balance.");
+            } else {
+                match fs::read_to_string(notes_path) {
+                    Ok(content) => {
+                        let parsed: serde_json::Value = match serde_json::from_str(&content) {
+                            Ok(v) => v,
+                            Err(_) => { 
+                                println!("💰 Your balance: 0.00000000 ZEC");
+                                return Ok(());
+                            }
+                        };
+                        let total_zat: u64 = parsed.as_array()
+                            .unwrap_or(&vec![])
+                            .iter()
+                            .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
+                            .sum();
+                        println!("💰 Your balance: {:.8} ZEC", total_zat as f64 / 100_000_000.0);
+                    },
+                    Err(_) => {
+                        println!("💰 Your balance: 0.00000000 ZEC");
+                    },
                 }
             }
         }
@@ -261,12 +345,43 @@ async fn main() -> NozyResult<()> {
             println!("Mnemonic: {}", wallet.get_mnemonic());
         }
         
-        Commands::TestZebra { zebra_url } => {
-            println!("🔗 Testing Zebra node connection...");
+        Commands::Config { set_zebra_url, set_network } => {
+            let mut config = load_config();
             
+            if let Some(ref url) = set_zebra_url {
+                config.zebra_url = url.clone();
+                save_config(&config)?;
+                println!("✅ Zebra URL set to: {}", url);
+            }
+            
+            if let Some(ref network) = set_network {
+                config.network = network.clone();
+                save_config(&config)?;
+                println!("✅ Network set to: {}", network);
+            }
+            
+            if set_zebra_url.is_none() && set_network.is_none() {
+                println!("Current configuration:");
+                println!("  Zebra URL: {}", config.zebra_url);
+                println!("  Network: {}", config.network);
+                if let Some(last_height) = config.last_scan_height {
+                    println!("  Last scanned height: {}", last_height);
+                } else {
+                    println!("  Last scanned height: (none)");
+                }
+                println!("\nTo change settings:");
+                println!("  nozy config --set-zebra-url <url>");
+                println!("  nozy config --set-network mainnet|testnet");
+            }
+        }
+        
+        Commands::TestZebra { zebra_url } => {
+            let config = load_config();
+            let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+            
+            println!("🔗 Testing Zebra node connection...");
             println!("📡 Connecting to: {}", zebra_url);
             
-            // Simple test - try to connect to the URL
             match std::process::Command::new("curl")
                 .arg("-s")
                 .arg("-X")
@@ -302,23 +417,6 @@ async fn main() -> NozyResult<()> {
                 }
             }
         }
-        Commands::ListNotes => {
-            use std::fs;
-            use std::path::Path;
-            use serde_json::Value;
-            let notes_path = Path::new("wallet_data/notes.json");
-            if notes_path.exists() {
-                let content = fs::read_to_string(notes_path)
-                    .map_err(|e| nozy::NozyError::Storage(format!("Failed to read notes: {}", e)))?;
-                let v: Value = serde_json::from_str(&content)
-                    .map_err(|e| nozy::NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
-                println!("Stored notes:");
-                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_else(|_| "[]".to_string()));
-            } else {
-                println!("No stored notes yet. Run a scan first.");
-            }
-        }
-        
         Commands::Proving { download, status } => {
             use nozy::orchard_tx::OrchardTransactionBuilder;
             

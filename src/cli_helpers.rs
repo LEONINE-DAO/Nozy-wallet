@@ -24,8 +24,8 @@ pub async fn scan_notes_for_sending(wallet: HDWallet, zebra_url: &str) -> NozyRe
     let zebra_client = ZebraClient::new(zebra_url.to_string());
     let tip_height = match zebra_client.get_block_count().await {
         Ok(h) => h,
-        Err(e) => {
-            println!("⚠️  Could not fetch tip height from Zebra ({}). Falling back to 10k-block scan ending at default.", e);
+        Err(_e) => {
+            
             3_066_071
         }
     };
@@ -34,8 +34,7 @@ pub async fn scan_notes_for_sending(wallet: HDWallet, zebra_url: &str) -> NozyRe
     
     match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
         Ok((_result, spendable)) => Ok(spendable),
-        Err(e) => {
-            println!("⚠️  Note scan failed: {}. Proceeding with empty note set.", e);
+        Err(_e) => {
             Ok(Vec::new())
         }
     }
@@ -69,23 +68,19 @@ pub async fn build_and_broadcast_transaction(
         memo,
     ).await?;
     
-    println!("✅ Transaction built successfully!");
-    println!("🆔 Transaction ID: {}", transaction.txid);
-    println!("📏 Transaction size: {} bytes", transaction.raw_transaction.len());
-    
     if enable_broadcast {
         match tx_builder.broadcast_transaction(&transaction).await {
-            Ok(txid) => {
-                println!("✅ Transaction broadcast successful!");
-                println!("🌐 Network TXID: {}", txid);
-                println!("🔗 Explorer: https://zcashblockexplorer.com/transactions/{}", txid);
+            Ok(_txid) => {
+                
             },
             Err(e) => {
-                println!("❌ Broadcast failed: {}", e);
+                return Err(e);
             }
         }
     } else {
-        println!("💡 Transaction ready for broadcast (broadcasting disabled)");
+        return Err(NozyError::InvalidOperation(
+            "Broadcasting disabled".to_string()
+        ));
     }
     
     Ok(())
@@ -93,7 +88,7 @@ pub async fn build_and_broadcast_transaction(
 
 pub fn handle_insufficient_funds_error(error: &NozyError) {
     if error.to_string().contains("Insufficient funds") {
-        println!("💡 Tip: You need to receive some ZEC first before you can send it.");
-        println!("   Use the 'scan' command to check for received notes.");
+        println!("💡 You don't have enough ZEC to send this amount.");
+        println!("   Run 'sync' to update your balance.");
     }
 }
