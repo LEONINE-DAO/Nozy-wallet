@@ -37,7 +37,7 @@ A modern, privacy-focused Zcash wallet built in Rust with support for Orchard sh
 ### Build from Source
 
 ```bash
-git clone https://github.com/yourusername/nozywallet.git
+git clone https://github.com/LEONINE-DAO/Nozy-wallet.git
 cd nozywallet
 cargo build --release
 ```
@@ -287,4 +287,5 @@ This software is provided "as is" without warranty of any kind. Use at your own 
 - [Zcash Foundation](https://zfnd.org/) for the Zcash protocol
 - [Zebra](https://github.com/ZcashFoundation/zebra) for the RPC node
 - [Orchard](https://github.com/zcash/orchard) for shielded transaction support
+
 - [Rust](https://rust-lang.org/) for the amazing language and ecosystem
