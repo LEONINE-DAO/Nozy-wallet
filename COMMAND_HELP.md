@@ -188,8 +188,8 @@ nozy send --recipient u1zhgy24tweexhjcsstya5qqzrus4cgv0amasfv5jp6f3p3qvw265rugn8
 # Send using testnet
 nozy send --recipient u1test1234567890abcdefghijklmnop... --amount 0.001 --zebra-url http://127.0.0.1:18232
 
-# Send to transparent address
-nozy send --recipient t1abc1234567890abcdefghijklmnop... --amount 0.001
+# Note: NozyWallet only supports shielded addresses (u1 unified addresses with Orchard receivers)
+# Transparent addresses (t1) are not supported for privacy protection
 ```
 
 **What it does:**
@@ -398,4 +398,4 @@ nozy send --recipient <address> --amount <amount> --zebra-url http://127.0.0.1:1
 
 ---
 
-*For more help, visit the [NozyWallet GitHub repository](https://github.com/yourusername/NozyWallet) or open an issue.*
+*For more help, visit the [NozyWallet GitHub repository](https://github.com/LEONINE-DAO/Nozy-wallet) or open an issue.*

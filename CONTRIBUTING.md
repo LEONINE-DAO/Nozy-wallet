@@ -36,7 +36,7 @@ This project follows the high standards of the Zcash community. We expect all co
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 
 # Clone the repository
-git clone https://github.com/your-username/NozyWallet.git
+git clone https://github.com/LEONINE-DAO/Nozy-wallet.git
 cd NozyWallet
 
 # Build the project

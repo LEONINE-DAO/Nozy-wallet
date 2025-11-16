@@ -257,7 +257,7 @@ src/
 
 ```bash
 # Clone and build
-git clone https://github.com/yourusername/nozywallet.git
+git clone https://github.com/LEONINE-DAO/Nozy-wallet.git
 cd nozywallet
 cargo build
 
@@ -277,8 +277,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 This software is provided "as is" without warranty of any kind. Use at your own risk. Always verify transactions before broadcasting to mainnet.
 
 ## 🆘 Support
-- **Discussions** & **Issues**: [GitHub Discussions](https://discord.gg/AZrAxHnt2U)
-- **Documentation**: [Wiki](https://github.com/leoninedao/nozywallet/wiki)
+
+- **Issues**: [GitHub Issues](https://github.com/LEONINE-DAO/Nozy-wallet/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/LEONINE-DAO/Nozy-wallet/discussions)
+- **Documentation**: [Wiki](https://github.com/LEONINE-DAO/Nozy-wallet/wiki)
 
 ## 🙏 Acknowledgments
 
