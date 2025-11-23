@@ -277,10 +277,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 This software is provided "as is" without warranty of any kind. Use at your own risk. Always verify transactions before broadcasting to mainnet.
 
 ## 🆘 Support
-
-- **Issues**: [GitHub Issues](https://github.com/yourusername/nozywallet/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/yourusername/nozywallet/discussions)
-- **Documentation**: [Wiki](https://github.com/yourusername/nozywallet/wiki)
+- **Discussions** & **Issues**: [GitHub Discussions](https://discord.gg/AZrAxHnt2U)
+- **Documentation**: [Wiki](https://github.com/leoninedao/nozywallet/wiki)
 
 ## 🙏 Acknowledgments
 
@@ -289,3 +287,4 @@ This software is provided "as is" without warranty of any kind. Use at your own 
 - [Orchard](https://github.com/zcash/orchard) for shielded transaction support
 
 - [Rust](https://rust-lang.org/) for the amazing language and ecosystem
+
