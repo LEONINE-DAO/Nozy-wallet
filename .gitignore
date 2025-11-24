@@ -3,14 +3,12 @@ target/
 **/*.rs.bk
 *.pdb
 
-# IDE and editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS generated files
 .DS_Store
 .DS_Store?
 ._*
@@ -19,17 +17,15 @@ target/
 ehthumbs.db
 Thumbs.db
 
-# Local storage and temporary files
 nozy_storage/
+wallet_data/
 *.tmp
 *.temp
 
-# Logs
+
 *.log
 
-# Environment variables
+
 .env
 .env.local
 
-# Cargo lock (optional - some projects include it)
-# Cargo.lock 
