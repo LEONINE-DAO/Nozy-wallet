@@ -29,3 +29,7 @@ wallet_data/
 .env
 .env.local
 
+# Reference directories (nested git repos)
+tauri-reference/
+react-native-0.73.11/
+

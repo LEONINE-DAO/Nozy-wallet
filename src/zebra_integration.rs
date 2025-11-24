@@ -260,7 +260,7 @@ impl ZebraClient {
         let hash_len = block_hash_bytes.len().min(32);
         anchor[..hash_len].copy_from_slice(&block_hash_bytes[..hash_len]);
         
-        let commitment_count = height as u64 * 100; // Rough estimate
+        let commitment_count = height as u64 * 100; 
         
         Ok(OrchardTreeState {
             height,

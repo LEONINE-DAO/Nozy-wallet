@@ -14,6 +14,7 @@ pub mod cli_helpers;
 pub mod groth16_prover_simple;
 pub mod local_analytics;
 pub mod config;
+pub mod paths;
 #[cfg(test)]
 pub mod tests;
 
@@ -27,3 +28,4 @@ pub use block_parser::BlockParser;
 pub use transaction_builder::ZcashTransactionBuilder;
 pub use rpc_test::RpcTester;
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
+pub use paths::{get_wallet_data_dir, get_wallet_config_dir, get_wallet_data_path, get_wallet_config_path};

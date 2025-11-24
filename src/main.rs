@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 use dialoguer::{Password, Confirm};
 use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient};
@@ -89,21 +88,23 @@ async fn main() -> NozyResult<()> {
                 .interact()
                 .map_err(|e| NozyError::InvalidOperation(format!("Input error: {}", e)))?;
             
-            if use_password {
-                let password = Password::new()
+            let password = if use_password {
+                let pwd = Password::new()
                     .with_prompt("Enter password for wallet encryption")
                     .with_confirmation("Confirm password", "Passwords don't match")
                     .interact()
                     .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
                 
-                wallet.set_password(&password)?;
+                wallet.set_password(&pwd)?;
                 println!("✅ Password protection enabled");
+                pwd
             } else {
                 println!("⚠️  Wallet will be stored without password protection");
-            }
+                String::new()
+            };
             
-            let storage = WalletStorage::new(PathBuf::from("wallet_data"));
-            storage.save_wallet(&wallet, "").await?;
+            let storage = WalletStorage::with_xdg_dir();
+            storage.save_wallet(&wallet, &password).await?;
             
             println!("🎉 Wallet created successfully!");
             println!("📝 Mnemonic: {}", wallet.get_mnemonic());
@@ -130,7 +131,7 @@ async fn main() -> NozyResult<()> {
                 .map_err(|e| nozy::NozyError::InvalidOperation(format!("Mnemonic input error: {}", e)))?;
             
             let wallet = HDWallet::from_mnemonic(&mnemonic)?;
-            let storage = WalletStorage::new(PathBuf::from("wallet_data"));
+            let storage = WalletStorage::with_xdg_dir();
             
             let password = Password::new()
                 .with_prompt("Enter password to encrypt wallet")
@@ -173,9 +174,8 @@ async fn main() -> NozyResult<()> {
             match note_scanner.scan_notes(effective_start, end_height).await {
                 Ok((result, _spendable_notes)) => {
                     use std::fs;
-                    use std::path::Path;
-                    let notes_dir = Path::new("wallet_data");
-                    if !notes_dir.exists() { let _ = fs::create_dir_all(notes_dir); }
+                    use nozy::paths::get_wallet_data_dir;
+                    let notes_dir = get_wallet_data_dir();
                     let notes_path = notes_dir.join("notes.json");
                     if let Ok(serialized) = serde_json::to_string_pretty(&result.notes) {
                         let _ = fs::write(&notes_path, serialized);
@@ -209,6 +209,13 @@ async fn main() -> NozyResult<()> {
             let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
             
             let (wallet, _storage) = load_wallet().await?;
+            
+            // NozyWallet only supports shielded addresses - reject transparent addresses
+            if recipient.starts_with("t1") {
+                return Err(NozyError::AddressParsing(
+                    "Transparent addresses (t1) are not supported. NozyWallet only supports shielded addresses (u1 unified addresses with Orchard receivers) for privacy protection. Please use a shielded address.".to_string()
+                ));
+            }
             
             match zcash_address::unified::Address::decode(&recipient) {
                 Ok((_, ua)) => {
@@ -260,8 +267,8 @@ async fn main() -> NozyResult<()> {
             let zebra_client = ZebraClient::new(zebra_url.clone());
             
             use std::fs;
-            use std::path::Path;
-            let notes_path = Path::new("wallet_data/notes.json");
+            use nozy::paths::get_wallet_data_dir;
+            let notes_path = get_wallet_data_dir().join("notes.json");
             let balance_before = if notes_path.exists() {
                 match fs::read_to_string(notes_path) {
                     Ok(content) => {
@@ -310,8 +317,8 @@ async fn main() -> NozyResult<()> {
         
         Commands::Balance => {
             use std::fs;
-            use std::path::Path;
-            let notes_path = Path::new("wallet_data/notes.json");
+            use nozy::paths::get_wallet_data_dir;
+            let notes_path = get_wallet_data_dir().join("notes.json");
             if !notes_path.exists() {
                 println!("💰 Your balance: 0.00000000 ZEC");
                 println!("   Run 'sync' to update your balance.");
@@ -461,7 +468,8 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::Analytics => {
-            let analytics_path = PathBuf::from("wallet_data/analytics.json");
+            use nozy::paths::get_wallet_data_dir;
+            let analytics_path = get_wallet_data_dir().join("analytics.json");
             let mut analytics = LocalAnalytics::load_from_file(&analytics_path)?;
             
             analytics.track_command("analytics");

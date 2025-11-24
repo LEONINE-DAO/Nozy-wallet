@@ -7,8 +7,9 @@ use dialoguer::Password;
 use nozy::{WalletStorage, NozyResult, NozyError};
 
 async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
-    let storage = WalletStorage::new(PathBuf::from("wallet_data"));
-    let wallet_path = std::path::Path::new("wallet_data/wallet.dat");
+    use nozy::paths::get_wallet_data_dir;
+    let storage = WalletStorage::with_xdg_dir();
+    let wallet_path = get_wallet_data_dir().join("wallet.dat");
     if wallet_path.exists() {
         let password = Password::new()
             .with_prompt("Enter wallet password")

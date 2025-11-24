@@ -46,9 +46,16 @@ impl ZcashTransactionBuilder {
     ) -> NozyResult<SignedTransaction> {
         
         // Hide technical details - building happens silently
-        if !recipient_address.starts_with("u1") && !recipient_address.starts_with("zs1") && !recipient_address.starts_with("t1") {
+        // NozyWallet only supports shielded addresses for privacy
+        if recipient_address.starts_with("t1") {
             return Err(NozyError::InvalidOperation(
-                "Invalid address format! Must be u1, zs1, or t1".to_string()
+                "Transparent addresses (t1) are not supported. NozyWallet only supports shielded addresses (u1 unified addresses with Orchard receivers) for privacy protection.".to_string()
+            ));
+        }
+        
+        if !recipient_address.starts_with("u1") && !recipient_address.starts_with("zs1") {
+            return Err(NozyError::InvalidOperation(
+                "Invalid address format! Must be a shielded address: u1 (unified with Orchard) or zs1 (Sapling)".to_string()
             ));
         }
         

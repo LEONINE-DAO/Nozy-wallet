@@ -25,6 +25,8 @@ pub struct WalletData {
     pub version: String,
     #[serde(default)]
     pub password_protected: bool,
+    #[serde(default)]
+    pub password_hash: Option<String>,
 }
 
 fn default_version() -> String {
@@ -47,6 +49,7 @@ impl WalletData {
             last_updated: now,
             version: env!("CARGO_PKG_VERSION").to_string(),
             password_protected: false,
+            password_hash: None,
         }
     }
     
@@ -116,7 +119,10 @@ impl WalletStorage {
     }
 
     pub async fn save_wallet(&self, wallet: &HDWallet, password: &str) -> NozyResult<()> {
-        let wallet_data = WalletData::new(wallet.get_mnemonic());
+        let mut wallet_data = WalletData::new(wallet.get_mnemonic());
+        wallet_data.password_protected = wallet.is_password_protected();
+        wallet_data.password_hash = wallet.get_password_hash().cloned();
+        
         let serialized = serde_json::to_string(&wallet_data)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize wallet: {}", e)))?;
         
@@ -137,7 +143,14 @@ impl WalletStorage {
         
         wallet_data.ensure_timestamps();
         
-        HDWallet::from_mnemonic(&wallet_data.mnemonic)
+        let mut wallet = HDWallet::from_mnemonic(&wallet_data.mnemonic)?;
+        
+        // Restore password hash if wallet was password protected
+        if let Some(hash) = wallet_data.password_hash {
+            wallet.set_password_hash(hash)?;
+        }
+        
+        Ok(wallet)
     }
 
     fn encrypt_data(&self, data: &str, password: &str) -> NozyResult<String> {

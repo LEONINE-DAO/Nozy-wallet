@@ -32,6 +32,9 @@ dialoguer = "0.11"
 # Error handling
 thiserror = "1.0"
 
+# XDG directory support
+directories = "5.0"
+
 # HD wallet
 bip32 = "0.5"
 bip39 = "2.1"
