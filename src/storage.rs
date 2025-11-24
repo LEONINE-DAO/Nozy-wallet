@@ -145,9 +145,16 @@ impl WalletStorage {
         
         let mut wallet = HDWallet::from_mnemonic(&wallet_data.mnemonic)?;
         
-        // Restore password hash if wallet was password protected
         if let Some(hash) = wallet_data.password_hash {
-            wallet.set_password_hash(hash)?;
+            wallet.set_password_hash(hash.clone())?;
+            
+            
+            let is_valid = wallet.verify_password(password)
+                .map_err(|e| NozyError::Cryptographic(format!("Password verification failed: {}", e)))?;
+            
+            if !is_valid {
+                return Err(NozyError::Cryptographic("Invalid password".to_string()));
+            }
         }
         
         Ok(wallet)
@@ -179,12 +186,6 @@ impl WalletStorage {
         let data = hex::decode(encrypted_data)
             .map_err(|e| NozyError::Storage(format!("Failed to decode hex: {}", e)))?;
         
-       
-        if data.len() >= 44 && data.len() < 50 {
-            if let Ok(result) = self.decrypt_old_format(&data) {
-                return Ok(result);
-            }
-        }
         
         if data.len() < 28 {
             return Err(NozyError::Storage("Invalid encrypted data length".to_string()));
@@ -230,25 +231,6 @@ impl WalletStorage {
         let mut key = [0u8; 32];
         key.copy_from_slice(&hash[..32]);
         key
-    }
-    
-  
-    fn decrypt_old_format(&self, data: &[u8]) -> NozyResult<String> {
-        if data.len() < 44 {
-            return Err(NozyError::Storage("Invalid old format data length".to_string()));
-        }
-        
-        let key = &data[0..32];
-        let nonce = &data[32..44];
-        let ciphertext = &data[44..];
-        
-        let cipher = Aes256Gcm::new_from_slice(key)
-            .map_err(|e| NozyError::Storage(format!("Failed to create cipher: {}", e)))?;
-        let plaintext = cipher.decrypt(Nonce::from_slice(nonce), ciphertext)
-            .map_err(|e| NozyError::Storage(format!("Decryption failed: {}", e)))?;
-        
-        String::from_utf8(plaintext)
-            .map_err(|e| NozyError::Storage(format!("Invalid UTF-8: {}", e)))
     }
     
     pub async fn create_backup(&self, backup_path: &str) -> NozyResult<()> {
