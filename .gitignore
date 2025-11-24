@@ -29,3 +29,16 @@ wallet_data/
 .env
 .env.local
 
+# Frontend/Mobile/API work (DO NOT COMMIT)
+frontend/
+mobile/
+api-server/
+src-tauri/
+tauri-reference/
+react-native-0.73.11/
+rn-template.zip
+push_url_update.ps1
+
+# Documentation files (temporary, exclude from commits)
+*.md
+!README.md
