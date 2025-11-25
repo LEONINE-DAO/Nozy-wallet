@@ -105,9 +105,11 @@ impl NoteScanner {
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e)))?;
             
         let orchard_fvk = FullViewingKey::from(&orchard_sk);
-        let orchard_ivk = orchard_fvk.to_ivk(orchard::keys::Scope::External);
+        // CRITICAL FIX: Check both External and Internal scopes
+        let orchard_ivk_external = orchard_fvk.to_ivk(orchard::keys::Scope::External);
+        let orchard_ivk_internal = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
         
-        println!("🔑 Generated scanning keys from wallet mnemonic");
+        println!("🔑 Generated scanning keys from wallet mnemonic (checking both External and Internal scopes)");
         
         let mut all_notes = Vec::new();
         let mut spendable_notes = Vec::new();
@@ -117,14 +119,33 @@ impl NoteScanner {
             
             match self.get_block_transactions(height).await {
                 Ok(transactions) => {
-                    let (block_notes, block_spendable) = self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk, &orchard_sk, height)?;
-                    
-                    if !block_notes.is_empty() {
-                        println!("🎉 Found {} notes in block {}", block_notes.len(), height);
+                    // Try External scope first
+                    match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_external, &orchard_sk, height, orchard::keys::Scope::External) {
+                        Ok((mut block_notes, mut block_spendable)) => {
+                            if !block_notes.is_empty() {
+                                println!("🎉 Found {} notes in block {} (External scope)", block_notes.len(), height);
+                            }
+                            all_notes.append(&mut block_notes);
+                            spendable_notes.append(&mut block_spendable);
+                        },
+                        Err(e) => {
+                            eprintln!("Warning: Failed to decrypt External scope notes in block {}: {}", height, e);
+                        }
                     }
                     
-                    all_notes.extend(block_notes);
-                    spendable_notes.extend(block_spendable);
+                    // Try Internal scope
+                    match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_internal, &orchard_sk, height, orchard::keys::Scope::Internal) {
+                        Ok((mut block_notes, mut block_spendable)) => {
+                            if !block_notes.is_empty() {
+                                println!("🎉 Found {} notes in block {} (Internal scope)", block_notes.len(), height);
+                            }
+                            all_notes.append(&mut block_notes);
+                            spendable_notes.append(&mut block_spendable);
+                        },
+                        Err(e) => {
+                            eprintln!("Warning: Failed to decrypt Internal scope notes in block {}: {}", height, e);
+                        }
+                    }
                 },
                 Err(e) => {
                     eprintln!("Warning: Failed to get block {}: {}", height, e);
@@ -156,7 +177,8 @@ impl NoteScanner {
         action: &OrchardActionData,
         ivk: &IncomingViewingKey,
         block_height: u32,
-        txid: &str
+        txid: &str,
+        scope: orchard::keys::Scope,
     ) -> NozyResult<Option<OrchardNote>> {
         use orchard::{
             note::{Nullifier, ExtractedNoteCommitment},
@@ -165,7 +187,7 @@ impl NoteScanner {
         };
         use zcash_note_encryption::{EphemeralKeyBytes};
         
-        println!("🔍 Attempting REAL Orchard action decryption in transaction {}", txid);
+        println!("🔍 Attempting REAL Orchard action decryption in transaction {} (scope: {:?})", txid, scope);
         
         let nullifier_result = Nullifier::from_bytes(&action.nullifier);
         let nullifier = if nullifier_result.is_some().into() {
@@ -357,7 +379,8 @@ impl NoteScanner {
         let mut actions = Vec::new();
         
         if let Some(actions_array) = orchard_json["actions"].as_array() {
-            for action in actions_array {
+            println!("📋 Found {} Orchard actions to parse", actions_array.len());
+            for (idx, action) in actions_array.iter().enumerate() {
                 let nullifier_hex = action["nullifier"].as_str().unwrap_or("");
                 let cmx_hex = action["cmx"].as_str().unwrap_or("");
                 let ephemeral_key_hex = action["ephemeralKey"].as_str().unwrap_or("");
@@ -367,16 +390,24 @@ impl NoteScanner {
                 let cv_hex = action["cv"].as_str().unwrap_or("");
                 let rk_hex = action["rk"].as_str().unwrap_or("");
                 
-                let nullifier = hex::decode(nullifier_hex).unwrap_or_default();
-                let cmx = hex::decode(cmx_hex).unwrap_or_default();
-                let ephemeral_key = hex::decode(ephemeral_key_hex).unwrap_or_default();
-                let enc_ciphertext = hex::decode(enc_ciphertext_hex).unwrap_or_default();
-                let out_ciphertext = hex::decode(out_ciphertext_hex).unwrap_or_default();
-                let cv = hex::decode(cv_hex).unwrap_or_default();
-                let rk = hex::decode(rk_hex).unwrap_or_default();
+                // Better error handling for hex decoding
+                let nullifier = hex::decode(nullifier_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode nullifier hex: {}", e)))?;
+                let cmx = hex::decode(cmx_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode cmx hex: {}", e)))?;
+                let ephemeral_key = hex::decode(ephemeral_key_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode ephemeral_key hex: {}", e)))?;
+                let enc_ciphertext = hex::decode(enc_ciphertext_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode encCiphertext hex: {}", e)))?;
+                let out_ciphertext = hex::decode(out_ciphertext_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode outCiphertext hex: {}", e)))?;
+                let cv = hex::decode(cv_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode cv hex: {}", e)))?;
+                let rk = hex::decode(rk_hex)
+                    .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode rk hex: {}", e)))?;
                 
                 if nullifier.len() == 32 && cmx.len() == 32 && ephemeral_key.len() == 32 && 
-                   enc_ciphertext.len() == 580 && out_ciphertext.len() == 80 &&
+                   enc_ciphertext.len() >= 52 && out_ciphertext.len() == 80 &&
                    cv.len() == 32 && rk.len() == 32 {
                     
                     let mut nullifier_bytes = [0u8; 32];
@@ -390,7 +421,9 @@ impl NoteScanner {
                     nullifier_bytes.copy_from_slice(&nullifier);
                     cmx_bytes.copy_from_slice(&cmx);
                     ephemeral_key_bytes.copy_from_slice(&ephemeral_key);
-                    encrypted_note_bytes.copy_from_slice(&enc_ciphertext);
+                    // Use first 580 bytes of enc_ciphertext, or pad if shorter
+                    let enc_len = enc_ciphertext.len().min(580);
+                    encrypted_note_bytes[..enc_len].copy_from_slice(&enc_ciphertext[..enc_len]);
                     enc_ciphertext_bytes.copy_from_slice(&out_ciphertext);
                     cv_bytes.copy_from_slice(&cv);
                     rk_bytes.copy_from_slice(&rk);
@@ -406,15 +439,18 @@ impl NoteScanner {
                     };
                     
                     actions.push(action_data);
+                    println!("✅ Parsed action {} successfully", idx);
                 } else {
-                    println!("⚠️  Skipping action with invalid field sizes");
-                    println!("    nullifier: {} bytes, cmx: {} bytes, ephemeral_key: {} bytes", 
+                    eprintln!("⚠️  Skipping action {} with invalid field sizes", idx);
+                    eprintln!("    nullifier: {} bytes (expected 32), cmx: {} bytes (expected 32), ephemeral_key: {} bytes (expected 32)", 
                              nullifier.len(), cmx.len(), ephemeral_key.len());
-                    println!("    enc_ciphertext: {} bytes, out_ciphertext: {} bytes", 
+                    eprintln!("    enc_ciphertext: {} bytes (expected >= 52), out_ciphertext: {} bytes (expected 80)", 
                              enc_ciphertext.len(), out_ciphertext.len());
-                    println!("    cv: {} bytes, rk: {} bytes", cv.len(), rk.len());
+                    eprintln!("    cv: {} bytes (expected 32), rk: {} bytes (expected 32)", cv.len(), rk.len());
                 }
             }
+        } else {
+            println!("⚠️  No 'actions' array found in Orchard JSON");
         }
         
         Ok(actions)
@@ -425,7 +461,8 @@ impl NoteScanner {
         transactions: &[ParsedTransaction],
         ivk: &IncomingViewingKey,
         sk: &SpendingKey,
-        block_height: u32
+        block_height: u32,
+        scope: orchard::keys::Scope,
     ) -> NozyResult<(Vec<OrchardNote>, Vec<SpendableNote>)> {
         let mut notes = Vec::new();
         let mut spendable_notes = Vec::new();
@@ -433,9 +470,9 @@ impl NoteScanner {
         for tx in transactions {
             if let Some(orchard_actions) = self.extract_orchard_actions_from_tx(tx) {
                 for (action_idx, action) in orchard_actions.iter().enumerate() {
-                    match self.decrypt_orchard_action(action, ivk, block_height, &tx.txid) {
+                    match self.decrypt_orchard_action(action, ivk, block_height, &tx.txid, scope) {
                         Ok(Some(orchard_note)) => {
-                            println!("✅ Successfully decrypted note: {} ZAT", orchard_note.value);
+                            println!("✅ Successfully decrypted note: {} ZAT (scope: {:?})", orchard_note.value, scope);
                             
                             let spendable = SpendableNote {
                                 orchard_note: orchard_note.clone(),
@@ -447,9 +484,10 @@ impl NoteScanner {
                             spendable_notes.push(spendable);
                         },
                         Ok(None) => {
+                            // Note doesn't belong to this IVK, continue silently
                         },
                         Err(e) => {
-                            eprintln!("Warning: Failed to decrypt action in {}: {}", tx.txid, e);
+                            eprintln!("Warning: Failed to decrypt action in {} (scope: {:?}): {}", tx.txid, scope, e);
                         }
                     }
                 }

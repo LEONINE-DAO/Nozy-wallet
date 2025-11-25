@@ -317,7 +317,6 @@ impl HDWallet {
     }
 
     pub fn set_password_hash(&mut self, hash: String) -> NozyResult<()> {
-        // Validate that it's a proper password hash format
         PasswordHash::new(&hash)
             .map_err(|e| NozyError::Cryptographic(format!("Invalid password hash format: {}", e)))?;
         self.password_hash = Some(hash);
