@@ -23,7 +23,7 @@ bech32 = "0.9"
 argon2 = "0.5"
 
 # Time handling
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { version = "0.4.42", features = ["serde"] }
 
 # CLI
 clap = { version = "4.0", features = ["derive"] }

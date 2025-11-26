@@ -2,7 +2,6 @@ use crate::error::{NozyError, NozyResult};
 use std::path::PathBuf;
 use std::fs;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 
 #[derive(Debug)]

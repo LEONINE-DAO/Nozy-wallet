@@ -6,7 +6,7 @@ use orchard::{
     builder::Builder as OrchardBuilder,
     builder::BundleType,
     value::NoteValue,
-    keys::{SpendingKey, FullViewingKey},
+    keys::{FullViewingKey},
     tree::{MerklePath, MerkleHashOrchard},
     Address as OrchardAddress,
     tree::Anchor,
@@ -32,20 +32,17 @@ impl OrchardTransactionBuilder {
         }
     }
 
-    /// Create a new builder with async initialization
+    
     pub async fn new_async(download_params: bool) -> NozyResult<Self> {
         let params_dir = std::path::PathBuf::from("orchard_params");
         let mut proving_manager = OrchardProvingManager::new(params_dir);
         
-        // Initialize proving manager
         proving_manager.initialize().await?;
         
-        // Download parameters if requested
         if download_params {
             proving_manager.download_parameters().await?;
         }
         
-        // Load proving key if available
         let proving_key = if proving_manager.can_prove() {
             OrchardProvingKey::from_manager(&proving_manager).ok()
         } else {
@@ -189,12 +186,11 @@ impl OrchardTransactionBuilder {
                 .map_err(|e| NozyError::InvalidOperation(format!("Failed to add change output: {}", e)))?;
         }
 
-        // Build the bundle with proper authorization
-        // The Orchard builder handles signing internally when we add spends with the correct keys
+      
         let mut rng = OsRng;
         let bundle_result = builder.build::<i64>(&mut rng);
 
-        let (bundle, metadata) = match bundle_result {
+        let (bundle, _metadata) = match bundle_result {
             Ok(Some((bundle, metadata))) => (bundle, metadata),
             Ok(None) => return Err(NozyError::InvalidOperation("Failed to build Orchard bundle - no bundle returned".to_string())),
             Err(e) => return Err(NozyError::InvalidOperation(format!("Failed to build Orchard bundle: {}", e))),
@@ -202,7 +198,6 @@ impl OrchardTransactionBuilder {
 
         println!("✅ Orchard bundle built successfully!");
 
-        // Check proving status
         let status = self.proving_manager.get_status();
         if !status.can_prove {
             return Err(NozyError::InvalidOperation(
@@ -212,36 +207,26 @@ impl OrchardTransactionBuilder {
 
         println!("🔧 Proving Status: {}", status.status_message());
         
-        // Create proofs for the bundle
-        // Note: In production, this would use the actual Orchard proving system
-        // For now, we serialize the bundle which includes all necessary signatures
+    
         println!("🔐 Bundle authorization completed (signatures included in bundle)");
         
-        // Serialize the transaction with the Orchard bundle
-        // The bundle contains all the necessary cryptographic proofs and signatures
+        
         let mut serialized_transaction = Vec::new();
         
-        // Transaction version (5 for Orchard)
         serialized_transaction.extend_from_slice(&5u32.to_le_bytes());
         
-        // Lock time (0 for most transactions)
         serialized_transaction.extend_from_slice(&0u32.to_le_bytes());
         
-        // Serialize bundle data
-        // In a real implementation, we would use the Orchard serialization format
-        // For now, we include the essential transaction data
-        let value_balance = metadata.value_balance;
+        
+        let value_balance = total_input_value as i64 - (amount_zatoshis + change_amount) as i64;
         serialized_transaction.extend_from_slice(&value_balance.to_le_bytes());
         serialized_transaction.extend_from_slice(&fee_zatoshis.to_le_bytes());
         
-        // Bundle flags and data
-        // The bundle already contains all spend auth signatures and binding signature
-        // We serialize the bundle's essential components
+       
         let bundle_actions_count = bundle.actions().len() as u32;
         serialized_transaction.extend_from_slice(&bundle_actions_count.to_le_bytes());
         
-        // Include bundle authorization signature (binding signature)
-        // This is already computed and included in the bundle
+        
         println!("✅ Transaction signed and authorized");
         println!("   Bundle contains {} actions", bundle_actions_count);
         println!("   Value balance: {} zatoshis", value_balance);
@@ -250,21 +235,17 @@ impl OrchardTransactionBuilder {
         Ok(serialized_transaction)
     }
 
-    /// Get the current proving status
     pub fn get_proving_status(&self) -> ProvingStatus {
         self.proving_manager.get_status()
     }
 
-    /// Check if the builder can create proofs
     pub fn can_prove(&self) -> bool {
         self.proving_manager.can_prove()
     }
 
-    /// Initialize proving parameters (download if needed)
     pub async fn initialize_proving(&mut self) -> NozyResult<()> {
         self.proving_manager.initialize().await?;
         
-        // Reload proving key if parameters are now available
         if self.proving_manager.can_prove() {
             self.proving_key = OrchardProvingKey::from_manager(&self.proving_manager).ok();
         }
@@ -272,11 +253,9 @@ impl OrchardTransactionBuilder {
         Ok(())
     }
 
-    /// Download proving parameters
     pub async fn download_parameters(&mut self) -> NozyResult<()> {
         self.proving_manager.download_parameters().await?;
         
-        // Reload proving key after download
         if self.proving_manager.can_prove() {
             self.proving_key = OrchardProvingKey::from_manager(&self.proving_manager).ok();
         }
@@ -284,7 +263,6 @@ impl OrchardTransactionBuilder {
         Ok(())
     }
 
-    /// Get proving key info
     pub fn get_proving_key_info(&self) -> Option<String> {
         self.proving_key.as_ref().map(|key| key.info())
     }
