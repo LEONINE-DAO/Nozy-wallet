@@ -25,12 +25,10 @@ impl ZcashTransactionBuilder {
     
     pub fn set_zebra_url(&mut self, url: &str) -> &mut Self {
         self.zebra_url = url.to_string();
-        // No user-facing output - this is internal
         self
     }
     
     pub fn enable_mainnet_broadcast(&mut self) -> &mut Self {
-        // No user-facing output - confirmation handled in main.rs
         self.allow_mainnet_broadcast = true;
         self
     }
@@ -45,8 +43,7 @@ impl ZcashTransactionBuilder {
         memo: Option<&[u8]>,
     ) -> NozyResult<SignedTransaction> {
         
-        // Hide technical details - building happens silently
-        // NozyWallet only supports shielded addresses for privacy
+       
         if recipient_address.starts_with("t1") {
             return Err(NozyError::InvalidOperation(
                 "Transparent addresses (t1) are not supported. NozyWallet only supports shielded addresses (u1 unified addresses with Orchard receivers) for privacy protection.".to_string()
@@ -85,7 +82,6 @@ impl ZcashTransactionBuilder {
         ).await?;
         let txid = self.calculate_txid(&tx_data)?;
         
-        // No user-facing output - building happens silently
         
         Ok(SignedTransaction {
             raw_transaction: tx_data,

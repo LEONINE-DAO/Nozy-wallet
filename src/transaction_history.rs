@@ -313,3 +313,162 @@ mod tests {
     }
 }
 
+pub struct SentTransactionStorage {
+    storage_path: std::path::PathBuf,
+    transactions: Arc<Mutex<HashMap<String, SentTransactionRecord>>>,
+}
+
+impl SentTransactionStorage {
+    pub fn new() -> NozyResult<Self> {
+        let data_dir = get_wallet_data_dir();
+        let storage = Self {
+            storage_path: data_dir.clone(),
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+        };
+        
+        storage.ensure_storage_directory()?;
+        storage.load_transactions()?;
+        
+        Ok(storage)
+    }
+    
+    pub fn with_path(storage_path: std::path::PathBuf) -> NozyResult<Self> {
+        let storage = Self {
+            storage_path: storage_path.clone(),
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+        };
+        
+        storage.ensure_storage_directory()?;
+        storage.load_transactions()?;
+        
+        Ok(storage)
+    }
+    
+    fn ensure_storage_directory(&self) -> NozyResult<()> {
+        if !self.storage_path.exists() {
+            fs::create_dir_all(&self.storage_path)
+                .map_err(|e| NozyError::Storage(format!("Failed to create storage directory: {}", e)))?;
+        }
+        Ok(())
+    }
+    
+    fn get_transactions_path(&self) -> std::path::PathBuf {
+        self.storage_path.join("sent_transactions.json")
+    }
+    
+    fn load_transactions(&self) -> NozyResult<()> {
+        let transactions_path = self.get_transactions_path();
+        let path = Path::new(&transactions_path);
+        
+        if path.exists() {
+            let content = fs::read_to_string(path)
+                .map_err(|e| NozyError::Storage(format!("Failed to read sent transactions: {}", e)))?;
+            
+            let stored_transactions: HashMap<String, SentTransactionRecord> = 
+                serde_json::from_str(&content)
+                    .map_err(|e| NozyError::Storage(format!("Failed to parse sent transactions: {}", e)))?;
+            
+            *self.transactions.lock().unwrap() = stored_transactions;
+        }
+        
+        Ok(())
+    }
+    
+    fn save_transactions(&self) -> NozyResult<()> {
+        let transactions_path = self.get_transactions_path();
+        let transactions = self.transactions.lock().unwrap();
+        let content = serde_json::to_string_pretty(&*transactions)
+            .map_err(|e| NozyError::Storage(format!("Failed to serialize sent transactions: {}", e)))?;
+        
+        fs::write(&transactions_path, content)
+            .map_err(|e| NozyError::Storage(format!("Failed to write sent transactions: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    pub fn save_transaction(&self, transaction: SentTransactionRecord) -> NozyResult<()> {
+        let txid = transaction.txid.clone();
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            transactions.insert(txid, transaction);
+        }
+        self.save_transactions()?;
+        Ok(())
+    }
+    
+    pub fn get_transaction(&self, txid: &str) -> Option<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.get(txid).cloned()
+    }
+    
+    pub fn get_all_transactions(&self) -> Vec<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.values().cloned().collect()
+    }
+    
+    pub fn get_pending_transactions(&self) -> Vec<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.values()
+            .filter(|tx| tx.status == TransactionStatus::Pending)
+            .cloned()
+            .collect()
+    }
+    
+    pub fn update_transaction_status(
+        &self,
+        txid: &str,
+        block_height: u32,
+        block_time: DateTime<Utc>,
+        current_height: u32,
+    ) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            if let Some(tx) = transactions.get_mut(txid) {
+                tx.mark_confirmed(block_height, block_time, current_height);
+                updated = true;
+            }
+        }
+        
+        if updated {
+            self.save_transactions()?;
+        }
+        
+        Ok(updated)
+    }
+    
+    pub fn mark_transaction_failed(&self, txid: &str) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            if let Some(tx) = transactions.get_mut(txid) {
+                tx.mark_failed();
+                updated = true;
+            }
+        }
+        
+        if updated {
+            self.save_transactions()?;
+        }
+        
+        Ok(updated)
+    }
+    
+    pub fn remove_transaction(&self, txid: &str) -> NozyResult<bool> {
+        let removed = {
+            let mut transactions = self.transactions.lock().unwrap();
+            transactions.remove(txid).is_some()
+        };
+        
+        if removed {
+            self.save_transactions()?;
+        }
+        
+        Ok(removed)
+    }
+    
+    pub fn count(&self) -> usize {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.len()
+    }
+}

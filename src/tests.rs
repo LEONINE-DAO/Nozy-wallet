@@ -32,17 +32,14 @@ mod tests {
     fn test_password_protection() {
         let mut wallet = HDWallet::new().unwrap();
         
-        // Test setting password
         let result = wallet.set_password("test_password");
         assert!(result.is_ok());
         assert!(wallet.is_password_protected());
         
-        // Test password verification
         let verify_result = wallet.verify_password("test_password");
         assert!(verify_result.is_ok());
         assert!(verify_result.unwrap());
         
-        // Test wrong password
         let wrong_result = wallet.verify_password("wrong_password");
         assert!(wrong_result.is_ok());
         assert!(!wrong_result.unwrap());
@@ -52,7 +49,6 @@ mod tests {
     fn test_address_generation() {
         let wallet = HDWallet::new().unwrap();
         
-        // Test Orchard address generation
         let address = wallet.generate_orchard_address(0, 0);
         assert!(address.is_ok());
         
@@ -65,36 +61,30 @@ mod tests {
         let wallet = HDWallet::new().unwrap();
         let storage = WalletStorage::new(PathBuf::from("test_wallet_data"));
         
-        // Create directory first
         std::fs::create_dir_all("test_wallet_data").unwrap();
         
-        // Test saving wallet
         let result = tokio::runtime::Runtime::new().unwrap().block_on(
             storage.save_wallet(&wallet, "test_password")
         );
         assert!(result.is_ok());
         
-        // Test loading wallet
         let loaded_wallet = tokio::runtime::Runtime::new().unwrap().block_on(
             storage.load_wallet("test_password")
         );
         assert!(loaded_wallet.is_ok());
         
-        // Clean up
         let _ = std::fs::remove_dir_all("test_wallet_data");
     }
 
     #[test]
     fn test_zebra_client_creation() {
         let client = ZebraClient::new("http://127.0.0.1:8232".to_string());
-        // Test that client was created successfully
         assert!(std::ptr::addr_of!(client) != std::ptr::null());
     }
 
     #[test]
     fn test_orchard_transaction_builder() {
         let builder = OrchardTransactionBuilder::new(false);
-        // Test that builder was created successfully
         assert!(std::ptr::addr_of!(builder) != std::ptr::null());
     }
 
@@ -129,27 +119,21 @@ mod tests {
         let wallet = HDWallet::new().unwrap();
         let storage = WalletStorage::new(PathBuf::from("test_backup_data"));
         
-        // Create directory first
         std::fs::create_dir_all("test_backup_data").unwrap();
         
-        // Save wallet first
         let _ = tokio::runtime::Runtime::new().unwrap().block_on(
             storage.save_wallet(&wallet, "test_password")
         );
         
-        // Test backup creation
         let backup_result = tokio::runtime::Runtime::new().unwrap().block_on(
             storage.create_backup("test_backups")
         );
         assert!(backup_result.is_ok());
         
-        // Test backup listing
         let backups = storage.list_backups();
         assert!(backups.is_ok());
-        // Note: backups are created in the data directory, not the backup directory
-        // So we check if the backup was created successfully by checking the result
         
-        // Clean up
+        
         let _ = std::fs::remove_dir_all("test_backup_data");
         let _ = std::fs::remove_dir_all("test_backups");
     }
@@ -159,11 +143,9 @@ mod tests {
         let wallet = HDWallet::new().unwrap();
         let client = ZebraClient::new("http://127.0.0.1:8232".to_string());
         
-        // Test note scanning function exists
         let result = tokio::runtime::Runtime::new().unwrap().block_on(
             crate::notes::scan_real_notes(&client, &wallet, 1000, 1001)
         );
-        // This will fail because we don't have a real Zebra node, but the function should exist
         assert!(result.is_err() || result.is_ok());
     }
 
@@ -173,7 +155,6 @@ mod tests {
         let client = ZebraClient::new("http://127.0.0.1:8232".to_string());
         let spendable_notes = Vec::new();
         
-        // Test transaction building function exists
         let result = tokio::runtime::Runtime::new().unwrap().block_on(
             builder.build_single_spend(
                 &client,
@@ -184,18 +165,16 @@ mod tests {
                 None,
             )
         );
-        // This will fail because we don't have real data, but the function should exist
         assert!(result.is_err() || result.is_ok());
     }
 }
 
-/// Integration tests that require a real Zebra node
 #[cfg(test)]
 mod integration_tests {
     use super::*;
 
     #[test]
-    #[ignore] // Ignore by default, run with --ignored
+    #[ignore] 
     fn test_zebra_connection() {
         let client = ZebraClient::new("http://127.0.0.1:8232".to_string());
         
@@ -203,7 +182,6 @@ mod integration_tests {
             client.get_block_count()
         );
         
-        // This test will only pass if Zebra is running
         if result.is_ok() {
             println!("✅ Zebra node is accessible");
         } else {
@@ -212,19 +190,17 @@ mod integration_tests {
     }
 
     #[test]
-    #[ignore] // Ignore by default, run with --ignored
+    #[ignore] 
     fn test_full_transaction_flow() {
         let _wallet = HDWallet::new().unwrap();
         let _client = ZebraClient::new("http://127.0.0.1:8232".to_string());
         let _builder = OrchardTransactionBuilder::new(false);
         
-        // This test would require a real Zebra node and real notes
-        // For now, just test that the structure exists
+       
         assert!(true);
     }
 }
 
-/// Performance tests
 #[cfg(test)]
 mod performance_tests {
     use super::*;
@@ -236,17 +212,16 @@ mod performance_tests {
         let _wallet = HDWallet::new().unwrap();
         let duration = start.elapsed();
         
-        // Wallet creation should be fast (less than 100ms)
         assert!(duration.as_millis() < 100);
     }
 
     #[test]
-    #[ignore] // Skip performance test in CI - can be slow
+    #[ignore]
     fn test_address_generation_performance() {
         let wallet = HDWallet::new().unwrap();
         
         let start = Instant::now();
-        for i in 0..10 { // Reduced from 100 to 10 for faster testing
+        for i in 0..10 {
             let _address = wallet.generate_orchard_address(0, i).unwrap();
         }
         let duration = start.elapsed();
@@ -256,7 +231,7 @@ mod performance_tests {
     }
 
     #[test]
-    #[ignore] // Skip performance test - Argon2 can be slow
+    #[ignore] 
     fn test_password_hashing_performance() {
         let mut wallet = HDWallet::new().unwrap();
         
