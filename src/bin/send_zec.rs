@@ -2,6 +2,7 @@ use nozy::{
     HDWallet, ZebraClient, ZcashTransactionBuilder, NoteScanner
 };
 use std::io::{self, Write};
+use std::path::PathBuf;
 use dialoguer::Password;
 use nozy::{WalletStorage, NozyResult, NozyError};
 
@@ -25,14 +26,17 @@ async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 NozyWallet - Send ZEC Transaction\n");
 
+    // Load existing wallet
     let (hd_wallet, _storage) = load_wallet().await?;
     let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
     let mut transaction_builder = ZcashTransactionBuilder::new();
     let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
 
+    // Set up transaction builder
     transaction_builder.set_zebra_url("http://127.0.0.1:8232");
     transaction_builder.enable_mainnet_broadcast();
 
+    // Get user input
     print!("Enter recipient address: ");
     io::stdout().flush()?;
     let mut recipient = String::new();
@@ -45,6 +49,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     io::stdin().read_line(&mut amount_str)?;
     let amount: f64 = amount_str.trim().parse()?;
 
+    // Optional memo
     print!("Enter memo (optional, press Enter to skip): ");
     io::stdout().flush()?;
     let mut memo_input = String::new();
@@ -54,6 +59,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if trimmed.is_empty() { None } else { Some(trimmed.as_bytes().to_vec()) }
     };
 
+    // Scan for spendable notes
     println!("🔎 Scanning for spendable notes...");
     let tip_height = match zebra_client.get_block_count().await {
         Ok(h) => h,
@@ -82,6 +88,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  Note {}: {} ZAT", i + 1, note.orchard_note.value);
     }
 
+    // Build transaction
     let amount_zatoshis = (amount * 100_000_000.0) as u64;
     let fee_zatoshis = 10_000;
 
@@ -99,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🆔 Transaction ID: {}", transaction.txid);
     println!("📏 Transaction size: {} bytes", transaction.raw_transaction.len());
 
+    // Broadcast transaction
     println!("🚀 Broadcasting transaction...");
     match transaction_builder.broadcast_transaction(&transaction).await {
         Ok(txid) => {
