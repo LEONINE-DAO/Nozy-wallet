@@ -168,7 +168,11 @@ pub struct ProvingStatus {
 
 impl ProvingStatus {
     pub fn status_message(&self) -> String {
-        "✅ Orchard proving ready (Halo 2 - no external parameters required)".to_string()
+        if self.can_prove && self.spend_params && self.output_params && self.spend_vk && self.output_vk {
+            "✅ All proving parameters available - Orchard proving ready (Halo 2 - no external parameters required)".to_string()
+        } else {
+            "⚠️ Some proving parameters are missing".to_string()
+        }
     }
 }
 
@@ -205,18 +209,25 @@ impl OrchardProvingKey {
     }
 
     pub fn is_placeholder(&self) -> bool {
-        false 
+        let placeholder_bytes = b"PLACEHOLDER_ORCHARD_PARAMETERS";
+        self.spend_params == placeholder_bytes &&
+        self.output_params == placeholder_bytes &&
+        self.spend_vk == placeholder_bytes &&
+        self.output_vk == placeholder_bytes
     }
 
     pub fn info(&self) -> String {
-        "Orchard Halo 2 proving system - ready for production use".to_string()
+        if self.is_placeholder() {
+            "Placeholder Orchard proving key - not for production use".to_string()
+        } else {
+            "Orchard Halo 2 proving system - ready for production use".to_string()
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn test_proving_manager_creation() {

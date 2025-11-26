@@ -1,6 +1,12 @@
+use crate::error::{NozyError, NozyResult};
+use crate::paths::get_wallet_data_dir;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use crate::notes::OrchardNote;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 
 #[derive(Debug, Clone)]
@@ -310,6 +316,179 @@ mod tests {
         assert_eq!(view.amount_zec(), 1.0);
         assert_eq!(view.fee_zec(), Some(0.0001));
         assert_eq!(view.net_amount_zatoshis, -100_000_000);
+    }
+}
+
+/// Storage manager for sent transactions
+pub struct SentTransactionStorage {
+    storage_path: std::path::PathBuf,
+    transactions: Arc<Mutex<HashMap<String, SentTransactionRecord>>>,
+}
+
+impl SentTransactionStorage {
+    /// Create a new storage instance using the wallet data directory
+    pub fn new() -> NozyResult<Self> {
+        let data_dir = get_wallet_data_dir();
+        let storage = Self {
+            storage_path: data_dir.clone(),
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+        };
+        
+        storage.ensure_storage_directory()?;
+        storage.load_transactions()?;
+        
+        Ok(storage)
+    }
+    
+    /// Create with custom storage path (for testing)
+    pub fn with_path(storage_path: std::path::PathBuf) -> NozyResult<Self> {
+        let storage = Self {
+            storage_path: storage_path.clone(),
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+        };
+        
+        storage.ensure_storage_directory()?;
+        storage.load_transactions()?;
+        
+        Ok(storage)
+    }
+    
+    fn ensure_storage_directory(&self) -> NozyResult<()> {
+        if !self.storage_path.exists() {
+            fs::create_dir_all(&self.storage_path)
+                .map_err(|e| NozyError::Storage(format!("Failed to create storage directory: {}", e)))?;
+        }
+        Ok(())
+    }
+    
+    fn get_transactions_path(&self) -> std::path::PathBuf {
+        self.storage_path.join("sent_transactions.json")
+    }
+    
+    /// Load sent transactions from disk
+    fn load_transactions(&self) -> NozyResult<()> {
+        let transactions_path = self.get_transactions_path();
+        let path = Path::new(&transactions_path);
+        
+        if path.exists() {
+            let content = fs::read_to_string(path)
+                .map_err(|e| NozyError::Storage(format!("Failed to read sent transactions: {}", e)))?;
+            
+            let stored_transactions: HashMap<String, SentTransactionRecord> = 
+                serde_json::from_str(&content)
+                    .map_err(|e| NozyError::Storage(format!("Failed to parse sent transactions: {}", e)))?;
+            
+            *self.transactions.lock().unwrap() = stored_transactions;
+        }
+        
+        Ok(())
+    }
+    
+    /// Save sent transactions to disk
+    fn save_transactions(&self) -> NozyResult<()> {
+        let transactions_path = self.get_transactions_path();
+        let transactions = self.transactions.lock().unwrap();
+        let content = serde_json::to_string_pretty(&*transactions)
+            .map_err(|e| NozyError::Storage(format!("Failed to serialize sent transactions: {}", e)))?;
+        
+        fs::write(&transactions_path, content)
+            .map_err(|e| NozyError::Storage(format!("Failed to write sent transactions: {}", e)))?;
+        
+        Ok(())
+    }
+    
+    /// Add or update a sent transaction record
+    pub fn save_transaction(&self, transaction: SentTransactionRecord) -> NozyResult<()> {
+        let txid = transaction.txid.clone();
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            transactions.insert(txid, transaction);
+        }
+        self.save_transactions()?;
+        Ok(())
+    }
+    
+    /// Get a sent transaction by TXID
+    pub fn get_transaction(&self, txid: &str) -> Option<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.get(txid).cloned()
+    }
+    
+    /// Get all sent transactions
+    pub fn get_all_transactions(&self) -> Vec<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.values().cloned().collect()
+    }
+    
+    /// Get pending transactions (for status updates)
+    pub fn get_pending_transactions(&self) -> Vec<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.values()
+            .filter(|tx| tx.status == TransactionStatus::Pending)
+            .cloned()
+            .collect()
+    }
+    
+    /// Update transaction status (for confirmed transactions)
+    pub fn update_transaction_status(
+        &self,
+        txid: &str,
+        block_height: u32,
+        block_time: DateTime<Utc>,
+        current_height: u32,
+    ) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            if let Some(tx) = transactions.get_mut(txid) {
+                tx.mark_confirmed(block_height, block_time, current_height);
+                updated = true;
+            }
+        }
+        
+        if updated {
+            self.save_transactions()?;
+        }
+        
+        Ok(updated)
+    }
+    
+    /// Mark transaction as failed
+    pub fn mark_transaction_failed(&self, txid: &str) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            if let Some(tx) = transactions.get_mut(txid) {
+                tx.mark_failed();
+                updated = true;
+            }
+        }
+        
+        if updated {
+            self.save_transactions()?;
+        }
+        
+        Ok(updated)
+    }
+    
+    /// Remove a transaction (for cleanup)
+    pub fn remove_transaction(&self, txid: &str) -> NozyResult<bool> {
+        let removed = {
+            let mut transactions = self.transactions.lock().unwrap();
+            transactions.remove(txid).is_some()
+        };
+        
+        if removed {
+            self.save_transactions()?;
+        }
+        
+        Ok(removed)
+    }
+    
+    /// Get count of stored transactions
+    pub fn count(&self) -> usize {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.len()
     }
 }
 
