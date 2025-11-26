@@ -69,9 +69,9 @@ pub async fn build_and_broadcast_transaction(
     ).await?;
     
     if enable_broadcast {
-        match tx_builder.broadcast_transaction(&transaction).await {
+        match tx_builder.broadcast_transaction(zebra_client, &transaction).await {
             Ok(_txid) => {
-                
+                println!("✅ Transaction broadcast successfully!");
             },
             Err(e) => {
                 return Err(e);

@@ -52,6 +52,10 @@ pub enum Commands {
         set_zebra_url: Option<String>,
         #[arg(long)]
         set_network: Option<String>,
+        #[arg(long)]
+        use_local: bool,
+        #[arg(long)]
+        use_remote: Option<String>,
     },
     
     TestZebra {
@@ -352,8 +356,29 @@ async fn main() -> NozyResult<()> {
             println!("Mnemonic: {}", wallet.get_mnemonic());
         }
         
-        Commands::Config { set_zebra_url, set_network } => {
+        Commands::Config { set_zebra_url, set_network, use_local, use_remote } => {
             let mut config = load_config();
+            
+            if use_local {
+                config.zebra_url = "http://127.0.0.1:8232".to_string();
+                save_config(&config)?;
+                println!("✅ Zebra URL set to local node: http://127.0.0.1:8232");
+                println!("🔗 NozyWallet will now connect to your local Zebra node");
+            }
+            
+            if let Some(ref remote_url) = use_remote {
+                let normalized = if remote_url.starts_with("http://") || remote_url.starts_with("https://") {
+                    remote_url.clone()
+                } else if remote_url.contains(":443") {
+                    format!("https://{}", remote_url)
+                } else {
+                    format!("https://{}", remote_url)
+                };
+                config.zebra_url = normalized.clone();
+                save_config(&config)?;
+                println!("✅ Zebra URL set to remote node: {}", normalized);
+                println!("🔗 NozyWallet will now connect to the remote node");
+            }
             
             if let Some(ref url) = set_zebra_url {
                 config.zebra_url = url.clone();
@@ -367,9 +392,15 @@ async fn main() -> NozyResult<()> {
                 println!("✅ Network set to: {}", network);
             }
             
-            if set_zebra_url.is_none() && set_network.is_none() {
+            if !use_local && use_remote.is_none() && set_zebra_url.is_none() && set_network.is_none() {
                 println!("Current configuration:");
                 println!("  Zebra URL: {}", config.zebra_url);
+                let is_local = config.zebra_url.contains("127.0.0.1") || config.zebra_url.contains("localhost");
+                if is_local {
+                    println!("    ✅ Connected to local Zebra node");
+                } else {
+                    println!("    🌐 Connected to remote node");
+                }
                 println!("  Network: {}", config.network);
                 if let Some(last_height) = config.last_scan_height {
                     println!("  Last scanned height: {}", last_height);
@@ -377,50 +408,72 @@ async fn main() -> NozyResult<()> {
                     println!("  Last scanned height: (none)");
                 }
                 println!("\nTo change settings:");
-                println!("  nozy config --set-zebra-url <url>");
-                println!("  nozy config --set-network mainnet|testnet");
+                println!("  nozy config --use-local                    # Connect to local Zebra node");
+                println!("  nozy config --use-remote <host:port>       # Connect to remote node (e.g., zec.leoninedao.org:443)");
+                println!("  nozy config --set-zebra-url <url>          # Set custom URL");
+                println!("  nozy config --set-network mainnet|testnet  # Set network");
             }
         }
         
         Commands::TestZebra { zebra_url } => {
             let config = load_config();
+            
             let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
             
             println!("🔗 Testing Zebra node connection...");
             println!("📡 Connecting to: {}", zebra_url);
+            println!();
             
-            match std::process::Command::new("curl")
-                .arg("-s")
-                .arg("-X")
-                .arg("POST")
-                .arg("-H")
-                .arg("Content-Type: application/json")
-                .arg("-d")
-                .arg(r#"{"jsonrpc":"2.0","id":"test","method":"getinfo"}"#)
-                .arg(&zebra_url)
-                .output()
-            {
-                Ok(output) => {
-                    if output.status.success() {
-                        let response = String::from_utf8_lossy(&output.stdout);
-                        println!("✅ Zebra node is ONLINE!");
-                        println!("📨 Response: {}", response);
-                        
-                        if response.contains("result") {
-                            println!("🎉 Zebra RPC is working correctly!");
-                            println!("✅ Ready for mainnet transactions!");
-                        }
+            let client = ZebraClient::new(zebra_url.clone());
+            
+            match client.test_connection().await {
+                Ok(_) => {
+                    println!();
+                    println!("🎉 Connection successful!");
+                    let is_local = zebra_url.contains("127.0.0.1") || zebra_url.contains("localhost");
+                    if is_local {
+                        println!("✅ NozyWallet is connected to your local Zebra node");
                     } else {
-                        let error = String::from_utf8_lossy(&output.stderr);
-                        println!("❌ Zebra connection failed: {}", error);
+                        println!("✅ NozyWallet is connected to the remote node");
+                    }
+                    println!("✅ Ready to sync and send transactions!");
+                    
+                    match client.get_network_info().await {
+                        Ok(info) => {
+                            if let Some(chain) = info.get("chain") {
+                                println!("   Network: {:?}", chain);
+                            }
+                            if let Some(blocks) = info.get("blocks") {
+                                println!("   Blocks: {:?}", blocks);
+                            }
+                        },
+                        Err(_) => {
+                           
+                        }
                     }
                 },
                 Err(e) => {
-                    println!("❌ Cannot test connection: {}", e);
-                    println!("💡 Make sure curl is installed or test manually:");
-                    println!("   curl -X POST -H \"Content-Type: application/json\" \\");
-                    println!("        -d '{{\"jsonrpc\":\"1.0\",\"id\":\"test\",\"method\":\"getinfo\"}}' \\");
-                    println!("        {}", zebra_url);
+                    println!("❌ Connection failed!");
+                    println!("   Error: {}", e);
+                    println!();
+                    let is_local = zebra_url.contains("127.0.0.1") || zebra_url.contains("localhost");
+                    if is_local {
+                        println!("💡 Troubleshooting steps for local node:");
+                        println!("   1. Make sure Zebra is running on this PC");
+                        println!("   2. Check if RPC is enabled in ~/.config/zebrad.toml:");
+                        println!("      [rpc]");
+                        println!("      listen_addr = \"127.0.0.1:8232\"");
+                        println!("   3. Verify Zebra is listening on port 8232");
+                        println!("   4. Try: zebrad start");
+                    } else {
+                        println!("💡 Troubleshooting steps for remote node:");
+                        println!("   1. Check if the remote node is accessible");
+                        println!("   2. Verify the URL is correct: {}", zebra_url);
+                        println!("   3. Check your internet connection");
+                        println!("   4. The node might be temporarily unavailable");
+                        println!();
+                        println!("   To switch to local node: nozy config --use-local");
+                    }
                 }
             }
         }

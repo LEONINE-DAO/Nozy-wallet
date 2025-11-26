@@ -108,7 +108,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Broadcast transaction
     println!("🚀 Broadcasting transaction...");
-    match transaction_builder.broadcast_transaction(&transaction).await {
+    match transaction_builder.broadcast_transaction(&zebra_client, &transaction).await {
         Ok(txid) => {
             println!("✅ Transaction broadcast successful!");
             println!("🌐 Network TXID: {}", txid);

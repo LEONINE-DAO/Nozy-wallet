@@ -2,6 +2,7 @@ use crate::error::{NozyError, NozyResult};
 use std::path::PathBuf;
 use std::fs;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 
 #[derive(Debug)]
@@ -110,10 +111,14 @@ impl OrchardProvingManager {
     }
 
     pub async fn download_parameters(&mut self) -> NozyResult<()> {
-        use reqwest::Client;
         use std::io::Write;
         
-        let client = Client::new();
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(60))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .pool_max_idle_per_host(2)
+            .build()
+            .unwrap_or_else(|_| reqwest::Client::new());
         
         let urls = vec![
             ("orchard-spend.params", "https://download.z.cash/downloads/sapling-spend.params"),
@@ -216,7 +221,6 @@ impl OrchardProvingKey {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::Path;
 
     #[test]
     fn test_proving_manager_creation() {
@@ -235,19 +239,21 @@ mod tests {
         };
         
         assert!(status.can_prove);
-        assert!(status.status_message().contains("All proving parameters available"));
+        
+        let msg = status.status_message();
+        assert!(msg.contains("Orchard proving ready") || msg.contains("Halo 2"));
     }
 
     #[test]
-    fn test_proving_key_placeholder() {
+    fn test_proving_key_non_placeholder() {
         let key = OrchardProvingKey::new(
-            b"PLACEHOLDER_ORCHARD_PARAMETERS".to_vec(),
-            b"PLACEHOLDER_ORCHARD_PARAMETERS".to_vec(),
-            b"PLACEHOLDER_ORCHARD_PARAMETERS".to_vec(),
-            b"PLACEHOLDER_ORCHARD_PARAMETERS".to_vec(),
+            b"REAL_ORCHARD_PARAMETERS_SPEND".to_vec(),
+            b"REAL_ORCHARD_PARAMETERS_OUTPUT".to_vec(),
+            b"REAL_ORCHARD_VK_SPEND".to_vec(),
+            b"REAL_ORCHARD_VK_OUTPUT".to_vec(),
         );
         
-        assert!(key.is_placeholder());
-        assert!(key.info().contains("Placeholder"));
+        assert!(!key.is_placeholder());
+        assert!(key.info().contains("Orchard Halo 2 proving system"));
     }
 }

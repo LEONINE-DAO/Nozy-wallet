@@ -1,6 +1,12 @@
+use crate::error::{NozyError, NozyResult};
+use crate::paths::get_wallet_data_dir;
+use crate::notes::OrchardNote;
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
-use crate::notes::OrchardNote;
+use std::collections::HashMap;
+use std::fs;
+use std::path::Path;
+use std::sync::{Arc, Mutex};
 
 
 #[derive(Debug, Clone)]
@@ -471,4 +477,140 @@ impl SentTransactionStorage {
         let transactions = self.transactions.lock().unwrap();
         transactions.len()
     }
+
+    /// Query transactions with filters
+    pub fn query_transactions(
+        &self,
+        status_filter: Option<TransactionStatus>,
+        min_amount: Option<u64>,
+        max_amount: Option<u64>,
+        start_date: Option<DateTime<Utc>>,
+        end_date: Option<DateTime<Utc>>,
+        recipient_filter: Option<&str>,
+    ) -> Vec<SentTransactionRecord> {
+        let transactions = self.transactions.lock().unwrap();
+        transactions.values()
+            .filter(|tx| {
+                // Status filter
+                if let Some(ref status) = status_filter {
+                    if tx.status != *status {
+                        return false;
+                    }
+                }
+                
+                // Amount filters
+                if let Some(min) = min_amount {
+                    if tx.amount_zatoshis < min {
+                        return false;
+                    }
+                }
+                if let Some(max) = max_amount {
+                    if tx.amount_zatoshis > max {
+                        return false;
+                    }
+                }
+                
+                // Date filters
+                if let Some(start) = start_date {
+                    if tx.created_at < start {
+                        return false;
+                    }
+                }
+                if let Some(end) = end_date {
+                    if tx.created_at > end {
+                        return false;
+                    }
+                }
+                
+                // Recipient filter
+                if let Some(recipient) = recipient_filter {
+                    if !tx.recipient_address.contains(recipient) {
+                        return false;
+                    }
+                }
+                
+                true
+            })
+            .cloned()
+            .collect()
+    }
+
+    /// Get transactions sorted by date (newest first)
+    pub fn get_transactions_sorted(&self, limit: Option<usize>) -> Vec<SentTransactionRecord> {
+        let mut transactions = self.get_all_transactions();
+        transactions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        
+        if let Some(limit) = limit {
+            transactions.truncate(limit);
+        }
+        
+        transactions
+    }
+
+    /// Get transactions by recipient
+    pub fn get_transactions_by_recipient(&self, recipient: &str) -> Vec<SentTransactionRecord> {
+        self.query_transactions(None, None, None, None, None, Some(recipient))
+    }
+
+    /// Get transactions in a date range
+    pub fn get_transactions_in_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> Vec<SentTransactionRecord> {
+        self.query_transactions(None, None, None, Some(start), Some(end), None)
+    }
+
+    /// Get total sent amount in a date range
+    pub fn get_total_sent_in_range(
+        &self,
+        start: DateTime<Utc>,
+        end: DateTime<Utc>,
+    ) -> u64 {
+        self.get_transactions_in_range(start, end)
+            .iter()
+            .map(|tx| tx.amount_zatoshis)
+            .sum()
+    }
+
+    /// Get transaction statistics
+    pub fn get_statistics(&self) -> TransactionStatistics {
+        let transactions = self.transactions.lock().unwrap();
+        let total_count = transactions.len();
+        let pending_count = transactions.values()
+            .filter(|tx| tx.status == TransactionStatus::Pending)
+            .count();
+        let confirmed_count = transactions.values()
+            .filter(|tx| tx.status == TransactionStatus::Confirmed)
+            .count();
+        let failed_count = transactions.values()
+            .filter(|tx| tx.status == TransactionStatus::Failed)
+            .count();
+        
+        let total_sent: u64 = transactions.values()
+            .map(|tx| tx.amount_zatoshis)
+            .sum();
+        let total_fees: u64 = transactions.values()
+            .map(|tx| tx.fee_zatoshis)
+            .sum();
+        
+        TransactionStatistics {
+            total_count,
+            pending_count,
+            confirmed_count,
+            failed_count,
+            total_sent_zatoshis: total_sent,
+            total_fees_zatoshis: total_fees,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransactionStatistics {
+    pub total_count: usize,
+    pub pending_count: usize,
+    pub confirmed_count: usize,
+    pub failed_count: usize,
+    pub total_sent_zatoshis: u64,
+    pub total_fees_zatoshis: u64,
 }

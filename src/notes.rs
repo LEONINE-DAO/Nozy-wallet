@@ -80,7 +80,6 @@ pub struct NoteScanResult {
 
 pub struct NoteScanner {
     wallet: HDWallet,
-    #[allow(dead_code)]
     zebra_client: ZebraClient,
 }
 
@@ -105,7 +104,6 @@ impl NoteScanner {
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e)))?;
             
         let orchard_fvk = FullViewingKey::from(&orchard_sk);
-        // CRITICAL FIX: Check both External and Internal scopes
         let orchard_ivk_external = orchard_fvk.to_ivk(orchard::keys::Scope::External);
         let orchard_ivk_internal = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
         
@@ -119,7 +117,6 @@ impl NoteScanner {
             
             match self.get_block_transactions(height).await {
                 Ok(transactions) => {
-                    // Try External scope first
                     match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_external, &orchard_sk, height, orchard::keys::Scope::External) {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
@@ -133,7 +130,6 @@ impl NoteScanner {
                         }
                     }
                     
-                    // Try Internal scope
                     match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_internal, &orchard_sk, height, orchard::keys::Scope::Internal) {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
@@ -293,77 +289,35 @@ impl NoteScanner {
     }
     
     async fn get_block_transactions(&self, height: u32) -> NozyResult<Vec<ParsedTransaction>> {
-        use serde_json::json;
-        use reqwest::Client;
+        let block_hash = self.zebra_client.get_block_hash(height).await?;
+        let block_data = self.zebra_client.get_block_by_hash(&block_hash, 2).await?;
         
-        let zebra_url = "http://127.0.0.1:8232";
-        
-        let hash_request = json!({
-            "jsonrpc": "2.0",
-            "id": "getblockhash",
-            "method": "getblockhash",
-            "params": [height]
-        });
-        
-        let client = Client::new();
-        let hash_response = client
-            .post(zebra_url)
-            .header("Content-Type", "application/json")
-            .json(&hash_request)
-            .send()
-            .await
-            .map_err(|e| NozyError::InvalidOperation(format!("Failed to get block hash: {}", e)))?;
-            
-        let hash_text = hash_response.text()
-            .await
-            .map_err(|e| NozyError::InvalidOperation(format!("Failed to read hash response: {}", e)))?;
-            
-        let hash_json: serde_json::Value = serde_json::from_str(&hash_text)
-            .map_err(|e| NozyError::InvalidOperation(format!("Failed to parse hash JSON: {}", e)))?;
-            
-        let block_hash = hash_json["result"].as_str()
-            .ok_or_else(|| NozyError::InvalidOperation("No block hash in response".to_string()))?;
-        
-        let block_request = json!({
-            "jsonrpc": "2.0",
-            "id": "getblock",
-            "method": "getblock",
-            "params": [block_hash, 2]
-        });
-        
-        let block_response = client
-            .post(zebra_url)
-            .header("Content-Type", "application/json")
-            .json(&block_request)
-            .send()
-            .await
-            .map_err(|e| NozyError::InvalidOperation(format!("Failed to get block: {}", e)))?;
-            
-        let block_text = block_response.text()
-            .await
-            .map_err(|e| NozyError::InvalidOperation(format!("Failed to read block response: {}", e)))?;
-            
-        let block_json: serde_json::Value = serde_json::from_str(&block_text)
-            .map_err(|e| NozyError::InvalidOperation(format!("Failed to parse block JSON: {}", e)))?;
+        let block_json: serde_json::Value = serde_json::to_value(&block_data)
+            .map_err(|e| NozyError::InvalidOperation(format!("Failed to serialize block data: {}", e)))?;
         
         let mut transactions = Vec::new();
         
-        if let Some(tx_array) = block_json["result"]["tx"].as_array() {
+        if let Some(tx_array) = block_json.get("tx").and_then(|v| v.as_array()) {
             for (i, tx) in tx_array.iter().enumerate() {
-                if let Some(txid) = tx["txid"].as_str() {
-                    let has_orchard = tx["orchard"].is_object() && !tx["orchard"]["actions"].as_array().unwrap_or(&vec![]).is_empty();
+                if let Some(txid) = tx.get("txid").and_then(|v| v.as_str()) {
+                    let has_orchard = tx.get("orchard")
+                        .and_then(|o| o.as_object())
+                        .and_then(|o| o.get("actions"))
+                        .and_then(|a| a.as_array())
+                        .map(|a| !a.is_empty())
+                        .unwrap_or(false);
                     
                     if has_orchard {
                         println!("🔍 Found Orchard transaction: {} in block {}", txid, height);
                         
-                        let raw_hex = tx["hex"].as_str().unwrap_or("");
+                        let raw_hex = tx.get("hex").and_then(|v| v.as_str()).unwrap_or("");
                         
                         let parsed_tx = ParsedTransaction {
                             txid: txid.to_string(),
                             height,
                             index: i as u32,
                             raw_data: hex::decode(raw_hex).unwrap_or_default(),
-                            orchard_actions: self.parse_orchard_actions_from_json(&tx["orchard"])?,
+                            orchard_actions: self.parse_orchard_actions_from_json(tx.get("orchard").ok_or_else(|| NozyError::InvalidOperation("No orchard data in transaction".to_string()))?)?,
                         };
                         
                         transactions.push(parsed_tx);
@@ -390,7 +344,6 @@ impl NoteScanner {
                 let cv_hex = action["cv"].as_str().unwrap_or("");
                 let rk_hex = action["rk"].as_str().unwrap_or("");
                 
-                // Better error handling for hex decoding
                 let nullifier = hex::decode(nullifier_hex)
                     .map_err(|e| NozyError::InvalidOperation(format!("Failed to decode nullifier hex: {}", e)))?;
                 let cmx = hex::decode(cmx_hex)
@@ -421,7 +374,6 @@ impl NoteScanner {
                     nullifier_bytes.copy_from_slice(&nullifier);
                     cmx_bytes.copy_from_slice(&cmx);
                     ephemeral_key_bytes.copy_from_slice(&ephemeral_key);
-                    // Use first 580 bytes of enc_ciphertext, or pad if shorter
                     let enc_len = enc_ciphertext.len().min(580);
                     encrypted_note_bytes[..enc_len].copy_from_slice(&enc_ciphertext[..enc_len]);
                     enc_ciphertext_bytes.copy_from_slice(&out_ciphertext);
@@ -484,7 +436,6 @@ impl NoteScanner {
                             spendable_notes.push(spendable);
                         },
                         Ok(None) => {
-                            // Note doesn't belong to this IVK, continue silently
                         },
                         Err(e) => {
                             eprintln!("Warning: Failed to decrypt action in {} (scope: {:?}): {}", tx.txid, scope, e);
@@ -511,28 +462,17 @@ pub struct OrchardActionData {
 
 pub async fn scan_real_notes(
     zebra_client: &ZebraClient,
-    _wallet: &HDWallet,
+    wallet: &HDWallet,
     start_height: u32,
     end_height: u32,
 ) -> NozyResult<Vec<SpendableNote>> {
     println!("🔍 Scanning blockchain for Orchard notes from height {} to {}", start_height, end_height);
     
-    let spendable_notes = Vec::new();
-    
-    for height in start_height..=end_height {
-        let _block_data = zebra_client.get_block(height).await?;
-        
-        
-        println!("📦 Scanning block {} (placeholder)", height);
-    }
+    let mut scanner = NoteScanner::new(wallet.clone(), zebra_client.clone());
+    let (_, spendable_notes) = scanner.scan_notes(Some(start_height), Some(end_height)).await?;
     
     println!("✅ Note scanning completed. Found {} spendable notes", spendable_notes.len());
     Ok(spendable_notes)
 }
 
-#[allow(dead_code)]
-fn try_decrypt_orchard_notes(_transactions: &[ParsedTransaction]) -> Vec<OrchardNote> {
-    
-    Vec::new()
-}
 

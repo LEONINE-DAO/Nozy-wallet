@@ -84,3 +84,13 @@ pub fn update_last_scan_height(height: u32) -> NozyResult<()> {
     config.last_scan_height = Some(height);
     save_config(&config)
 }
+
+/// Ensure the config is set to use the local Zebra node
+pub fn ensure_local_zebra_node() -> NozyResult<()> {
+    let mut config = load_config();
+    if config.zebra_url != "http://127.0.0.1:8232" && !config.zebra_url.contains("127.0.0.1") && !config.zebra_url.contains("localhost") {
+        config.zebra_url = "http://127.0.0.1:8232".to_string();
+        save_config(&config)?;
+    }
+    Ok(())
+}

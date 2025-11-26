@@ -217,8 +217,6 @@ impl ZebraClient {
 
     /// Get the current Orchard tree state at the given height
     pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
-        // This would call a real Zebra RPC method to get Orchard tree state
-        // For now, return a placeholder that would be replaced with real RPC call
         let response = self.make_rpc_call("z_getorchardtree", json!([height])).await?;
         
         let anchor_hex = response["anchor"].as_str()
@@ -239,8 +237,6 @@ impl ZebraClient {
 
     /// Find the position of a note in the Orchard commitment tree
     pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
-        // This would call a real Zebra RPC method to find note position
-        // For now, return a placeholder that would be replaced with real RPC call
         let commitment_hex = hex::encode(commitment_bytes);
         let response = self.make_rpc_call("z_findnoteposition", json!([commitment_hex])).await?;
         
@@ -249,8 +245,6 @@ impl ZebraClient {
 
     /// Get the authentication path for a note position
     pub async fn get_authentication_path(&self, position: u32, anchor: &[u8; 32]) -> NozyResult<Vec<[u8; 32]>> {
-        // This would call a real Zebra RPC method to get auth path
-        // For now, return a placeholder that would be replaced with real RPC call
         let anchor_hex = hex::encode(anchor);
         let response = self.make_rpc_call("z_getauthpath", json!([position, anchor_hex])).await?;
         

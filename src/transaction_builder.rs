@@ -104,75 +104,18 @@ impl ZcashTransactionBuilder {
         Ok(hex::encode(txid_bytes))
     }
     
-    pub async fn broadcast_transaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
+    pub async fn broadcast_transaction(
+        &self,
+        zebra_client: &ZebraClient,
+        transaction: &SignedTransaction,
+    ) -> NozyResult<String> {
         if !self.allow_mainnet_broadcast {
             return Err(NozyError::InvalidOperation(
                 "Broadcasting disabled".to_string()
             ));
         }
         
-        
-        match self.call_zebra_sendrawtransaction(transaction).await {
-            Ok(network_txid) => {
-                Ok(network_txid)
-            },
-            Err(e) => {
-                Err(e)
-            }
-        }
-    }
-    
-    async fn call_zebra_sendrawtransaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
-        use reqwest::Client;
-        use serde_json::json;
-        
-        let zebra_url = &self.zebra_url;
         let raw_tx_hex = hex::encode(&transaction.raw_transaction);
-        
-        
-        let rpc_request = json!({
-            "jsonrpc": "2.0",
-            "id": "nozy-wallet",
-            "method": "sendrawtransaction", 
-            "params": [raw_tx_hex]
-        });
-        
-        let client = Client::new();
-        let response = client
-            .post(zebra_url)
-            .header("Content-Type", "application/json")
-            .json(&rpc_request)
-            .send()
-            .await
-            .map_err(|e| NozyError::InvalidOperation(format!("Connection failed: {}", e)))?;
-            
-        if !response.status().is_success() {
-            return Err(NozyError::InvalidOperation(
-                format!("HTTP error: {}", response.status())
-            ));
-        }
-        
-        let response_text = response
-            .text()
-            .await
-            .map_err(|e| NozyError::InvalidOperation(format!("Response read error: {}", e)))?;
-            
-        
-        let json_response: serde_json::Value = serde_json::from_str(&response_text)
-            .map_err(|e| NozyError::InvalidOperation(format!("JSON parse error: {}", e)))?;
-            
-        if let Some(error) = json_response.get("error") {
-            return Err(NozyError::InvalidOperation(
-                format!("Zebra RPC error: {}", error)
-            ));
-        }
-        
-        if let Some(result) = json_response.get("result") {
-            if let Some(txid) = result.as_str() {
-                return Ok(txid.to_string());
-            }
-        }
-        
-        Ok(transaction.txid.clone())
+        zebra_client.broadcast_transaction(&raw_tx_hex).await
     }
 } 
