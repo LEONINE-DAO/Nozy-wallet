@@ -3,6 +3,7 @@ use crate::hd_wallet::HDWallet;
 use crate::zebra_integration::ZebraClient;
 use crate::block_parser::ParsedTransaction;
 use serde::{Serialize, Deserialize};
+use indicatif::{ProgressBar, ProgressStyle};
 
 use orchard::{
     keys::{SpendingKey, FullViewingKey, IncomingViewingKey},
@@ -92,10 +93,37 @@ impl NoteScanner {
     }
 
     pub async fn scan_notes(&mut self, start_height: Option<u32>, end_height: Option<u32>) -> NozyResult<(NoteScanResult, Vec<SpendableNote>)> {
-        let start_height = start_height.unwrap_or(3050000);
-        let end_height = end_height.unwrap_or(start_height + 100);
+        let start_height = if let Some(start) = start_height {
+            start
+        } else {
+            3050000
+        };
         
-        println!("Scanning blocks {} to {} for Orchard notes...", start_height, end_height);
+        let end_height = if let Some(end) = end_height {
+            end
+        } else {
+            match self.zebra_client.get_block_count().await {
+                Ok(tip) => {
+                    let max_scan = start_height + 1000;
+                    tip.min(max_scan)
+                },
+                Err(_) => start_height + 100, 
+            }
+        };
+        
+        let start_height = start_height.min(end_height);
+        
+        let total_blocks = (end_height - start_height + 1) as u64;
+        println!("Scanning blocks {} to {} for Orchard notes... ({} blocks)", start_height, end_height, total_blocks);
+        
+        let pb = ProgressBar::new(total_blocks);
+        pb.set_style(
+            ProgressStyle::default_bar()
+                .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} blocks ({percent}%) | {msg}")
+                .unwrap()
+                .progress_chars("#>-")
+        );
+        pb.set_message("Scanning blocks...");
         
         let account_id = AccountId::try_from(0).map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
         let mnemonic = self.wallet.get_mnemonic_object();
@@ -107,53 +135,72 @@ impl NoteScanner {
         let orchard_ivk_external = orchard_fvk.to_ivk(orchard::keys::Scope::External);
         let orchard_ivk_internal = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
         
-        println!("🔑 Generated scanning keys from wallet mnemonic (checking both External and Internal scopes)");
+        pb.println("🔑 Generated scanning keys from wallet mnemonic (checking both External and Internal scopes)");
         
         let mut all_notes = Vec::new();
         let mut spendable_notes = Vec::new();
         
         for height in start_height..=end_height {
-            println!("Scanning block {}...", height);
+            pb.set_message(format!("Block {}", height));
             
             match self.get_block_transactions(height).await {
                 Ok(transactions) => {
                     match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_external, &orchard_sk, height, orchard::keys::Scope::External) {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
-                                println!("🎉 Found {} notes in block {} (External scope)", block_notes.len(), height);
+                                pb.println(format!("🎉 Found {} notes in block {} (External scope)", block_notes.len(), height));
                             }
                             all_notes.append(&mut block_notes);
                             spendable_notes.append(&mut block_spendable);
                         },
                         Err(e) => {
-                            eprintln!("Warning: Failed to decrypt External scope notes in block {}: {}", height, e);
+                            if !transactions.is_empty() {
+                                pb.println(format!("⚠️  Warning: Failed to decrypt External scope notes in block {}: {}", height, e));
+                            }
                         }
                     }
                     
                     match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_internal, &orchard_sk, height, orchard::keys::Scope::Internal) {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
-                                println!("🎉 Found {} notes in block {} (Internal scope)", block_notes.len(), height);
+                                pb.println(format!("🎉 Found {} notes in block {} (Internal scope)", block_notes.len(), height));
                             }
                             all_notes.append(&mut block_notes);
                             spendable_notes.append(&mut block_spendable);
                         },
                         Err(e) => {
-                            eprintln!("Warning: Failed to decrypt Internal scope notes in block {}: {}", height, e);
+                            if !transactions.is_empty() {
+                                pb.println(format!("⚠️  Warning: Failed to decrypt Internal scope notes in block {}: {}", height, e));
+                            }
                         }
                     }
                 },
                 Err(e) => {
-                    eprintln!("Warning: Failed to get block {}: {}", height, e);
+                    pb.println(format!("⚠️  Warning: Failed to get block {}: {}", height, e));
                 }
+            }
+            
+            pb.inc(1);
+        }
+        
+        pb.finish_with_message("Scanning complete!");
+        
+        let mut unique_notes = Vec::new();
+        let mut seen_nullifiers = std::collections::HashSet::new();
+        
+        for note in &all_notes {
+            let nullifier_bytes = note.nullifier.to_bytes();
+            if !seen_nullifiers.contains(&nullifier_bytes) {
+                seen_nullifiers.insert(nullifier_bytes);
+                unique_notes.push(note.clone());
             }
         }
         
-        let total_balance = all_notes.iter().filter(|n| !n.spent).map(|n| n.value).sum();
-        let unspent_count = all_notes.iter().filter(|n| !n.spent).count();
+        let total_balance = unique_notes.iter().filter(|n| !n.spent).map(|n| n.value).sum();
+        let unspent_count = unique_notes.iter().filter(|n| !n.spent).count();
         let spendable_count = spendable_notes.len();
         
-        let serializable_notes: Vec<SerializableOrchardNote> = all_notes.iter().map(|n| n.into()).collect();
+        let serializable_notes: Vec<SerializableOrchardNote> = unique_notes.iter().map(|n| n.into()).collect();
         
         let result = NoteScanResult {
             notes: serializable_notes,

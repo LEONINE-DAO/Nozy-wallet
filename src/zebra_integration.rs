@@ -460,6 +460,64 @@ impl ZebraClient {
        
         Ok(serde_json::json!({"raw": raw_tx}))
     }
+
+    pub async fn get_transaction_info(&self, txid: &str) -> NozyResult<TransactionInfo> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getrawtransaction",
+            "params": [txid, true],
+            "id": 1
+        });
+
+        let response: ZebraResponse<serde_json::Value> = self.make_request(request).await?;
+        
+        if let Some(error) = response.error {
+            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+        }
+
+        let tx_data = response.result
+            .ok_or_else(|| NozyError::InvalidOperation("No transaction data in response".to_string()))?;
+
+        let block_height = tx_data.get("blockheight")
+            .and_then(|v| v.as_u64())
+            .map(|h| h as u32);
+        
+        let block_hash = tx_data.get("blockhash")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        let confirmations = if let Some(height) = block_height {
+            let current_height = self.get_block_count().await.unwrap_or(0);
+            current_height.saturating_sub(height) + 1
+        } else {
+            0
+        };
+
+        Ok(TransactionInfo {
+            txid: txid.to_string(),
+            block_height,
+            block_hash,
+            confirmations,
+            in_mempool: block_height.is_none(),
+        })
+    }
+
+    pub async fn check_transaction_exists(&self, txid: &str) -> NozyResult<bool> {
+        match self.get_transaction_info(txid).await {
+            Ok(_) => Ok(true),
+            Err(NozyError::InvalidOperation(msg)) if msg.contains("No transaction") => Ok(false),
+            Err(e) => Err(e),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TransactionInfo {
+    pub txid: String,
+    pub block_height: Option<u32>,
+    pub block_hash: Option<String>,
+    pub confirmations: u32,
+    pub in_mempool: bool,
 }
 
 #[derive(Debug, Clone)]
