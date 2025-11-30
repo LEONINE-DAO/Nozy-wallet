@@ -1,6 +1,6 @@
 # NozyWallet - Privacy-Focused Zcash Wallet
 
-A modern, privacy-focused Zcash wallet built in Rust with support for Orchard shielded transactions.
+NozyWallet is a Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security. Built in Rust with support for Orchard shielded transactions, it provides complete financial privacy with secure key management and seamless integration with the Zcash ecosystem.
 
 ## 🚀 Features
 

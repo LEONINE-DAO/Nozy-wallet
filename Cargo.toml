@@ -2,6 +2,10 @@
 name = "nozy"
 version = "0.1.0"
 edition = "2021"
+description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
+authors = ["LEONINE-DAO"]
+license = "MIT"
+repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
 
 [dependencies]
 # Async runtime
