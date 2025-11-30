@@ -28,6 +28,7 @@ chrono = { version = "0.4.42", features = ["serde"] }
 # CLI
 clap = { version = "4.0", features = ["derive"] }
 dialoguer = "0.11"
+indicatif = "0.17"
 
 # Error handling
 thiserror = "1.0"
@@ -64,3 +65,7 @@ path = "src/main.rs"
 [[bin]]
 name = "benchmark"
 path = "src/bin/benchmark.rs"
+
+[[bin]]
+name = "check_wallet_password"
+path = "src/bin/check_wallet_password.rs"
