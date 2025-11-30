@@ -41,3 +41,4 @@ push_url_update.ps1
 # Documentation files (temporary, exclude from commits)
 *.md
 !README.md
+!api-server/*.md
