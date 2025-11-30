@@ -64,7 +64,6 @@ pub fn load_config() -> WalletConfig {
 pub fn save_config(config: &WalletConfig) -> NozyResult<()> {
     let config_path = get_wallet_config_path();
     
-    // Ensure parent directory exists
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| NozyError::Storage(format!("Failed to create config directory: {}", e)))?;
@@ -85,7 +84,6 @@ pub fn update_last_scan_height(height: u32) -> NozyResult<()> {
     save_config(&config)
 }
 
-/// Ensure the config is set to use the local Zebra node
 pub fn ensure_local_zebra_node() -> NozyResult<()> {
     let mut config = load_config();
     if config.zebra_url != "http://127.0.0.1:8232" && !config.zebra_url.contains("127.0.0.1") && !config.zebra_url.contains("localhost") {

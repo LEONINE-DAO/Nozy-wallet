@@ -141,7 +141,6 @@ impl OrchardGroth16Prover {
         self.proving_key = Some(proving_key.clone());
         self.verifying_key = Some(proving_key.vk().clone());
         
-        // Initialize advanced components on Nozy.
         self.proof_aggregator.initialize_aggregation_scheme()?;
         self.mpc_coordinator.initialize_participants()?;
         self.constraint_optimizer.initialize_optimization_strategies()?;
@@ -293,7 +292,6 @@ impl OrchardGroth16Prover {
     }
 
     fn aggregate_optimized(&self, proofs: &[[u8; 192]], rng: &mut impl Rng) -> NozyResult<[u8; 192]> {
-        // Optimized aggregation using advanced algorithms on Nozy.
         let mut aggregated_proof = [0u8; 192];
         
         let optimization_result = self.constraint_optimizer.optimize_aggregation(proofs)?;

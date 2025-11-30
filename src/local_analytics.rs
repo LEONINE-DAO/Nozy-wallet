@@ -5,7 +5,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-/// Privacy-focused local analytics
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LocalAnalytics {
     pub commands_executed: HashMap<String, u64>,
@@ -222,7 +221,6 @@ impl LocalAnalytics {
     }
 }
 
-/// Anonymized data structure for optional development insights
 #[derive(Debug, Serialize, Deserialize)]
 struct AnonymizedData {
     total_sessions: u64,

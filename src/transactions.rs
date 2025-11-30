@@ -41,11 +41,11 @@ impl TransactionBuilder {
         let tx_hash = hasher.finalize();
         
         let mut raw_transaction = Vec::new();
-        raw_transaction.extend_from_slice(&5u32.to_le_bytes()); // Version 5 (Orchard)
-        raw_transaction.extend_from_slice(&0u32.to_le_bytes()); // Lock time
-        raw_transaction.extend_from_slice(&amount.to_le_bytes()); // Amount
-        raw_transaction.extend_from_slice(&fee.to_le_bytes()); // Fee
-        raw_transaction.extend_from_slice(recipient.as_bytes()); // Recipient
+        raw_transaction.extend_from_slice(&5u32.to_le_bytes()); 
+        raw_transaction.extend_from_slice(&0u32.to_le_bytes()); 
+        raw_transaction.extend_from_slice(&amount.to_le_bytes()); 
+        raw_transaction.extend_from_slice(&fee.to_le_bytes()); 
+        raw_transaction.extend_from_slice(recipient.as_bytes()); 
         
         Ok(SignedTransaction {
             raw_transaction,

@@ -95,7 +95,6 @@ impl ZebraClient {
         
         let mut orchard_actions = Vec::new();
         
-        // Parse Orchard actions from transaction
         if let Some(vjoinsplit) = response["vjoinsplit"].as_array() {
             for js in vjoinsplit {
                 if let Some(orchard) = js["orchard"].as_object() {
@@ -215,7 +214,6 @@ impl ZebraClient {
         Ok(())
     }
 
-    /// Get the current Orchard tree state at the given height
     pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
         let response = self.make_rpc_call("z_getorchardtree", json!([height])).await?;
         
@@ -235,7 +233,6 @@ impl ZebraClient {
         })
     }
 
-    /// Find the position of a note in the Orchard commitment tree
     pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
         let commitment_hex = hex::encode(commitment_bytes);
         let response = self.make_rpc_call("z_findnoteposition", json!([commitment_hex])).await?;
@@ -243,7 +240,6 @@ impl ZebraClient {
         Ok(response["position"].as_u64().unwrap_or(0) as u32)
     }
 
-    /// Get the authentication path for a note position
     pub async fn get_authentication_path(&self, position: u32, anchor: &[u8; 32]) -> NozyResult<Vec<[u8; 32]>> {
         let anchor_hex = hex::encode(anchor);
         let response = self.make_rpc_call("z_getauthpath", json!([position, anchor_hex])).await?;

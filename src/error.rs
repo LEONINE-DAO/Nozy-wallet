@@ -43,7 +43,6 @@ pub enum NozyError {
 }
 
 impl NozyError {
-    /// Create a user-friendly error message with context
     pub fn with_context(self, context: &str) -> Self {
         match self {
             NozyError::KeyDerivation(msg) => NozyError::KeyDerivation(format!("{}: {}", context, msg)),
@@ -62,7 +61,6 @@ impl NozyError {
         }
     }
     
-    /// Get a user-friendly error message with suggestions
     pub fn user_friendly_message(&self) -> String {
         match self {
             NozyError::NetworkError(_) => {

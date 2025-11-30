@@ -188,7 +188,7 @@ impl NoteDataParser {
                 for spending_key in spending_keys {
                     if let Ok(note_data) = self.parse_orchard_note(action, transaction, spending_key) {
                         notes.push(note_data);
-                        break; // Found the right key, move to next action
+                        break; 
                     }
                 }
             }
