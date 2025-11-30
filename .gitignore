@@ -29,10 +29,9 @@ wallet_data/
 .env
 .env.local
 
-# Frontend/Mobile/API work (DO NOT COMMIT)
+# Frontend/Mobile work (DO NOT COMMIT)
 frontend/
 mobile/
-api-server/
 src-tauri/
 tauri-reference/
 react-native-0.73.11/
