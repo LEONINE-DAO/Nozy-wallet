@@ -16,12 +16,16 @@ pub mod local_analytics;
 pub mod config;
 pub mod paths;
 pub mod transaction_history;
+pub mod transaction_tracker;
+pub mod note_sync;
+pub mod note_index;
+pub mod address_book;
 #[cfg(test)]
 pub mod tests;
 
 pub use error::{NozyError, NozyResult};
 pub use hd_wallet::HDWallet;
-pub use notes::{NoteScanner, SpendableNote, NoteScanResult, OrchardNote};
+pub use notes::{NoteScanner, SpendableNote, NoteScanResult, OrchardNote, SerializableOrchardNote};
 pub use storage::{WalletStorage, WalletData};
 pub use transactions::{TransactionBuilder, TransactionDetails, SignedTransaction};
 pub use zebra_integration::ZebraClient;
@@ -31,3 +35,8 @@ pub use rpc_test::RpcTester;
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
 pub use paths::{get_wallet_data_dir, get_wallet_config_dir, get_wallet_data_path, get_wallet_config_path};
 pub use transaction_history::{SentTransactionRecord, TransactionView, TransactionType, TransactionStatus};
+pub use transaction_tracker::TransactionConfirmationTracker;
+pub use note_sync::{NoteSyncManager, SyncResult};
+pub use note_index::NoteIndex;
+pub use address_book::{AddressBook, AddressEntry};
+pub use cli_helpers::estimate_transaction_fee;
