@@ -442,6 +442,144 @@ impl SentTransactionStorage {
         
         Ok(updated)
     }
+
+    pub async fn check_transaction_confirmation(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+        txid: &str,
+    ) -> NozyResult<bool> {
+        match zebra_client.get_transaction_info(txid).await {
+            Ok(tx_info) => {
+                if let Some(block_height) = tx_info.block_height {
+                    let current_height = zebra_client.get_block_count().await.unwrap_or(0);
+                    
+                    let block_time = if let Ok(block_data) = zebra_client.get_block(block_height).await {
+                        if let Some(time) = block_data.get("time").and_then(|v| v.as_u64()) {
+                            chrono::DateTime::from_timestamp(time as i64, 0)
+                                .unwrap_or_else(|| Utc::now())
+                        } else {
+                            Utc::now()
+                        }
+                    } else {
+                        Utc::now()
+                    };
+                    
+                    let was_updated = self.update_transaction_status(txid, block_height, block_time, current_height)?;
+                    
+                    if was_updated {
+                        let _ = self.mark_spent_notes_for_confirmed_transactions();
+                    }
+                    
+                    return Ok(was_updated);
+                }
+                Ok(false)
+            },
+            Err(_) => {
+                
+                Ok(false)
+            }
+        }
+    }
+
+    pub async fn check_all_pending_transactions(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+    ) -> NozyResult<usize> {
+        let pending = self.get_pending_transactions();
+        let mut updated_count = 0;
+        
+        for tx in pending {
+            if self.check_transaction_confirmation(zebra_client, &tx.txid).await? {
+                updated_count += 1;
+            }
+            
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+        
+        if updated_count > 0 {
+            let _ = self.mark_spent_notes_for_confirmed_transactions();
+        }
+        
+        Ok(updated_count)
+    }
+
+    pub async fn update_confirmations(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+    ) -> NozyResult<usize> {
+        let current_height = zebra_client.get_block_count().await.unwrap_or(0);
+        let mut updated_count = 0;
+        
+        {
+            let mut transactions = self.transactions.lock().unwrap();
+            for tx in transactions.values_mut() {
+                if let Some(block_height) = tx.block_height {
+                    let new_confirmations = current_height.saturating_sub(block_height) + 1;
+                    if new_confirmations != tx.confirmations {
+                        tx.confirmations = new_confirmations;
+                        updated_count += 1;
+                    }
+                }
+            }
+        }
+        
+        if updated_count > 0 {
+            self.save_transactions()?;
+        }
+        
+        Ok(updated_count)
+    }
+
+    pub fn mark_spent_notes_for_confirmed_transactions(&self) -> NozyResult<usize> {
+        use crate::paths::get_wallet_data_dir;
+        use std::fs;
+        
+        let notes_path = get_wallet_data_dir().join("notes.json");
+        if !notes_path.exists() {
+            return Ok(0);
+        }
+        
+        let confirmed_txs: Vec<(String, Vec<String>)> = {
+            let transactions = self.transactions.lock().unwrap();
+            transactions.values()
+                .filter(|tx| tx.status == TransactionStatus::Confirmed)
+                .map(|tx| (tx.txid.clone(), tx.spent_note_ids.clone()))
+                .collect()
+        };
+        
+        if confirmed_txs.is_empty() {
+            return Ok(0);
+        }
+        
+        let content = fs::read_to_string(&notes_path)
+            .map_err(|e| NozyError::Storage(format!("Failed to read notes: {}", e)))?;
+        
+        let mut notes: Vec<crate::notes::SerializableOrchardNote> = serde_json::from_str(&content)
+            .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
+        
+      
+        let spent_nullifiers: std::collections::HashSet<Vec<u8>> = confirmed_txs.iter()
+            .flat_map(|(_, note_ids)| note_ids.iter())
+            .filter_map(|note_id_hex| hex::decode(note_id_hex).ok())
+            .collect();
+        
+        let mut marked_count = 0;
+        for note in &mut notes {
+            if !note.spent && spent_nullifiers.contains(&note.nullifier_bytes) {
+                note.spent = true;
+                marked_count += 1;
+            }
+        }
+        
+        if marked_count > 0 {
+            let serialized = serde_json::to_string_pretty(&notes)
+                .map_err(|e| NozyError::Storage(format!("Failed to serialize notes: {}", e)))?;
+            fs::write(&notes_path, serialized)
+                .map_err(|e| NozyError::Storage(format!("Failed to write notes: {}", e)))?;
+        }
+        
+        Ok(marked_count)
+    }
     
     pub fn mark_transaction_failed(&self, txid: &str) -> NozyResult<bool> {
         let mut updated = false;
@@ -478,7 +616,6 @@ impl SentTransactionStorage {
         transactions.len()
     }
 
-    /// Query transactions with filters
     pub fn query_transactions(
         &self,
         status_filter: Option<TransactionStatus>,
@@ -491,14 +628,12 @@ impl SentTransactionStorage {
         let transactions = self.transactions.lock().unwrap();
         transactions.values()
             .filter(|tx| {
-                // Status filter
                 if let Some(ref status) = status_filter {
                     if tx.status != *status {
                         return false;
                     }
                 }
                 
-                // Amount filters
                 if let Some(min) = min_amount {
                     if tx.amount_zatoshis < min {
                         return false;
@@ -510,7 +645,6 @@ impl SentTransactionStorage {
                     }
                 }
                 
-                // Date filters
                 if let Some(start) = start_date {
                     if tx.created_at < start {
                         return false;
@@ -522,7 +656,6 @@ impl SentTransactionStorage {
                     }
                 }
                 
-                // Recipient filter
                 if let Some(recipient) = recipient_filter {
                     if !tx.recipient_address.contains(recipient) {
                         return false;
@@ -535,7 +668,6 @@ impl SentTransactionStorage {
             .collect()
     }
 
-    /// Get transactions sorted by date (newest first)
     pub fn get_transactions_sorted(&self, limit: Option<usize>) -> Vec<SentTransactionRecord> {
         let mut transactions = self.get_all_transactions();
         transactions.sort_by(|a, b| b.created_at.cmp(&a.created_at));
@@ -547,12 +679,10 @@ impl SentTransactionStorage {
         transactions
     }
 
-    /// Get transactions by recipient
     pub fn get_transactions_by_recipient(&self, recipient: &str) -> Vec<SentTransactionRecord> {
         self.query_transactions(None, None, None, None, None, Some(recipient))
     }
 
-    /// Get transactions in a date range
     pub fn get_transactions_in_range(
         &self,
         start: DateTime<Utc>,
@@ -561,7 +691,6 @@ impl SentTransactionStorage {
         self.query_transactions(None, None, None, Some(start), Some(end), None)
     }
 
-    /// Get total sent amount in a date range
     pub fn get_total_sent_in_range(
         &self,
         start: DateTime<Utc>,
@@ -573,7 +702,6 @@ impl SentTransactionStorage {
             .sum()
     }
 
-    /// Get transaction statistics
     pub fn get_statistics(&self) -> TransactionStatistics {
         let transactions = self.transactions.lock().unwrap();
         let total_count = transactions.len();
