@@ -2,7 +2,7 @@
 
 NozyWallet is a Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security. Built in Rust with support for Orchard shielded transactions, it provides complete financial privacy with secure key management and seamless integration with the Zcash ecosystem.
 
-## 🚀 Features
+## Features
 
 ### ✅ Implemented Features
 
@@ -27,7 +27,7 @@ NozyWallet is a Orchard wallet built for Zebra, delivering the highest level of 
 - **Full Transaction Signing**: Complete bundle authorization and signing
 - **Mainnet Broadcasting**: Production-ready transaction broadcasting
 
-## 📦 Installation
+##  Installation
 
 ### Prerequisites
 
@@ -188,7 +188,7 @@ match result {
 }
 ```
 
-## 🧪 Testing
+##  Testing
 
 ### Run All Tests
 
@@ -245,7 +245,7 @@ src/
 └── tests.rs             # Test suite
 ```
 
-## 🤝 Contributing
+##  Contributing
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
@@ -276,17 +276,18 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 This software is provided "as is" without warranty of any kind. Use at your own risk. Always verify transactions before broadcasting to mainnet.
 
-## 🆘 Support
+## Support
 
 - **Issues**: [GitHub Issues](https://github.com/LEONINE-DAO/Nozy-wallet/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/LEONINE-DAO/Nozy-wallet/discussions)
 - **Documentation**: [Wiki](https://github.com/LEONINE-DAO/Nozy-wallet/wiki)
 
-## 🙏 Acknowledgments
+## Acknowledgments
 
 - [Zcash Foundation](https://zfnd.org/) for the Zcash protocol
 - [Zebra](https://github.com/ZcashFoundation/zebra) for the RPC node
 - [Orchard](https://github.com/zcash/orchard) for shielded transaction support
 
 - [Rust](https://rust-lang.org/) for the amazing language and ecosystem
+
 
