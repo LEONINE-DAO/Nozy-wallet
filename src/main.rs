@@ -56,6 +56,14 @@ pub enum Commands {
         use_local: bool,
         #[arg(long)]
         use_remote: Option<String>,
+        #[arg(long)]
+        use_crosslink: bool,
+        #[arg(long)]
+        use_zebra: bool,
+        #[arg(long)]
+        set_crosslink_url: Option<String>,
+        #[arg(long)]
+        show_backend: bool,
     },
     
     TestZebra {
@@ -202,11 +210,14 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::Sync { start_height, end_height, zebra_url } => {
-            let config = load_config();
-            let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
-            
+            let mut config = load_config();
+
+            if let Some(url) = zebra_url {
+                config.zebra_url = url;
+            }
+
             let (wallet, _storage) = load_wallet().await?;
-            let zebra_client = ZebraClient::new(zebra_url);
+            let zebra_client = ZebraClient::from_config(&config);
             
             let effective_start = if let Some(start) = start_height {
                 Some(start)
@@ -288,9 +299,12 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::Send { recipient, amount, zebra_url, memo } => {
-            let config = load_config();
-            let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
-            
+            let mut config = load_config();
+
+            if let Some(url) = zebra_url {
+                config.zebra_url = url;
+            }
+
             let (wallet, _storage) = load_wallet().await?;
             
             let address_book = AddressBook::new()?;
@@ -322,8 +336,8 @@ async fn main() -> NozyResult<()> {
                     return Err(NozyError::AddressParsing(format!("Invalid recipient address: {}", e)));
                 }
             }
-            
-            let zebra_client = ZebraClient::new(zebra_url.clone());
+
+            let zebra_client = ZebraClient::from_config(&config);
             let network = config.network.clone();
             let is_mainnet = network == "mainnet";
             
@@ -355,7 +369,7 @@ async fn main() -> NozyResult<()> {
             println!("  Proving:   ✅ Ready (Halo 2)");
             
             println!("\n🔍 Scanning for spendable notes...");
-            let spendable_notes = scan_notes_for_sending(wallet, &zebra_url).await?;
+            let spendable_notes = scan_notes_for_sending(wallet, &config.zebra_url).await?;
             
             if spendable_notes.is_empty() {
                 return Err(NozyError::InvalidOperation(
@@ -462,7 +476,7 @@ async fn main() -> NozyResult<()> {
                 Some(fee_zatoshis),
                 memo_bytes_opt.as_deref(),
                 enable_broadcast,
-                &zebra_url,
+                &config.zebra_url,
             ).await {
                 Ok(_) => {
                     let amount_with_fee = amount_zatoshis + fee_zatoshis;
@@ -544,14 +558,70 @@ async fn main() -> NozyResult<()> {
             println!("Mnemonic: {}", wallet.get_mnemonic());
         }
         
-        Commands::Config { set_zebra_url, set_network, use_local, use_remote } => {
+        Commands::Config { 
+            set_zebra_url, 
+            set_network, 
+            use_local, 
+            use_remote,
+            use_crosslink,
+            use_zebra,
+            set_crosslink_url,
+            show_backend,
+        } => {
+            use nozy::BackendKind;
             let mut config = load_config();
+            let mut changed = false;
+            
+            if use_crosslink {
+                config.backend = BackendKind::Crosslink;
+                save_config(&config)?;
+                println!("✅ Backend switched to: Crosslink");
+                println!("🔗 NozyWallet will now use Zebra Crosslink node");
+                changed = true;
+            }
+            
+            if use_zebra {
+                config.backend = BackendKind::Zebra;
+                save_config(&config)?;
+                println!("✅ Backend switched to: Zebra (standard)");
+                println!("🔗 NozyWallet will now use standard Zebra node");
+                changed = true;
+            }
+            
+            if let Some(ref url) = set_crosslink_url {
+                config.crosslink_url = url.clone();
+                save_config(&config)?;
+                println!("✅ Crosslink URL set to: {}", url);
+                changed = true;
+            }
+            
+            if show_backend {
+                println!("Current Backend Configuration:");
+                println!("{}", "=".repeat(50));
+                match config.backend {
+                    BackendKind::Zebra => {
+                        println!("  Backend: Zebra (standard)");
+                        println!("  Zebra URL: {}", config.zebra_url);
+                    },
+                    BackendKind::Crosslink => {
+                        println!("  Backend: Crosslink (experimental)");
+                        if config.crosslink_url.is_empty() {
+                            println!("  Crosslink URL: {} (using zebra_url as fallback)", config.zebra_url);
+                        } else {
+                            println!("  Crosslink URL: {}", config.crosslink_url);
+                        }
+                    },
+                }
+                println!("  Network: {}", config.network);
+                return Ok(());
+            }
             
             if use_local {
                 config.zebra_url = "http://127.0.0.1:8232".to_string();
                 save_config(&config)?;
                 println!("✅ Zebra URL set to local node: http://127.0.0.1:8232");
                 println!("🔗 NozyWallet will now connect to your local Zebra node");
+                changed = true;
             }
             
             if let Some(ref remote_url) = use_remote {
@@ -566,26 +636,41 @@ async fn main() -> NozyResult<()> {
                 save_config(&config)?;
                 println!("✅ Zebra URL set to remote node: {}", normalized);
                 println!("🔗 NozyWallet will now connect to the remote node");
+                changed = true;
             }
             
             if let Some(ref url) = set_zebra_url {
                 config.zebra_url = url.clone();
                 save_config(&config)?;
                 println!("✅ Zebra URL set to: {}", url);
+                changed = true;
             }
             
             if let Some(ref network) = set_network {
                 config.network = network.clone();
                 save_config(&config)?;
                 println!("✅ Network set to: {}", network);
+                changed = true;
             }
             
-            if !use_local && use_remote.is_none() && set_zebra_url.is_none() && set_network.is_none() {
+            if !changed {
                 println!("Current configuration:");
+                println!("{}", "=".repeat(50));
+                match config.backend {
+                    BackendKind::Zebra => {
+                        println!("  Backend: Zebra (standard)");
+                    },
+                    BackendKind::Crosslink => {
+                        println!("  Backend: Crosslink (experimental) ⚠️");
+                    },
+                }
                 println!("  Zebra URL: {}", config.zebra_url);
+                if !config.crosslink_url.is_empty() {
+                    println!("  Crosslink URL: {}", config.crosslink_url);
+                }
                 let is_local = config.zebra_url.contains("127.0.0.1") || config.zebra_url.contains("localhost");
                 if is_local {
-                    println!("    ✅ Connected to local Zebra node");
+                    println!("    ✅ Connected to local node");
                 } else {
                     println!("    🌐 Connected to remote node");
                 }
@@ -596,33 +681,59 @@ async fn main() -> NozyResult<()> {
                     println!("  Last scanned height: (none)");
                 }
                 println!("\nTo change settings:");
-                println!("  nozy config --use-local                    # Connect to local Zebra node");
-                println!("  nozy config --use-remote <host:port>       # Connect to remote node (e.g., zec.leoninedao.org:443)");
-                println!("  nozy config --set-zebra-url <url>          # Set custom URL");
-                println!("  nozy config --set-network mainnet|testnet  # Set network");
+                println!("  Backend switching:");
+                println!("    nozy config --use-zebra                    # Use standard Zebra");
+                println!("    nozy config --use-crosslink                 # Use Crosslink (experimental)");
+                println!("    nozy config --set-crosslink-url <url>        # Set Crosslink node URL");
+                println!("    nozy config --show-backend                  # Show backend info");
+                println!("  Node URL:");
+                println!("    nozy config --use-local                     # Connect to local Zebra node");
+                println!("    nozy config --use-remote <host:port>         # Connect to remote node");
+                println!("    nozy config --set-zebra-url <url>           # Set custom URL");
+                println!("  Network:");
+                println!("    nozy config --set-network mainnet|testnet   # Set network");
             }
         }
         
         Commands::TestZebra { zebra_url } => {
-            let config = load_config();
+            let mut config = load_config();
             
-            let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+            if let Some(url) = zebra_url {
+                config.zebra_url = url.clone();
+            }
             
-            println!("🔗 Testing Zebra node connection...");
-            println!("📡 Connecting to: {}", zebra_url);
+            let client = ZebraClient::from_config(&config);
+            let test_url = match config.backend {
+                nozy::BackendKind::Zebra => config.zebra_url.clone(),
+                nozy::BackendKind::Crosslink => {
+                    if config.crosslink_url.is_empty() {
+                        config.zebra_url.clone()
+                    } else {
+                        config.crosslink_url.clone()
+                    }
+                },
+            };
+            
+            println!("🔗 Testing {} node connection...", match config.backend {
+                nozy::BackendKind::Zebra => "Zebra",
+                nozy::BackendKind::Crosslink => "Crosslink",
+            });
+            println!("📡 Connecting to: {}", test_url);
             println!();
-            
-            let client = ZebraClient::new(zebra_url.clone());
             
             match client.test_connection().await {
                 Ok(_) => {
                     println!();
                     println!("🎉 Connection successful!");
-                    let is_local = zebra_url.contains("127.0.0.1") || zebra_url.contains("localhost");
+                    let backend_name = match config.backend {
+                        nozy::BackendKind::Zebra => "Zebra",
+                        nozy::BackendKind::Crosslink => "Crosslink",
+                    };
+                    let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
                     if is_local {
-                        println!("✅ NozyWallet is connected to your local Zebra node");
+                        println!("✅ NozyWallet is connected to your local {} node", backend_name);
                     } else {
-                        println!("✅ NozyWallet is connected to the remote node");
+                        println!("✅ NozyWallet is connected to the remote {} node", backend_name);
                     }
                     println!("✅ Ready to sync and send transactions!");
                     
@@ -644,19 +755,16 @@ async fn main() -> NozyResult<()> {
                     println!("❌ Connection failed!");
                     println!("   Error: {}", e);
                     println!();
-                    let is_local = zebra_url.contains("127.0.0.1") || zebra_url.contains("localhost");
+                    let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
                     if is_local {
                         println!("💡 Troubleshooting steps for local node:");
-                        println!("   1. Make sure Zebra is running on this PC");
-                        println!("   2. Check if RPC is enabled in ~/.config/zebrad.toml:");
-                        println!("      [rpc]");
-                        println!("      listen_addr = \"127.0.0.1:8232\"");
-                        println!("   3. Verify Zebra is listening on port 8232");
-                        println!("   4. Try: zebrad start");
+                        println!("   1. Make sure the node is running on this PC");
+                        println!("   2. Check if RPC is enabled in the node config");
+                        println!("   3. Verify it is listening on {}", test_url);
                     } else {
                         println!("💡 Troubleshooting steps for remote node:");
                         println!("   1. Check if the remote node is accessible");
-                        println!("   2. Verify the URL is correct: {}", zebra_url);
+                        println!("   2. Verify the URL is correct: {}", test_url);
                         println!("   3. Check your internet connection");
                         println!("   4. The node might be temporarily unavailable");
                         println!();
@@ -743,7 +851,7 @@ async fn main() -> NozyResult<()> {
             use nozy::load_config;
             
             let config = load_config();
-            let zebra_client = ZebraClient::new(config.zebra_url);
+            let zebra_client = ZebraClient::from_config(&config);
             let tx_storage = SentTransactionStorage::new()?;
             
             let _ = tx_storage.update_confirmations(&zebra_client).await;
@@ -793,7 +901,7 @@ async fn main() -> NozyResult<()> {
             use nozy::load_config;
             
             let config = load_config();
-            let zebra_client = ZebraClient::new(config.zebra_url);
+            let zebra_client = ZebraClient::from_config(&config);
             let tx_storage = SentTransactionStorage::new()?;
             
             if let Some(txid_str) = txid {
@@ -848,7 +956,7 @@ async fn main() -> NozyResult<()> {
             
             let (wallet, _storage) = load_wallet().await?;
             let config = load_config();
-            let zebra_client = ZebraClient::new(config.zebra_url.clone());
+            let zebra_client = ZebraClient::from_config(&config);
             
             println!("📊 NozyWallet Status Dashboard");
             println!("{}", "=".repeat(60));
@@ -857,7 +965,20 @@ async fn main() -> NozyResult<()> {
             println!("   Mnemonic: {}...", &wallet.get_mnemonic()[..20]);
             
             println!("\n🔗 Connection:");
-            println!("   Zebra URL: {}", config.zebra_url);
+            match config.backend {
+                nozy::BackendKind::Zebra => {
+                    println!("   Backend: Zebra (standard)");
+                    println!("   URL: {}", config.zebra_url);
+                },
+                nozy::BackendKind::Crosslink => {
+                    println!("   Backend: Crosslink (experimental) ⚠️");
+                    if config.crosslink_url.is_empty() {
+                        println!("   URL: {} (using zebra_url)", config.zebra_url);
+                    } else {
+                        println!("   URL: {}", config.crosslink_url);
+                    }
+                },
+            }
             match zebra_client.test_connection().await {
                 Ok(_) => {
                     if let Ok(block_count) = zebra_client.get_block_count().await {

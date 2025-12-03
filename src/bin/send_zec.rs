@@ -1,5 +1,5 @@
 use nozy::{
-    HDWallet, ZebraClient, ZcashTransactionBuilder, NoteScanner
+    HDWallet, ZebraClient, ZcashTransactionBuilder, NoteScanner, load_config,
 };
 use std::io::{self, Write};
 use dialoguer::Password;
@@ -26,11 +26,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🚀 NozyWallet - Send ZEC Transaction\n");
 
     let (hd_wallet, _storage) = load_wallet().await?;
-    let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
+
+    let config = load_config();
+    let zebra_client = ZebraClient::from_config(&config);
     let mut transaction_builder = ZcashTransactionBuilder::new();
     let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
 
-    transaction_builder.set_zebra_url("http://127.0.0.1:8232");
+    transaction_builder.set_zebra_url(&config.zebra_url);
     transaction_builder.enable_mainnet_broadcast();
 
     print!("Enter recipient address: ");

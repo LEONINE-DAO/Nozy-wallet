@@ -3,19 +3,46 @@ use crate::paths::get_wallet_config_path;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
+/// Nozy talking to Zebra & Crosslink 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BackendKind {
+    Zebra,
+    Crosslink,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletConfig {
     #[serde(default = "default_zebra_url")]
     pub zebra_url: String,
+
+   
+    /// If empty, `zebra_url` will be used as a fallback when backend == Crosslink.
+    #[serde(default = "default_crosslink_url")]
+    pub crosslink_url: String,
+
     #[serde(default = "default_network")]
     pub network: String,
+
     pub last_scan_height: Option<u32>,
+
     #[serde(default = "default_theme")]
     pub theme: String,
+
+    
+    /// Defaults to `zebra` to preserve existing behavior.
+    #[serde(default = "default_backend")]
+    pub backend: BackendKind,
 }
 
 fn default_zebra_url() -> String {
     "http://127.0.0.1:8232".to_string()
+}
+
+fn default_crosslink_url() -> String {
+    
+    String::new()
 }
 
 fn default_network() -> String {
@@ -26,13 +53,19 @@ fn default_theme() -> String {
     "dark".to_string()
 }
 
+fn default_backend() -> BackendKind {
+    BackendKind::Zebra
+}
+
 impl Default for WalletConfig {
     fn default() -> Self {
         Self {
             zebra_url: default_zebra_url(),
+            crosslink_url: default_crosslink_url(),
             network: default_network(),
             last_scan_height: None,
             theme: default_theme(),
+            backend: default_backend(),
         }
     }
 }

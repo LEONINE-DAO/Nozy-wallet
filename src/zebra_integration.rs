@@ -1,3 +1,4 @@
+use crate::config::BackendKind;
 use crate::error::{NozyError, NozyResult};
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -7,7 +8,13 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct ZebraClient {
+    
     url: String,
+    /// Nozy is talking to both `Zebra` and `Crosslink` use the same JSON-RPC
+    /// interface from Nozy's perspective, but this flag lets us adapt
+    /// behaviour later (for example, staking-specific calls) without
+    /// changing call sites.
+    backend: BackendKind,
     client: Arc<reqwest::Client>,
 }
 
@@ -24,12 +31,18 @@ struct ZebraError {
 }
 
 impl ZebraClient {
+    
     pub fn new(url: String) -> Self {
+        Self::new_with_backend(url, BackendKind::Zebra)
+    }
+
+  
+    pub fn new_with_backend(url: String, backend: BackendKind) -> Self {
         let url = Self::normalize_url(url);
-        
+
         let is_local = url.contains("127.0.0.1") || url.contains("localhost");
         let timeout_secs = if is_local { 10 } else { 30 };
-        
+
         let client = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_secs))
             .tcp_keepalive(std::time::Duration::from_secs(60))
@@ -38,11 +51,30 @@ impl ZebraClient {
             .danger_accept_invalid_certs(false)
             .build()
             .unwrap_or_else(|_| reqwest::Client::new());
-        
-        Self { 
+
+        Self {
             url,
+            backend,
             client: Arc::new(client),
         }
+    }
+
+   
+    pub fn from_config(config: &crate::config::WalletConfig) -> Self {
+        let (backend, url) = match &config.backend {
+            BackendKind::Zebra => (BackendKind::Zebra, config.zebra_url.clone()),
+            BackendKind::Crosslink => {
+                let url = if !config.crosslink_url.is_empty() {
+                    config.crosslink_url.clone()
+                } else {
+                    
+                    config.zebra_url.clone()
+                };
+                (BackendKind::Crosslink, url)
+            }
+        };
+
+        Self::new_with_backend(url, backend)
     }
     
     fn normalize_url(url: String) -> String {

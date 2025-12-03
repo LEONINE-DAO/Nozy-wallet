@@ -24,6 +24,7 @@ pub mod address_book;
 pub mod tests;
 
 pub use error::{NozyError, NozyResult};
+pub use config::BackendKind;
 pub use hd_wallet::HDWallet;
 pub use notes::{NoteScanner, SpendableNote, NoteScanResult, OrchardNote, SerializableOrchardNote};
 pub use storage::{WalletStorage, WalletData};

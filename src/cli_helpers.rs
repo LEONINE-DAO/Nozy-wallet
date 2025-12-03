@@ -1,5 +1,5 @@
 use crate::error::{NozyError, NozyResult};
-use crate::{HDWallet, WalletStorage, NoteScanner, ZebraClient};
+use crate::{HDWallet, WalletStorage, NoteScanner, ZebraClient, load_config};
 use dialoguer::Password;
 
 
@@ -68,7 +68,9 @@ pub async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
 }
 
 pub async fn scan_notes_for_sending(wallet: HDWallet, zebra_url: &str) -> NozyResult<Vec<crate::SpendableNote>> {
-    let zebra_client = ZebraClient::new(zebra_url.to_string());
+    let mut config = load_config();
+    config.zebra_url = zebra_url.to_string();
+    let zebra_client = ZebraClient::from_config(&config);
     let tip_height = match zebra_client.get_block_count().await {
         Ok(h) => h,
         Err(_e) => {
@@ -77,7 +79,7 @@ pub async fn scan_notes_for_sending(wallet: HDWallet, zebra_url: &str) -> NozyRe
         }
     };
     let start_height = tip_height.saturating_sub(10_000);
-    let mut note_scanner = NoteScanner::new(wallet, ZebraClient::new("http://127.0.0.1:8232".to_string()));
+    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
     
     match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
         Ok((_result, spendable)) => Ok(spendable),
