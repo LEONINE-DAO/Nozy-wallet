@@ -279,7 +279,7 @@ This software is provided "as is" without warranty of any kind. Use at your own 
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/LEONINE-DAO/Nozy-wallet/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/LEONINE-DAO/Nozy-wallet/discussions)
+- **Discussions**: [GitHub Discussions](https://discord.gg/XMmFGvcQ89)
 - **Documentation**: [Wiki](https://github.com/LEONINE-DAO/Nozy-wallet/wiki)
 
 ## Acknowledgments
@@ -289,5 +289,6 @@ This software is provided "as is" without warranty of any kind. Use at your own 
 - [Orchard](https://github.com/zcash/orchard) for shielded transaction support
 
 - [Rust](https://rust-lang.org/) for the amazing language and ecosystem
+
 
 
