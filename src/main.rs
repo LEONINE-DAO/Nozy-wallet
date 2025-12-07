@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand};
 use dialoguer::{Password, Confirm};
-use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient, AddressBook};
+use nozy::{HDWallet, WalletStorage, NozyResult, NozyError, NoteScanner, ZebraClient, AddressBook, ZebraBlockSource, ZebraBlockParser};
+use zeaking::Zeaking;
 use nozy::local_analytics::LocalAnalytics;
 use nozy::cli_helpers::{load_wallet, scan_notes_for_sending, build_and_broadcast_transaction, handle_insufficient_funds_error};
 use nozy::{load_config, save_config, update_last_scan_height};
