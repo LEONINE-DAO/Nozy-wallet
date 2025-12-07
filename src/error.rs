@@ -40,6 +40,12 @@ pub enum NozyError {
     
     #[error("Cryptographic error: {0}")]
     Cryptographic(String),
+    
+    #[error("Insufficient funds: {0}")]
+    InsufficientFunds(String),
+    
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
 }
 
 impl NozyError {
@@ -58,6 +64,8 @@ impl NozyError {
             NozyError::NoteScanning(msg) => NozyError::NoteScanning(format!("{}: {}", context, msg)),
             NozyError::Rpc(msg) => NozyError::Rpc(format!("{}: {}", context, msg)),
             NozyError::Cryptographic(msg) => NozyError::Cryptographic(format!("{}: {}", context, msg)),
+            NozyError::InsufficientFunds(msg) => NozyError::InsufficientFunds(format!("{}: {}", context, msg)),
+            NozyError::InvalidInput(msg) => NozyError::InvalidInput(format!("{}: {}", context, msg)),
         }
     }
     
@@ -78,7 +86,55 @@ impl NozyError {
             NozyError::Storage(_) => {
                 "Storage error. Please check your wallet file permissions and try again.".to_string()
             },
+            NozyError::InsufficientFunds(_) => {
+                "Insufficient funds. Please check your balance and try again.".to_string()
+            },
+            NozyError::InvalidInput(_) => {
+                "Invalid input. Please check your input values and try again.".to_string()
+            },
             _ => format!("An error occurred: {}", self)
+        }
+    }
+    
+    pub fn recovery_suggestions(&self) -> Vec<String> {
+        match self {
+            NozyError::NetworkError(_) => vec![
+                "Check if Zebra node is running: 'zebrad start'",
+                "Verify Zebra RPC URL in config: 'nozy config'",
+                "Check network connectivity",
+                "Try restarting Zebra node",
+            ],
+            NozyError::InsufficientFunds(_) => vec![
+                "Check your balance: 'nozy balance'",
+                "Wait for pending transactions to confirm",
+                "Sync your wallet: 'nozy sync'",
+            ],
+            NozyError::AddressParsing(_) => vec![
+                "Ensure address starts with 'u1' (unified address)",
+                "Verify address is for the correct network (mainnet/testnet)",
+                "Check for typos in the address",
+            ],
+            NozyError::Transaction(_) => vec![
+                "Verify recipient address is correct",
+                "Check transaction amount is valid",
+                "Ensure sufficient funds including fees",
+                "Try again after a few moments",
+            ],
+            NozyError::Storage(_) => vec![
+                "Check wallet file permissions",
+                "Ensure sufficient disk space",
+                "Verify wallet directory is writable",
+            ],
+            NozyError::KeyDerivation(_) => vec![
+                "Verify mnemonic phrase is correct",
+                "Check wallet seed is valid",
+                "Try restoring wallet from mnemonic",
+            ],
+            _ => vec![
+                "Check the error message above for details",
+                "Review your input values",
+                "Try the operation again",
+            ],
         }
     }
 }
