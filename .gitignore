@@ -43,3 +43,8 @@ push_url_update.ps1
 !README.md
 !api-server/*.md
 !CROSSLINK*.md
+!*AUDIT*.md
+!*SECURITY*.md
+
+# mdBook output (but keep source)
+book/book/
