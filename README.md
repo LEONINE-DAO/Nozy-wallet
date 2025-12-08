@@ -1,11 +1,43 @@
-# NozyWallet - Privacy-Focused Zcash Wallet
+# NozyWallet - Privacy by Default
 
-NozyWallet is a Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security. Built in Rust with support for Orchard shielded transactions, it provides complete financial privacy with secure key management and seamless integration with the Zcash ecosystem.
+**Monero-Level Privacy, Zcash Speed**
+
+NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet **only supports shielded transactions** - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees.
+
+## 🚀 NU 6.1 Support - Ready for Network Upgrade 6.1!
+
+**NozyWallet is fully updated and ready for Zcash Network Upgrade 6.1 (NU 6.1)!**
+
+- ✅ **Protocol Version 170140** - Fully compatible with NU 6.1
+- ✅ **Activation Height**: Block 3,146,400 (November 23, 2025)
+- ✅ **Latest Libraries**: Using `zcash_protocol 0.6.2+` and `zcash_primitives 0.24.1+`
+- ✅ **NU 6.1 Features**: ZIP 271, ZIP 1016 support
+
+Check your NU 6.1 status:
+```bash
+nozy nu61
+```
+
+Or see it in your wallet status:
+```bash
+nozy status
+```
+
+## 🔒 Privacy Guarantees
+
+- ✅ **Every transaction is private** - No transparent transactions possible
+- ✅ **Untraceable** - Sender, receiver, and amount are all hidden
+- ✅ **Fungible** - No blacklisted or tainted coins
+- ✅ **Zero-knowledge proofs** - Cryptographically proven privacy
+- ✅ **Privacy by default** - You cannot accidentally compromise your privacy
+
+Just like Monero, but faster and more efficient.
 
 ## Features
 
 ### ✅ Implemented Features
 
+- **NU 6.1 Support**: Fully compatible with Zcash Network Upgrade 6.1 (protocol version 170140)
 - **HD Wallet Support**: Hierarchical deterministic wallet with BIP39 mnemonic support
 - **Password Protection**: Argon2-based password hashing for wallet security
 - **Address Generation**: Generate Orchard addresses for receiving ZEC
