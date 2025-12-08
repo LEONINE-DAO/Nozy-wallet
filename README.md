@@ -21,11 +21,6 @@ NozyWallet is a Orchard wallet built for Zebra, delivering the highest level of 
 - **Merkle Path Construction**: Convert authentication paths to MerkleHashOrchard arrays
 - **Bundle Authorization Framework**: Complete transaction authorization framework
 
-### 🔄 Production Ready
-
-- **Real Proving Parameters**: Download and integrate real Orchard proving parameters
-- **Full Transaction Signing**: Complete bundle authorization and signing
-- **Mainnet Broadcasting**: Production-ready transaction broadcasting
 
 ##  Installation
 
@@ -289,6 +284,7 @@ This software is provided "as is" without warranty of any kind. Use at your own 
 - [Orchard](https://github.com/zcash/orchard) for shielded transaction support
 
 - [Rust](https://rust-lang.org/) for the amazing language and ecosystem
+
 
 
 
