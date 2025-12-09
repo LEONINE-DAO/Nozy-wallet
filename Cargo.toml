@@ -1,6 +1,6 @@
 [package]
 name = "nozy"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
 authors = ["LEONINE-DAO"]
@@ -15,18 +15,25 @@ tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# HTTP client
-reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls"] }
+# HTTP client (with SOCKS proxy support for Tor)
+reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls", "socks"] }
+
+# gRPC support
+tonic = { version = "0.11", features = ["tls", "tls-roots"] }
+prost = "0.13"
+prost-types = "0.13"
 
 # Crypto utilities
 hex = "0.4"
 rand = "0.8"
 sha2 = "0.10"
+ripemd = "0.1"
 aes-gcm = "0.10"
 bech32 = "0.9"
 argon2 = "0.5"
 
 # Time handling
+# Updated to latest version to fix security vulnerabilities (RUSTSEC-2020-0159, RUSTSEC-2024-0395)
 chrono = { version = "0.4", features = ["serde"] }
 
 # CLI
@@ -37,6 +44,18 @@ indicatif = "0.17"
 # Error handling
 thiserror = "1.0"
 
+# Force update tracing-subscriber to fix vulnerability (RUSTSEC-2025-0055)
+# This overrides the version from ark-groth16 dependency tree
+tracing-subscriber = "0.3.20"
+
+# Force update ed25519-dalek to fix vulnerability (RUSTSEC-2022-0093)
+# This overrides the version from tendermint 0.23.8 → cosmrs dependency tree
+ed25519-dalek = "2.1"
+
+# Force update curve25519-dalek to fix vulnerability (RUSTSEC-2024-0344)
+# This overrides the version from ed25519-dalek dependency tree
+curve25519-dalek = "4.1"
+
 # XDG directory support
 directories = "5.0"
 
@@ -44,9 +63,15 @@ directories = "5.0"
 bip32 = "0.5"
 bip39 = "2.1"
 
+# Secret Network / Cosmos SDK support
+secp256k1 = { version = "0.28", features = ["global-context", "rand"] }
+cosmrs = "0.8"
+tendermint = "0.35"
+
 # Official Zcash libraries - using compatible versions that work together
-zcash_primitives = "0.24.0"
-zcash_protocol = "0.6.0"
+# Updated to match Cargo.lock and support NU 6.1 (protocol version 170140)
+zcash_primitives = "0.24.1"
+zcash_protocol = "0.6.2"
 zcash_address = "0.9.0"
 zcash_note_encryption = "0.4.0"
 orchard = "0.11.0"
@@ -61,6 +86,13 @@ ark-serialize = "0.4"
    ark-ec = "0.3"
    ark-bls12-381 = "0.3"
    ark-std = "0.3"
+
+# Zeaking indexing system
+zeaking = { path = "zeaking", version = "0.1.0" }
+async-trait = "0.1"
+
+[workspace]
+members = ["zeaking"]
 
 [[bin]]
 name = "nozy"
