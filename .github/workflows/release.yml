@@ -1,0 +1,171 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'  
+  workflow_dispatch:  
+
+permissions:
+  contents: write
+
+jobs:
+  build-cli:
+    name: Build CLI Binaries
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        target:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: nozy
+            extension: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: nozy.exe
+            extension: ".exe"
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary: nozy
+            extension: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: nozy
+            extension: ""
+    runs-on: ${{ matrix.os.target.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-${{ matrix.target }}-
+
+      - name: Build CLI binary
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin nozy
+
+      - name: Generate SHA256 hash
+        id: hash
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            certutil -hashfile target/${{ matrix.target }}/release/${{ matrix.binary }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > hash.txt
+          else
+            shasum -a 256 target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
+          fi
+          HASH=$(cat hash.txt | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Generated hash: $HASH"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nozy-cli-${{ matrix.target }}${{ matrix.extension }}
+          path: |
+            target/${{ matrix.target }}/release/${{ matrix.binary }}
+            hash.txt
+          retention-days: 90
+
+  build-desktop:
+    name: Build Desktop Installers
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build desktop app
+        run: cargo tauri build --bundles all
+        env:
+          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
+          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
+
+      - name: Generate SHA256 hashes for installers
+        shell: bash
+        run: |
+          cd src-tauri/target/release/bundle
+          find . -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) -exec shasum -a 256 {} \; > ../../hashes.txt || true
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -Command "Get-ChildItem -Recurse -Include *.exe,*.msi | ForEach-Object { certutil -hashfile $_.FullName SHA256 | Select-String -Pattern '^[A-Fa-f0-9]{64}' | Out-File -Append -FilePath ../../hashes.txt }" || true
+          fi
+          cat ../../hashes.txt || echo "No installers found"
+
+      - name: Upload desktop installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: nozy-desktop-${{ runner.os }}
+          path: |
+            src-tauri/target/release/bundle/**/*
+            src-tauri/target/release/hashes.txt
+          retention-days: 90
+
+  create-release:
+    name: Create Release
+    needs: [build-cli, build-desktop]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Generate hashes file
+        run: |
+          echo "# NozyWallet Release Hashes" > RELEASE_HASHES.txt
+          echo "" >> RELEASE_HASHES.txt
+          echo "## SHA256 Hashes" >> RELEASE_HASHES.txt
+          echo "" >> RELEASE_HASHES.txt
+          echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> RELEASE_HASHES.txt
+          echo "Version: ${GITHUB_REF#refs/tags/}" >> RELEASE_HASHES.txt
+          echo "" >> RELEASE_HASHES.txt
+          
+          # Collect all hash files
+          find artifacts -name "hash.txt" -exec cat {} \; >> RELEASE_HASHES.txt || true
+          find artifacts -name "hashes.txt" -exec cat {} \; >> RELEASE_HASHES.txt || true
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            artifacts/**/*
+            RELEASE_HASHES.txt
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
