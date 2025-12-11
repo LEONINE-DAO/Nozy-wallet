@@ -2,6 +2,7 @@ use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use crate::zebra_integration::ZebraClient;
 use crate::block_parser::ParsedTransaction;
+use crate::note_index::NoteIndex;
 use serde::{Serialize, Deserialize};
 use indicatif::{ProgressBar, ProgressStyle};
 
@@ -82,13 +83,66 @@ pub struct NoteScanResult {
 pub struct NoteScanner {
     wallet: HDWallet,
     zebra_client: ZebraClient,
+    /// Optional index for incremental building during scan
+    note_index: Option<NoteIndex>,
 }
 
 impl NoteScanner {
+    /// Create a new NoteScanner without an index.
     pub fn new(wallet: HDWallet, zebra_client: ZebraClient) -> Self {
         Self {
             wallet,
             zebra_client,
+            note_index: None,
+        }
+    }
+
+    /// Create a new NoteScanner with an existing index for incremental updates.
+    /// 
+    /// Useful for resuming scans or loading from persisted index.
+    pub fn with_index(wallet: HDWallet, zebra_client: ZebraClient, index: NoteIndex) -> Self {
+        Self {
+            wallet,
+            zebra_client,
+            note_index: Some(index),
+        }
+    }
+
+    /// Create a new NoteScanner, loading index from file if it exists.
+    /// 
+    /// This enables incremental scanning - new notes are added to the existing index.
+    pub fn with_index_file(wallet: HDWallet, zebra_client: ZebraClient, index_path: &std::path::PathBuf) -> NozyResult<Self> {
+        let index = NoteIndex::load_from_file(index_path)?;
+        Ok(Self {
+            wallet,
+            zebra_client,
+            note_index: Some(index),
+        })
+    }
+
+    /// Get a reference to the index (if any).
+    pub fn get_index(&self) -> Option<&NoteIndex> {
+        self.note_index.as_ref()
+    }
+
+    /// Get a mutable reference to the index (if any).
+    pub fn get_index_mut(&mut self) -> Option<&mut NoteIndex> {
+        self.note_index.as_mut()
+    }
+
+    /// Take ownership of the index.
+    pub fn take_index(self) -> Option<NoteIndex> {
+        self.note_index
+    }
+
+    /// Save the index to file (if an index exists).
+    /// 
+    /// Returns Ok(()) if saved successfully, or if no index exists.
+    pub fn save_index(&self, path: &std::path::PathBuf) -> NozyResult<()> {
+        if let Some(ref index) = self.note_index {
+            index.save_to_file(path)
+        } else {
+            Ok(())
         }
     }
 
@@ -120,7 +174,7 @@ impl NoteScanner {
         pb.set_style(
             ProgressStyle::default_bar()
                 .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} blocks ({percent}%) | {msg}")
-                .unwrap()
+                .unwrap_or_else(|_| ProgressStyle::default_bar())
                 .progress_chars("#>-")
         );
         pb.set_message("Scanning blocks...");
@@ -137,6 +191,8 @@ impl NoteScanner {
         
         pb.println("🔑 Generated scanning keys from wallet mnemonic (checking both External and Internal scopes)");
         
+        // Initialize or get existing index
+        let mut note_index = self.note_index.take().unwrap_or_else(NoteIndex::new);
         let mut all_notes = Vec::new();
         let mut spendable_notes = Vec::new();
         
@@ -149,6 +205,11 @@ impl NoteScanner {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
                                 pb.println(format!("🎉 Found {} notes in block {} (External scope)", block_notes.len(), height));
+                            }
+                            // Add notes to index incrementally
+                            for note in &block_notes {
+                                let serializable: SerializableOrchardNote = note.into();
+                                note_index.add_note(serializable);
                             }
                             all_notes.append(&mut block_notes);
                             spendable_notes.append(&mut block_spendable);
@@ -164,6 +225,11 @@ impl NoteScanner {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
                                 pb.println(format!("🎉 Found {} notes in block {} (Internal scope)", block_notes.len(), height));
+                            }
+                            // Add notes to index incrementally
+                            for note in &block_notes {
+                                let serializable: SerializableOrchardNote = note.into();
+                                note_index.add_note(serializable);
                             }
                             all_notes.append(&mut block_notes);
                             spendable_notes.append(&mut block_spendable);
@@ -185,22 +251,17 @@ impl NoteScanner {
         
         pb.finish_with_message("Scanning complete!");
         
-        let mut unique_notes = Vec::new();
-        let mut seen_nullifiers = std::collections::HashSet::new();
-        
-        for note in &all_notes {
-            let nullifier_bytes = note.nullifier.to_bytes();
-            if !seen_nullifiers.contains(&nullifier_bytes) {
-                seen_nullifiers.insert(nullifier_bytes);
-                unique_notes.push(note.clone());
-            }
-        }
-        
-        let total_balance = unique_notes.iter().filter(|n| !n.spent).map(|n| n.value).sum();
-        let unspent_count = unique_notes.iter().filter(|n| !n.spent).count();
+        // Use index for deduplication and statistics (more efficient than manual dedup)
+        // Note: index already contains all unique notes from incremental adds
+        let total_balance = note_index.total_balance();
+        let unspent_count = note_index.unspent_count();
         let spendable_count = spendable_notes.len();
         
-        let serializable_notes: Vec<SerializableOrchardNote> = unique_notes.iter().map(|n| n.into()).collect();
+        // Get all notes from index (already deduplicated)
+        let serializable_notes: Vec<SerializableOrchardNote> = note_index.get_all_notes().to_vec();
+        
+        // Store index back for potential reuse
+        self.note_index = Some(note_index);
         
         let result = NoteScanResult {
             notes: serializable_notes,
@@ -209,8 +270,8 @@ impl NoteScanner {
             spendable_count,
         };
         
-        println!("Scan complete: Found {} notes, {} spendable, total balance: {} ZAT", 
-                all_notes.len(), spendable_count, total_balance);
+        println!("Scan complete: Found {} unique notes, {} spendable, total balance: {} ZAT", 
+                result.notes.len(), spendable_count, total_balance);
         
         Ok((result, spendable_notes))
     }
@@ -233,19 +294,21 @@ impl NoteScanner {
         println!("🔍 Attempting REAL Orchard action decryption in transaction {} (scope: {:?})", txid, scope);
         
         let nullifier_result = Nullifier::from_bytes(&action.nullifier);
-        let nullifier = if nullifier_result.is_some().into() {
-            nullifier_result.unwrap()
-        } else {
-            println!("⚠️  Invalid nullifier bytes");
-            return Ok(None);
+        let nullifier = match nullifier_result.into_option() {
+            Some(n) => n,
+            None => {
+                println!("⚠️  Invalid nullifier bytes");
+                return Ok(None);
+            }
         };
         
         let cmx_result = ExtractedNoteCommitment::from_bytes(&action.cmx);
-        let cmx = if cmx_result.is_some().into() {
-            cmx_result.unwrap()
-        } else {
-            println!("⚠️  Invalid cmx bytes");
-            return Ok(None);
+        let cmx = match cmx_result.into_option() {
+            Some(c) => c,
+            None => {
+                println!("⚠️  Invalid cmx bytes");
+                return Ok(None);
+            }
         };
         
         let ephemeral_key = EphemeralKeyBytes::from(action.ephemeral_key);
