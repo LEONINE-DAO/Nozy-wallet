@@ -25,7 +25,7 @@ if (-not (Test-Path "target/release/nozywallet-api.exe")) {
 
 # Run the server
 Write-Host "✅ Starting server on http://0.0.0.0:3000" -ForegroundColor Green
-Write-Host "📱 Mobile app should connect to: http://localhost:3000/api" -ForegroundColor Cyan
+Write-Host "🌐 Frontend applications should connect to: http://localhost:3000/api" -ForegroundColor Cyan
 Write-Host ""
 cargo run --release
 

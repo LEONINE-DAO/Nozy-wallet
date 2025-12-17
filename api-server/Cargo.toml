@@ -28,6 +28,11 @@ hex = "0.4"
 thiserror = "1.0"
 anyhow = "1.0"
 
+# TLS/HTTPS support
+rustls = "0.21"
+rustls-pemfile = "1.0"
+tokio-rustls = "0.24"
+
 # Local wallet library
 nozy = { path = "../" }
 

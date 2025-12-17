@@ -38,7 +38,17 @@ async fn main() -> anyhow::Result<()> {
     
     info!("Rate limiting: {} requests per {} seconds", rate_limit_requests, rate_limit_window);
     info!("Environment: {}", if is_production { "PRODUCTION" } else { "DEVELOPMENT" });
-    info!("Starting NozyWallet API server on http://0.0.0.0:3000");
+    
+    // HTTPS configuration
+    let https_enabled = std::env::var("NOZY_HTTPS_ENABLED").is_ok();
+    let https_port: u16 = std::env::var("NOZY_HTTPS_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(443);
+    let http_port: u16 = std::env::var("NOZY_HTTP_PORT")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(3000);
 
     let app = Router::new()
         .route("/api/wallet/exists", get(handlers::check_wallet_exists))
@@ -131,14 +141,6 @@ async fn main() -> anyhow::Result<()> {
         })
         .layer(TraceLayer::new_for_http());
 
-    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await
-        .map_err(|e| {
-            tracing::error!("Failed to bind to 0.0.0.0:3000: {}", e);
-            anyhow::anyhow!("Failed to bind to port 3000: {}. Is the port already in use?", e)
-        })?;
-    info!("API server listening on http://0.0.0.0:3000");
-    info!("Health check: http://localhost:3000/health");
-    
     let shutdown_signal = async {
         tokio::signal::ctrl_c()
             .await
@@ -146,13 +148,91 @@ async fn main() -> anyhow::Result<()> {
         info!("Received shutdown signal, shutting down gracefully...");
     };
     
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal)
-        .await
-        .map_err(|e| {
-            tracing::error!("Server error: {}", e);
-            anyhow::anyhow!("Server error: {}", e)
-        })?;
+    if https_enabled {
+        let cert_path = std::env::var("NOZY_SSL_CERT_PATH")
+            .ok()
+            .ok_or_else(|| anyhow::anyhow!("NOZY_SSL_CERT_PATH not set for HTTPS mode"))?;
+        let key_path = std::env::var("NOZY_SSL_KEY_PATH")
+            .ok()
+            .ok_or_else(|| anyhow::anyhow!("NOZY_SSL_KEY_PATH not set for HTTPS mode"))?;
+        
+        info!("Loading SSL certificate from: {}", cert_path);
+        info!("Loading SSL key from: {}", key_path);
+        
+        let cert_file = std::fs::File::open(&cert_path)
+            .map_err(|e| anyhow::anyhow!("Failed to open certificate file {}: {}", cert_path, e))?;
+        let key_file = std::fs::File::open(&key_path)
+            .map_err(|e| anyhow::anyhow!("Failed to open key file {}: {}", key_path, e))?;
+        
+        let mut cert_reader = std::io::BufReader::new(cert_file);
+        let mut key_reader = std::io::BufReader::new(key_file);
+        
+        let certs = rustls_pemfile::certs(&mut cert_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow::anyhow!("Failed to parse certificate: {}", e))?;
+        
+        let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| anyhow::anyhow!("Failed to parse private key: {}", e))?;
+        
+        if keys.is_empty() {
+            key_reader = std::io::BufReader::new(std::fs::File::open(&key_path)?);
+            keys = rustls_pemfile::rsa_private_keys(&mut key_reader)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| anyhow::anyhow!("Failed to parse RSA private key: {}", e))?;
+        }
+        
+        let key = keys.into_iter().next()
+            .ok_or_else(|| anyhow::anyhow!("No private key found in key file"))?;
+        
+        let cert_der: Vec<rustls::pki_types::CertificateDer> = certs
+            .into_iter()
+            .map(|c| rustls::pki_types::CertificateDer::from(c.to_vec()))
+            .collect();
+        
+        let config = rustls::ServerConfig::builder()
+            .with_safe_defaults()
+            .with_no_client_auth()
+            .with_single_cert(cert_der, rustls::pki_types::PrivateKeyDer::Pkcs8(key.into()))
+            .map_err(|e| anyhow::anyhow!("Failed to create TLS config: {}", e))?;
+        
+        let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
+        
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", https_port)).await
+            .map_err(|e| {
+                tracing::error!("Failed to bind to 0.0.0.0:{}: {}", https_port, e);
+                anyhow::anyhow!("Failed to bind to port {}: {}. Is the port already in use?", https_port, e)
+            })?;
+        
+        info!("API server listening on https://0.0.0.0:{}", https_port);
+        info!("Health check: https://localhost:{}/health", https_port);
+        
+        let incoming = tokio_rustls::TlsListener::new(acceptor, listener);
+        
+        axum::serve(incoming, app)
+            .with_graceful_shutdown(shutdown_signal)
+            .await
+            .map_err(|e| {
+                tracing::error!("Server error: {}", e);
+                anyhow::anyhow!("Server error: {}", e)
+            })?;
+    } else {
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port)).await
+            .map_err(|e| {
+                tracing::error!("Failed to bind to 0.0.0.0:{}: {}", http_port, e);
+                anyhow::anyhow!("Failed to bind to port {}: {}. Is the port already in use?", http_port, e)
+            })?;
+        info!("API server listening on http://0.0.0.0:{}", http_port);
+        info!("Health check: http://localhost:{}/health", http_port);
+        
+        axum::serve(listener, app)
+            .with_graceful_shutdown(shutdown_signal)
+            .await
+            .map_err(|e| {
+                tracing::error!("Server error: {}", e);
+                anyhow::anyhow!("Server error: {}", e)
+            })?;
+    }
     
     info!("API server shut down successfully");
     Ok(())

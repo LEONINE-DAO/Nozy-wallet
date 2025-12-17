@@ -27,7 +27,7 @@ fi
 
 # Run the server
 echo "✅ Starting server on http://0.0.0.0:3000"
-echo "📱 Mobile app should connect to: http://localhost:3000/api"
+echo "🌐 Frontend applications should connect to: http://localhost:3000/api"
 echo ""
 cargo run --release
 
