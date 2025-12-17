@@ -1,0 +1,31 @@
+[package]
+name = "zeaking"
+version = "0.1.0"
+edition = "2021"
+description = "Zeaking - Fast local blockchain indexing system for Zcash (similar to Zingo's Zaino)"
+authors = ["LEONINE-DAO"]
+license = "MIT"
+repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
+keywords = ["zcash", "blockchain", "indexing", "orchard", "wallet"]
+categories = ["cryptography", "blockchain"]
+
+[dependencies]
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+
+# Error handling
+thiserror = "1.0"
+
+# Async runtime (required for async trait support)
+async-trait = "0.1"
+
+# Hex encoding
+hex = "0.4"
+
+[dev-dependencies]
+tokio = { version = "1.0", features = ["full"] }
+
