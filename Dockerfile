@@ -11,7 +11,9 @@ COPY src ./src
 COPY api-server/src ./api-server/src
 COPY zeaking/src ./zeaking/src
 
-RUN cargo build --release --package nozywallet-api
+# Build from api-server directory (workspace member)
+WORKDIR /app/api-server
+RUN cargo build --release
 
 FROM debian:bookworm-slim
 
@@ -21,7 +23,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY --from=builder /app/api-server/target/release/nozywallet-api /app/nozywallet-api
+COPY --from=builder /app/target/release/nozywallet-api /app/nozywallet-api
 
 RUN mkdir -p /app/wallet_data
 
