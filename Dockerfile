@@ -1,21 +1,17 @@
-# Dockerfile for NozyWallet API Server
-# Using latest stable Rust to support Cargo.lock version 4
+
 FROM rust:latest as builder
 
 WORKDIR /app
 
-# Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY api-server/Cargo.toml ./api-server/
 COPY zeaking/Cargo.toml ./zeaking/
 
-# Copy source code
 COPY src ./src
 COPY api-server/src ./api-server/src
 COPY zeaking/src ./zeaking/src
 
-# Build from workspace root (not api-server directory)
-RUN cargo build --release --bin nozywallet-api
+RUN cargo build --release --package nozywallet-api
 
 FROM debian:bookworm-slim
 
