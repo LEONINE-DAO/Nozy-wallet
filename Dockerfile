@@ -3,16 +3,18 @@ FROM rust:1.70 as builder
 
 WORKDIR /app
 
+# Copy workspace files
 COPY Cargo.toml Cargo.lock ./
 COPY api-server/Cargo.toml ./api-server/
 COPY zeaking/Cargo.toml ./zeaking/
 
+# Copy source code
 COPY src ./src
 COPY api-server/src ./api-server/src
 COPY zeaking/src ./zeaking/src
 
-WORKDIR /app/api-server
-RUN cargo build --release
+# Build from workspace root (not api-server directory)
+RUN cargo build --release --bin nozywallet-api
 
 FROM debian:bookworm-slim
 
