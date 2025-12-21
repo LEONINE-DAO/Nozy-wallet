@@ -1,5 +1,6 @@
 # Dockerfile for NozyWallet API Server
-FROM rust:1.75 as builder
+# Using latest stable Rust to support Cargo.lock version 4
+FROM rust:latest as builder
 
 WORKDIR /app
 
