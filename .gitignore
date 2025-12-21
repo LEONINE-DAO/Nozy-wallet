@@ -22,6 +22,14 @@ wallet_data/
 *.tmp
 *.temp
 
+# Wallet backup files - NEVER COMMIT THESE!
+*_BACKUP.txt
+*_BACKUP.md
+*backup*.txt
+*backup*.md
+WALLET_BACKUP.txt
+WALLET_BACKUP.md
+
 
 *.log
 
@@ -45,6 +53,11 @@ push_url_update.ps1
 !CROSSLINK*.md
 !*AUDIT*.md
 !*SECURITY*.md
+!FRONTEND*.md
+!DESKTOP*.md
+!TEAM*.md
+!*DEPLOY*.md
+!DIGITALOCEAN*.md
 
 # mdBook output (but keep source)
 book/book/
