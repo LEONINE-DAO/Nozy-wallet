@@ -1,18 +1,14 @@
-# Dockerfile for NozyWallet API Server
-FROM rust:1.70 as builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
-COPY api-server/Cargo.toml ./api-server/
-COPY zeaking/Cargo.toml ./zeaking/
 
+COPY Cargo.toml ./
+COPY api-server ./api-server
+COPY zeaking ./zeaking
 COPY src ./src
-COPY api-server/src ./api-server/src
-COPY zeaking/src ./zeaking/src
 
-WORKDIR /app/api-server
-RUN cargo build --release
+RUN cargo build --release --workspace --bin nozywallet-api
 
 FROM debian:bookworm-slim
 
@@ -22,7 +18,7 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY --from=builder /app/api-server/target/release/nozywallet-api /app/nozywallet-api
+COPY --from=builder /app/target/release/nozywallet-api /app/nozywallet-api
 
 RUN mkdir -p /app/wallet_data
 

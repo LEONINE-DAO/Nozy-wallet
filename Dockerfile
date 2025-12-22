@@ -1,19 +1,19 @@
 
-FROM rust:latest as builder
+FROM rust:latest AS builder
 
 WORKDIR /app
 
-COPY Cargo.toml Cargo.lock ./
-COPY api-server/Cargo.toml ./api-server/
-COPY zeaking/Cargo.toml ./zeaking/
 
+COPY Cargo.toml ./
+COPY api-server ./api-server
+COPY zeaking ./zeaking
 COPY src ./src
-COPY api-server/src ./api-server/src
-COPY zeaking/src ./zeaking/src
 
-# Build from api-server directory (workspace member)
-WORKDIR /app/api-server
-RUN cargo build --release
+RUN cargo fetch
+
+
+RUN cargo build --release --workspace
+
 
 FROM debian:bookworm-slim
 
