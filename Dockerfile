@@ -4,12 +4,14 @@ FROM rust:latest AS builder
 WORKDIR /app
 
 
+# Copy workspace root files
 COPY Cargo.toml Cargo.lock ./
-COPY api-server ./api-server
 COPY zeaking ./zeaking
 COPY src ./src
+COPY api-server ./api-server
 
-RUN cargo build --release --package nozywallet-api
+# Build using manifest path to api-server (workspace will be auto-detected)
+RUN cargo build --release --manifest-path ./api-server/Cargo.toml
 
 
 FROM debian:bookworm-slim
