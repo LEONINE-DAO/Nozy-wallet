@@ -4,15 +4,12 @@ FROM rust:latest AS builder
 WORKDIR /app
 
 
-COPY Cargo.toml ./
+COPY Cargo.toml Cargo.lock ./
 COPY api-server ./api-server
 COPY zeaking ./zeaking
 COPY src ./src
 
-RUN cargo fetch
-
-
-RUN cargo build --release --workspace
+RUN cargo build --release --bin nozywallet-api
 
 
 FROM debian:bookworm-slim
