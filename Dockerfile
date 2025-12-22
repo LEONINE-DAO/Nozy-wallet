@@ -9,7 +9,7 @@ COPY api-server ./api-server
 COPY zeaking ./zeaking
 COPY src ./src
 
-RUN cargo build --release --bin nozywallet-api
+RUN cargo build --release --package nozywallet-api
 
 
 FROM debian:bookworm-slim
