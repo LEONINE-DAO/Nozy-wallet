@@ -149,6 +149,9 @@ async fn main() -> anyhow::Result<()> {
     };
     
     if https_enabled {
+        use axum_server::tls_rustls::RustlsConfig;
+        use std::net::SocketAddr;
+        
         let cert_path = std::env::var("NOZY_SSL_CERT_PATH")
             .ok()
             .ok_or_else(|| anyhow::anyhow!("NOZY_SSL_CERT_PATH not set for HTTPS mode"))?;
@@ -159,58 +162,26 @@ async fn main() -> anyhow::Result<()> {
         info!("Loading SSL certificate from: {}", cert_path);
         info!("Loading SSL key from: {}", key_path);
         
-        let cert_file = std::fs::File::open(&cert_path)
-            .map_err(|e| anyhow::anyhow!("Failed to open certificate file {}: {}", cert_path, e))?;
-        let key_file = std::fs::File::open(&key_path)
-            .map_err(|e| anyhow::anyhow!("Failed to open key file {}: {}", key_path, e))?;
+        let config = RustlsConfig::from_pem_file(cert_path, key_path)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to load TLS configuration: {}", e))?;
         
-        let mut cert_reader = std::io::BufReader::new(cert_file);
-        let mut key_reader = std::io::BufReader::new(key_file);
-        
-        let certs = rustls_pemfile::certs(&mut cert_reader)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow::anyhow!("Failed to parse certificate: {}", e))?;
-        
-        let mut keys = rustls_pemfile::pkcs8_private_keys(&mut key_reader)
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| anyhow::anyhow!("Failed to parse private key: {}", e))?;
-        
-        if keys.is_empty() {
-            key_reader = std::io::BufReader::new(std::fs::File::open(&key_path)?);
-            keys = rustls_pemfile::rsa_private_keys(&mut key_reader)
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| anyhow::anyhow!("Failed to parse RSA private key: {}", e))?;
-        }
-        
-        let key = keys.into_iter().next()
-            .ok_or_else(|| anyhow::anyhow!("No private key found in key file"))?;
-        
-        let cert_der: Vec<rustls::pki_types::CertificateDer> = certs
-            .into_iter()
-            .map(|c| rustls::pki_types::CertificateDer::from(c.to_vec()))
-            .collect();
-        
-        let config = rustls::ServerConfig::builder()
-            .with_safe_defaults()
-            .with_no_client_auth()
-            .with_single_cert(cert_der, rustls::pki_types::PrivateKeyDer::Pkcs8(key.into()))
-            .map_err(|e| anyhow::anyhow!("Failed to create TLS config: {}", e))?;
-        
-        let acceptor = tokio_rustls::TlsAcceptor::from(std::sync::Arc::new(config));
-        
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", https_port)).await
-            .map_err(|e| {
-                tracing::error!("Failed to bind to 0.0.0.0:{}: {}", https_port, e);
-                anyhow::anyhow!("Failed to bind to port {}: {}. Is the port already in use?", https_port, e)
-            })?;
-        
+        let addr = SocketAddr::from(([0, 0, 0, 0], https_port));
         info!("API server listening on https://0.0.0.0:{}", https_port);
         info!("Health check: https://localhost:{}/health", https_port);
         
-        let incoming = tokio_rustls::TlsListener::new(acceptor, listener);
+        let handle = axum_server::Handle::new();
+        let shutdown_handle = handle.clone();
         
-        axum::serve(incoming, app)
-            .with_graceful_shutdown(shutdown_signal)
+        tokio::spawn(async move {
+            shutdown_signal.await;
+            info!("Shutting down HTTPS server...");
+            shutdown_handle.shutdown();
+        });
+        
+        axum_server::bind_rustls(addr, config)
+            .handle(handle)
+            .serve(app.into_make_service())
             .await
             .map_err(|e| {
                 tracing::error!("Server error: {}", e);
