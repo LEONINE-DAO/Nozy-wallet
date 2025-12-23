@@ -147,90 +147,6 @@ jobs:
             hash.txt
           retention-days: 90
 
-  build-desktop-client:
-    name: Build Desktop Client
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Clone Desktop Client Repository
-        id: clone_desktop
-        continue-on-error: true
-        uses: actions/checkout@v4
-        with:
-          repository: LEONINE-DAO/NozyWallet-DesktopClient
-          path: desktop-client
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Check if desktop client exists
-        id: check_repo
-        run: |
-          if [ -d "desktop-client" ] && [ -f "desktop-client/package.json" ] || [ -f "desktop-client/Cargo.toml" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-            echo "✅ Desktop client repository found"
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-            echo "⚠️ Desktop client repository not found, skipping build"
-          fi
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Node.js
-        if: steps.check_repo.outputs.exists == 'true'
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-          cache: 'npm'
-          cache-dependency-path: desktop-client/frontend/package-lock.json
-
-      - name: Install Tauri CLI
-        if: steps.check_repo.outputs.exists == 'true'
-        run: cargo install tauri-cli --locked
-
-      - name: Install frontend dependencies
-        if: steps.check_repo.outputs.exists == 'true'
-        working-directory: desktop-client/frontend
-        run: npm ci
-
-      - name: Build desktop app
-        if: steps.check_repo.outputs.exists == 'true'
-        working-directory: desktop-client
-        run: cargo tauri build --bundles all
-        env:
-          TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
-          TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
-
-      - name: Generate SHA256 hashes for installers
-        if: steps.check_repo.outputs.exists == 'true'
-        shell: bash
-        working-directory: desktop-client
-        run: |
-          cd src-tauri/target/release/bundle
-          find . -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.msi" \) -exec shasum -a 256 {} \; > ../../hashes.txt || true
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell -Command "Get-ChildItem -Recurse -Include *.exe,*.msi | ForEach-Object { certutil -hashfile $_.FullName SHA256 | Select-String -Pattern '^[A-Fa-f0-9]{64}' | Out-File -Append -FilePath ../../hashes.txt }" || true
-          fi
-          cat ../../hashes.txt || echo "No installers found"
-
-      - name: Upload desktop installers
-        if: steps.check_repo.outputs.exists == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: nozywallet-desktop-${{ runner.os }}
-          path: |
-            desktop-client/src-tauri/target/release/bundle/**/*
-            desktop-client/src-tauri/target/release/hashes.txt
-          retention-days: 90
-
-      - name: Skip desktop client build
-        if: steps.check_repo.outputs.exists == 'false'
-        run: echo "Desktop client repository not found, skipping build"
-
   create-release:
     name: Create Release
     needs: [build-cli, build-api]
@@ -286,16 +202,7 @@ jobs:
             - macOS Intel: `nozywallet-api-x86_64-apple-darwin`
             - macOS Apple Silicon: `nozywallet-api-aarch64-apple-darwin`
             
-            **Desktop Client:**
-            - See installers in `nozywallet-desktop-*` artifacts
-            - Windows: `.exe` installer
-            - macOS: `.dmg` file
-            - Linux: `.AppImage` or `.deb`
-            
-            ### 🔗 Related Releases
-            
-            - **Desktop Client Repository**: [NozyWallet-DesktopClient](https://github.com/LEONINE-DAO/NozyWallet-DesktopClient)
-            - Desktop client installers are included in this release
+            **Note:** Desktop client builds are not included in this release. The desktop client is in a separate repository and will be released independently when ready.
             
             ### 🔒 Security
             
