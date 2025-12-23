@@ -158,16 +158,30 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Clone Desktop Client Repository
+        id: clone_desktop
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: LEONINE-DAO/NozyWallet-DesktopClient
           path: desktop-client
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Check if desktop client exists
+        id: check_repo
+        run: |
+          if [ -d "desktop-client" ] && [ -f "desktop-client/package.json" ] || [ -f "desktop-client/Cargo.toml" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "✅ Desktop client repository found"
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "⚠️ Desktop client repository not found, skipping build"
+          fi
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
       - name: Install Node.js
+        if: steps.check_repo.outputs.exists == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '18'
@@ -175,16 +189,8 @@ jobs:
           cache-dependency-path: desktop-client/frontend/package-lock.json
 
       - name: Install Tauri CLI
+        if: steps.check_repo.outputs.exists == 'true'
         run: cargo install tauri-cli --locked
-
-      - name: Check if desktop client exists
-        id: check_repo
-        run: |
-          if [ -d "desktop-client" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            echo "exists=false" >> $GITHUB_OUTPUT
-          fi
 
       - name: Install frontend dependencies
         if: steps.check_repo.outputs.exists == 'true'
