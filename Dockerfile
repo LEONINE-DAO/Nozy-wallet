@@ -4,14 +4,14 @@ FROM rust:latest AS builder
 WORKDIR /app
 
 
-# Copy workspace root files
 COPY Cargo.toml Cargo.lock ./
 COPY zeaking ./zeaking
 COPY src ./src
 COPY api-server ./api-server
 
-# Build using manifest path to api-server (workspace will be auto-detected)
-RUN cargo build --release --manifest-path ./api-server/Cargo.toml
+WORKDIR /app/api-server
+RUN cargo build --release
+WORKDIR /app
 
 
 FROM debian:bookworm-slim

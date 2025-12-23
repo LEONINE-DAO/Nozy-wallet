@@ -79,14 +79,91 @@ jobs:
             hash.txt
           retention-days: 90
 
-  build-desktop:
-    name: Build Desktop Installers
+  build-api:
+    name: Build API Server Binaries
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        target:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            binary: nozywallet-api
+            extension: ""
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            binary: nozywallet-api.exe
+            extension: ".exe"
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            binary: nozywallet-api
+            extension: ""
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            binary: nozywallet-api
+            extension: ""
+    runs-on: ${{ matrix.os.target.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-api-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-api-${{ matrix.target }}-
+
+      - name: Build API server binary
+        working-directory: api-server
+        run: |
+          cargo build --release --target ${{ matrix.target }} --bin nozywallet-api
+
+      - name: Generate SHA256 hash
+        id: hash
+        shell: bash
+        run: |
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            certutil -hashfile api-server/target/${{ matrix.target }}/release/${{ matrix.binary }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > hash.txt
+          else
+            shasum -a 256 api-server/target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
+          fi
+          HASH=$(cat hash.txt | awk '{print $1}')
+          echo "hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Generated hash: $HASH"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nozywallet-api-${{ matrix.target }}${{ matrix.extension }}
+          path: |
+            api-server/target/${{ matrix.target }}/release/${{ matrix.binary }}
+            hash.txt
+          retention-days: 90
+
+  build-desktop-client:
+    name: Build Desktop Client
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Clone Desktop Client Repository
+        uses: actions/checkout@v4
+        with:
+          repository: LEONINE-DAO/NozyWallet-DesktopClient
+          path: desktop-client
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -96,16 +173,17 @@ jobs:
         with:
           node-version: '18'
           cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
+          cache-dependency-path: desktop-client/frontend/package-lock.json
 
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
+      - name: Install frontend dependencies
+        working-directory: desktop-client/frontend
+        run: npm ci
+
       - name: Build desktop app
+        working-directory: desktop-client
         run: cargo tauri build --bundles all
         env:
           TAURI_PRIVATE_KEY: ${{ secrets.TAURI_PRIVATE_KEY }}
@@ -113,9 +191,10 @@ jobs:
 
       - name: Generate SHA256 hashes for installers
         shell: bash
+        working-directory: desktop-client
         run: |
           cd src-tauri/target/release/bundle
-          find . -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" \) -exec shasum -a 256 {} \; > ../../hashes.txt || true
+          find . -type f \( -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.AppImage" -o -name "*.rpm" -o -name "*.msi" \) -exec shasum -a 256 {} \; > ../../hashes.txt || true
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             powershell -Command "Get-ChildItem -Recurse -Include *.exe,*.msi | ForEach-Object { certutil -hashfile $_.FullName SHA256 | Select-String -Pattern '^[A-Fa-f0-9]{64}' | Out-File -Append -FilePath ../../hashes.txt }" || true
           fi
@@ -124,15 +203,15 @@ jobs:
       - name: Upload desktop installers
         uses: actions/upload-artifact@v4
         with:
-          name: nozy-desktop-${{ runner.os }}
+          name: nozywallet-desktop-${{ runner.os }}
           path: |
-            src-tauri/target/release/bundle/**/*
-            src-tauri/target/release/hashes.txt
+            desktop-client/src-tauri/target/release/bundle/**/*
+            desktop-client/src-tauri/target/release/hashes.txt
           retention-days: 90
 
   create-release:
     name: Create Release
-    needs: [build-cli, build-desktop]
+    needs: [build-cli, build-api, build-desktop-client]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -152,6 +231,8 @@ jobs:
           echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> RELEASE_HASHES.txt
           echo "Version: ${GITHUB_REF#refs/tags/}" >> RELEASE_HASHES.txt
           echo "" >> RELEASE_HASHES.txt
+          echo "## CLI Binaries" >> RELEASE_HASHES.txt
+          echo "" >> RELEASE_HASHES.txt
           
           # Collect all hash files
           find artifacts -name "hash.txt" -exec cat {} \; >> RELEASE_HASHES.txt || true
@@ -166,6 +247,37 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## 🎉 NozyWallet v2.1.0 Release
+            
+            ### 📦 Downloads
+            
+            **CLI Binary:**
+            - Linux (x86_64): `nozy-cli-x86_64-unknown-linux-gnu`
+            - Windows (x86_64): `nozy-cli-x86_64-pc-windows-msvc.exe`
+            - macOS Intel: `nozy-cli-x86_64-apple-darwin`
+            - macOS Apple Silicon: `nozy-cli-aarch64-apple-darwin`
+            
+            **API Server:**
+            - Linux (x86_64): `nozywallet-api-x86_64-unknown-linux-gnu`
+            - Windows (x86_64): `nozywallet-api-x86_64-pc-windows-msvc.exe`
+            - macOS Intel: `nozywallet-api-x86_64-apple-darwin`
+            - macOS Apple Silicon: `nozywallet-api-aarch64-apple-darwin`
+            
+            **Desktop Client:**
+            - See installers in `nozywallet-desktop-*` artifacts
+            - Windows: `.exe` installer
+            - macOS: `.dmg` file
+            - Linux: `.AppImage` or `.deb`
+            
+            ### 🔗 Related Releases
+            
+            - **Desktop Client Repository**: [NozyWallet-DesktopClient](https://github.com/LEONINE-DAO/NozyWallet-DesktopClient)
+            - Desktop client installers are included in this release
+            
+            ### 🔒 Security
+            
+            All binaries are signed with SHA256 hashes. Verify downloads using `RELEASE_HASHES.txt`.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

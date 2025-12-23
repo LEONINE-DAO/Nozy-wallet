@@ -1,6 +1,6 @@
 [package]
 name = "nozy"
-version = "0.2.0"
+version = "2.1.0"
 edition = "2021"
 description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
 authors = ["LEONINE-DAO"]
@@ -92,7 +92,8 @@ zeaking = { path = "zeaking", version = "0.1.0" }
 async-trait = "0.1"
 
 [workspace]
-members = ["zeaking"]
+members = ["zeaking", "api-server"]
+resolver = "2"
 
 [[bin]]
 name = "nozy"
@@ -105,3 +106,15 @@ path = "src/bin/benchmark.rs"
 [[bin]]
 name = "check_wallet_password"
 path = "src/bin/check_wallet_password.rs"
+
+[[bin]]
+name = "measure_sync_speed"
+path = "src/bin/measure_sync_speed.rs"
+
+[[bin]]
+name = "test_password_variations"
+path = "src/bin/test_password_variations.rs"
+
+[[bin]]
+name = "diagnose_wallet"
+path = "src/bin/diagnose_wallet.rs"
