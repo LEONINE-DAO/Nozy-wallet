@@ -153,6 +153,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -162,7 +163,6 @@ jobs:
           repository: LEONINE-DAO/NozyWallet-DesktopClient
           path: desktop-client
           token: ${{ secrets.GITHUB_TOKEN }}
-        continue-on-error: true
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -177,11 +177,22 @@ jobs:
       - name: Install Tauri CLI
         run: cargo install tauri-cli --locked
 
+      - name: Check if desktop client exists
+        id: check_repo
+        run: |
+          if [ -d "desktop-client" ]; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Install frontend dependencies
+        if: steps.check_repo.outputs.exists == 'true'
         working-directory: desktop-client/frontend
         run: npm ci
 
       - name: Build desktop app
+        if: steps.check_repo.outputs.exists == 'true'
         working-directory: desktop-client
         run: cargo tauri build --bundles all
         env:
@@ -189,6 +200,7 @@ jobs:
           TAURI_KEY_PASSWORD: ${{ secrets.TAURI_KEY_PASSWORD }}
 
       - name: Generate SHA256 hashes for installers
+        if: steps.check_repo.outputs.exists == 'true'
         shell: bash
         working-directory: desktop-client
         run: |
@@ -200,6 +212,7 @@ jobs:
           cat ../../hashes.txt || echo "No installers found"
 
       - name: Upload desktop installers
+        if: steps.check_repo.outputs.exists == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: nozywallet-desktop-${{ runner.os }}
@@ -207,6 +220,10 @@ jobs:
             desktop-client/src-tauri/target/release/bundle/**/*
             desktop-client/src-tauri/target/release/hashes.txt
           retention-days: 90
+
+      - name: Skip desktop client build
+        if: steps.check_repo.outputs.exists == 'false'
+        run: echo "Desktop client repository not found, skipping build"
 
   create-release:
     name: Create Release
