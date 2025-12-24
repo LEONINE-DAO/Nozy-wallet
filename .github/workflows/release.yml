@@ -124,6 +124,7 @@ jobs:
         working-directory: api-server
         run: |
           cargo build --release --target ${{ matrix.target }} --bin nozywallet-api
+        continue-on-error: false
 
       - name: Generate SHA256 hash
         id: hash
