@@ -41,18 +41,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ${{ runner.home }}/.cargo/bin/
-            ${{ runner.home }}/.cargo/registry/index/
-            ${{ runner.home }}/.cargo/registry/cache/
-            ${{ runner.home }}/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-${{ matrix.target }}-
+          workspaces: '.'
+          cache-on-failure: true
 
       - name: Build CLI binary
         run: |
@@ -112,18 +105,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache cargo registry
-        uses: actions/cache@v4
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
         with:
-          path: |
-            ${{ runner.home }}/.cargo/bin/
-            ${{ runner.home }}/.cargo/registry/index/
-            ${{ runner.home }}/.cargo/registry/cache/
-            ${{ runner.home }}/.cargo/git/db/
-            api-server/target/
-          key: ${{ runner.os }}-cargo-api-${{ matrix.target }}-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-api-${{ matrix.target }}-
+          workspaces: 'api-server'
+          cache-on-failure: true
 
       - name: Build API server binary
         working-directory: api-server
