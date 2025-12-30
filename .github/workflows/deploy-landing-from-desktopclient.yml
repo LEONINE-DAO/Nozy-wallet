@@ -25,6 +25,8 @@ jobs:
           path: main-repo
 
       - name: Checkout DesktopClient repository
+        id: checkout-desktopclient
+        continue-on-error: true
         uses: actions/checkout@v4
         with:
           repository: LEONINE-DAO/NozyWallet-DesktopClient
@@ -39,20 +41,29 @@ jobs:
           # Create site directory
           mkdir -p _site
           
-          # Copy landing page from DesktopClient repo
-          # Look for index.html in common locations
-          if [ -f desktopclient/index.html ]; then
-            cp desktopclient/index.html _site/
-          elif [ -f desktopclient/public/index.html ]; then
-            cp desktopclient/public/index.html _site/
-          elif [ -f desktopclient/src/index.html ]; then
-            cp desktopclient/src/index.html _site/
-          elif [ -f desktopclient/docs/index.html ]; then
-            cp desktopclient/docs/index.html _site/
-          else
-            echo "⚠️  Landing page not found in DesktopClient repo, using fallback"
-            # Create a simple redirect page
-            cat > _site/index.html << 'EOF'
+          # Try to copy landing page from DesktopClient repo if it was checked out successfully
+          if [ -d desktopclient ] && [ "${{ steps.checkout-desktopclient.outcome }}" == "success" ]; then
+            echo "✅ DesktopClient repo checked out successfully"
+            # Look for index.html in common locations
+            if [ -f desktopclient/index.html ]; then
+              echo "📄 Found index.html in root"
+              cp desktopclient/index.html _site/
+            elif [ -f desktopclient/public/index.html ]; then
+              echo "📄 Found index.html in public/"
+              cp desktopclient/public/index.html _site/
+            elif [ -f desktopclient/src/index.html ]; then
+              echo "📄 Found index.html in src/"
+              cp desktopclient/src/index.html _site/
+            elif [ -f desktopclient/docs/index.html ]; then
+              echo "📄 Found index.html in docs/"
+              cp desktopclient/docs/index.html _site/
+            else
+              echo "⚠️  Landing page not found in DesktopClient repo, using local fallback"
+              if [ -f main-repo/index.html ]; then
+                cp main-repo/index.html _site/
+              else
+                # Create a simple redirect page
+                cat > _site/index.html << 'EOF'
           <!DOCTYPE html>
           <html>
           <head>
@@ -64,17 +75,46 @@ jobs:
           </body>
           </html>
           EOF
-          fi
-          
-          # Copy any assets (CSS, JS, images) from DesktopClient
-          if [ -d desktopclient/public ]; then
-            cp -r desktopclient/public/* _site/ 2>/dev/null || true
-          fi
-          if [ -d desktopclient/assets ]; then
-            cp -r desktopclient/assets _site/ 2>/dev/null || true
-          fi
-          if [ -d desktopclient/static ]; then
-            cp -r desktopclient/static _site/ 2>/dev/null || true
+              fi
+            fi
+            
+            # Copy any assets (CSS, JS, images) from DesktopClient
+            if [ -d desktopclient/public ]; then
+              cp -r desktopclient/public/* _site/ 2>/dev/null || true
+            fi
+            if [ -d desktopclient/assets ]; then
+              cp -r desktopclient/assets _site/ 2>/dev/null || true
+            fi
+            if [ -d desktopclient/static ]; then
+              cp -r desktopclient/static _site/ 2>/dev/null || true
+            fi
+          else
+            echo "⚠️  DesktopClient repo not accessible, using local landing page"
+            if [ -f main-repo/index.html ]; then
+              echo "📄 Using local index.html"
+              cp main-repo/index.html _site/
+            else
+              echo "❌ No landing page found, creating fallback"
+              cat > _site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>NozyWallet - Privacy by Default</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>🦋 NozyWallet</h1>
+            <p>Privacy by Default</p>
+            <p><a href="/downloads/">Download NozyWallet</a></p>
+            <p style="color: #666; margin-top: 50px;">
+              Note: Landing page from DesktopClient repo not available. 
+              <br>Using fallback page. Check repository access or use local landing page.
+            </p>
+          </body>
+          </html>
+          EOF
+            fi
           fi
           
           # Copy downloads page from main repo
