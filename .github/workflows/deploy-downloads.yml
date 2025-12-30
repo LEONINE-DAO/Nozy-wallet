@@ -7,10 +7,12 @@ on:
       - master
     paths:
       - 'downloads/**'
+      - 'index.html'
       - '.github/workflows/deploy-downloads.yml'
   release:
     types: [published]
   workflow_dispatch:
+
 
 permissions:
   contents: read
@@ -26,10 +28,19 @@ jobs:
       - name: Setup Pages
         uses: actions/configure-pages@v4
 
+      - name: Prepare site
+        run: |
+          # Create a _site directory with both root and downloads
+          mkdir -p _site/downloads
+          if [ -f index.html ]; then
+            cp index.html _site/
+          fi
+          cp -r downloads/* _site/downloads/ 2>/dev/null || true
+
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: downloads
+          path: _site
 
       - name: Deploy to GitHub Pages
         id: deployment

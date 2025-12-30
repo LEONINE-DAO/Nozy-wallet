@@ -44,13 +44,29 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: '.'
           cache-on-failure: true
+          workspaces: |
+            zeaking
+            api-server
+
+      - name: Configure Cargo network retry
+        run: |
+          mkdir -p $HOME/.cargo
+          cat >> $HOME/.cargo/config.toml << EOF
+          [net]
+          retry = 3
+          git-fetch-with-cli = true
+          EOF
+        shell: bash
 
       - name: Build CLI binary
+        env:
+          CARGO_NET_TIMEOUT: 300
         run: |
-          cargo build --release --target ${{ matrix.target }} --bin nozy
-        timeout-minutes: 30
+          cargo build --release --target ${{ matrix.target }} --bin nozy || \
+          (echo "Build failed, retrying..." && sleep 5 && \
+           cargo build --release --target ${{ matrix.target }} --bin nozy)
+        timeout-minutes: 45
 
       - name: Generate SHA256 hash
         id: hash
@@ -67,12 +83,14 @@ jobs:
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: false
         with:
           name: nozy-cli-${{ matrix.target }}${{ matrix.extension }}
           path: |
             target/${{ matrix.target }}/release/${{ matrix.binary }}
             hash.txt
           retention-days: 90
+          if-no-files-found: error
 
   build-api:
     name: Build API Server Binaries
@@ -108,23 +126,38 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: 'api-server'
           cache-on-failure: true
+          workspaces: |
+            zeaking
+            api-server
+
+      - name: Configure Cargo network retry
+        run: |
+          mkdir -p $HOME/.cargo
+          cat >> $HOME/.cargo/config.toml << EOF
+          [net]
+          retry = 3
+          git-fetch-with-cli = true
+          EOF
+        shell: bash
 
       - name: Build API server binary
-        working-directory: api-server
+        env:
+          CARGO_NET_TIMEOUT: 300
         run: |
-          cargo build --release --target ${{ matrix.target }} --bin nozywallet-api
-        timeout-minutes: 30
+          cargo build --release --target ${{ matrix.target }} --package nozywallet-api || \
+          (echo "Build failed, retrying..." && sleep 5 && \
+           cargo build --release --target ${{ matrix.target }} --package nozywallet-api)
+        timeout-minutes: 45
 
       - name: Generate SHA256 hash
         id: hash
         shell: bash
         run: |
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            certutil -hashfile api-server/target/${{ matrix.target }}/release/${{ matrix.binary }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > hash.txt
+            certutil -hashfile target/${{ matrix.target }}/release/${{ matrix.binary }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > hash.txt
           else
-            shasum -a 256 api-server/target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
+            shasum -a 256 target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
           fi
           HASH=$(cat hash.txt | awk '{print $1}')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
@@ -132,12 +165,14 @@ jobs:
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: false
         with:
           name: nozywallet-api-${{ matrix.target }}${{ matrix.extension }}
           path: |
-            api-server/target/${{ matrix.target }}/release/${{ matrix.binary }}
+            target/${{ matrix.target }}/release/${{ matrix.binary }}
             hash.txt
           retention-days: 90
+          if-no-files-found: error
 
   create-release:
     name: Create Release
@@ -149,6 +184,7 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        continue-on-error: false
         with:
           path: artifacts
 

@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NozyWallet - Privacy by Default</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2rem;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+            text-align: center;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 4rem 2rem;
+        }
+
+        .header h1 {
+            font-size: 3.5rem;
+            margin-bottom: 1rem;
+        }
+
+        .header p {
+            font-size: 1.3rem;
+            opacity: 0.95;
+            margin-bottom: 2rem;
+        }
+
+        .content {
+            padding: 3rem 2rem;
+        }
+
+        .content h2 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            color: #333;
+        }
+
+        .content p {
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: #666;
+            margin-bottom: 2rem;
+        }
+
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin: 2rem 0;
+        }
+
+        .feature {
+            padding: 1.5rem;
+            background: #f8f9fa;
+            border-radius: 12px;
+            border: 2px solid #e0e0e0;
+        }
+
+        .feature h3 {
+            font-size: 1.3rem;
+            margin-bottom: 0.5rem;
+            color: #667eea;
+        }
+
+        .cta-buttons {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 2rem;
+        }
+
+        .btn {
+            display: inline-block;
+            padding: 1rem 2.5rem;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: bold;
+            font-size: 1.1rem;
+            transition: all 0.3s ease;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: scale(1.05);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+        }
+
+        .footer {
+            background: #f8f9fa;
+            padding: 2rem;
+            text-align: center;
+            color: #666;
+        }
+
+        .footer a {
+            color: #667eea;
+            text-decoration: none;
+            margin: 0 1rem;
+        }
+
+        .version-badge {
+            display: inline-block;
+            background: rgba(255, 255, 255, 0.2);
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🦋 NozyWallet</h1>
+            <p>Privacy by Default</p>
+            <p style="font-size: 1rem; opacity: 0.9;">Monero-Level Privacy, Zcash Speed</p>
+            <div class="version-badge" id="latest-version">Loading version...</div>
+        </div>
+
+        <div class="content">
+            <h2>Welcome to NozyWallet</h2>
+            <p>
+                NozyWallet is a privacy-first cryptocurrency wallet built for Zcash, delivering 
+                the highest level of privacy through fully-shielded transactions and cutting-edge 
+                cryptographic security.
+            </p>
+
+            <div class="features">
+                <div class="feature">
+                    <h3>🔒 Privacy First</h3>
+                    <p>Fully-shielded transactions with Monero-level privacy</p>
+                </div>
+                <div class="feature">
+                    <h3>⚡ Fast & Secure</h3>
+                    <p>Built on Zcash with cutting-edge cryptography</p>
+                </div>
+                <div class="feature">
+                    <h3>🛡️ Open Source</h3>
+                    <p>Transparent, auditable, and community-driven</p>
+                </div>
+            </div>
+
+            <div class="cta-buttons">
+                <a href="downloads/" class="btn btn-primary">📥 Download Now</a>
+                <a href="https://github.com/LEONINE-DAO/Nozy-wallet" class="btn btn-secondary" target="_blank">📚 View on GitHub</a>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>
+                <a href="downloads/">Downloads</a>
+                <a href="https://github.com/LEONINE-DAO/Nozy-wallet/releases">Releases</a>
+                <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/LICENSE">License</a>
+            </p>
+            <p style="margin-top: 1rem; font-size: 0.9rem;">
+                © 2024 NozyWallet - Privacy by Default
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Fetch latest version from GitHub API
+        async function loadLatestVersion() {
+            try {
+                const response = await fetch('https://api.github.com/repos/LEONINE-DAO/Nozy-wallet/releases/latest');
+                const release = await response.json();
+                
+                if (release.tag_name) {
+                    document.getElementById('latest-version').textContent = `Latest: ${release.tag_name}`;
+                }
+            } catch (error) {
+                console.error('Error loading version:', error);
+                document.getElementById('latest-version').textContent = 'Latest: v2.1.0';
+            }
+        }
+
+        loadLatestVersion();
+    </script>
+</body>
+</html>
+

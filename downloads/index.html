@@ -361,8 +361,10 @@
                     }
                 });
 
-                // Load hashes from HASHES.txt if available
-                const hashesAsset = release.assets.find(a => a.name.includes('HASHES'));
+                // Load hashes from RELEASE_HASHES.txt or HASHES.txt if available
+                const hashesAsset = release.assets.find(a => 
+                    a.name.includes('HASHES') || a.name.includes('RELEASE_HASHES')
+                );
                 if (hashesAsset) {
                     const hashesResponse = await fetch(hashesAsset.browser_download_url);
                     const hashesText = await hashesResponse.text();

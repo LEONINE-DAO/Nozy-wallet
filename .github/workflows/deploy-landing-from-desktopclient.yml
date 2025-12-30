@@ -1,0 +1,98 @@
+name: Deploy Landing Page from DesktopClient
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - '.github/workflows/deploy-landing-from-desktopclient.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: main-repo
+
+      - name: Checkout DesktopClient repository
+        uses: actions/checkout@v4
+        with:
+          repository: LEONINE-DAO/NozyWallet-DesktopClient
+          path: desktopclient
+          token: ${{ secrets.DESKTOPCLIENT_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Prepare site
+        run: |
+          # Create site directory
+          mkdir -p _site
+          
+          # Copy landing page from DesktopClient repo
+          # Look for index.html in common locations
+          if [ -f desktopclient/index.html ]; then
+            cp desktopclient/index.html _site/
+          elif [ -f desktopclient/public/index.html ]; then
+            cp desktopclient/public/index.html _site/
+          elif [ -f desktopclient/src/index.html ]; then
+            cp desktopclient/src/index.html _site/
+          elif [ -f desktopclient/docs/index.html ]; then
+            cp desktopclient/docs/index.html _site/
+          else
+            echo "⚠️  Landing page not found in DesktopClient repo, using fallback"
+            # Create a simple redirect page
+            cat > _site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <meta http-equiv="refresh" content="0; url=https://github.com/LEONINE-DAO/NozyWallet-DesktopClient">
+            <title>NozyWallet - Redirecting...</title>
+          </head>
+          <body>
+            <p>Redirecting to <a href="https://github.com/LEONINE-DAO/NozyWallet-DesktopClient">NozyWallet DesktopClient</a>...</p>
+          </body>
+          </html>
+          EOF
+          fi
+          
+          # Copy any assets (CSS, JS, images) from DesktopClient
+          if [ -d desktopclient/public ]; then
+            cp -r desktopclient/public/* _site/ 2>/dev/null || true
+          fi
+          if [ -d desktopclient/assets ]; then
+            cp -r desktopclient/assets _site/ 2>/dev/null || true
+          fi
+          if [ -d desktopclient/static ]; then
+            cp -r desktopclient/static _site/ 2>/dev/null || true
+          fi
+          
+          # Copy downloads page from main repo
+          mkdir -p _site/downloads
+          if [ -d main-repo/downloads ]; then
+            cp -r main-repo/downloads/* _site/downloads/ 2>/dev/null || true
+          fi
+          
+          # List what we're deploying
+          echo "📦 Deploying:"
+          find _site -type f | head -20
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
+
