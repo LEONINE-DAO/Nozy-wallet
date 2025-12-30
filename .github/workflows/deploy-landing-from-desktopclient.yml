@@ -24,7 +24,14 @@ jobs:
         with:
           path: main-repo
 
-      - name: Checkout DesktopClient repository
+      - name: Download landing page from Vercel
+        id: download-vercel
+        continue-on-error: true
+        run: |
+          echo "📥 Downloading landing page from Vercel..."
+          curl -L https://nozy-wallet.vercel.app/ -o vercel-landing.html || echo "Failed to download from Vercel"
+          
+      - name: Checkout DesktopClient repository (fallback)
         id: checkout-desktopclient
         continue-on-error: true
         uses: actions/checkout@v4
@@ -41,8 +48,17 @@ jobs:
           # Create site directory
           mkdir -p _site
           
-          # Try to copy landing page from DesktopClient repo if it was checked out successfully
-          if [ -d desktopclient ] && [ "${{ steps.checkout-desktopclient.outcome }}" == "success" ]; then
+          # Priority 1: Use Vercel landing page if downloaded successfully
+          if [ -f vercel-landing.html ] && [ "${{ steps.download-vercel.outcome }}" == "success" ]; then
+            echo "✅ Using landing page from Vercel"
+            cp vercel-landing.html _site/index.html
+            # Update asset paths to use Vercel CDN (keeps CSS/JS working)
+            sed -i 's|href="/|href="https://nozy-wallet.vercel.app/|g' _site/index.html || true
+            sed -i 's|src="/|src="https://nozy-wallet.vercel.app/|g' _site/index.html || true
+            echo "✅ Updated asset paths to use Vercel CDN"
+          
+          # Priority 2: Try DesktopClient repo if it was checked out successfully
+          elif [ -d desktopclient ] && [ "${{ steps.checkout-desktopclient.outcome }}" == "success" ]; then
             echo "✅ DesktopClient repo checked out successfully"
             # Look for index.html in common locations
             if [ -f desktopclient/index.html ]; then
