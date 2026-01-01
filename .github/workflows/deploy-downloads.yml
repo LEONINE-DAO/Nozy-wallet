@@ -32,10 +32,37 @@ jobs:
         run: |
           # Create a _site directory with both root and downloads
           mkdir -p _site/downloads
+          
+          # Always ensure index.html exists
           if [ -f index.html ]; then
+            echo "📄 Using local index.html"
             cp index.html _site/
+          else
+            echo "⚠️  index.html not found, creating fallback"
+            cat > _site/index.html << 'EOF'
+          <!DOCTYPE html>
+          <html>
+          <head>
+            <title>NozyWallet - Privacy by Default</title>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+          </head>
+          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+            <h1>🦋 NozyWallet</h1>
+            <p>Privacy by Default</p>
+            <p><a href="/downloads/">Download NozyWallet</a></p>
+          </body>
+          </html>
+          EOF
           fi
+          
+          # Copy downloads page
           cp -r downloads/* _site/downloads/ 2>/dev/null || true
+          
+          # Verify files
+          echo "📦 Files ready for deployment:"
+          ls -la _site/ || true
+          ls -la _site/downloads/ || true
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
