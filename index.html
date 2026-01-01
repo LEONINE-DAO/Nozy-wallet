@@ -3,46 +3,366 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NozyWallet - Privacy by Default</title>
-    <meta http-equiv="refresh" content="0; url=https://nozy-wallet.vercel.app/">
-    <link rel="canonical" href="https://nozy-wallet.vercel.app/">
+    <title>NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed</title>
+    <meta name="description" content="NozyWallet is the only Zcash wallet that enforces complete privacy for every transaction. Same privacy as Monero, but faster and more efficient. Privacy by default.">
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            min-height: 100vh;
+        * {
             margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            position: relative;
+            overflow-x: hidden;
+        }
+        
+        .download-overlay {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .download-btn {
+            background: rgba(255, 255, 255, 0.95);
+            color: #667eea;
+            padding: 14px 28px;
+            border-radius: 50px;
+            text-decoration: none;
+            font-weight: 600;
+            font-size: 16px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            border: 2px solid transparent;
+        }
+        
+        .download-btn:hover {
+            background: white;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 25px rgba(0, 0, 0, 0.3);
+        }
+        
+        .download-btn:active {
+            transform: translateY(0);
+        }
+        
+        .download-btn.loading {
+            opacity: 0.7;
+            cursor: wait;
+        }
+        
+        .download-btn .icon {
+            font-size: 20px;
+        }
+        
+        .os-badge {
+            background: rgba(102, 126, 234, 0.2);
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            text-align: center;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+        
+        .vercel-container {
+            width: 100%;
+            height: 100vh;
+            border: none;
+            display: block;
+        }
+        
+        .fallback-content {
+            display: none;
+            min-height: 100vh;
             color: white;
             text-align: center;
-            padding: 2rem;
+            padding: 3rem 2rem;
         }
-        .container {
-            max-width: 600px;
+        
+        .fallback-content.active {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
         }
-        h1 {
-            font-size: 2.5rem;
+        
+        .fallback-content h1 {
+            font-size: 3rem;
             margin-bottom: 1rem;
         }
-        a {
-            color: white;
-            text-decoration: underline;
+        
+        .fallback-content p {
+            font-size: 1.2rem;
+            margin-bottom: 2rem;
+            opacity: 0.9;
+        }
+        
+        .fallback-content .download-btn {
+            position: static;
+            margin: 10px;
+        }
+        
+        @media (max-width: 768px) {
+            .download-overlay {
+                top: 10px;
+                right: 10px;
+                left: 10px;
+                flex-direction: row;
+                justify-content: center;
+            }
+            
+            .download-btn {
+                padding: 12px 20px;
+                font-size: 14px;
+            }
+            
+            .os-badge {
+                display: none;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>🦋 NozyWallet</h1>
-        <p>Redirecting to NozyWallet...</p>
-        <p>If you're not redirected, <a href="https://nozy-wallet.vercel.app/">click here</a>.</p>
-        <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.8;">
-            <a href="/downloads/">Downloads</a>
-        </p>
+    
+    <div class="download-overlay">
+        <div class="os-badge" id="os-badge">Detecting OS...</div>
+        <a href="#" class="download-btn" id="download-btn">
+            <span class="icon">⬇️</span>
+            <span id="download-text">Download NozyWallet</span>
+        </a>
     </div>
+    
+    
+    <iframe 
+        src="https://nozy-wallet.vercel.app/" 
+        class="vercel-container"
+        title="NozyWallet - Privacy by Default"
+        allow="fullscreen"
+        loading="eager"
+        id="vercel-iframe">
+    </iframe>
+    
+    
+    <div class="fallback-content" id="fallback">
+        <div>
+            <h1>🦋 NozyWallet</h1>
+            <p>Privacy by Default</p>
+            <div class="download-overlay" style="position: static;">
+                <div class="os-badge" id="fallback-os-badge">Detecting OS...</div>
+                <a href="#" class="download-btn" id="fallback-download-btn">
+                    <span class="icon">⬇️</span>
+                    <span id="fallback-download-text">Download NozyWallet</span>
+                </a>
+            </div>
+            <p style="margin-top: 2rem; font-size: 0.9rem; opacity: 0.8;">
+                <a href="/downloads/" style="color: white; text-decoration: underline;">View All Downloads</a>
+            </p>
+        </div>
+    </div>
+
     <script>
-        window.location.href = "https://nozy-wallet.vercel.app/";
+        
+        function detectOS() {
+            const userAgent = navigator.userAgent || navigator.vendor || window.opera;
+            const platform = navigator.platform || '';
+            
+            // Windows
+            if (/win/i.test(platform) || /Win32|Win64|Windows/.test(userAgent)) {
+                return {
+                    os: 'windows',
+                    name: 'Windows',
+                    searchTerms: ['windows', 'x86_64-pc-windows-msvc', 'cli']
+                };
+            }
+            
+            // macOS
+            if (/Mac|MacIntel|MacPPC|Mac68K/i.test(platform) || /Macintosh/.test(userAgent)) {
+                
+                if (/arm|aarch64/i.test(navigator.userAgent) || navigator.platform === 'MacARM64') {
+                    return {
+                        os: 'macos-arm',
+                        name: 'macOS (Apple Silicon)',
+                        searchTerms: ['aarch64-apple-darwin', 'arm', 'cli']
+                    };
+                } else {
+                    return {
+                        os: 'macos-intel',
+                        name: 'macOS (Intel)',
+                        searchTerms: ['x86_64-apple-darwin', 'intel', 'cli']
+                    };
+                }
+            }
+            
+            // Linux
+            if (/Linux|X11/i.test(platform) || /Linux/.test(userAgent)) {
+                return {
+                    os: 'linux',
+                    name: 'Linux',
+                    searchTerms: ['linux', 'x86_64-unknown-linux-gnu', 'cli']
+                };
+            }
+            
+            // Default to Linux 
+            return {
+                os: 'linux',
+                name: 'Linux',
+                searchTerms: ['linux', 'x86_64-unknown-linux-gnu', 'cli']
+            };
+        }
+        
+        function findAssetForOS(assets, osInfo) {
+            const nameLower = (name) => name.toLowerCase();
+            
+            for (const asset of assets) {
+                const assetName = nameLower(asset.name);
+                
+                const matches = osInfo.searchTerms.every(term => 
+                    assetName.includes(nameLower(term))
+                );
+                
+                if (matches) {
+                    return asset;
+                }
+            }
+            
+            for (const asset of assets) {
+                const assetName = nameLower(asset.name);
+                
+                if (osInfo.os === 'windows' && assetName.includes('windows') && assetName.includes('cli')) {
+                    return asset;
+                } else if (osInfo.os.startsWith('macos') && (assetName.includes('darwin') || assetName.includes('macos')) && assetName.includes('cli')) {
+                    if (osInfo.os === 'macos-arm' && (assetName.includes('aarch64') || assetName.includes('arm'))) {
+                        return asset;
+                    } else if (osInfo.os === 'macos-intel' && (assetName.includes('x86_64') || assetName.includes('intel'))) {
+                        return asset;
+                    } else if (osInfo.os.startsWith('macos')) {
+                        return asset; 
+                    }
+                } else if (osInfo.os === 'linux' && assetName.includes('linux') && assetName.includes('cli')) {
+                    return asset;
+                }
+            }
+            
+            return null;
+        }
+        
+        
+        async function setupDownload() {
+            const osInfo = detectOS();
+            const downloadBtn = document.getElementById('download-btn');
+            const downloadText = document.getElementById('download-text');
+            const osBadge = document.getElementById('os-badge');
+            const fallbackDownloadBtn = document.getElementById('fallback-download-btn');
+            const fallbackDownloadText = document.getElementById('fallback-download-text');
+            const fallbackOsBadge = document.getElementById('fallback-os-badge');
+            
+            osBadge.textContent = osInfo.name;
+            if (fallbackOsBadge) {
+                fallbackOsBadge.textContent = osInfo.name;
+            }
+            
+            downloadBtn.classList.add('loading');
+            downloadText.textContent = 'Loading...';
+            if (fallbackDownloadText) {
+                fallbackDownloadText.textContent = 'Loading...';
+            }
+            
+            try {
+                const response = await fetch('https://api.github.com/repos/LEONINE-DAO/Nozy-wallet/releases/latest');
+                const release = await response.json();
+                
+                if (!release.assets || release.assets.length === 0) {
+                    throw new Error('No assets found in release');
+                }
+                
+                const asset = findAssetForOS(release.assets, osInfo);
+                
+                if (asset) {
+                    const sizeMB = (asset.size / 1024 / 1024).toFixed(1);
+                    
+                    downloadBtn.href = asset.browser_download_url;
+                    downloadText.textContent = `Download (${sizeMB} MB)`;
+                    downloadBtn.classList.remove('loading');
+                    
+                    if (fallbackDownloadBtn) {
+                        fallbackDownloadBtn.href = asset.browser_download_url;
+                        fallbackDownloadText.textContent = `Download (${sizeMB} MB)`;
+                    }
+                    
+                    downloadBtn.addEventListener('click', function(e) {
+                        
+                        console.log('Downloading:', asset.name, 'for', osInfo.name);
+                    });
+                    
+                    if (fallbackDownloadBtn) {
+                        fallbackDownloadBtn.addEventListener('click', function(e) {
+                            console.log('Downloading:', asset.name, 'for', osInfo.name);
+                        });
+                    }
+                } else {
+                    
+                    downloadBtn.href = '/downloads/';
+                    downloadText.textContent = 'View Downloads';
+                    downloadBtn.classList.remove('loading');
+                    
+                    if (fallbackDownloadBtn) {
+                        fallbackDownloadBtn.href = '/downloads/';
+                        fallbackDownloadText.textContent = 'View Downloads';
+                    }
+                }
+            } catch (error) {
+                console.error('Error loading release:', error);
+                
+                
+                downloadBtn.href = '/downloads/';
+                downloadText.textContent = 'View Downloads';
+                downloadBtn.classList.remove('loading');
+                
+                if (fallbackDownloadBtn) {
+                    fallbackDownloadBtn.href = '/downloads/';
+                    fallbackDownloadText.textContent = 'View Downloads';
+                }
+            }
+        }
+        
+        
+        const iframe = document.getElementById('vercel-iframe');
+        const fallback = document.getElementById('fallback');
+        
+        iframe.onerror = function() {
+            fallback.classList.add('active');
+            iframe.style.display = 'none';
+        };
+        
+        
+        setTimeout(function() {
+            try {
+                
+                if (iframe.contentWindow === null || iframe.contentWindow.location.href === 'about:blank') {
+                    fallback.classList.add('active');
+                    iframe.style.display = 'none';
+                }
+            } catch (e) {
+                
+                fallback.classList.add('active');
+                iframe.style.display = 'none';
+            }
+        }, 3000);
+        
+      
+        setupDownload();
     </script>
 </body>
 </html>
