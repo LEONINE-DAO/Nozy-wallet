@@ -8,6 +8,7 @@ on:
     paths:
       - 'downloads/**'
       - 'index.html'
+      - 'assets/**'
       - '.github/workflows/deploy-downloads.yml'
   release:
     types: [published]
@@ -59,9 +60,19 @@ jobs:
           # Copy downloads page
           cp -r downloads/* _site/downloads/ 2>/dev/null || true
           
+          # Copy assets folder (for Vercel landing page)
+          if [ -d assets ]; then
+            echo "📦 Copying assets folder"
+            cp -r assets _site/ 2>/dev/null || true
+          fi
+          
           # Verify files
           echo "📦 Files ready for deployment:"
           ls -la _site/ || true
+          if [ -d _site/assets ]; then
+            echo "✅ Assets folder:"
+            ls -la _site/assets/ || true
+          fi
           ls -la _site/downloads/ || true
 
       - name: Upload artifact

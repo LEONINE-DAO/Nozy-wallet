@@ -156,9 +156,19 @@ jobs:
             cp -r main-repo/downloads/* _site/downloads/ 2>/dev/null || true
           fi
           
+          # Copy assets folder (for Vercel landing page)
+          if [ -d main-repo/assets ]; then
+            echo "📦 Copying assets folder"
+            cp -r main-repo/assets _site/ 2>/dev/null || true
+          fi
+          
           # List what we're deploying
           echo "📦 Deploying:"
           find _site -type f | head -20
+          if [ -d _site/assets ]; then
+            echo "✅ Assets folder contents:"
+            ls -la _site/assets/ || true
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
