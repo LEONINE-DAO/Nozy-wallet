@@ -99,94 +99,12 @@
         <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="action-btn docs-btn" id="docs-btn">
             📚 View Documentation
         </a>
-        <a href="#" class="action-btn" id="download-btn">⬇️ Download</a>
+        <a href="./downloads/" class="action-btn" id="download-btn">⬇️ Download</a>
     </div>
 
     <script>
-        function detectOS() {
-            const platform = navigator.platform || '';
-            const userAgent = navigator.userAgent || '';
-            
-            if (/win/i.test(platform) || /Win32|Win64|Windows/.test(userAgent)) {
-                return { os: 'windows', searchTerms: ['windows', 'x86_64-pc-windows-msvc', 'cli'] };
-            }
-            if (/Mac|MacIntel|MacPPC|Mac68K/i.test(platform) || /Macintosh/.test(userAgent)) {
-                if (/arm|aarch64/i.test(navigator.userAgent) || navigator.platform === 'MacARM64') {
-                    return { os: 'macos-arm', searchTerms: ['aarch64-apple-darwin', 'arm', 'cli'] };
-                }
-                return { os: 'macos-intel', searchTerms: ['x86_64-apple-darwin', 'intel', 'cli'] };
-            }
-            if (/Linux|X11/i.test(platform) || /Linux/.test(userAgent)) {
-                return { os: 'linux', searchTerms: ['linux', 'x86_64-unknown-linux-gnu', 'cli'] };
-            }
-            return { os: 'linux', searchTerms: ['linux', 'x86_64-unknown-linux-gnu', 'cli'] };
-        }
-        
-        function findAsset(assets, osInfo) {
-            const nameLower = (name) => name.toLowerCase();
-            
-            for (const asset of assets) {
-                const name = nameLower(asset.name);
-                if (osInfo.searchTerms.every(term => name.includes(nameLower(term)))) {
-                    return asset;
-                }
-            }
-            
-            for (const asset of assets) {
-                const name = nameLower(asset.name);
-                if (osInfo.os === 'windows' && name.includes('windows') && name.includes('cli')) {
-                    return asset;
-                } else if (osInfo.os.startsWith('macos') && (name.includes('darwin') || name.includes('macos')) && name.includes('cli')) {
-                    if ((osInfo.os === 'macos-arm' && (name.includes('aarch64') || name.includes('arm'))) ||
-                        (osInfo.os === 'macos-intel' && (name.includes('x86_64') || name.includes('intel')))) {
-                        return asset;
-                    } else if (osInfo.os.startsWith('macos')) {
-                        return asset;
-                    }
-                } else if (osInfo.os === 'linux' && name.includes('linux') && name.includes('cli')) {
-                    return asset;
-                }
-            }
-            return null;
-        }
-        
-        async function setupDownload() {
-            const btn = document.getElementById('download-btn');
-            const osInfo = detectOS();
-            
-            btn.classList.add('loading');
-            btn.textContent = 'Loading...';
-            
-            try {
-                const response = await fetch('https://api.github.com/repos/LEONINE-DAO/Nozy-wallet/releases/latest');
-                const release = await response.json();
-                
-                if (release.assets && release.assets.length > 0) {
-                    const asset = findAsset(release.assets, osInfo);
-                    
-                    if (asset) {
-                        btn.href = asset.browser_download_url;
-                        const sizeMB = (asset.size / 1024 / 1024).toFixed(1);
-                        btn.textContent = `⬇️ Download (${sizeMB} MB)`;
-                        btn.download = asset.name;
-                    } else {
-                        btn.href = './downloads/';
-                        btn.textContent = '⬇️ View Downloads';
-                    }
-                } else {
-                    btn.href = './downloads/';
-                    btn.textContent = '⬇️ View Downloads';
-                }
-            } catch (error) {
-                console.error('Error setting up download:', error);
-                btn.href = './downloads/';
-                btn.textContent = '⬇️ View Downloads';
-            }
-            
-            btn.classList.remove('loading');
-        }
-        
-        setupDownload();
+        // Download button links directly to downloads page
+        // Users can select their platform and download there
     </script>
 </body>
 </html>
