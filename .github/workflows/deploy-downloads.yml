@@ -58,7 +58,18 @@ jobs:
           fi
           
           # Copy downloads page
-          cp -r downloads/* _site/downloads/ 2>/dev/null || true
+          if [ -d downloads ]; then
+            echo "📦 Copying downloads directory"
+            cp -r downloads/* _site/downloads/ 2>/dev/null || true
+            # Ensure index.html exists in downloads
+            if [ -f downloads/index.html ]; then
+              echo "✅ Downloads index.html found"
+            else
+              echo "⚠️  Downloads index.html not found"
+            fi
+          else
+            echo "⚠️  Downloads directory not found"
+          fi
           
           # Copy assets folder (for Vercel landing page)
           if [ -d assets ]; then
@@ -68,12 +79,25 @@ jobs:
           
           # Verify files
           echo "📦 Files ready for deployment:"
+          echo "Root files:"
           ls -la _site/ || true
           if [ -d _site/assets ]; then
             echo "✅ Assets folder:"
             ls -la _site/assets/ || true
           fi
-          ls -la _site/downloads/ || true
+          if [ -d _site/downloads ]; then
+            echo "✅ Downloads folder:"
+            ls -la _site/downloads/ || true
+            if [ -f _site/downloads/index.html ]; then
+              echo "✅ Downloads index.html exists"
+            else
+              echo "❌ Downloads index.html MISSING!"
+              exit 1
+            fi
+          else
+            echo "❌ Downloads directory MISSING!"
+            exit 1
+          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

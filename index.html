@@ -170,16 +170,16 @@
                         btn.textContent = `⬇️ Download (${sizeMB} MB)`;
                         btn.download = asset.name;
                     } else {
-                        btn.href = '/downloads/';
+                        btn.href = './downloads/';
                         btn.textContent = '⬇️ View Downloads';
                     }
                 } else {
-                    btn.href = '/downloads/';
+                    btn.href = './downloads/';
                     btn.textContent = '⬇️ View Downloads';
                 }
             } catch (error) {
                 console.error('Error setting up download:', error);
-                btn.href = '/downloads/';
+                btn.href = './downloads/';
                 btn.textContent = '⬇️ View Downloads';
             }
             
