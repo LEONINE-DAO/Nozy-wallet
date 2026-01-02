@@ -24,14 +24,17 @@
             display: block;
         }
         
-        .download-overlay {
+        .action-overlay {
             position: fixed;
             bottom: 20px;
             right: 20px;
             z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
         }
         
-        .download-btn {
+        .action-btn {
             background: rgba(255, 255, 255, 0.95);
             color: #667eea;
             padding: 12px 24px;
@@ -42,27 +45,43 @@
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
             transition: all 0.3s ease;
             display: inline-block;
+            text-align: center;
+            white-space: nowrap;
         }
         
-        .download-btn:hover {
+        .action-btn:hover {
             background: white;
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
         }
         
-        .download-btn.loading {
+        .action-btn.loading {
             opacity: 0.7;
             cursor: wait;
         }
         
+        .action-btn.docs-btn {
+            background: rgba(102, 126, 234, 0.9);
+            color: white;
+        }
+        
+        .action-btn.docs-btn:hover {
+            background: rgba(102, 126, 234, 1);
+        }
+        
         @media (max-width: 768px) {
-            .download-overlay {
+            .action-overlay {
                 bottom: 10px;
                 right: 10px;
+                left: 10px;
+                flex-direction: row;
+                justify-content: center;
             }
-            .download-btn {
+            .action-btn {
                 padding: 10px 20px;
                 font-size: 13px;
+                flex: 1;
+                max-width: 200px;
             }
         }
     </style>
@@ -76,8 +95,11 @@
         loading="eager">
     </iframe>
     
-    <div class="download-overlay">
-        <a href="#" class="download-btn" id="download-btn">Download</a>
+    <div class="action-overlay">
+        <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="action-btn docs-btn" id="docs-btn">
+            📚 View Documentation
+        </a>
+        <a href="#" class="action-btn" id="download-btn">⬇️ Download</a>
     </div>
 
     <script>
@@ -145,18 +167,20 @@
                     if (asset) {
                         btn.href = asset.browser_download_url;
                         const sizeMB = (asset.size / 1024 / 1024).toFixed(1);
-                        btn.textContent = `Download (${sizeMB} MB)`;
+                        btn.textContent = `⬇️ Download (${sizeMB} MB)`;
+                        btn.download = asset.name;
                     } else {
                         btn.href = '/downloads/';
-                        btn.textContent = 'View Downloads';
+                        btn.textContent = '⬇️ View Downloads';
                     }
                 } else {
                     btn.href = '/downloads/';
-                    btn.textContent = 'View Downloads';
+                    btn.textContent = '⬇️ View Downloads';
                 }
             } catch (error) {
+                console.error('Error setting up download:', error);
                 btn.href = '/downloads/';
-                btn.textContent = 'View Downloads';
+                btn.textContent = '⬇️ View Downloads';
             }
             
             btn.classList.remove('loading');
