@@ -30,15 +30,40 @@
     <script type="module" crossorigin src="/Nozy-wallet/assets/index-CSzPK1kz.js"></script>
     <link rel="stylesheet" crossorigin href="/Nozy-wallet/assets/index-Zl7hyVsg.css">
     <script>
-        // Wait for React app to fully load, then modify download buttons
+        (function() {
+            function fixLogoPath() {
+                const images = document.querySelectorAll('img[src="/logo.png"], img[src*="logo.png"]');
+                images.forEach(img => {
+                    if (img.src.includes('/logo.png') && !img.src.includes('/Nozy-wallet/')) {
+                        img.src = '/Nozy-wallet/logo.png';
+                    }
+                });
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', fixLogoPath);
+            } else {
+                fixLogoPath();
+            }
+            
+            const observer = new MutationObserver(fixLogoPath);
+            observer.observe(document.body || document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['src']
+            });
+            
+            window.addEventListener('load', fixLogoPath);
+        })();
+        
         (function() {
             let attempts = 0;
-            const maxAttempts = 20; // Try for 10 seconds (20 * 500ms)
+            const maxAttempts = 20; 
             
             function modifyDownloadButtons() {
                 attempts++;
                 
-                // Find all possible download buttons/links
                 const selectors = [
                     'a[href*="download"]',
                     'button:has-text("download")',
@@ -51,14 +76,12 @@
                 
                 let foundButtons = false;
                 
-                // Try to find download buttons by text content
                 document.querySelectorAll('a, button, [role="button"], [onclick*="download"]').forEach(element => {
                     const text = (element.textContent || '').toLowerCase();
                     const href = element.getAttribute('href') || '';
                     const onclick = element.getAttribute('onclick') || '';
                     const className = element.className || '';
                     
-                    // Check if it's a download button
                     if (text.includes('download') || 
                         href.toLowerCase().includes('download') || 
                         onclick.toLowerCase().includes('download') ||
@@ -66,11 +89,9 @@
                         
                         foundButtons = true;
                         
-                        // Remove existing handlers
                         element.onclick = null;
                         element.removeAttribute('onclick');
                         
-                        // Set new behavior
                         if (element.tagName === 'A') {
                             element.href = 'downloads/';
                             element.setAttribute('href', 'downloads/');
@@ -83,7 +104,6 @@
                             }, true);
                         }
                         
-                        // Also handle any React onClick handlers
                         const reactProps = Object.keys(element).filter(key => key.startsWith('__react'));
                         reactProps.forEach(prop => {
                             try {
@@ -100,31 +120,27 @@
                                     }
                                 }
                             } catch (e) {
-                                // Ignore errors
+                               
                             }
                         });
                     }
                 });
                 
-                // If we found buttons or tried enough times, stop
                 if (foundButtons || attempts >= maxAttempts) {
                     if (foundButtons) {
                         console.log('✅ Modified download buttons');
                     }
                 } else {
-                    // Try again after a delay
                     setTimeout(modifyDownloadButtons, 500);
                 }
             }
             
-            // Start trying immediately
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', modifyDownloadButtons);
             } else {
                 modifyDownloadButtons();
             }
             
-            // Also watch for dynamically added elements
             const observer = new MutationObserver(function(mutations) {
                 modifyDownloadButtons();
             });
@@ -136,10 +152,8 @@
                 attributeFilter: ['href', 'onclick']
             });
             
-            // Also try on window load
             window.addEventListener('load', modifyDownloadButtons);
             
-            // Global click interceptor - catch download button clicks at document level
             document.addEventListener('click', function(e) {
                 const target = e.target;
                 const text = (target.textContent || '').toLowerCase();
@@ -147,13 +161,11 @@
                 const className = target.className || '';
                 const id = target.id || '';
                 
-                // Check if clicked element is a download button
                 if (text.includes('download') || 
                     href.toLowerCase().includes('download') || 
                     className.toLowerCase().includes('download') ||
                     id.toLowerCase().includes('download')) {
                     
-                    // Check if it's not already pointing to downloads/
                     if (!href.includes('downloads/') && !href.includes('downloads.html')) {
                         e.preventDefault();
                         e.stopPropagation();
@@ -162,7 +174,6 @@
                     }
                 }
                 
-                // Also check parent elements (for nested structures)
                 let parent = target.parentElement;
                 for (let i = 0; i < 3 && parent; i++) {
                     const parentText = (parent.textContent || '').toLowerCase();
@@ -179,7 +190,7 @@
                     }
                     parent = parent.parentElement;
                 }
-            }, true); // Use capture phase to catch before React handlers
+            }, true); 
         })();
     </script>
   </head>
