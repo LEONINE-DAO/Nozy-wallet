@@ -1,42 +1,56 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed</title>
-    <meta name="description" content="NozyWallet is the only Zcash wallet that enforces complete privacy for every transaction. Same privacy as Monero, but faster and more efficient. Privacy by default.">
+  <head>
+    <meta charset="UTF-8" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="./assets/logo.png"
+    />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <meta
+      name="keywords"
+      content="privacy wallet, zcash wallet, monero alternative, private cryptocurrency, untraceable transactions, zero-knowledge proofs, shielded transactions"
+    />
+    <meta
+      name="description"
+      content="NozyWallet is the only Zcash wallet that enforces complete privacy for every transaction. Same privacy as Monero, but faster and more efficient. Privacy by default."
+    />
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <title>
+      NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed
+    </title>
+    <script type="module" crossorigin src="./assets/index-CSzPK1kz.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/index-Zl7hyVsg.css">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-        
-        html, body {
-            height: 100%;
-            overflow: hidden;
-        }
-        
-        #vercel-iframe {
-            width: 100%;
-            height: 100vh;
-            border: none;
-            display: block;
-        }
-        
-        .action-overlay {
+        /* Overlay buttons for download and documentation */
+        .nozy-overlay-buttons {
             position: fixed;
-            bottom: 20px;
-            right: 20px;
             z-index: 10000;
             display: flex;
-            flex-direction: column;
             gap: 12px;
         }
         
-        .action-btn {
+        .nozy-overlay-buttons.top-right {
+            top: 20px;
+            right: 20px;
+        }
+        
+        .nozy-overlay-buttons.bottom-right {
+            bottom: 20px;
+            right: 20px;
+            flex-direction: column;
+        }
+        
+        .nozy-btn {
             background: rgba(255, 255, 255, 0.95);
-            color: #667eea;
+            color: #1a1a1a;
             padding: 12px 24px;
             border-radius: 30px;
             text-decoration: none;
@@ -47,37 +61,41 @@
             display: inline-block;
             text-align: center;
             white-space: nowrap;
+            border: 2px solid #1a1a1a;
         }
         
-        .action-btn:hover {
-            background: white;
+        .nozy-btn:hover {
+            background: #1a1a1a;
+            color: #FFD700;
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
         }
         
-        .action-btn.loading {
-            opacity: 0.7;
-            cursor: wait;
-        }
-        
-        .action-btn.docs-btn {
+        .nozy-btn.docs {
             background: rgba(102, 126, 234, 0.9);
             color: white;
+            border: 2px solid rgba(102, 126, 234, 0.9);
         }
         
-        .action-btn.docs-btn:hover {
+        .nozy-btn.docs:hover {
             background: rgba(102, 126, 234, 1);
         }
         
         @media (max-width: 768px) {
-            .action-overlay {
+            .nozy-overlay-buttons.top-right {
+                top: 10px;
+                right: 10px;
+            }
+            
+            .nozy-overlay-buttons.bottom-right {
                 bottom: 10px;
                 right: 10px;
                 left: 10px;
                 flex-direction: row;
                 justify-content: center;
             }
-            .action-btn {
+            
+            .nozy-btn {
                 padding: 10px 20px;
                 font-size: 13px;
                 flex: 1;
@@ -85,26 +103,39 @@
             }
         }
     </style>
-</head>
-<body>
-    <iframe 
-        id="vercel-iframe"
-        src="https://nozy-wallet.vercel.app/" 
-        title="NozyWallet - Privacy by Default"
-        allow="fullscreen"
-        loading="eager">
-    </iframe>
+  </head>
+  <body>
+    <div id="root"></div>
     
-    <div class="action-overlay">
-        <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="action-btn docs-btn" id="docs-btn">
+    <!-- Top right download button -->
+    <div class="nozy-overlay-buttons top-right">
+        <a href="./downloads/" class="nozy-btn">⬇️ Download</a>
+    </div>
+    
+    <!-- Bottom right action buttons -->
+    <div class="nozy-overlay-buttons bottom-right">
+        <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="nozy-btn docs">
             📚 View Documentation
         </a>
-        <a href="./downloads/" class="action-btn" id="download-btn">⬇️ Download</a>
+        <a href="./downloads/" class="nozy-btn">⬇️ Download</a>
     </div>
-
+    
     <script>
-        // Download button links directly to downloads page
-        // Users can select their platform and download there
+        // Intercept any download button clicks from the React app and redirect to downloads page
+        document.addEventListener('click', function(e) {
+            // Check if clicked element or parent is a download button
+            const target = e.target.closest('a, button');
+            if (target) {
+                const text = target.textContent.toLowerCase();
+                const href = target.getAttribute('href');
+                
+                // If it's a download button, redirect to our downloads page
+                if (text.includes('download') && href && !href.includes('downloads')) {
+                    e.preventDefault();
+                    window.location.href = './downloads/';
+                }
+            }
+        }, true);
     </script>
-</body>
+  </body>
 </html>
