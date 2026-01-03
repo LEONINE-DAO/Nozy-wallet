@@ -75,6 +75,13 @@ jobs:
           if [ -d assets ]; then
             echo "📦 Copying assets folder"
             cp -r assets _site/ 2>/dev/null || true
+            
+            # React bundle expects /logo.png at root, so copy it there too
+            if [ -f assets/logo.png ]; then
+              echo "📦 Copying logo.png to root (React bundle expects /logo.png)"
+              cp assets/logo.png _site/logo.png
+              echo "✅ Logo copied to root"
+            fi
           fi
           
           # Verify files
