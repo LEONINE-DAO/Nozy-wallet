@@ -138,6 +138,48 @@
             
             // Also try on window load
             window.addEventListener('load', modifyDownloadButtons);
+            
+            // Global click interceptor - catch download button clicks at document level
+            document.addEventListener('click', function(e) {
+                const target = e.target;
+                const text = (target.textContent || '').toLowerCase();
+                const href = target.getAttribute('href') || '';
+                const className = target.className || '';
+                const id = target.id || '';
+                
+                // Check if clicked element is a download button
+                if (text.includes('download') || 
+                    href.toLowerCase().includes('download') || 
+                    className.toLowerCase().includes('download') ||
+                    id.toLowerCase().includes('download')) {
+                    
+                    // Check if it's not already pointing to downloads/
+                    if (!href.includes('downloads/') && !href.includes('downloads.html')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.location.href = 'downloads/';
+                        return false;
+                    }
+                }
+                
+                // Also check parent elements (for nested structures)
+                let parent = target.parentElement;
+                for (let i = 0; i < 3 && parent; i++) {
+                    const parentText = (parent.textContent || '').toLowerCase();
+                    const parentHref = parent.getAttribute('href') || '';
+                    const parentClass = parent.className || '';
+                    
+                    if (parentText.includes('download') && 
+                        !parentHref.includes('downloads/') &&
+                        (parent.tagName === 'A' || parent.tagName === 'BUTTON')) {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        window.location.href = 'downloads/';
+                        return false;
+                    }
+                    parent = parent.parentElement;
+                }
+            }, true); // Use capture phase to catch before React handlers
         })();
     </script>
   </head>
