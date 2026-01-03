@@ -20,18 +20,22 @@ jobs:
             target: x86_64-unknown-linux-gnu
             binary: nozy
             extension: ""
+            friendly_name: nozy-linux
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: nozy.exe
             extension: ".exe"
+            friendly_name: nozy-windows.exe
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: nozy
             extension: ""
+            friendly_name: nozy-macos-intel
           - os: macos-latest
             target: aarch64-apple-darwin
             binary: nozy
             extension: ""
+            friendly_name: nozy-macos-arm
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -68,18 +72,15 @@ jobs:
            cargo build --release --target ${{ matrix.target }} --bin nozy)
         timeout-minutes: 45
 
-      - name: Generate SHA256 hash
-        id: hash
+      - name: Rename binary to friendly name and generate hash
         shell: bash
         run: |
+          cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.friendly_name }}
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            certutil -hashfile target/${{ matrix.target }}/release/${{ matrix.binary }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > hash.txt
+            certutil -hashfile ${{ matrix.friendly_name }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > ${{ matrix.friendly_name }}.sha256
           else
-            shasum -a 256 target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
+            shasum -a 256 ${{ matrix.friendly_name }} > ${{ matrix.friendly_name }}.sha256
           fi
-          HASH=$(cat hash.txt | awk '{print $1}')
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Generated hash: $HASH"
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
@@ -87,8 +88,8 @@ jobs:
         with:
           name: nozy-cli-${{ matrix.target }}${{ matrix.extension }}
           path: |
-            target/${{ matrix.target }}/release/${{ matrix.binary }}
-            hash.txt
+            ${{ matrix.friendly_name }}
+            ${{ matrix.friendly_name }}.sha256
           retention-days: 90
           if-no-files-found: error
 
@@ -188,28 +189,35 @@ jobs:
         with:
           path: artifacts
 
+      - name: Rename and organize release files
+        run: |
+          mkdir -p release-files
+          # Copy and rename CLI binaries to friendly names
+          find artifacts -type f -name "nozy-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
+          find artifacts -type f -name "nozy-*.sha256" -exec cp {} release-files/ \;
+          # Copy API server binaries (keep original names)
+          find artifacts -type f -name "nozywallet-api-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
+          find artifacts -type f -name "nozywallet-api-*.sha256" -exec cp {} release-files/ \; || true
+
       - name: Generate hashes file
         run: |
-          echo "# NozyWallet Release Hashes" > RELEASE_HASHES.txt
-          echo "" >> RELEASE_HASHES.txt
-          echo "## SHA256 Hashes" >> RELEASE_HASHES.txt
-          echo "" >> RELEASE_HASHES.txt
-          echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> RELEASE_HASHES.txt
-          echo "Version: ${GITHUB_REF#refs/tags/}" >> RELEASE_HASHES.txt
-          echo "" >> RELEASE_HASHES.txt
-          echo "## CLI Binaries" >> RELEASE_HASHES.txt
-          echo "" >> RELEASE_HASHES.txt
+          echo "# NozyWallet Release Hashes" > release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          echo "## SHA256 Hashes" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          echo "Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> release-files/HASHES.txt
+          echo "Version: ${GITHUB_REF#refs/tags/}" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          echo "## CLI Binaries" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
           
           # Collect all hash files
-          find artifacts -name "hash.txt" -exec cat {} \; >> RELEASE_HASHES.txt || true
-          find artifacts -name "hashes.txt" -exec cat {} \; >> RELEASE_HASHES.txt || true
+          find release-files -name "*.sha256" -exec cat {} \; >> release-files/HASHES.txt || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            artifacts/**/*
-            RELEASE_HASHES.txt
+          files: release-files/**
           draft: false
           prerelease: false
           generate_release_notes: true
@@ -219,10 +227,10 @@ jobs:
             ### 📦 Downloads
             
             **CLI Binary:**
-            - Linux (x86_64): `nozy-cli-x86_64-unknown-linux-gnu`
-            - Windows (x86_64): `nozy-cli-x86_64-pc-windows-msvc.exe`
-            - macOS Intel: `nozy-cli-x86_64-apple-darwin`
-            - macOS Apple Silicon: `nozy-cli-aarch64-apple-darwin`
+            - Linux (x86_64): `nozy-linux`
+            - Windows (x86_64): `nozy-windows.exe`
+            - macOS Intel: `nozy-macos-intel`
+            - macOS Apple Silicon: `nozy-macos-arm`
             
             **API Server:**
             - Linux (x86_64): `nozywallet-api-x86_64-unknown-linux-gnu`
