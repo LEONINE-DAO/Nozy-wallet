@@ -361,7 +361,6 @@
                     const name = asset.name.toLowerCase();
                     const size = (asset.size / 1024 / 1024).toFixed(2);
                     
-                    // Check for friendly CLI names first (nozy-windows.exe, nozy-linux, nozy-macos-*)
                     if (name === 'nozy-windows.exe' || (name.includes('windows') && name.includes('nozy') && !name.includes('api'))) {
                         updateDownloadLink('windows', 'cli', asset.browser_download_url, asset.name, size);
                     } else if (name === 'nozy-linux' || (name.includes('linux') && name.includes('nozy') && !name.includes('api'))) {
@@ -370,9 +369,7 @@
                         updateDownloadLink('macos-intel', 'cli', asset.browser_download_url, asset.name, size);
                     } else if (name === 'nozy-macos-arm' || (name.includes('macos') && (name.includes('aarch64') || name.includes('arm')) && name.includes('nozy') && !name.includes('api'))) {
                         updateDownloadLink('macos-arm', 'cli', asset.browser_download_url, asset.name, size);
-                    }
-                    // Fallback to old naming convention
-                    else if (name.includes('windows') && name.includes('cli')) {
+                    } else if (name.includes('windows') && name.includes('cli')) {
                         updateDownloadLink('windows', 'cli', asset.browser_download_url, asset.name, size);
                     } else if (name.includes('macos') || name.includes('darwin')) {
                         if (name.includes('aarch64') || name.includes('arm')) {
@@ -419,7 +416,6 @@
                     const hash = match[1];
                     const filename = match[2].trim().toLowerCase();
                     
-                    // Check for friendly CLI names first
                     if (filename === 'nozy-windows.exe' || (filename.includes('windows') && filename.includes('nozy') && !filename.includes('api'))) {
                         document.getElementById('hash-windows-cli').textContent = hash;
                     } else if (filename === 'nozy-linux' || (filename.includes('linux') && filename.includes('nozy') && !filename.includes('api'))) {
@@ -428,9 +424,7 @@
                         document.getElementById('hash-macos-intel-cli').textContent = hash;
                     } else if (filename === 'nozy-macos-arm' || (filename.includes('macos') && (filename.includes('aarch64') || filename.includes('arm')) && filename.includes('nozy') && !filename.includes('api'))) {
                         document.getElementById('hash-macos-arm-cli').textContent = hash;
-                    }
-                    // Fallback to old naming convention
-                    else if (filename.includes('windows') && filename.includes('cli')) {
+                    } else if (filename.includes('windows') && filename.includes('cli')) {
                         document.getElementById('hash-windows-cli').textContent = hash;
                     } else if (filename.includes('macos') || filename.includes('darwin')) {
                         if (filename.includes('aarch64') || filename.includes('arm')) {
