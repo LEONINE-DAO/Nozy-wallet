@@ -7,6 +7,8 @@ on:
       - master
     paths:
       - '.github/workflows/deploy-landing-from-desktopclient.yml'
+      - 'index.html'
+      - 'assets/**'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -48,22 +50,12 @@ jobs:
           # Create site directory
           mkdir -p _site
           
-          # Always ensure we have a landing page - start with local as default
+          # Priority 1: Use local index.html (we host Vercel page directly now)
           if [ -f main-repo/index.html ]; then
-            echo "📄 Using local index.html as base"
+            echo "✅ Using local index.html (hosting Vercel page directly)"
             cp main-repo/index.html _site/index.html
-          fi
           
-          # Priority 1: Try to use Vercel landing page if downloaded successfully
-          if [ -f vercel-landing.html ] && [ "${{ steps.download-vercel.outcome }}" == "success" ]; then
-            echo "✅ Overriding with landing page from Vercel"
-            cp vercel-landing.html _site/index.html
-            # Update asset paths to use Vercel CDN (keeps CSS/JS working)
-            sed -i 's|href="/|href="https://nozy-wallet.vercel.app/|g' _site/index.html || true
-            sed -i 's|src="/|src="https://nozy-wallet.vercel.app/|g' _site/index.html || true
-            echo "✅ Updated asset paths to use Vercel CDN"
-          
-          # Priority 2: Try DesktopClient repo if it was checked out successfully
+          # Priority 2: Try DesktopClient repo if local not available and checkout succeeded
           elif [ -d desktopclient ] && [ "${{ steps.checkout-desktopclient.outcome }}" == "success" ]; then
             echo "✅ DesktopClient repo checked out successfully"
             # Look for index.html in common locations
@@ -156,10 +148,20 @@ jobs:
             cp -r main-repo/downloads/* _site/downloads/ 2>/dev/null || true
           fi
           
-          # Copy assets folder (for Vercel landing page)
+          # Copy assets folder (REQUIRED for Vercel landing page to work)
           if [ -d main-repo/assets ]; then
-            echo "📦 Copying assets folder"
+            echo "📦 Copying assets folder (REQUIRED)"
             cp -r main-repo/assets _site/ 2>/dev/null || true
+            if [ -d _site/assets ]; then
+              echo "✅ Assets folder copied successfully"
+              ls -la _site/assets/ || true
+            else
+              echo "❌ ERROR: Assets folder not copied!"
+              exit 1
+            fi
+          else
+            echo "❌ ERROR: Assets folder not found in main-repo!"
+            exit 1
           fi
           
           # List what we're deploying
