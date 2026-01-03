@@ -159,6 +159,13 @@ jobs:
               echo "❌ ERROR: Assets folder not copied!"
               exit 1
             fi
+            
+            # React bundle expects /logo.png at root, so copy it there too
+            if [ -f main-repo/assets/logo.png ]; then
+              echo "📦 Copying logo.png to root (React bundle expects /logo.png)"
+              cp main-repo/assets/logo.png _site/logo.png
+              echo "✅ Logo copied to root"
+            fi
           else
             echo "❌ ERROR: Assets folder not found in main-repo!"
             exit 1
