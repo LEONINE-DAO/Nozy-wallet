@@ -29,7 +29,6 @@
     <script type="module" crossorigin src="./assets/index-CSzPK1kz.js"></script>
     <link rel="stylesheet" crossorigin href="./assets/index-Zl7hyVsg.css">
     <style>
-        /* Overlay buttons for download and documentation */
         .nozy-overlay-buttons {
             position: fixed;
             z-index: 10000;
@@ -107,12 +106,10 @@
   <body>
     <div id="root"></div>
     
-    <!-- Top right download button -->
     <div class="nozy-overlay-buttons top-right">
         <a href="./downloads/" class="nozy-btn">⬇️ Download</a>
     </div>
     
-    <!-- Bottom right action buttons -->
     <div class="nozy-overlay-buttons bottom-right">
         <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="nozy-btn docs">
             📚 View Documentation
@@ -121,15 +118,12 @@
     </div>
     
     <script>
-        // Intercept any download button clicks from the React app and redirect to downloads page
         document.addEventListener('click', function(e) {
-            // Check if clicked element or parent is a download button
             const target = e.target.closest('a, button');
             if (target) {
                 const text = target.textContent.toLowerCase();
                 const href = target.getAttribute('href');
                 
-                // If it's a download button, redirect to our downloads page
                 if (text.includes('download') && href && !href.includes('downloads')) {
                     e.preventDefault();
                     window.location.href = './downloads/';
