@@ -321,8 +321,12 @@
                 <h3>🔐 How to Verify Downloads</h3>
                 <p><strong>Windows:</strong></p>
                 <code>certutil -hashfile nozy-windows.exe SHA256</code>
-                <p style="margin-top: 1rem;"><strong>macOS/Linux:</strong></p>
-                <code>shasum -a 256 nozy-macos</code>
+                <p style="margin-top: 1rem;"><strong>macOS (Intel):</strong></p>
+                <code>shasum -a 256 nozy-macos-intel</code>
+                <p style="margin-top: 1rem;"><strong>macOS (Apple Silicon):</strong></p>
+                <code>shasum -a 256 nozy-macos-arm</code>
+                <p style="margin-top: 1rem;"><strong>Linux:</strong></p>
+                <code>shasum -a 256 nozy-linux</code>
                 <p style="margin-top: 1rem;">Compare the output with the hash shown above. They should match exactly.</p>
             </div>
 
@@ -357,7 +361,18 @@
                     const name = asset.name.toLowerCase();
                     const size = (asset.size / 1024 / 1024).toFixed(2);
                     
-                    if (name.includes('windows') && name.includes('cli')) {
+                    // Check for friendly CLI names first (nozy-windows.exe, nozy-linux, nozy-macos-*)
+                    if (name === 'nozy-windows.exe' || (name.includes('windows') && name.includes('nozy') && !name.includes('api'))) {
+                        updateDownloadLink('windows', 'cli', asset.browser_download_url, asset.name, size);
+                    } else if (name === 'nozy-linux' || (name.includes('linux') && name.includes('nozy') && !name.includes('api'))) {
+                        updateDownloadLink('linux', 'cli', asset.browser_download_url, asset.name, size);
+                    } else if (name === 'nozy-macos-intel' || (name.includes('macos') && name.includes('intel') && name.includes('nozy') && !name.includes('api'))) {
+                        updateDownloadLink('macos-intel', 'cli', asset.browser_download_url, asset.name, size);
+                    } else if (name === 'nozy-macos-arm' || (name.includes('macos') && (name.includes('aarch64') || name.includes('arm')) && name.includes('nozy') && !name.includes('api'))) {
+                        updateDownloadLink('macos-arm', 'cli', asset.browser_download_url, asset.name, size);
+                    }
+                    // Fallback to old naming convention
+                    else if (name.includes('windows') && name.includes('cli')) {
                         updateDownloadLink('windows', 'cli', asset.browser_download_url, asset.name, size);
                     } else if (name.includes('macos') || name.includes('darwin')) {
                         if (name.includes('aarch64') || name.includes('arm')) {
@@ -404,7 +419,18 @@
                     const hash = match[1];
                     const filename = match[2].trim().toLowerCase();
                     
-                    if (filename.includes('windows') && filename.includes('cli')) {
+                    // Check for friendly CLI names first
+                    if (filename === 'nozy-windows.exe' || (filename.includes('windows') && filename.includes('nozy') && !filename.includes('api'))) {
+                        document.getElementById('hash-windows-cli').textContent = hash;
+                    } else if (filename === 'nozy-linux' || (filename.includes('linux') && filename.includes('nozy') && !filename.includes('api'))) {
+                        document.getElementById('hash-linux-cli').textContent = hash;
+                    } else if (filename === 'nozy-macos-intel' || (filename.includes('macos') && filename.includes('intel') && filename.includes('nozy') && !filename.includes('api'))) {
+                        document.getElementById('hash-macos-intel-cli').textContent = hash;
+                    } else if (filename === 'nozy-macos-arm' || (filename.includes('macos') && (filename.includes('aarch64') || filename.includes('arm')) && filename.includes('nozy') && !filename.includes('api'))) {
+                        document.getElementById('hash-macos-arm-cli').textContent = hash;
+                    }
+                    // Fallback to old naming convention
+                    else if (filename.includes('windows') && filename.includes('cli')) {
                         document.getElementById('hash-windows-cli').textContent = hash;
                     } else if (filename.includes('macos') || filename.includes('darwin')) {
                         if (filename.includes('aarch64') || filename.includes('arm')) {
