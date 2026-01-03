@@ -1,55 +1,42 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link
-      rel="icon"
-      type="image/svg+xml"
-      href="./assets/logo.png"
-    />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
-    <meta
-      name="keywords"
-      content="privacy wallet, zcash wallet, monero alternative, private cryptocurrency, untraceable transactions, zero-knowledge proofs, shielded transactions"
-    />
-    <meta
-      name="description"
-      content="NozyWallet is the only Zcash wallet that enforces complete privacy for every transaction. Same privacy as Monero, but faster and more efficient. Privacy by default."
-    />
-    <!-- Google Fonts: Inter -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <title>
-      NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed
-    </title>
-    <script type="module" crossorigin src="./assets/index-CSzPK1kz.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Zl7hyVsg.css">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed</title>
+    <meta name="description" content="NozyWallet is the only Zcash wallet that enforces complete privacy for every transaction. Same privacy as Monero, but faster and more efficient. Privacy by default.">
     <style>
-        .nozy-overlay-buttons {
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        html, body {
+            height: 100%;
+            overflow: hidden;
+        }
+        
+        #vercel-iframe {
+            width: 100%;
+            height: 100vh;
+            border: none;
+            display: block;
+        }
+        
+        .action-overlay {
             position: fixed;
+            bottom: 20px;
+            right: 20px;
             z-index: 10000;
             display: flex;
+            flex-direction: column;
             gap: 12px;
         }
         
-        .nozy-overlay-buttons.top-right {
-            top: 20px;
-            right: 20px;
-        }
-        
-        .nozy-overlay-buttons.bottom-right {
-            bottom: 20px;
-            right: 20px;
-            flex-direction: column;
-        }
-        
-        .nozy-btn {
+        .action-btn {
             background: rgba(255, 255, 255, 0.95);
-            color: #1a1a1a;
+            color: #667eea;
             padding: 12px 24px;
             border-radius: 30px;
             text-decoration: none;
@@ -60,41 +47,32 @@
             display: inline-block;
             text-align: center;
             white-space: nowrap;
-            border: 2px solid #1a1a1a;
         }
         
-        .nozy-btn:hover {
-            background: #1a1a1a;
-            color: #FFD700;
+        .action-btn:hover {
+            background: white;
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
         }
         
-        .nozy-btn.docs {
+        .action-btn.docs-btn {
             background: rgba(102, 126, 234, 0.9);
             color: white;
-            border: 2px solid rgba(102, 126, 234, 0.9);
         }
         
-        .nozy-btn.docs:hover {
+        .action-btn.docs-btn:hover {
             background: rgba(102, 126, 234, 1);
         }
         
         @media (max-width: 768px) {
-            .nozy-overlay-buttons.top-right {
-                top: 10px;
-                right: 10px;
-            }
-            
-            .nozy-overlay-buttons.bottom-right {
+            .action-overlay {
                 bottom: 10px;
                 right: 10px;
                 left: 10px;
                 flex-direction: row;
                 justify-content: center;
             }
-            
-            .nozy-btn {
+            .action-btn {
                 padding: 10px 20px;
                 font-size: 13px;
                 flex: 1;
@@ -102,34 +80,26 @@
             }
         }
     </style>
-  </head>
-  <body>
-    <div id="root"></div>
+</head>
+<body>
+    <iframe 
+        id="vercel-iframe"
+        src="https://nozy-wallet.vercel.app/" 
+        title="NozyWallet - Privacy by Default"
+        allow="fullscreen"
+        loading="eager">
+    </iframe>
     
-    <div class="nozy-overlay-buttons top-right">
-        <a href="./downloads/" class="nozy-btn">⬇️ Download</a>
-    </div>
-    
-    <div class="nozy-overlay-buttons bottom-right">
-        <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="nozy-btn docs">
+    <div class="action-overlay">
+        <a href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/README.md#-documentation" target="_blank" class="action-btn docs-btn" id="docs-btn">
             📚 View Documentation
         </a>
-        <a href="./downloads/" class="nozy-btn">⬇️ Download</a>
+        <a href="./downloads/" class="action-btn" id="download-btn">⬇️ Download</a>
     </div>
-    
+
     <script>
-        document.addEventListener('click', function(e) {
-            const target = e.target.closest('a, button');
-            if (target) {
-                const text = target.textContent.toLowerCase();
-                const href = target.getAttribute('href');
-                
-                if (text.includes('download') && href && !href.includes('downloads')) {
-                    e.preventDefault();
-                    window.location.href = './downloads/';
-                }
-            }
-        }, true);
+        // Download button links directly to downloads page
+        // Users can select their platform and download there
     </script>
-  </body>
+</body>
 </html>
