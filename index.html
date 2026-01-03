@@ -2,10 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <base href="/Nozy-wallet/">
     <link
       rel="icon"
       type="image/svg+xml"
-      href="./assets/logo.png"
+      href="assets/logo.png"
     />
     <meta
       name="viewport"
@@ -26,8 +27,8 @@
     <title>
       NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed
     </title>
-    <script type="module" crossorigin src="./assets/index-CSzPK1kz.js"></script>
-    <link rel="stylesheet" crossorigin href="./assets/index-Zl7hyVsg.css">
+    <script type="module" crossorigin src="assets/index-CSzPK1kz.js"></script>
+    <link rel="stylesheet" crossorigin href="assets/index-Zl7hyVsg.css">
     <script>
         // Wait for React app to load, then modify download buttons
         window.addEventListener('load', function() {
@@ -48,11 +49,11 @@
                         
                         // Set new href or click handler
                         if (element.tagName === 'A') {
-                            element.href = './downloads/';
+                            element.href = 'downloads/';
                         } else {
                             element.addEventListener('click', function(e) {
                                 e.preventDefault();
-                                window.location.href = './downloads/';
+                                window.location.href = 'downloads/';
                             });
                         }
                     }
