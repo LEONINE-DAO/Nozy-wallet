@@ -31,6 +31,8 @@ ripemd = "0.1"
 aes-gcm = "0.10"
 bech32 = "0.9"
 argon2 = "0.5"
+# Secure memory zeroization for sensitive data
+zeroize = { version = "1.6", features = ["zeroize_derive"] }
 
 # Time handling
 # Updated to latest version to fix security vulnerabilities (RUSTSEC-2020-0159, RUSTSEC-2024-0395)
@@ -90,6 +92,12 @@ ark-serialize = "0.4"
 # Zeaking indexing system
 zeaking = { path = "zeaking", version = "0.1.0" }
 async-trait = "0.1"
+
+# Parallel processing for CPU-intensive operations
+rayon = "1.8"
+
+# Futures utilities for parallel async operations
+futures = "0.3"
 
 [workspace]
 members = ["zeaking", "api-server"]

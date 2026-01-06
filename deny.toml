@@ -1,0 +1,52 @@
+# Cargo-deny configuration for NozyWallet
+# See: https://github.com/EmbarkStudios/cargo-deny
+
+[licenses]
+# Allow MIT and compatible licenses
+default = "deny"
+copyleft = "deny"
+# Allow these licenses
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Unlicense",
+    "Zlib",
+]
+
+# Exemptions (if needed)
+# exemptions = [
+#     { name = "some-crate", reason = "..." },
+# ]
+
+[bans]
+# Multiple versions of the same crate
+multiple-versions = "warn"
+
+# Skip certain crates from duplicate version checks
+skip = []
+
+[sources]
+# Only allow crates from crates.io
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[advisories]
+# Check for security advisories
+vulnerability = "deny"
+unmaintained = "warn"
+unsound = "deny"
+notice = "warn"
+yanked = "deny"
+# Ignore specific advisories if needed
+# ignore = []
+
+[metadata]
+# Metadata for the project
+authors = ["LEONINE-DAO"]
+maintainers = ["LEONINE-DAO"]
+

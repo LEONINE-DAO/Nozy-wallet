@@ -45,6 +45,17 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - name: Verify Cargo.lock is up to date
+        run: |
+          cargo generate-lockfile --check || (echo "❌ Cargo.lock is out of date. Run 'cargo update' and commit Cargo.lock" && exit 1)
+          echo "✅ Cargo.lock is up to date"
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit || (echo "❌ Security vulnerabilities found. Fix before release." && exit 1)
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
         with:
@@ -123,6 +134,17 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.target }}
+
+      - name: Verify Cargo.lock is up to date
+        run: |
+          cargo generate-lockfile --check || (echo "❌ Cargo.lock is out of date. Run 'cargo update' and commit Cargo.lock" && exit 1)
+          echo "✅ Cargo.lock is up to date"
+
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Run security audit
+        run: cargo audit || (echo "❌ Security vulnerabilities found. Fix before release." && exit 1)
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
