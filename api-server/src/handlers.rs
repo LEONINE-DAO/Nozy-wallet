@@ -261,7 +261,11 @@ pub async fn create_wallet(
             )
         })?;
 
-    Ok(ResponseJson(wallet.get_mnemonic()))
+    // SECURITY: Never return full mnemonic in API responses
+    // Only return masked version for security
+    // Note: Consider removing mnemonic endpoints entirely for production
+    use nozy::safe_display::display_mnemonic_safe;
+    Ok(ResponseJson(display_mnemonic_safe(&wallet.get_mnemonic())))
 }
 
 pub async fn restore_wallet(
@@ -324,7 +328,11 @@ pub async fn unlock_wallet(
             )
         })?;
 
-    Ok(ResponseJson(wallet.get_mnemonic()))
+    // SECURITY: Never return full mnemonic in API responses
+    // Only return masked version for security
+    // Note: Consider removing mnemonic endpoints entirely for production
+    use nozy::safe_display::display_mnemonic_safe;
+    Ok(ResponseJson(display_mnemonic_safe(&wallet.get_mnemonic())))
 }
 
 pub async fn generate_address(

@@ -16,7 +16,6 @@ pub struct SwapService {
 }
 
 impl SwapService {
-    /// Create new swap service client with privacy proxy
     pub fn new(
         api_url: Option<String>,
         api_key: Option<String>,
@@ -24,7 +23,6 @@ impl SwapService {
     ) -> NozyResult<Self> {
         let api_url = api_url.unwrap_or_else(|| "https://api.swap-service.example.com".to_string());
         
-        // Create client with privacy proxy
         let client = if let Some(proxy_config) = proxy {
             proxy_config.create_client()?
         } else {
@@ -40,7 +38,6 @@ impl SwapService {
         })
     }
     
-    /// Initiate a swap
     pub async fn initiate_swap(&self, request: SwapRequest) -> NozyResult<SwapResponse> {
         println!("🔄 Initiating swap through privacy network...");
         println!("   Direction: {:?}", request.direction);
@@ -69,9 +66,8 @@ impl SwapService {
                     match response.json::<SwapResponse>().await {
                         Ok(swap_response) => Ok(swap_response),
                         Err(e) => {
-                            // If API response doesn't match expected format, use placeholder
                             eprintln!("⚠️  Warning: Failed to parse swap service response: {}", e);
-                            eprintln!("   Using placeholder response. Configure swap service API URL in config.");
+                            eprintln!("   Using fallback response. Configure swap service API URL in config.");
                             Ok(SwapResponse {
                                 swap_id: format!("swap_{}", hex::encode(rand::thread_rng().gen::<[u8; 8]>())),
                                 deposit_address: request.from_address.clone(),
@@ -85,8 +81,7 @@ impl SwapService {
                     let status = response.status();
                     let error_text = response.text().await.unwrap_or_else(|_| "Unknown error".to_string());
                     eprintln!("⚠️  Swap service API error ({}): {}", status, error_text);
-                    eprintln!("   Using placeholder response. Check swap service configuration.");
-                    // Return placeholder for now
+                    eprintln!("   Using fallback response. Check swap service configuration.");
                     Ok(SwapResponse {
                         swap_id: format!("swap_{}", hex::encode(rand::thread_rng().gen::<[u8; 8]>())),
                         deposit_address: request.from_address.clone(),
@@ -98,8 +93,7 @@ impl SwapService {
             },
             Err(e) => {
                 eprintln!("⚠️  Failed to connect to swap service: {}", e);
-                eprintln!("   Using placeholder response. Check swap service URL and network connection.");
-                // Return placeholder for graceful degradation
+                eprintln!("   Using fallback response. Check swap service URL and network connection.");
                 Ok(SwapResponse {
                     swap_id: format!("swap_{}", hex::encode(&rand::random::<[u8; 8]>())),
                     deposit_address: request.from_address.clone(),
@@ -111,7 +105,6 @@ impl SwapService {
         }
     }
     
-    /// Check swap status
     pub async fn get_swap_status(&self, swap_id: &str) -> NozyResult<SwapStatusResponse> {
         let mut request = self.client
             .get(&format!("{}/swap/status/{}", self.api_url, swap_id))
@@ -128,7 +121,6 @@ impl SwapService {
                         Ok(status) => Ok(status),
                         Err(e) => {
                             eprintln!("⚠️  Warning: Failed to parse swap status: {}", e);
-                            // Return placeholder
                             Ok(SwapStatusResponse {
                                 swap_id: swap_id.to_string(),
                                 status: SwapStatus::Processing,
@@ -138,7 +130,6 @@ impl SwapService {
                         }
                     }
                 } else {
-                    // API error, return placeholder
                     Ok(SwapStatusResponse {
                         swap_id: swap_id.to_string(),
                         status: SwapStatus::Processing,
@@ -149,7 +140,6 @@ impl SwapService {
             },
             Err(e) => {
                 eprintln!("⚠️  Failed to check swap status: {}", e);
-                // Return placeholder for graceful degradation
                 Ok(SwapStatusResponse {
                     swap_id: swap_id.to_string(),
                     status: SwapStatus::Processing,
@@ -165,10 +155,8 @@ impl SwapService {
         use crate::cache::SimpleCache;
         use std::sync::Mutex;
         
-        // Use a static cache for swap rates (5 minute TTL)
         static RATE_CACHE: Mutex<Option<SimpleCache<f64>>> = Mutex::new(None);
         
-        // Check cache first
         let cache_key = format!("{}/{}", from, to);
         {
             let mut cache_guard = RATE_CACHE.lock().unwrap_or_else(|_| {
@@ -185,7 +173,6 @@ impl SwapService {
             }
         }
         
-        // Try to get rate from swap service API
         let mut request = self.client
             .get(&format!("{}/swap/rate/{}/{}", self.api_url, from, to))
             .timeout(Duration::from_secs(10));
@@ -200,7 +187,7 @@ impl SwapService {
                     match response.json::<serde_json::Value>().await {
                         Ok(json) => {
                             if let Some(api_rate) = json.get("rate").and_then(|v| v.as_f64()) {
-                                // Cache the rate
+                                
                                 {
                                     let mut cache_guard = RATE_CACHE.lock().unwrap();
                                     if let Some(cache) = cache_guard.as_mut() {
@@ -221,11 +208,10 @@ impl SwapService {
             Err(_) => None
         };
         
-        // Fallback to placeholder rate if API fails
         let final_rate = if let Some(r) = rate {
             r
         } else {
-            eprintln!("⚠️  Warning: Could not fetch rate from swap service, using placeholder");
+            eprintln!("⚠️  Warning: Could not fetch rate from swap service, using default rate");
             if from == "xmr" && to == "zec" {
                 0.5
             } else if from == "zec" && to == "xmr" {

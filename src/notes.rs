@@ -3,8 +3,12 @@ use crate::hd_wallet::HDWallet;
 use crate::zebra_integration::ZebraClient;
 use crate::block_parser::ParsedTransaction;
 use crate::note_index::NoteIndex;
+use crate::cache::SimpleCache;
+use crate::key_management::{SecureSeed, zeroize_bytes};
 use serde::{Serialize, Deserialize};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::Arc;
+use futures::future::join_all;
 
 use orchard::{
     keys::{SpendingKey, FullViewingKey, IncomingViewingKey},
@@ -83,61 +87,68 @@ pub struct NoteScanResult {
 pub struct NoteScanner {
     wallet: HDWallet,
     zebra_client: ZebraClient,
-    /// Optional index for incremental building during scan
     note_index: Option<NoteIndex>,
+    block_cache: Option<Arc<SimpleCache<Vec<ParsedTransaction>>>>,
+    parallel_blocks: usize,
 }
 
 impl NoteScanner {
-    /// Create a new NoteScanner without an index.
     pub fn new(wallet: HDWallet, zebra_client: ZebraClient) -> Self {
         Self {
             wallet,
             zebra_client,
             note_index: None,
+            block_cache: None,
+            parallel_blocks: 5, 
         }
     }
 
-    /// Create a new NoteScanner with an existing index for incremental updates.
-    /// 
-    /// Useful for resuming scans or loading from persisted index.
+    pub fn set_parallel_blocks(&mut self, count: usize) {
+        self.parallel_blocks = count.max(1).min(50);
+    }
+
+    pub fn enable_block_cache(&mut self) {
+        if self.block_cache.is_none() {
+            self.block_cache = Some(Arc::new(SimpleCache::new(3600))); // 1 hour TTL
+        }
+    }
+
+    
     pub fn with_index(wallet: HDWallet, zebra_client: ZebraClient, index: NoteIndex) -> Self {
         Self {
             wallet,
             zebra_client,
             note_index: Some(index),
+            block_cache: None,
+            parallel_blocks: 5,
         }
     }
 
-    /// Create a new NoteScanner, loading index from file if it exists.
-    /// 
-    /// This enables incremental scanning - new notes are added to the existing index.
+    
     pub fn with_index_file(wallet: HDWallet, zebra_client: ZebraClient, index_path: &std::path::PathBuf) -> NozyResult<Self> {
         let index = NoteIndex::load_from_file(index_path)?;
         Ok(Self {
             wallet,
             zebra_client,
             note_index: Some(index),
+            block_cache: None,
+            parallel_blocks: 5,
         })
     }
 
-    /// Get a reference to the index (if any).
     pub fn get_index(&self) -> Option<&NoteIndex> {
         self.note_index.as_ref()
     }
 
-    /// Get a mutable reference to the index (if any).
     pub fn get_index_mut(&mut self) -> Option<&mut NoteIndex> {
         self.note_index.as_mut()
     }
 
-    /// Take ownership of the index.
     pub fn take_index(self) -> Option<NoteIndex> {
         self.note_index
     }
 
-    /// Save the index to file (if an index exists).
-    /// 
-    /// Returns Ok(()) if saved successfully, or if no index exists.
+    
     pub fn save_index(&self, path: &std::path::PathBuf) -> NozyResult<()> {
         if let Some(ref index) = self.note_index {
             index.save_to_file(path)
@@ -181,32 +192,79 @@ impl NoteScanner {
         
         let account_id = AccountId::try_from(0).map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
         let mnemonic = self.wallet.get_mnemonic_object();
-        let seed = mnemonic.to_seed("");
-        let orchard_sk = SpendingKey::from_zip32_seed(&seed, 133, account_id)
+        
+        let mut seed_bytes = mnemonic.to_seed("").to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes.clone());
+        
+        let orchard_sk = SpendingKey::from_zip32_seed(secure_seed.as_bytes(), 133, account_id)
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e)))?;
             
         let orchard_fvk = FullViewingKey::from(&orchard_sk);
         let orchard_ivk_external = orchard_fvk.to_ivk(orchard::keys::Scope::External);
         let orchard_ivk_internal = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
         
+        zeroize_bytes(&mut seed_bytes);
+        
+        
         pb.println("🔑 Generated scanning keys from wallet mnemonic (checking both External and Internal scopes)");
         
-        // Initialize or get existing index
         let mut note_index = self.note_index.take().unwrap_or_else(NoteIndex::new);
         let mut all_notes = Vec::new();
         let mut spendable_notes = Vec::new();
         
-        for height in start_height..=end_height {
-            pb.set_message(format!("Block {}", height));
+        let block_cache = self.block_cache.clone().unwrap_or_else(|| {
+            Arc::new(SimpleCache::new(3600)) 
+        });
+        
+        let mut current_height = start_height;
+        let batch_size = self.parallel_blocks;
+        let zebra_client = &self.zebra_client;
+        
+        while current_height <= end_height {
+            let batch_end = (current_height + batch_size as u32 - 1).min(end_height);
             
-            match self.get_block_transactions(height).await {
-                Ok(transactions) => {
+            
+            let block_futures: Vec<_> = (current_height..=batch_end)
+                .map(|height| {
+                    let cache = block_cache.clone();
+                    let client = zebra_client.clone();
+                    async move {
+                        let cache_key = format!("block_{}", height);
+                        if let Some(cached) = cache.get(&cache_key) {
+                            return (height, Ok(cached));
+                        }
+                        
+                        let block_hash = match client.get_block_hash(height).await {
+                            Ok(hash) => hash,
+                            Err(e) => return (height, Err(NozyError::NetworkError(format!("Failed to get block hash: {}", e)))),
+                        };
+                        
+                        let block_data = match client.get_block_by_hash(&block_hash, 2).await {
+                            Ok(data) => data,
+                            Err(e) => return (height, Err(NozyError::NetworkError(format!("Failed to get block: {}", e)))),
+                        };
+                        
+                        let result = Self::parse_block_data(&block_data, height);
+                        if let Ok(ref txs) = result {
+                            cache.set(cache_key, txs.clone());
+                        }
+                        (height, result)
+                    }
+                })
+                .collect();
+            
+            let block_results = join_all(block_futures).await;
+            
+            for (height, block_result) in block_results {
+                pb.set_message(format!("Block {}", height));
+                
+                match block_result {
+                    Ok(transactions) => {
                     match self.try_decrypt_orchard_notes_real(&transactions, &orchard_ivk_external, &orchard_sk, height, orchard::keys::Scope::External) {
                         Ok((mut block_notes, mut block_spendable)) => {
                             if !block_notes.is_empty() {
                                 pb.println(format!("🎉 Found {} notes in block {} (External scope)", block_notes.len(), height));
                             }
-                            // Add notes to index incrementally
                             for note in &block_notes {
                                 let serializable: SerializableOrchardNote = note.into();
                                 note_index.add_note(serializable);
@@ -226,7 +284,6 @@ impl NoteScanner {
                             if !block_notes.is_empty() {
                                 pb.println(format!("🎉 Found {} notes in block {} (Internal scope)", block_notes.len(), height));
                             }
-                            // Add notes to index incrementally
                             for note in &block_notes {
                                 let serializable: SerializableOrchardNote = note.into();
                                 note_index.add_note(serializable);
@@ -247,20 +304,20 @@ impl NoteScanner {
             }
             
             pb.inc(1);
+            }
+            
+            current_height = batch_end + 1;
         }
         
         pb.finish_with_message("Scanning complete!");
         
-        // Use index for deduplication and statistics (more efficient than manual dedup)
-        // Note: index already contains all unique notes from incremental adds
+        
         let total_balance = note_index.total_balance();
         let unspent_count = note_index.unspent_count();
         let spendable_count = spendable_notes.len();
         
-        // Get all notes from index (already deduplicated)
         let serializable_notes: Vec<SerializableOrchardNote> = note_index.get_all_notes().to_vec();
         
-        // Store index back for potential reuse
         self.note_index = Some(note_index);
         
         let result = NoteScanResult {
@@ -398,11 +455,8 @@ impl NoteScanner {
         }
     }
     
-    async fn get_block_transactions(&self, height: u32) -> NozyResult<Vec<ParsedTransaction>> {
-        let block_hash = self.zebra_client.get_block_hash(height).await?;
-        let block_data = self.zebra_client.get_block_by_hash(&block_hash, 2).await?;
-        
-        let block_json: serde_json::Value = serde_json::to_value(&block_data)
+    fn parse_block_data(block_data: &serde_json::Value, height: u32) -> NozyResult<Vec<ParsedTransaction>> {
+        let block_json: serde_json::Value = serde_json::to_value(block_data)
             .map_err(|e| NozyError::InvalidOperation(format!("Failed to serialize block data: {}", e)))?;
         
         let mut transactions = Vec::new();
@@ -418,16 +472,17 @@ impl NoteScanner {
                         .unwrap_or(false);
                     
                     if has_orchard {
-                        println!("🔍 Found Orchard transaction: {} in block {}", txid, height);
-                        
                         let raw_hex = tx.get("hex").and_then(|v| v.as_str()).unwrap_or("");
+                        
+                        let orchard_json = tx.get("orchard")
+                            .ok_or_else(|| NozyError::InvalidOperation("No orchard data in transaction".to_string()))?;
                         
                         let parsed_tx = ParsedTransaction {
                             txid: txid.to_string(),
                             height,
                             index: i as u32,
                             raw_data: hex::decode(raw_hex).unwrap_or_default(),
-                            orchard_actions: self.parse_orchard_actions_from_json(tx.get("orchard").ok_or_else(|| NozyError::InvalidOperation("No orchard data in transaction".to_string()))?)?,
+                            orchard_actions: Self::parse_orchard_actions_from_json_static(orchard_json)?,
                         };
                         
                         transactions.push(parsed_tx);
@@ -438,8 +493,18 @@ impl NoteScanner {
         
         Ok(transactions)
     }
+
+    async fn get_block_transactions(&self, height: u32) -> NozyResult<Vec<ParsedTransaction>> {
+        let block_hash = self.zebra_client.get_block_hash(height).await?;
+        let block_data = self.zebra_client.get_block_by_hash(&block_hash, 2).await?;
+        Self::parse_block_data(&block_data, height)
+    }
     
     fn parse_orchard_actions_from_json(&self, orchard_json: &serde_json::Value) -> NozyResult<Vec<OrchardActionData>> {
+        Self::parse_orchard_actions_from_json_static(orchard_json)
+    }
+    
+    fn parse_orchard_actions_from_json_static(orchard_json: &serde_json::Value) -> NozyResult<Vec<OrchardActionData>> {
         let mut actions = Vec::new();
         
         if let Some(actions_array) = orchard_json["actions"].as_array() {

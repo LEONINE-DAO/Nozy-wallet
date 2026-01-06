@@ -1,6 +1,7 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::SpendableNote;
 use crate::transactions::{SignedTransaction, TransactionSignature, SignatureType};
+use crate::key_management::{SecureSpendingKeyBytes, zeroize_bytes};
 
 use redjubjub::{SigningKey, VerificationKey, Signature, Binding, SpendAuth};
 use pallas::redjubjub::{PrivateKey, PublicKey};
@@ -26,8 +27,14 @@ impl ZcashTransactionSigner {
         message: &[u8],
         rng: &mut impl Rng,
     ) -> NozyResult<[u8; 64]> {
-        let signing_key = SigningKey::<SpendAuth>::from_bytes(&spending_key.to_bytes());
+        let key_bytes_array = spending_key.to_bytes();
+        let mut key_bytes = key_bytes_array.to_vec();
+        let secure_key_bytes = SecureSpendingKeyBytes::new(key_bytes.clone());
+        
+        let signing_key = SigningKey::<SpendAuth>::from_bytes(secure_key_bytes.as_bytes());
         let signature = signing_key.sign(rng, message);
+        
+        zeroize_bytes(&mut key_bytes);
         
         let sig_bytes: [u8; 64] = signature.into();
         Ok(sig_bytes)
@@ -90,13 +97,18 @@ impl ZcashTransactionSigner {
         let mut signatures = Vec::new();
         
         for spend_note in spend_notes {
-            let spending_key = SpendingKey::from_bytes(&spend_note.private_key)
+            let mut private_key_bytes = spend_note.private_key.clone();
+            let secure_key_bytes = SecureSpendingKeyBytes::new(private_key_bytes.clone());
+            
+            let spending_key = SpendingKey::from_bytes(secure_key_bytes.as_bytes())
                 .map_err(|e| NozyError::KeyDerivation(format!("Invalid spending key: {}", e)))?;
             
             let signature_bytes = self.create_orchard_signature(&spending_key, sighash, rng)?;
             
             let full_viewing_key = FullViewingKey::from(&spending_key);
             let verification_key_bytes: [u8; 32] = full_viewing_key.to_bytes();
+            
+            zeroize_bytes(&mut private_key_bytes);
             
             let signature = TransactionSignature {
                 signature_type: SignatureType::Orchard,

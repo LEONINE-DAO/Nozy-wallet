@@ -110,52 +110,16 @@ impl OrchardProvingManager {
     }
 
     pub async fn download_parameters(&mut self) -> NozyResult<()> {
-        use std::io::Write;
         
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(60))
-            .tcp_keepalive(std::time::Duration::from_secs(60))
-            .pool_max_idle_per_host(2)
-            .build()
-            .unwrap_or_else(|_| reqwest::Client::new());
         
-        let urls = vec![
-            ("orchard-spend.params", "https://download.z.cash/downloads/sapling-spend.params"),
-            ("orchard-output.params", "https://download.z.cash/downloads/sapling-output.params"),
-            ("orchard-spend-verifying.key", "https://download.z.cash/downloads/sapling-spend-verifying.key"),
-            ("orchard-output-verifying.key", "https://download.z.cash/downloads/sapling-output-verifying.key"),
-        ];
+        println!("⚠️  INFO: Orchard uses Halo 2 proving system");
+        println!("   Halo 2 does NOT require external proving parameters");
+        println!("   Proving is handled internally by the Orchard library");
+        println!("   No downloads are needed for Orchard shielded transactions");
+        println!();
+        println!("✅ Orchard Halo 2 proving system is ready!");
+        println!("🚀 Your wallet is ready for shielded transactions!");
         
-        for (filename, url) in urls {
-            println!("📥 Downloading {} from {}", filename, url);
-            
-            let response = client.get(url)
-                .send()
-                .await
-                .map_err(|e| NozyError::NetworkError(format!("Failed to download {}: {}", filename, e)))?;
-            
-            if !response.status().is_success() {
-                return Err(NozyError::NetworkError(format!("Failed to download {}: HTTP {}", filename, response.status())));
-            }
-            
-            let data = response.bytes()
-                .await
-                .map_err(|e| NozyError::NetworkError(format!("Failed to read response for {}: {}", filename, e)))?;
-            
-            let path = self.params_dir.join(filename);
-            let mut file = fs::File::create(&path)
-                .map_err(|e| NozyError::Storage(format!("Failed to create {}: {}", filename, e)))?;
-            
-            file.write_all(&data)
-                .map_err(|e| NozyError::Storage(format!("Failed to write {}: {}", filename, e)))?;
-            
-            self.parameters.insert(filename.to_string(), data.to_vec());
-            
-            println!("✅ Downloaded {} ({} bytes)", filename, data.len());
-        }
-        
-        println!("🎉 All proving parameters downloaded successfully!");
-        println!("🚀 Your wallet is ready for Orchard shielded transactions!");
         Ok(())
     }
 

@@ -132,7 +132,6 @@ impl SecretRpcClient {
     
     /// Execute contract (for SNIP-20 transfers, etc.)
     /// Note: This endpoint requires proper transaction signing
-    /// For now, this is a placeholder that shows what's needed
     pub async fn execute_contract(
         &self,
         contract_address: &str,

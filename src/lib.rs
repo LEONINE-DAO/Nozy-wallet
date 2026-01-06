@@ -35,6 +35,8 @@ pub mod nu6_1_check;
 pub mod progress;
 pub mod input_validation;
 pub mod cache;
+pub mod key_management;
+pub mod safe_display;
 #[cfg(test)]
 pub mod tests;
 
