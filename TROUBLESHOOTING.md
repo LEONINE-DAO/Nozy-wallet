@@ -1,25 +1,53 @@
 # NozyWallet Troubleshooting Guide
 
+## Quick Reference
+
+**Common Error Messages and Quick Fixes:**
+
+| Error Message | Quick Fix | Section |
+|--------------|-----------|---------|
+| "Connection failed to http://127.0.0.1:8232: Is Zebra running?" | Start Zebra: `zebrad start --rpc.bind-addr 127.0.0.1:8232` | [1.1](#1-zebra-connection-issues) |
+| "Request timeout" | Check Zebra sync status, wait for sync to complete | [1.2](#problem-request-timeout-to-http1270018232-the-node-may-be-slow-or-overloaded) |
+| "Invalid JSON response" | Restart Zebra, check version compatibility | [1.3](#problem-invalid-json-response-from-http1270018232-or-rpc-error) |
+| "HTTP error 404/500" | Verify RPC configuration in Zebra config file | [1.4](#problem-http-error-404-or-http-error-500-from-zebra) |
+| "No wallet found" | Create wallet: `cargo run --bin nozy new` | [2.1](#problem-no-wallet-found-or-wallet-load-failed) |
+| "Invalid password" | Check password, restore from mnemonic if needed | [2.2](#problem-invalid-password-or-password-verification-failed) |
+| "Proving parameters not found" | Download: `cargo run --bin nozy proving --download` | [3.1](#problem-proving-parameters-not-found-or-cannot-prove) |
+| "Insufficient funds" | Rescan notes, check spendable balance | [4.1](#problem-insufficient-funds-or-transaction-build-failed) |
+| "Invalid address format" | Use unified address (u1...), not transparent (t1...) | [4.2](#problem-invalid-address-format-or-address-parsing-failed) |
+| "link.exe not found" (Windows) | Install Visual Studio Build Tools | [6.1](#problem-compilation-failed-or-build-error-or-linkexe-not-found-windows) |
+| "Transaction build failed" | Check proving parameters status | [12.1](#problem-transaction-build-failed-or-cannot-create-proofs) |
+
 ## Common Issues and Solutions
 
 ### 1. Zebra Connection Issues
 
-#### Problem: "Zebra connection failed" or "Network error"
+#### Problem: "Zebra connection failed" or "Connection failed to http://127.0.0.1:8232: Is Zebra running?"
 
 **Symptoms:**
 - `cargo run --bin nozy test-zebra` fails
-- Error messages about network connectivity
+- Error: "Failed to connect to local Zebra node at http://127.0.0.1:8232 after 4 attempts"
+- Error: "Connection failed to http://127.0.0.1:8232: Is Zebra running?"
 - Timeout errors when scanning or sending
 
 **Solutions:**
 
 1. **Check if Zebra is running:**
    ```bash
-   # Check if Zebra process is running
+   # On Linux/macOS
    ps aux | grep zebrad
    
-   # Or check if port 8232 is open
+   # On Windows (PowerShell)
+   Get-Process | Where-Object {$_.ProcessName -like "*zebrad*"}
+   
+   # Check if port 8232 is open
+   # Linux/macOS:
    netstat -tlnp | grep 8232
+   # or
+   lsof -i :8232
+   
+   # Windows:
+   netstat -ano | findstr :8232
    ```
 
 2. **Start Zebra with RPC enabled:**
@@ -27,59 +55,233 @@
    # Install Zebra if not already installed
    cargo install zebrad
    
-   # Start Zebra with RPC
+   # Start Zebra with RPC (Linux/macOS)
    zebrad start --rpc.bind-addr 127.0.0.1:8232
+   
+   # Or run in background
+   nohup zebrad start --rpc.bind-addr 127.0.0.1:8232 > zebrad.log 2>&1 &
    ```
 
 3. **Check Zebra configuration:**
    ```bash
-   # Check Zebra config file (~/.config/zebrad.toml)
-   cat ~/.config/zebrad.toml
+   # Check Zebra config file location
+   # Linux: ~/.config/zebrad.toml
+   # macOS: ~/Library/Application Support/zebrad/zebrad.toml
+   # Windows: %APPDATA%\zebrad\zebrad.toml
+   
+   cat ~/.config/zebrad.toml  # Linux
+   # or
+   cat ~/Library/Application\ Support/zebrad/zebrad.toml  # macOS
    
    # Ensure RPC is enabled:
    # [rpc]
    # listen_addr = "127.0.0.1:8232"
    ```
 
-4. **Test direct RPC connection:**
+4. **Create/Edit Zebra config:**
    ```bash
+   # Create config directory if it doesn't exist
+   mkdir -p ~/.config  # Linux
+   mkdir -p ~/Library/Application\ Support/zebrad  # macOS
+   
+   # Edit config file
+   nano ~/.config/zebrad.toml
+   
+   # Add or verify:
+   [rpc]
+   listen_addr = "127.0.0.1:8232"
+   ```
+
+5. **Test direct RPC connection:**
+   ```bash
+   # Test with curl
    curl -H 'content-type: application/json' \
         --data-binary '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}' \
         http://127.0.0.1:8232
+   
+   # Should return JSON with block count
+   # If it fails, Zebra RPC is not accessible
    ```
 
-5. **Check firewall settings:**
+6. **Check firewall settings:**
    ```bash
-   # On Linux
+   # On Linux (ufw)
    sudo ufw status
-   sudo ufw allow 8232
+   sudo ufw allow 8232/tcp
+   
+   # On Linux (firewalld)
+   sudo firewall-cmd --add-port=8232/tcp --permanent
+   sudo firewall-cmd --reload
    
    # On Windows
-   # Check Windows Firewall settings
+   # Open Windows Defender Firewall
+   # Add inbound rule for port 8232
+   # Or run PowerShell as admin:
+   New-NetFirewallRule -DisplayName "Zebra RPC" -Direction Inbound -LocalPort 8232 -Protocol TCP -Action Allow
    ```
 
-#### Problem: "Invalid JSON response" or "RPC error"
+7. **Check if another process is using port 8232:**
+   ```bash
+   # Linux/macOS
+   sudo lsof -i :8232
+   # Kill the process if needed:
+   kill -9 <PID>
+   
+   # Windows
+   netstat -ano | findstr :8232
+   # Kill the process:
+   taskkill /PID <PID> /F
+   ```
+
+#### Problem: "Request timeout to http://127.0.0.1:8232. The node may be slow or overloaded."
+
+**Symptoms:**
+- Requests to Zebra timeout
+- Slow response times
+- "Request timeout" errors
+
+**Solutions:**
+
+1. **Check Zebra sync status:**
+   ```bash
+   # Check if Zebra is still syncing
+   zebrad status
+   # If syncing, wait for it to complete
+   ```
+
+2. **Increase timeout (if using custom Zebra URL):**
+   ```bash
+   # Check current Zebra URL
+   cargo run --bin nozy config --show
+   
+   # The timeout is built into the client, but you can:
+   # - Ensure Zebra is fully synced
+   # - Use a faster Zebra node
+   # - Check system resources
+   ```
+
+3. **Check system resources:**
+   ```bash
+   # Check CPU and memory usage
+   htop  # Linux
+   top   # macOS/Linux
+   # Windows: Task Manager
+   
+   # Zebra may be resource-intensive during sync
+   ```
+
+4. **Restart Zebra:**
+   ```bash
+   # Stop Zebra
+   pkill zebrad  # Linux/macOS
+   # Windows: Task Manager or
+   taskkill /IM zebrad.exe /F
+   
+   # Start fresh
+   zebrad start --rpc.bind-addr 127.0.0.1:8232
+   ```
+
+#### Problem: "Invalid JSON response from http://127.0.0.1:8232" or "RPC error"
+
+**Symptoms:**
+- Error: "Invalid JSON response from http://127.0.0.1:8232"
+- Error: "HTTP error 500 from http://127.0.0.1:8232"
+- Malformed JSON in responses
 
 **Solutions:**
 
 1. **Check Zebra version compatibility:**
    ```bash
    zebrad --version
-   # Ensure you're using a recent version
+   # Ensure you're using Zebra 1.x or later
+   # Update if needed:
+   cargo install --force zebrad
    ```
 
-2. **Restart Zebra:**
+2. **Check Zebra RPC endpoint:**
+   ```bash
+   # Verify RPC is responding correctly
+   curl -X POST http://127.0.0.1:8232 \
+        -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}'
+   
+   # Should return valid JSON
+   ```
+
+3. **Check Zebra logs for errors:**
+   ```bash
+   # Linux/macOS
+   tail -f ~/.cache/zebrad/debug.log
+   # or
+   journalctl -u zebrad -f  # if running as service
+   
+   # Look for RPC-related errors
+   ```
+
+4. **Restart Zebra cleanly:**
+   ```bash
+   # Stop Zebra gracefully
+   pkill -TERM zebrad  # Linux/macOS
+   
+   # Wait a few seconds, then start
+   zebrad start --rpc.bind-addr 127.0.0.1:8232
+   ```
+
+5. **Check for Zebra database corruption:**
+   ```bash
+   # If Zebra keeps failing, database might be corrupted
+   # Backup and reset (WARNING: This will require re-sync)
+   # Only do this if absolutely necessary
+   mv ~/.cache/zebrad ~/.cache/zebrad.backup
+   zebrad start --rpc.bind-addr 127.0.0.1:8232
+   ```
+
+#### Problem: "HTTP error 404" or "HTTP error 500" from Zebra
+
+**Solutions:**
+
+1. **Verify RPC endpoint URL:**
+   ```bash
+   # Check current configuration
+   cargo run --bin nozy config --show
+   
+   # Ensure URL is correct:
+   # http://127.0.0.1:8232 (not https://)
+   # No trailing slash
+   ```
+
+2. **Check Zebra RPC configuration:**
+   ```bash
+   # Verify RPC is enabled in config
+   grep -A 2 "\[rpc\]" ~/.config/zebrad.toml
+   
+   # Should show:
+   # [rpc]
+   # listen_addr = "127.0.0.1:8232"
+   ```
+
+3. **Test with different RPC method:**
+   ```bash
+   # Try a simple RPC call
+   curl -X POST http://127.0.0.1:8232 \
+        -H 'Content-Type: application/json' \
+        -d '{"jsonrpc":"2.0","method":"getblockcount","params":[],"id":1}'
+   ```
+
+4. **Reconfigure Zebra RPC:**
    ```bash
    # Stop Zebra
    pkill zebrad
    
-   # Start fresh
-   zebrad start --rpc.bind-addr 127.0.0.1:8232
-   ```
-
-3. **Check Zebra logs:**
-   ```bash
-   tail -f ~/.cache/zebrad/debug.log
+   # Edit config
+   nano ~/.config/zebrad.toml
+   
+   # Add/update:
+   [rpc]
+   listen_addr = "127.0.0.1:8232"
+   
+   # Start Zebra
+   zebrad start
    ```
 
 ### 2. Wallet Issues
@@ -219,26 +421,59 @@
    # Compare with recipient address format
    ```
 
-#### Problem: "Invalid address format" or "Address parsing failed"
+#### Problem: "Invalid address format" or "Address parsing failed" or "Invalid recipient address"
+
+**Symptoms:**
+- Error: "Invalid recipient address. Must be a valid shielded address (u1...)"
+- Error: "Transparent addresses (t1) are not supported"
+- Error: "Recipient must include an Orchard receiver"
+- Address validation fails
 
 **Solutions:**
 
 1. **Check address format:**
-   - Orchard addresses start with `u1`
-   - Unified addresses are supported
-   - Ensure no extra spaces or characters
+   - Orchard addresses start with `u1` (unified addresses)
+   - NozyWallet **only supports shielded addresses** (Orchard)
+   - Transparent addresses (t1) are **not supported** for privacy
+   - Ensure no extra spaces, newlines, or special characters
 
-2. **Generate test address:**
+2. **Verify address is a unified address:**
    ```bash
+   # Generate a valid address to see the format
    cargo run --bin nozy addresses --count 1
-   # Use this format for testing
+   
+   # Example valid address format:
+   # u1testaddress1234567890abcdefghijklmnopqrstuvwxyz...
    ```
 
-3. **Verify address with Zcash tools:**
+3. **Check for common mistakes:**
    ```bash
-   # Use zcash-cli to verify address
-   zcash-cli validateaddress "u1..."
+   # Remove any whitespace
+   echo "u1..." | tr -d ' \n\r\t'
+   
+   # Check address length (should be ~78 characters for unified addresses)
+   echo -n "u1..." | wc -c
    ```
+
+4. **Validate address structure:**
+   - Must start with `u1`
+   - Must be valid bech32 encoding
+   - Must contain Orchard receiver
+   - No special characters except base32 characters
+
+5. **Test with a known good address:**
+   ```bash
+   # Generate your own address first
+   cargo run --bin nozy addresses --count 1
+   
+   # Use that address format as reference
+   ```
+
+6. **If using address from another wallet:**
+   - Ensure it's a **shielded address** (u1...)
+   - Not a transparent address (t1...)
+   - Not a legacy address
+   - Extract Orchard receiver from unified address if needed
 
 ### 5. Note Scanning Issues
 
@@ -508,5 +743,205 @@ If you lose access to your wallet:
    - Use encrypted storage
    - Keep mnemonic safe
    - Use strong passwords
+
+### 9. Configuration Issues
+
+#### Problem: "Configuration error" or "Invalid network setting"
+
+**Symptoms:**
+- Error when setting configuration
+- Network setting not recognized
+- Zebra URL not working
+
+**Solutions:**
+
+1. **Check current configuration:**
+   ```bash
+   cargo run --bin nozy config --show
+   ```
+
+2. **Reset to defaults:**
+   ```bash
+   # Remove config file (will use defaults)
+   rm ~/.config/nozy/config.json  # Linux
+   rm ~/Library/Application\ Support/com.nozy.nozy/config/config.json  # macOS
+   rm %APPDATA%\nozy\config\config.json  # Windows
+   ```
+
+3. **Set network correctly:**
+   ```bash
+   # Must be either "mainnet" or "testnet"
+   cargo run --bin nozy config --set-network mainnet
+   # or
+   cargo run --bin nozy config --set-network testnet
+   ```
+
+4. **Set Zebra URL:**
+   ```bash
+   # Use local Zebra
+   cargo run --bin nozy config --use-local
+   
+   # Or set custom URL
+   cargo run --bin nozy config --set-zebra-url http://127.0.0.1:8232
+   ```
+
+5. **Verify config file format:**
+   ```bash
+   # Check JSON is valid
+   cat ~/.config/nozy/config.json | python -m json.tool
+   ```
+
+### 10. Windows-Specific Issues
+
+#### Problem: "Path not found" or "Permission denied" on Windows
+
+**Solutions:**
+
+1. **Check file paths:**
+   ```powershell
+   # Windows uses backslashes in paths
+   # Config location: %APPDATA%\nozy\config\config.json
+   # Data location: %APPDATA%\nozy\data\
+   
+   # Check if directories exist
+   Test-Path $env:APPDATA\nozy\config
+   Test-Path $env:APPDATA\nozy\data
+   ```
+
+2. **Run PowerShell as Administrator (if needed):**
+   ```powershell
+   # Right-click PowerShell -> Run as Administrator
+   # Then run cargo commands
+   ```
+
+3. **Check Windows Defender/Antivirus:**
+   - May block wallet file access
+   - Add exception for NozyWallet directory
+   - Check Windows Defender logs
+
+4. **Use Git Bash instead of PowerShell:**
+   ```bash
+   # Git Bash handles paths better for some operations
+   # Install Git for Windows if needed
+   ```
+
+#### Problem: "link.exe not found" or "MSVC linker error" on Windows
+
+**Solutions:**
+
+1. **Install Visual Studio Build Tools:**
+   ```powershell
+   winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --add Microsoft.VisualStudio.Workload.VCTools"
+   ```
+
+2. **Use Developer Command Prompt:**
+   - Open "Developer Command Prompt for VS 2022"
+   - Run cargo commands from there
+
+3. **Set PATH manually:**
+   ```powershell
+   # Find link.exe location
+   Get-ChildItem -Path "C:\Program Files\Microsoft Visual Studio" -Recurse -Filter "link.exe" | Select-Object -First 1
+   
+   # Add to PATH (replace with actual path)
+   $env:PATH += ";C:\Program Files\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC\14.xx.xxxxx\bin\Hostx64\x64"
+   ```
+
+### 11. Network and Proxy Issues
+
+#### Problem: "Failed to connect" or "Proxy error"
+
+**Solutions:**
+
+1. **Check network connectivity:**
+   ```bash
+   # Test internet connection
+   ping google.com
+   
+   # Test Zebra connection
+   curl http://127.0.0.1:8232
+   ```
+
+2. **Check proxy settings:**
+   ```bash
+   # If behind a proxy, configure environment variables
+   export HTTP_PROXY=http://proxy.example.com:8080
+   export HTTPS_PROXY=http://proxy.example.com:8080
+   export NO_PROXY=127.0.0.1,localhost
+   ```
+
+3. **Disable proxy for local connections:**
+   ```bash
+   export NO_PROXY=127.0.0.1,localhost,*.local
+   ```
+
+4. **Check firewall rules:**
+   - Ensure port 8232 is allowed
+   - Check both inbound and outbound rules
+   - Verify localhost connections are allowed
+
+### 12. Transaction-Specific Errors
+
+#### Problem: "Transaction build failed" or "Cannot create proofs"
+
+**Symptoms:**
+- Error: "Cannot create proofs: proving system not ready"
+- Transaction building fails
+- Proving parameters missing
+
+**Solutions:**
+
+1. **Check proving status:**
+   ```bash
+   cargo run --bin nozy proving --status
+   ```
+
+2. **Download proving parameters:**
+   ```bash
+   # For testing
+   cargo run --bin nozy proving --download
+   
+   # For production, download real parameters
+   # See README.md for instructions
+   ```
+
+3. **Verify parameters are in correct location:**
+   ```bash
+   ls -la orchard_params/
+   # Should see:
+   # - orchard-spend.params
+   # - orchard-output.params
+   # - orchard-spend-verifying.key
+   # - orchard-output-verifying.key
+   ```
+
+#### Problem: "Insufficient funds" when balance shows funds
+
+**Solutions:**
+
+1. **Check actual spendable balance:**
+   ```bash
+   cargo run --bin nozy balance
+   # This shows spendable notes, not just total
+   ```
+
+2. **Account for transaction fees:**
+   - Transaction requires: amount + fee
+   - Check fee estimate:
+   ```bash
+   cargo run --bin nozy send --recipient "u1..." --amount 0.1
+   # Will show fee estimate before sending
+   ```
+
+3. **Rescan for notes:**
+   ```bash
+   # Notes might not be detected yet
+   cargo run --bin nozy scan --start-height 2000000 --end-height 2100000
+   ```
+
+4. **Check note maturity:**
+   - Some notes may not be immediately spendable
+   - Wait for confirmations
+   - Check transaction history
 
 This troubleshooting guide should help resolve most common issues. For additional help, refer to the GitHub issues or create a new discussion.

@@ -153,6 +153,110 @@ pub enum NozyError {
 - Seed phrase recovery
 - Multi-device sync
 
+## 🎯 Priority 6: User Interfaces & Platforms
+
+### 15. Desktop GUI Application
+**Status**: 🔄 **Migration in Progress** - Switching from Electron to Tauri
+**Priority**: High - Makes NozyWallet accessible to non-technical users
+
+**Current Status:**
+- ✅ Electron prototype exists: [NozyWallet-DesktopClient](https://github.com/LEONINE-DAO/NozyWallet-DesktopClient)
+- 🔄 **Migrating to Tauri** for better security, performance, and Rust integration
+- 📋 See [TAURI_MIGRATION_GUIDE.md](TAURI_MIGRATION_GUIDE.md) for complete migration guide
+
+**Why Tauri?**
+- ✅ **Native Rust Integration** - Direct access to NozyWallet backend (no API server needed)
+- ✅ **Smaller Binaries** - ~5-10MB vs Electron's 100MB+ (10-20x smaller!)
+- ✅ **Better Security** - Isolated processes, smaller attack surface, no Node.js
+- ✅ **Better Performance** - Native Rust code, lower memory footprint, faster startup
+- ✅ **Zcash Ecosystem Alignment** - Rust is the language of Zcash (Zebra, zcashd, etc.)
+- ✅ **Cross-Platform** - Windows, macOS, Linux support with native look and feel
+
+**Goals:**
+- Cross-platform desktop application (Windows, macOS, Linux)
+- Beautiful, privacy-focused user interface
+- Real-time balance and transaction updates
+- Visual transaction builder
+- Address book with labels
+- Transaction history viewer
+- Settings and configuration UI
+- **Direct Rust integration** - No API server overhead
+
+**Technology Stack:**
+- **Backend**: Tauri (Rust) - Direct integration with NozyWallet core
+- **Frontend**: React 18 + Vite 5 + Tailwind CSS 4 (existing from Electron version)
+- **Icons**: Solar Icons (existing)
+- **State**: Zustand (existing)
+- **Data Fetching**: TanStack Query v5 (existing)
+
+**Migration Plan:**
+1. ✅ Create Tauri project structure
+2. 🔄 Migrate React frontend to use Tauri commands
+3. ⏳ Replace HTTP API calls with direct Rust function calls
+4. ⏳ Test on all platforms (Windows, macOS, Linux)
+5. ⏳ Update CI/CD for Tauri builds
+6. ⏳ Remove Electron dependencies
+
+**Contributor Needs:**
+- Frontend developers (React/TypeScript) - Migrate components to Tauri API
+- Rust developers - Create Tauri commands and integrate NozyWallet core
+- UI/UX designers - Polish interface during migration
+- Testers - Test on Windows, macOS, Linux
+
+**📖 See [TAURI_MIGRATION_GUIDE.md](TAURI_MIGRATION_GUIDE.md) for complete step-by-step migration guide**
+
+### 16. Mobile Applications
+**Status**: 🎯 Planned
+**Priority**: High - Essential for on-the-go privacy
+
+**Goals:**
+- Native iOS application
+- Native Android application
+- QR code scanning for addresses
+- Biometric authentication
+- Push notifications for transactions
+- Mobile-optimized UI/UX
+
+**Technology Options:**
+- React Native (shared codebase)
+- Flutter (Dart)
+- Native Swift/Kotlin with Rust core
+
+**Contributor Needs:**
+- Mobile developers (iOS/Android)
+- React Native or Flutter developers
+- Mobile UI/UX designers
+
+### 17. Web Interface
+**Status**: 🎯 In Progress (API server exists)
+**Priority**: Medium - Leverages existing API server
+
+**Goals:**
+- Browser-based wallet interface
+- Connect to existing API server
+- Full wallet functionality via web
+- Responsive design for mobile browsers
+
+**Contributor Needs:**
+- Frontend developers
+- Web UI/UX designers
+- API integration developers
+
+### 18. Multi-Account Management
+**Status**: 🎯 Planned
+**Priority**: Medium - Useful for power users
+
+**Goals:**
+- Manage multiple wallets from one interface
+- Switch between accounts easily
+- Aggregate balances across accounts
+- Account labeling and organization
+- Separate transaction histories per account
+
+**Contributor Needs:**
+- Backend developers for account management
+- UI developers for account switching interface
+
 ## 🛠️ Implementation Strategy
 
 ### Phase 1: Core Integration (Weeks 1-2)

@@ -59,9 +59,25 @@ I've completed a comprehensive **self-security audit** of NozyWallet and are sha
 - [ ] Fix any issues found
 - [ ] Re-test all functionality
 
-### Phase 4: Professional Audit (Future)
-- [ ] Plan professional security audit
-- [ ] Engage security firm
+### Phase 4: Professional Audit (Planned for Production)
+- [ ] **Engage Third-Party Audit Firm** (Q1 2026)
+  - Considering: Least Authority, Trail of Bits, Kudelski Security
+  - Apply for Zcash Foundation grant funding
+  - Target: Comprehensive security audit before production
+- [ ] **Complete Professional Audit** (Q2 2026)
+  - Code security review
+  - Cryptographic analysis
+  - Penetration testing
+  - Side-channel analysis
+- [ ] **Remediate Audit Findings** (Q2-Q3 2026)
+  - Address all critical and high-severity issues
+  - Implement recommended security improvements
+- [ ] **Publish Audit Report** (Q3 2026)
+  - Public disclosure of audit results
+  - Security certification
+  - Production readiness confirmation
+
+**See [SECURITY.md](SECURITY.md) for detailed audit planning and requirements.**
 - [ ] Complete comprehensive audit
 
 ---
