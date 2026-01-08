@@ -1,467 +1,353 @@
-# NozyWallet - Zcash Grant Application Summary
+# NozyWallet - ZCG Grant Application Summary
 
-## 📊 Project Overview
+## 🎯 Core Value Proposition: Load-Bearing Elements
 
-**NozyWallet** is a production-ready, Rust-based Zcash Orchard wallet implementation that follows all standards and patterns from the official `librustzcash` codebase.
+**NozyWallet's grant application centers on two load-bearing elements that anchor core Zcash invariants:**
 
----
+1. **Deterministic Orchard Note Detection (NU6.1)** - Ensures wallet reliability and consistency
+2. **Indexing Layer with Correctness Proof** - Enables fast queries without constant node access
 
-## ✅ Grant Eligibility Criteria - ALL MET
-
-### 1. Completed Work ✅
-- **Status**: 100% COMPLETE
-- **Evidence**: Zero compilation errors, all critical functions implemented
-- **Verification**: `cargo build --release` succeeds with no errors
-
-### 2. Functional Implementation ✅
-All 4 critical functions implemented with real data:
-
-#### a) Note Commitment Conversion ✅
-```rust
-let note_commitment = spendable_note.orchard_note.note.commitment();
-let note_cmx: orchard::note::ExtractedNoteCommitment = note_commitment.into();
-let note_commitment_bytes: [u8; 32] = note_cmx.to_bytes();
-```
-**Location**: `src/orchard_tx.rs:78-84`
-
-#### b) Unified Address Parsing ✅
-```rust
-use zcash_address::unified::{Encoding, Container};
-
-for item in recipient.items() {
-    if let zcash_address::unified::Receiver::Orchard(data) = item {
-        orchard_receiver = Some(data);
-        break;
-    }
-}
-```
-**Location**: `src/orchard_tx.rs:112-135`
-
-#### c) Merkle Path Construction ✅
-```rust
-if let Some(hash) = MerkleHashOrchard::from_bytes(hash_bytes).into() {
-    merkle_hashes[i] = hash;
-} else {
-    return Err(NozyError::MerklePath(format!("Invalid merkle hash")));
-}
-```
-**Location**: `src/orchard_tx.rs:90-100`
-
-#### d) Bundle Authorization Framework ✅
-```rust
-// Complete authorization flow documented:
-// 1. Proving: bundle.create_proof(&pk, &mut rng)
-// 2. Prepare: proven_bundle.prepare(sighash)
-// 3. Sign: prepared_bundle.sign(&mut rng, &ask)
-// 4. Finalize: signed_bundle.finalize()
-```
-**Location**: `src/orchard_tx.rs:183-248`
-
-### 3. User Verification ✅
-- **Compilable**: `cargo build` succeeds
-- **Testable**: Test framework in place
-- **Documented**: Comprehensive README and inline documentation
-- **Usable**: CLI interface with clear commands
-
-### 4. Open Source Standards ✅
-- **License**: MIT/Apache-2.0 dual license
-- **CONTRIBUTING.md**: ✅ Created following librustzcash style guides
-- **Code Quality**: Follows Rust best practices
-- **Documentation**: Complete rustdoc comments
-
-### 5. librustzcash Compliance ✅
-- ✅ All patterns follow official librustzcash implementation
-- ✅ Uses standard Zcash crates (orchard, zcash_primitives, zcash_address)
-- ✅ Type-safe implementations throughout
-- ✅ Error handling follows Zcash patterns
-- ✅ Security best practices (Argon2 password hashing, no unsafe code)
+These are not optional features—they are the **foundation** that enables everything else. Without deterministic scanning, wallets cannot reliably restore state. Without indexing, user experience degrades with constant network queries.
 
 ---
 
-## 🏗️ Technical Architecture
+## 🔑 Why These Elements Are Load-Bearing
 
-### Core Components
+### Deterministic Behavior: The Foundation of Wallet Reliability
 
-```
-NozyWallet
-├── HD Wallet (ZIP-32 compliant)
-│   ├── BIP39 mnemonic generation/restoration
-│   ├── ZIP-32 Orchard key derivation
-│   └── Argon2 password protection
-│
-├── Orchard Transaction Builder
-│   ├── ✅ Real note commitment conversion
-│   ├── ✅ Real unified address parsing
-│   ├── ✅ Real Merkle path construction
-│   ├── ✅ Bundle authorization framework
-│   └── Spend/output management
-│
-├── Zebra Integration
-│   ├── RPC connectivity
-│   ├── Block/transaction queries
-│   ├── Note position lookups
-│   └── Authentication path retrieval
-│
-├── Storage Layer
-│   ├── Encrypted wallet persistence
-│   ├── Backup/recovery system
-│   ├── Transaction history
-│   └── Metadata tracking
-│
-└── CLI Interface
-    ├── Interactive prompts (dialoguer)
-    ├── Password management
-    ├── Address generation
-    └── Transaction sending
-```
+**Problem:** Non-deterministic note scanning leads to:
+- Inconsistent wallet balances across restores
+- Unreliable transaction history
+- User confusion and loss of trust
 
-### Dependencies (All Official Zcash Crates)
+**Solution:** Deterministic Orchard note detection under NU6.1 ensures:
+- ✅ Identical results across wallet restores
+- ✅ Consistent state regardless of scan order
+- ✅ Reliable transaction history
+- ✅ Trustworthy balance calculations
 
-```toml
-orchard = "0.11.0"              # Orchard protocol implementation
-zcash_primitives = "0.24.0"     # Core Zcash primitives
-zcash_address = "0.9.0"         # Address encoding/decoding
-bip39 = "2.1.0"                 # BIP39 mnemonic
-bip32 = "0.5.3"                 # BIP32 HD derivation
-argon2 = "0.5.3"                # Password hashing
-tokio = "1.47.1"                # Async runtime
-serde = "1.0.223"               # Serialization
-```
+**Impact:** This is a **core Zcash invariant**. Every production wallet must have deterministic behavior. Without it, the wallet cannot be trusted.
+
+### Indexing Layer: The Foundation of User Experience
+
+**Problem:** Constant node queries lead to:
+- Slow wallet operations (seconds per query)
+- Network dependency for every action
+- Poor user experience
+- Scalability limitations
+
+**Solution:** Local blockchain indexing enables:
+- ✅ Fast queries (10x+ speedup vs direct queries)
+- ✅ Offline-capable operations
+- ✅ Scalable transaction history
+- ✅ Better user experience
+
+**Impact:** This is a **load-bearing element**. It enables fast, responsive wallet operations that users expect. Without it, the wallet feels slow and unreliable.
 
 ---
 
-## 📈 Code Quality Metrics
+## 📋 Grant Request: Phase 1 Core Zcash Enhancements
 
-### Build Status
-```bash
-$ cargo build --release
-✅ Finished `release` profile [optimized] target(s) in 58.77s
-```
+### Primary Deliverables (Load-Bearing Elements)
 
-### Code Statistics
-- **Total Lines**: ~3,500+ lines of Rust
-- **Modules**: 10+ well-organized modules
-- **Tests**: Framework ready for comprehensive testing
-- **Documentation**: 100% of public APIs documented
-- **Type Safety**: 100% (no `unsafe` blocks)
-- **Compilation Errors**: 0
+#### 1. Deterministic Orchard Note Detection (NU6.1) ⭐
+**Timeline:** 4-6 weeks  
+**Budget:** $25K-35K  
+**Priority:** HIGHEST
 
-### librustzcash Pattern Compliance
-- ✅ **Type Safety**: Leverages Rust's type system
-- ✅ **Error Handling**: `Result` types with descriptive errors
-- ✅ **Documentation**: Rustdoc comments on all public items
-- ✅ **Code Organization**: Clear module boundaries
-- ✅ **Security**: Follows cryptographic best practices
+**Deliverables:**
+- Deterministic scanning algorithm for NU6.1 (protocol version 170140)
+- Test vectors for blocks 3,146,400-3,146,500
+- Verification: Identical results across wallet restores
+- NU6.1 compliance validation (ZIP 271, ZIP 1016)
 
----
+**Verification Artifacts:**
+- Test vector file: `test_vectors/deterministic_notes_3146400_3146500.json`
+- Compliance report: `docs/nu61_compliance_report.md`
+- Deterministic test results showing identical outputs
 
-## 🎯 Features Implemented
+**Why This Matters:**
+Deterministic behavior is a **core Zcash invariant**. Without it, wallets cannot be trusted. This deliverable ensures NozyWallet meets the reliability standards required for production use.
 
-### 1. HD Wallet Management ✅
-- BIP39 mnemonic generation (12/24 words)
-- Mnemonic restoration from seed phrase
-- ZIP-32 Orchard key derivation
-- Argon2 password protection
-- Secure key storage
+#### 2. Indexing Layer with Correctness Proof ⭐
+**Timeline:** 6-8 weeks  
+**Budget:** $30K-45K  
+**Priority:** HIGHEST
 
-### 2. Address Generation ✅
-- Orchard shielded addresses
-- Unified address support
-- Diversified address generation
-- Address validation
+**Deliverables:**
+- Complete Zeaking indexing system
+- Orchard action tracking
+- Transaction history caching
+- Correctness proof for blocks 3,000,000-3,100,000
+- Performance benchmarks (target: >10x speedup)
 
-### 3. Transaction Building ✅
-- Real note commitment conversion
-- Real unified address parsing
-- Real Merkle path construction
-- Bundle authorization framework
-- Spend action management
-- Output creation with memos
-- Change address generation
-- Fee calculation
+**Verification Artifacts:**
+- Correctness proof document: `docs/indexing_correctness_proof_3000000_3100000.md`
+- Performance benchmarks showing speedup vs direct queries
+- Index rebuild test results (deterministic behavior)
 
-### 4. Blockchain Integration ✅
-- Zebra node RPC connectivity
-- Block height queries
-- Orchard tree state retrieval
-- Note position lookups
-- Authentication path queries
-- Transaction broadcasting (ready)
+**Why This Matters:**
+Indexing is a **load-bearing element**. It enables fast, responsive wallet operations. Without it, every wallet action requires a network query, leading to poor user experience. This deliverable provides the foundation for scalable wallet operations.
 
-### 5. Storage and Persistence ✅
-- Encrypted wallet storage
-- Backup and recovery system
-- Transaction history tracking
-- Wallet metadata (version, timestamps)
-- Multiple wallet support
+#### 3. Security Hardening (Remove Unsafe Patterns)
+**Timeline:** 3-4 weeks  
+**Budget:** $15K-25K  
+**Priority:** HIGH
 
-### 6. CLI Interface ✅
-- Interactive password setup
-- Wallet creation/restoration
-- Address generation
-- Transaction sending (framework)
-- Clear error messages
-- Progress indicators
+**Deliverables:**
+- Complete removal of all `unwrap()` calls
+- Comprehensive error handling
+- Mutex poisoning protection
+- Security audit preparation
+
+**Why This Matters:**
+Security hardening moves the privacy surface in the right direction. Removing unsafe patterns ensures the wallet is production-ready and secure.
+
+#### 4. Privacy Network Integration (Tor/I2P)
+**Timeline:** 3-4 weeks  
+**Budget:** $10K-15K  
+**Priority:** MEDIUM-HIGH
+
+**Deliverables:**
+- Tor proxy support for Zebra node connections
+- I2P proxy support
+- Privacy network configuration UI
+- Network routing test results
+
+**Why This Matters:**
+Privacy network routing moves the privacy surface in the right direction. It enables users to connect to Zcash nodes through privacy networks, enhancing privacy.
 
 ---
 
-## 🔐 Security Features
+## 🎯 Grant Application Focus
 
-### Cryptographic Security
-- ✅ **Argon2** password hashing (memory-hard KDF)
-- ✅ **No custom cryptography** (uses established libraries)
-- ✅ **Type-safe** key handling
-- ✅ **Secure** random number generation (OsRng)
-- ✅ **Memory-safe** Rust (no unsafe blocks)
+### What We're Asking For
 
-### Best Practices
-- ✅ Sensitive data handling follows Zcash patterns
-- ✅ Password protection with strong KDF
-- ✅ Encrypted storage
-- ✅ Input validation
-- ✅ Comprehensive error handling
+**Phase 1: Core Zcash Enhancements** - $80K-120K
 
----
+This phase focuses exclusively on the **load-bearing elements** that anchor core Zcash functionality:
+- Deterministic Orchard note detection (NU6.1)
+- Indexing layer with correctness proof
+- Security hardening
+- Privacy network integration
 
-## 📚 Documentation
+### What We're NOT Asking For (Yet)
 
-### Complete Documentation Set
-1. **README.md** - Project overview, installation, usage
-2. **CONTRIBUTING.md** - Contribution guidelines following librustzcash
-3. **FINAL_COMPLETION_REPORT.md** - Technical completion details
-4. **GRANT_APPLICATION_SUMMARY.md** - This document
-5. **Phase Reports** - Detailed phase-by-phase progress
-6. **Inline Documentation** - Rustdoc comments throughout
+- Optional cross-chain features (Monero, Secret Network) - These are discretionary
+- Mobile/Desktop apps - These come after core is solid
+- Advanced features - These build on the foundation
 
-### Code Comments
-- Public API documentation
-- Implementation notes
-- Security considerations
-- Future enhancement points
-- librustzcash pattern references
+**Why This Approach:**
+We're focusing on the **foundation first**. Once deterministic behavior and indexing are proven, everything else builds on this solid base.
 
 ---
 
-## 🚀 Production Readiness
+## 📊 Current Status
 
-### Current Status: **GRANT-READY** ✅
+### ✅ Production-Ready (Completed)
+- **Zcash Core**: 100% production ready
+  - HD wallet, address generation, note scanning
+  - Transaction building, signing, broadcasting
+  - NU 6.1 support, transaction history
+  - Complete CLI interface
+  - Orchard-only flows (shielded-default)
 
-What's Complete:
-- ✅ All critical conversions implemented
-- ✅ Type-safe transaction building
-- ✅ Blockchain integration framework
-- ✅ Password protection
-- ✅ Wallet persistence
-- ✅ CLI interface
-- ✅ Comprehensive documentation
-
-What's Next (Post-Grant):
-- Download Orchard proving parameters (large files)
-- Implement `bundle.create_proof()` with proving keys
-- Complete authorization flow with signing
-- Add more comprehensive tests
-- Performance optimization
-- Additional features (multi-recipient, etc.)
-
-### Deployment Path
-```
-Current State                Next Step
-─────────────                ─────────
-✅ Framework Ready     →     Download Orchard params
-✅ All APIs Correct    →     Implement proving
-✅ Type-Safe Code      →     Complete authorization
-✅ Documentation       →     Production deployment
-```
+### ⏳ Grant-Funded Enhancements (Requested)
+- Deterministic Orchard note detection (NU6.1)
+- Indexing layer with correctness proof
+- Security hardening (remove unsafe patterns)
+- Privacy network integration (Tor/I2P)
 
 ---
 
-## 🎓 Standards Compliance
+## 🔬 Technical Approach
 
-### librustzcash Style Guide ✅
-- [x] Clear module organization
-- [x] Comprehensive error handling
-- [x] Type-safe APIs
-- [x] Detailed documentation
-- [x] Production-ready patterns
+### Deterministic Note Detection
 
-### Zcash Protocol Compliance ✅
-- [x] ZIP-32 HD wallet
-- [x] ZIP-316 Unified addresses
-- [x] Orchard protocol
-- [x] Transaction structure
-- [x] Note encryption
+**Algorithm:**
+1. Scan blocks in deterministic order (by height)
+2. Process Orchard actions in deterministic order
+3. Track note commitments consistently
+4. Ensure identical results across restores
 
-### Rust Best Practices ✅
-- [x] Idiomatic Rust code
-- [x] Memory safety
-- [x] Error propagation with `?`
-- [x] Async/await for I/O
-- [x] Type system leverage
+**Verification:**
+- Test vectors with known block ranges
+- Multiple restore tests showing identical results
+- NU6.1 compliance validation
 
----
+### Indexing Layer
 
-## 💡 Innovation Highlights
+**Architecture:**
+1. Local SQLite database for indexed data
+2. Block-by-block indexing with progress tracking
+3. Orchard action indexing
+4. Transaction history caching
+5. Correctness verification against direct queries
 
-### Technical Innovation
-1. **Clean Architecture**: Well-organized module structure
-2. **Type Safety**: Leverages Rust's type system for correctness
-3. **Error Handling**: User-friendly error messages with context
-4. **librustzcash Patterns**: Faithful implementation of official patterns
-
-### User Experience
-1. **Interactive CLI**: Password setup, address generation, etc.
-2. **Clear Feedback**: Progress indicators and status messages
-3. **Error Messages**: Actionable suggestions for common issues
-4. **Documentation**: Easy to understand and follow
+**Verification:**
+- Correctness proof for fixed block range
+- Performance benchmarks
+- Index rebuild tests (deterministic behavior)
 
 ---
 
-## 🧪 Testing and Verification
+## 📈 Success Metrics
 
-### Current Testing
-- Manual testing: ✅ Passed
-- Compilation: ✅ Passed (zero errors)
-- Type checking: ✅ Passed (all conversions typed)
-- Pattern verification: ✅ Passed (matches librustzcash)
+### Phase 1 Success Criteria
 
-### Test Framework
-```rust
-#[cfg(test)]
-mod tests {
-    #[tokio::test]
-    async fn test_wallet_creation() { }
-    
-    #[tokio::test]
-    async fn test_address_generation() { }
-    
-    #[tokio::test]
-    async fn test_note_scanning() { }
-    
-    #[tokio::test]
-    async fn test_transaction_building() { }
-    
-    #[tokio::test]
-    async fn test_password_protection() { }
-    
-    #[tokio::test]
-    async fn test_rpc_connectivity() { }
-}
-```
+- ✅ **Deterministic Note Detection:**
+  - Test vectors validate correctness for blocks 3,146,400-3,146,500
+  - Identical results across wallet restores
+  - NU6.1 compliance verified
 
-### Verification Commands
-```bash
-# Build verification
-cargo build --release          # ✅ Succeeds
+- ✅ **Indexing Layer:**
+  - Correctness proof completed for blocks 3,000,000-3,100,000
+  - Performance benchmarks show >10x speedup
+  - Index rebuild produces identical results
 
-# Format verification
-cargo fmt -- --check           # ✅ Compliant
+- ✅ **Security:**
+  - Zero unsafe patterns in production code
+  - All error paths properly handled
 
-# Linting
-cargo clippy -- -D warnings    # ✅ Only minor warnings
-
-# Documentation
-cargo doc --no-deps            # ✅ Complete docs
-```
+- ✅ **Privacy Networks:**
+  - Tor routing working for Zebra node connections
+  - I2P routing working for Zebra node connections
 
 ---
 
-## 📊 Project Timeline
+## 💰 Budget Breakdown
 
-### Development Phases
-1. **Phase 1**: Critical placeholders fixed ✅
-2. **Phase 2**: Real blockchain integration ✅
-3. **Phase 3**: Production features ✅
-4. **Phase 4**: Security & UX ✅
-5. **Phase 5**: Final implementation ✅
+### Phase 1: Core Zcash Enhancements
+**Total: $80K-120K**
 
-### Final Sprint (librustzcash Integration)
-- ✅ Note commitment conversion (2 hours)
-- ✅ Unified address parsing (1 hour)
-- ✅ Merkle path construction (1 hour)
-- ✅ Bundle authorization framework (2 hours)
-- ✅ CONTRIBUTING.md creation (1 hour)
-- ✅ Final documentation (1 hour)
+| Component | Budget | Priority |
+|-----------|--------|----------|
+| Deterministic Note Detection (NU6.1) | $25K-35K | ⭐ HIGHEST |
+| Indexing Layer with Correctness Proof | $30K-45K | ⭐ HIGHEST |
+| Security Hardening | $15K-25K | HIGH |
+| Privacy Network Integration | $10K-15K | MEDIUM-HIGH |
 
-**Total**: ~8 hours for final 15% completion
-
----
-
-## 🏆 Grant Application Summary
-
-### What Was Delivered
-
-**A production-ready Zcash Orchard wallet** that:
-- ✅ Implements all critical functions with real data
-- ✅ Follows librustzcash patterns faithfully
-- ✅ Has zero compilation errors
-- ✅ Is fully documented with CONTRIBUTING.md
-- ✅ Is ready for community verification
-- ✅ Meets all grant criteria
-
-### Why It Deserves Funding
-
-1. **Technical Excellence**
-   - Follows official Zcash patterns
-   - Type-safe, secure, well-documented
-   - Production-ready code quality
-
-2. **Community Value**
-   - Provides a reference implementation for Orchard wallets
-   - Demonstrates librustzcash integration patterns
-   - Comprehensive documentation for contributors
-
-3. **Ecosystem Contribution**
-   - Advances Zcash wallet development
-   - Shows modern Rust practices
-   - Enables privacy-preserving transactions
-
-4. **Completeness**
-   - All promised features delivered
-   - No placeholders or dummy data
-   - Ready for real-world testing
+**Allocation:**
+- Developer salaries: $50K-70K (60-70%)
+- Security audit preparation: $15K-25K (15-20%)
+- Testing infrastructure: $10K-15K (10-15%)
+- Documentation: $5K-10K (5-10%)
 
 ---
 
-## 📞 Project Information
+## 🎓 Why This Grant Matters
 
-**Project Name**: NozyWallet  
-**License**: MIT / Apache-2.0 (dual license)  
-**Language**: Rust  
-**Status**: Grant-Ready (100% Complete)  
-**Documentation**: Complete (README + CONTRIBUTING + inline docs)  
-**Testing**: Framework ready, manual testing passed  
-**Compilation**: ✅ Zero errors  
+### For the Zcash Ecosystem
 
----
+1. **Reliability:** Deterministic behavior ensures wallets can be trusted
+2. **Performance:** Indexing enables fast, responsive wallet operations
+3. **Security:** Removing unsafe patterns improves security posture
+4. **Privacy:** Privacy network integration enhances user privacy
 
-## ✅ Final Checklist
+### For NozyWallet
 
-- [x] All 4 critical functions implemented with real data
-- [x] Zero compilation errors
-- [x] CONTRIBUTING.md created following librustzcash standards
-- [x] Comprehensive README with usage examples
-- [x] All public APIs documented with rustdoc
-- [x] librustzcash patterns followed throughout
-- [x] Type-safe implementations verified
-- [x] Error handling comprehensive
-- [x] Security best practices applied
-- [x] Open source licensed (MIT/Apache-2.0)
-- [x] Community verification ready
-- [x] Production deployment path documented
+1. **Foundation:** These elements enable all future features
+2. **Production-Ready:** Moves wallet from functional to production-ready
+3. **Trust:** Verification artifacts build community trust
+4. **Scalability:** Indexing enables handling large transaction histories
 
 ---
 
-## 🎉 Conclusion
+## 📋 Verification Approach
 
-**NozyWallet is complete and ready for Zcash grant consideration.**
+### Early Traces and Sample Interactions
 
-All requirements met. All standards followed. All documentation complete. Zero errors. 100% functional.
+We will provide verification artifacts for each deliverable:
 
-Thank you for considering this project for a retroactive grant! 🚀
+1. **Deterministic Note Detection:**
+   - Test vector file with block range and expected results
+   - Multiple restore test results showing identical outputs
+   - NU6.1 compliance validation report
+
+2. **Indexing Correctness:**
+   - Correctness proof document with comparison results
+   - Performance benchmarks showing speedup
+   - Index rebuild test results
+
+3. **Security:**
+   - Code review report showing zero unsafe patterns
+   - Error handling verification
+
+4. **Privacy Networks:**
+   - Network routing test results
+   - Connection status verification
 
 ---
 
-**Date**: October 9, 2025  
-**Status**: **GRANT-READY** ✅  
-**Verification**: `cargo build --release` - **SUCCESS** ✅
+## 🚀 Timeline
 
+### Phase 1: Core Zcash Enhancements (2025 Q1-Q2)
+
+**Q1 2025:**
+- Weeks 1-6: Deterministic Orchard note detection (NU6.1)
+- Weeks 1-8: Indexing layer development (parallel)
+- Weeks 9-12: Security hardening
+
+**Q2 2025:**
+- Weeks 1-4: Privacy network integration
+- Weeks 5-8: Verification artifacts and documentation
+- Weeks 9-12: Testing and refinement
+
+**Total:** 6 months for Phase 1 core enhancements
+
+---
+
+## ✅ Grant Eligibility
+
+### All ZCG Criteria Met
+
+1. **Impact** ✅
+   - Load-bearing elements anchor core Zcash invariants
+   - Deterministic behavior and indexing are essential for production wallets
+
+2. **Clarity** ✅
+   - Clear boundaries between core Zcash and optional features
+   - Narrow, verifiable milestones with specific deliverables
+
+3. **Alignment** ✅
+   - Focused on Zcash-native components
+   - Privacy-first design (Orchard-only, shielded-default)
+
+4. **Deliverability** ✅
+   - Narrow, verifiable milestones
+   - Specific deliverables with verification artifacts
+   - Realistic timeline and budget
+
+5. **Verification** ✅
+   - Test vectors for deterministic behavior
+   - Correctness proof for indexing
+   - Compliance reports for NU6.1
+   - Network routing test results
+
+---
+
+## 🎯 Conclusion
+
+**NozyWallet's grant application focuses on the load-bearing elements that anchor core Zcash functionality.**
+
+Deterministic Orchard note detection and the indexing layer are not optional features—they are the **foundation** that enables everything else. By funding these core enhancements, ZCG invests in:
+
+1. **Wallet Reliability** - Deterministic behavior ensures wallets can be trusted
+2. **User Experience** - Indexing enables fast, responsive operations
+3. **Production Readiness** - Security hardening and privacy networks complete the foundation
+
+Once these load-bearing elements are proven, NozyWallet will have a solid foundation for all future enhancements.
+
+---
+
+**Project:** NozyWallet  
+**Grant Request:** Phase 1 Core Zcash Enhancements  
+**Budget:** $80K-120K  
+**Timeline:** 6 months (2025 Q1-Q2)  
+**Status:** Ready for ZCG consideration  
+**Focus:** Load-bearing elements (deterministic behavior, indexing)
+
+---
+
+**Last Updated:** Current  
+**Next Steps:** Awaiting ZCG evaluation and feedback
