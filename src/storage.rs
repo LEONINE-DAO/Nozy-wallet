@@ -287,8 +287,12 @@ impl WalletStorage {
         if let Ok(entries) = fs::read_dir(&self.data_dir) {
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.is_file() && path.file_name().unwrap().to_string_lossy().starts_with("wallet_backup_") {
-                    backups.push(path.to_string_lossy().to_string());
+                if path.is_file() {
+                    if let Some(file_name) = path.file_name() {
+                        if file_name.to_string_lossy().starts_with("wallet_backup_") {
+                            backups.push(path.to_string_lossy().to_string());
+                        }
+                    }
                 }
             }
         }

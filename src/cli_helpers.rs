@@ -123,9 +123,14 @@ pub async fn build_and_broadcast_transaction(
         memo,
     ).await?;
     
+    use crate::privacy_ui::show_transaction_privacy_summary;
+    show_transaction_privacy_summary();
+    
     if enable_broadcast {
         match tx_builder.broadcast_transaction(zebra_client, &transaction).await {
             Ok(network_txid) => {
+                use crate::privacy_ui::show_privacy_badge;
+                show_privacy_badge();
                 println!("✅ Transaction broadcast successfully!");
                 println!("🆔 Network TXID: {}", network_txid);
                 

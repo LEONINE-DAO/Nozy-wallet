@@ -75,7 +75,8 @@ impl AddressBook {
             let stored_addresses: HashMap<String, AddressEntry> = serde_json::from_str(&content)
                 .map_err(|e| NozyError::Storage(format!("Failed to parse address book: {}", e)))?;
             
-            *self.addresses.lock().unwrap() = stored_addresses;
+            *self.addresses.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = stored_addresses;
         }
         
         Ok(())
@@ -83,7 +84,8 @@ impl AddressBook {
 
     fn save_addresses(&self) -> NozyResult<()> {
         let addresses_path = self.get_addresses_path();
-        let addresses = self.addresses.lock().unwrap();
+        let addresses = self.addresses.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         
         let content = serde_json::to_string_pretty(&*addresses)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize address book: {}", e)))?;
@@ -104,7 +106,8 @@ impl AddressBook {
         let entry = AddressEntry::new(name.clone(), address.clone(), notes);
         
         {
-            let mut addresses = self.addresses.lock().unwrap();
+            let mut addresses = self.addresses.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             addresses.insert(name, entry);
         }
         
@@ -114,7 +117,8 @@ impl AddressBook {
 
     pub fn remove_address(&self, name: &str) -> NozyResult<bool> {
         let removed = {
-            let mut addresses = self.addresses.lock().unwrap();
+            let mut addresses = self.addresses.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             addresses.remove(name).is_some()
         };
         
@@ -126,8 +130,12 @@ impl AddressBook {
     }
 
     pub fn get_address(&self, name: &str) -> Option<AddressEntry> {
-        let addresses = self.addresses.lock().unwrap();
-        addresses.get(name).cloned()
+        self.addresses.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_address: {}", e);
+            })
+            .ok()
+            .and_then(|addresses| addresses.get(name).cloned())
     }
 
     pub fn get_address_by_name(&self, name: &str) -> Option<String> {
@@ -135,27 +143,41 @@ impl AddressBook {
     }
 
     pub fn list_addresses(&self) -> Vec<AddressEntry> {
-        let addresses = self.addresses.lock().unwrap();
-        addresses.values().cloned().collect()
+        self.addresses.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in list_addresses: {}", e);
+            })
+            .ok()
+            .map(|addresses| addresses.values().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn search_addresses(&self, query: &str) -> Vec<AddressEntry> {
-        let addresses = self.addresses.lock().unwrap();
-        let query_lower = query.to_lowercase();
-        
-        addresses.values()
-            .filter(|entry| {
-                entry.name.to_lowercase().contains(&query_lower) ||
-                entry.address.to_lowercase().contains(&query_lower) ||
-                entry.notes.as_ref().map(|n| n.to_lowercase().contains(&query_lower)).unwrap_or(false)
+        let addresses = self.addresses.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in search_addresses: {}", e);
             })
-            .cloned()
-            .collect()
+            .ok();
+        
+        if let Some(addresses) = addresses {
+            let query_lower = query.to_lowercase();
+            addresses.values()
+                .filter(|entry| {
+                    entry.name.to_lowercase().contains(&query_lower) ||
+                    entry.address.to_lowercase().contains(&query_lower) ||
+                    entry.notes.as_ref().map(|n| n.to_lowercase().contains(&query_lower)).unwrap_or(false)
+                })
+                .cloned()
+                .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn update_address_usage(&self, name: &str) -> NozyResult<bool> {
         let updated = {
-            let mut addresses = self.addresses.lock().unwrap();
+            let mut addresses = self.addresses.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             if let Some(entry) = addresses.get_mut(name) {
                 entry.mark_used();
                 true
@@ -173,7 +195,8 @@ impl AddressBook {
 
     pub fn update_address(&self, name: &str, new_address: Option<String>, new_notes: Option<String>) -> NozyResult<bool> {
         let updated = {
-            let mut addresses = self.addresses.lock().unwrap();
+            let mut addresses = self.addresses.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             if let Some(entry) = addresses.get_mut(name) {
                 if let Some(addr) = new_address {
                     if !addr.starts_with("u1") && !addr.starts_with("zs1") {
@@ -200,8 +223,13 @@ impl AddressBook {
     }
 
     pub fn count(&self) -> usize {
-        let addresses = self.addresses.lock().unwrap();
-        addresses.len()
+        self.addresses.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in count: {}", e);
+            })
+            .ok()
+            .map(|addresses| addresses.len())
+            .unwrap_or(0)
     }
 }
 

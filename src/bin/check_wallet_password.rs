@@ -1,4 +1,4 @@
-use nozy::{WalletStorage, NozyResult};
+use nozy::WalletStorage;
 use nozy::paths::get_wallet_data_dir;
 use std::fs;
 

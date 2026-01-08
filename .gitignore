@@ -1,4 +1,3 @@
-# Rust build artifacts
 target/
 **/*.rs.bk
 *.pdb
@@ -21,8 +20,6 @@ nozy_storage/
 wallet_data/
 *.tmp
 *.temp
-
-# Wallet backup files - NEVER COMMIT THESE!
 *_BACKUP.txt
 *_BACKUP.md
 *backup*.txt
@@ -37,7 +34,6 @@ WALLET_BACKUP.md
 .env
 .env.local
 
-# Frontend/Mobile work (DO NOT COMMIT)
 frontend/
 mobile/
 src-tauri/
@@ -46,7 +42,6 @@ react-native-0.73.11/
 rn-template.zip
 push_url_update.ps1
 
-# Documentation files (temporary, exclude from commits)
 *.md
 !README.md
 !api-server/*.md
@@ -59,5 +54,4 @@ push_url_update.ps1
 !*DEPLOY*.md
 !DIGITALOCEAN*.md
 
-# mdBook output (but keep source)
 book/book/

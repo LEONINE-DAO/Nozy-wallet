@@ -2,10 +2,9 @@
 // Phase 1 proofs are reusable for ~2048 blocks (~3 days)
 
 use crate::error::{NozyError, NozyResult};
-use crate::monero_zk_verifier::types::VerificationError;
 use serde::{Serialize, Deserialize};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Cache proof metadata

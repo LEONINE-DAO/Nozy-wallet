@@ -594,11 +594,11 @@ async fn main() -> NozyResult<()> {
                 .map(|note| note.orchard_note.note.value().inner())
                 .sum();
             
-            println!("  Available: {:.8} ZEC (from {} notes)", total_available as f64 / 100_000_000.0, spendable_notes.len());
+            println!("  Shielded ZEC: {:.8} ZEC (from {} notes)", total_available as f64 / 100_000_000.0, spendable_notes.len());
             
             if total_available < total_amount {
                 let error = NozyError::InsufficientFunds(format!(
-                    "Available: {:.8} ZEC, Required: {:.8} ZEC",
+                    "Shielded ZEC: {:.8} ZEC, Required: {:.8} ZEC",
                     total_available as f64 / 100_000_000.0,
                     total_amount as f64 / 100_000_000.0
                 ));
@@ -784,10 +784,10 @@ async fn main() -> NozyResult<()> {
             
             if pending_amount > 0 {
                 println!("   Pending:   -{:.8} ZEC", pending_amount as f64 / 100_000_000.0);
-                println!("   Available: {:.8} ZEC", available_balance as f64 / 100_000_000.0);
-                println!("\n   💡 Pending transactions reduce available balance until confirmed");
+                println!("   Shielded ZEC: {:.8} ZEC", available_balance as f64 / 100_000_000.0);
+                println!("\n   💡 Pending transactions reduce shielded balance until confirmed");
             } else {
-                println!("   Available: {:.8} ZEC", available_balance as f64 / 100_000_000.0);
+                println!("   Shielded ZEC: {:.8} ZEC", available_balance as f64 / 100_000_000.0);
             }
             
             if !notes_path.exists() {
@@ -1237,8 +1237,6 @@ async fn main() -> NozyResult<()> {
             
             println!();
             
-            use nozy::transaction_history::SentTransactionStorage;
-            
             let (wallet, _storage) = load_wallet().await?;
             let config = load_config();
             let zebra_client = ZebraClient::from_config(&config);
@@ -1556,8 +1554,8 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::PrivacyNetwork { command } => {
-            use crate::privacy_network::proxy::ProxyConfig;
-            use crate::privacy_network::{TorProxy, I2PProxy};
+            use nozy::privacy_network::proxy::ProxyConfig;
+            use nozy::privacy_network::{TorProxy, I2PProxy};
             
             match command {
                 PrivacyNetworkCommand::Status => {
@@ -1639,11 +1637,10 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::Swap { command } => {
-            use crate::bridge::SwapEngine;
-            use crate::swap::{SwapService, SwapDirection};
-            use crate::monero::MoneroWallet;
-            use crate::privacy_network::proxy::ProxyConfig;
-            use crate::cli_helpers::load_wallet;
+            use nozy::swap::{SwapEngine, SwapService, SwapDirection};
+            use nozy::monero::MoneroWallet;
+            use nozy::privacy_network::proxy::ProxyConfig;
+            use nozy::cli_helpers::load_wallet;
             
             let proxy = ProxyConfig::auto_detect().await;
             if !proxy.enabled {
@@ -1715,7 +1712,7 @@ async fn main() -> NozyResult<()> {
                     }
                 },
                 SwapCommand::List => {
-                    use crate::bridge::SwapStorage;
+                    use nozy::bridge::SwapStorage;
                     let storage = SwapStorage::new()?;
                     let swaps = storage.list_swaps()?;
                     
@@ -1753,7 +1750,7 @@ async fn main() -> NozyResult<()> {
                         Some(proxy),
                     )?;
                     
-                    use crate::bridge::ChurnManager;
+                    use nozy::bridge::ChurnManager;
                     let churn_manager = ChurnManager::new(monero_wallet);
                     churn_manager.churn_outputs(times, ring_size, Some(300)).await?;
                 },
@@ -1761,7 +1758,7 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::Shade { command } => {
-            use nozy::secret::{SecretWallet, Snip20Token};
+            use nozy::secret::SecretWallet;
             use nozy::secret::snip20::shade_tokens;
             use nozy::secret_keys::SecretKeyDerivation;
             use nozy::privacy_network::proxy::ProxyConfig;
@@ -1770,13 +1767,13 @@ async fn main() -> NozyResult<()> {
             let config = load_config();
             let proxy = ProxyConfig::auto_detect().await;
             
-            let (hd_wallet, _storage) = load_wallet().await.ok();
+            let hd_wallet = load_wallet().await.ok();
             
             match command {
                 ShadeCommand::Balance { address, token } => {
                     let wallet_address = if let Some(addr) = address {
                         addr
-                    } else if let Some(ref wallet) = hd_wallet {
+                    } else if let Some((ref wallet, _)) = hd_wallet.as_ref() {
                         match wallet.generate_secret_address(0, 0) {
                             Ok(addr) => {
                                 println!("📍 Using Secret Network address from wallet: {}", addr);
@@ -1825,7 +1822,7 @@ async fn main() -> NozyResult<()> {
                         }
                     } else {
                         println!("\n   Common Shade Tokens:");
-                        for (name, contract) in [
+                        for (_name, contract) in [
                             ("SHD", shade_tokens::SHD),
                             ("SILK", shade_tokens::SILK),
                         ] {
@@ -2110,8 +2107,8 @@ async fn main() -> NozyResult<()> {
         }
         
         Commands::Monero { command } => {
-            use crate::monero::MoneroWallet;
-            use crate::privacy_network::proxy::ProxyConfig;
+            use nozy::monero::MoneroWallet;
+            use nozy::privacy_network::proxy::ProxyConfig;
             
             let proxy = ProxyConfig::auto_detect().await;
             

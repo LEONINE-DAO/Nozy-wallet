@@ -5,6 +5,11 @@ use crate::orchard_tx::OrchardTransactionBuilder;
 use crate::storage::WalletStorage;
 use std::path::PathBuf;
 
+// Include deterministic scanning tests
+#[cfg(test)]
+#[path = "tests/deterministic_scanning_tests.rs"]
+mod deterministic_scanning_tests;
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,5 +1,6 @@
-use crate::config::BackendKind;
+use crate::config::{BackendKind, Protocol};
 use crate::error::{NozyError, NozyResult};
+use crate::grpc_client::ZebraGrpcClient;
 use serde::Deserialize;
 use std::collections::HashMap;
 use serde_json::Value;
@@ -8,14 +9,18 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone)]
 pub struct ZebraClient {
-    
     url: String,
     /// Nozy is talking to both `Zebra` and `Crosslink` use the same JSON-RPC
     /// interface from Nozy's perspective, but this flag lets us adapt
     /// behaviour later (for example, staking-specific calls) without
     /// changing call sites.
+    #[allow(dead_code)]
     backend: BackendKind,
+    protocol: Protocol,
     client: Arc<reqwest::Client>,
+    /// gRPC client, initialized on first use when protocol is gRPC
+    #[allow(dead_code)]
+    grpc_client: Option<Arc<ZebraGrpcClient>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -38,7 +43,11 @@ impl ZebraClient {
 
   
     pub fn new_with_backend(url: String, backend: BackendKind) -> Self {
-        let url = Self::normalize_url(url);
+        Self::new_with_backend_and_protocol(url, backend, Protocol::JsonRpc)
+    }
+
+    pub fn new_with_backend_and_protocol(url: String, backend: BackendKind, protocol: Protocol) -> Self {
+        let url = Self::normalize_url(url.clone());
 
         let is_local = url.contains("127.0.0.1") || url.contains("localhost");
         let timeout_secs = if is_local { 10 } else { 30 };
@@ -55,7 +64,9 @@ impl ZebraClient {
         Self {
             url,
             backend,
+            protocol,
             client: Arc::new(client),
+            grpc_client: None, // Will be initialized on first use if needed
         }
     }
 
@@ -67,20 +78,41 @@ impl ZebraClient {
                 let url = if !config.crosslink_url.is_empty() {
                     config.crosslink_url.clone()
                 } else {
-                    
+                    // Fallback to zebra_url until a dedicated Crosslink
+                    // endpoint is configured.
                     config.zebra_url.clone()
                 };
                 (BackendKind::Crosslink, url)
             }
         };
 
-        Self::new_with_backend(url, backend)
+        Self::new_with_backend_and_protocol(url, backend, config.protocol.clone())
     }
     
     fn normalize_url(url: String) -> String {
-        let url = url.trim().to_string();
+        let mut url = url.trim().to_string();
+        
+        // Fix double dots in URLs (e.g., "zec..leoninedao.org" -> "zec.leoninedao.org")
+        url = url.replace("..", ".");
+        
+        // Fix triple slashes (e.g., "https:///host" -> "https://host")
+        url = url.replace(":///", "://");
+        
+        // Fix double slashes after protocol (e.g., "https:///host" -> "https://host")
+        if url.starts_with("http://") {
+            url = url.replace("http:///", "http://");
+        } else if url.starts_with("https://") {
+            url = url.replace("https:///", "https://");
+        }
         
         if url.starts_with("http://") || url.starts_with("https://") {
+            // Keep the port if it's specified - don't remove it
+            // Only fix path slashes, preserve protocol and port
+            // The URL should be in format: https://host:port/path
+            // We want to preserve https:// and :port, only fix // in path
+            
+            // Simple approach: if URL already has proper format, return as-is
+            // Only fix if there are obvious issues like triple slashes (already fixed above)
             return url;
         }
         
@@ -89,7 +121,7 @@ impl ZebraClient {
             if parts.len() >= 2 {
                 if let Ok(port) = parts[1].parse::<u16>() {
                     if port == 443 {
-                        return format!("https://{}", url);
+                        return format!("https://{}", parts[0]);
                     } else {
                         return format!("http://{}", url);
                     }
@@ -146,21 +178,35 @@ impl ZebraClient {
     }
 
     pub async fn get_block_count(&self) -> NozyResult<u32> {
-        let request = serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": "getblockcount",
-            "params": [],
-            "id": 1
-        });
+        match self.protocol {
+            Protocol::Grpc => {
+                // Initialize gRPC client if needed
+                let grpc_client = self.get_grpc_client().await?;
+                grpc_client.get_block_count().await
+            },
+            Protocol::JsonRpc => {
+                let request = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "getblockcount",
+                    "params": [],
+                    "id": 1
+                });
 
-        let response: ZebraResponse<u32> = self.make_request(request).await?;
-        
-        if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+                let response: ZebraResponse<u32> = self.make_request(request).await?;
+                
+                if let Some(error) = response.error {
+                    return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+                }
+
+                response.result
+                    .ok_or_else(|| NozyError::InvalidOperation("Invalid block height response".to_string()))
+            }
         }
+    }
 
-        response.result
-            .ok_or_else(|| NozyError::InvalidOperation("Invalid block height response".to_string()))
+    async fn get_grpc_client(&self) -> NozyResult<Arc<ZebraGrpcClient>> {
+        let grpc_client = ZebraGrpcClient::new(self.url.clone()).await?;
+        Ok(Arc::new(grpc_client))
     }
 
     pub async fn get_sync_status(&self) -> NozyResult<HashMap<String, Value>> {
@@ -400,7 +446,9 @@ impl ZebraClient {
                     if attempt < MAX_RETRIES {
                         let error_msg = match &last_error {
                             Some(NozyError::NetworkError(msg)) => msg,
-                            _ => return Err(last_error.unwrap()),
+                            _ => {
+                                return Err(last_error.expect("last_error should be Some at this point"));
+                            },
                         };
                         
                         if error_msg.contains("failed to connect") 
@@ -412,7 +460,7 @@ impl ZebraClient {
                             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                             continue;
                         } else {
-                            return Err(last_error.unwrap());
+                            return Err(last_error.expect("last_error should be Some at this point"));
                         }
                     }
                 }
@@ -475,9 +523,18 @@ impl ZebraClient {
     }
     
     pub async fn test_connection(&self) -> NozyResult<()> {
-        let block_count = self.get_block_count().await?;
-        println!("✅ Successfully connected to Zebra node at {}", self.url);
-        println!("   Current block height: {}", block_count);
+        match self.protocol {
+            Protocol::Grpc => {
+                let grpc_client = self.get_grpc_client().await?;
+                grpc_client.test_connection().await?;
+                println!("✅ Successfully connected to Zebra node via gRPC at {}", self.url);
+            },
+            Protocol::JsonRpc => {
+                let block_count = self.get_block_count().await?;
+                println!("✅ Successfully connected to Zebra node at {}", self.url);
+                println!("   Current block height: {}", block_count);
+            }
+        }
         Ok(())
     }
 

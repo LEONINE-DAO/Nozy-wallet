@@ -12,7 +12,6 @@ use cosmrs::crypto::secp256k1::SigningKey;
 use cosmrs::crypto::PublicKey;
 use cosmrs::tendermint::chain::Id as ChainId;
 use cosmrs::tendermint::block::Height;
-use prost::Message as ProstMessage;
 use serde_json::Value;
 use std::str::FromStr;
 

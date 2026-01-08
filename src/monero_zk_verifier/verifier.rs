@@ -1,9 +1,9 @@
 // Main ZK block verifier implementation
 // Integrates with RISC Zero zkVM for Monero RandomX verification
 
-use crate::error::{NozyError, NozyResult};
+use crate::error::NozyResult;
 use crate::monero_zk_verifier::types::{
-    VerificationLevel, VerificationResult, VerificationError, ZkVerificationConfig,
+    VerificationLevel, VerificationResult, ZkVerificationConfig,
 };
 use crate::monero_zk_verifier::proof_cache::ProofCache;
 use std::path::PathBuf;

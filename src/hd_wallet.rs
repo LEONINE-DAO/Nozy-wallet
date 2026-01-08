@@ -192,17 +192,19 @@ impl HDWallet {
         let ivk = self.derive_incoming_viewing_key_for_address(address)?;
         
         let nullifier_result = Nullifier::from_bytes(&action.nullifier);
-        let nullifier = if nullifier_result.is_some().into() {
-            nullifier_result.unwrap()
-        } else {
-            return Err(NozyError::InvalidOperation("Invalid nullifier bytes".to_string()));
+        let nullifier = match nullifier_result.into_option() {
+            Some(n) => n,
+            None => {
+                return Err(NozyError::InvalidOperation("Invalid nullifier bytes".to_string()));
+            }
         };
         
         let cmx_result = ExtractedNoteCommitment::from_bytes(&action.cmx);
-        let cmx = if cmx_result.is_some().into() {
-            cmx_result.unwrap()
-        } else {
-            return Err(NozyError::InvalidOperation("Invalid cmx bytes".to_string()));
+        let cmx = match cmx_result.into_option() {
+            Some(c) => c,
+            None => {
+                return Err(NozyError::InvalidOperation("Invalid cmx bytes".to_string()));
+            }
         };
         
         let ephemeral_key = EphemeralKeyBytes::from(action.ephemeral_key);

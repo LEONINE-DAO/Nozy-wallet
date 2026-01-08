@@ -100,7 +100,8 @@ impl NoteStorage {
             let stored_notes: HashMap<String, StoredNote> = serde_json::from_str(&content)
                 .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
             
-            *self.notes.lock().unwrap() = stored_notes;
+            *self.notes.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = stored_notes;
         }
         
         Ok(())
@@ -117,7 +118,8 @@ impl NoteStorage {
             let stored_keys: HashMap<String, StoredSpendingKey> = serde_json::from_str(&content)
                 .map_err(|e| NozyError::Storage(format!("Failed to parse spending keys: {}", e)))?;
             
-            *self.spending_keys.lock().unwrap() = stored_keys;
+            *self.spending_keys.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = stored_keys;
         }
         
         Ok(())
@@ -134,7 +136,8 @@ impl NoteStorage {
             let stored_txs: HashMap<String, StoredTransaction> = serde_json::from_str(&content)
                 .map_err(|e| NozyError::Storage(format!("Failed to parse transactions: {}", e)))?;
             
-            *self.transactions.lock().unwrap() = stored_txs;
+            *self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = stored_txs;
         }
         
         Ok(())
@@ -149,7 +152,8 @@ impl NoteStorage {
 
     fn save_notes(&self) -> NozyResult<()> {
         let notes_path = format!("{}/notes.json", self.storage_path);
-        let notes = self.notes.lock().unwrap();
+        let notes = self.notes.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         let content = serde_json::to_string_pretty(&*notes)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize notes: {}", e)))?;
         
@@ -161,7 +165,8 @@ impl NoteStorage {
 
     fn save_spending_keys(&self) -> NozyResult<()> {
         let keys_path = format!("{}/spending_keys.json", self.storage_path);
-        let keys = self.spending_keys.lock().unwrap();
+        let keys = self.spending_keys.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         let content = serde_json::to_string_pretty(&*keys)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize spending keys: {}", e)))?;
         
@@ -173,7 +178,8 @@ impl NoteStorage {
 
     fn save_transactions(&self) -> NozyResult<()> {
         let txs_path = format!("{}/transactions.json", self.storage_path);
-        let txs = self.transactions.lock().unwrap();
+        let txs = self.transactions.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         let content = serde_json::to_string_pretty(&*txs)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize transactions: {}", e)))?;
         
@@ -197,7 +203,9 @@ impl NoteStorage {
             confirmation_height: None,
         };
         
-        self.notes.lock().unwrap().insert(note_id, stored_note);
+        self.notes.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?
+            .insert(note_id, stored_note);
         self.update_spending_key_note_count(spending_key_id)?;
         self.save_notes()?;
         
@@ -216,7 +224,9 @@ impl NoteStorage {
             note_count: 0,
         };
         
-        self.spending_keys.lock().unwrap().insert(key_id, stored_key);
+        self.spending_keys.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?
+            .insert(key_id, stored_key);
         self.save_spending_keys()?;
         
         Ok(())
@@ -235,73 +245,117 @@ impl NoteStorage {
             is_confirmed: true,
         };
         
-        self.transactions.lock().unwrap().insert(tx_id, stored_tx);
+        self.transactions.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?
+            .insert(tx_id, stored_tx);
         self.save_transactions()?;
         
         Ok(())
     }
 
     pub fn get_all_notes(&self) -> Vec<StoredNote> {
-        self.notes.lock().unwrap().values().cloned().collect()
+        self.notes.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_all_notes: {}", e);
+            })
+            .ok()
+            .map(|notes| notes.values().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn get_notes_for_address(&self, address: &str) -> Vec<StoredNote> {
-        self.notes.lock().unwrap()
-            .values()
-            .filter(|note| note.note.recipient == address)
-            .cloned()
-            .collect()
+        self.notes.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_notes_for_address: {}", e);
+            })
+            .ok()
+            .map(|notes| notes
+                .values()
+                .filter(|note| note.note.recipient == address)
+                .cloned()
+                .collect())
+            .unwrap_or_default()
     }
 
     pub fn get_unspent_notes(&self) -> Vec<StoredNote> {
-        self.notes.lock().unwrap()
-            .values()
-            .filter(|note| !note.note.spent)
-            .cloned()
-            .collect()
+        self.notes.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_unspent_notes: {}", e);
+            })
+            .ok()
+            .map(|notes| notes
+                .values()
+                .filter(|note| !note.note.spent)
+                .cloned()
+                .collect())
+            .unwrap_or_default()
     }
 
     pub fn get_spending_keys_for_address(&self, address: &str) -> Vec<StoredSpendingKey> {
-        self.spending_keys.lock().unwrap()
-            .values()
-            .filter(|key| key.spending_key.address == address)
-            .cloned()
-            .collect()
+        self.spending_keys.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_spending_keys_for_address: {}", e);
+            })
+            .ok()
+            .map(|keys| keys
+                .values()
+                .filter(|key| key.spending_key.address == address)
+                .cloned()
+                .collect())
+            .unwrap_or_default()
     }
 
     pub fn mark_note_spent(&self, note_id: &str) -> NozyResult<()> {
-        let mut notes = self.notes.lock().unwrap();
+        let mut notes = self.notes.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         if let Some(note) = notes.get_mut(note_id) {
             note.note.spent = true;
             note.updated_at = Utc::now();
+            drop(notes); // Release lock before saving
             self.save_notes()?;
         }
         Ok(())
     }
 
     pub fn update_note_confirmation(&self, note_id: &str, is_confirmed: bool, confirmation_height: Option<u32>) -> NozyResult<()> {
-        let mut notes = self.notes.lock().unwrap();
+        let mut notes = self.notes.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         if let Some(note) = notes.get_mut(note_id) {
             note.is_confirmed = is_confirmed;
             note.confirmation_height = confirmation_height;
             note.updated_at = Utc::now();
+            drop(notes); // Release lock before saving
             self.save_notes()?;
         }
         Ok(())
     }
 
     pub fn get_stats(&self) -> StorageStats {
-        let notes = self.notes.lock().unwrap();
-        let spending_keys = self.spending_keys.lock().unwrap();
-        let transactions = self.transactions.lock().unwrap();
+        let notes = self.notes.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_stats (notes): {}", e);
+            })
+            .ok();
+        let spending_keys = self.spending_keys.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_stats (spending_keys): {}", e);
+            })
+            .ok();
+        let transactions = self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_stats (transactions): {}", e);
+            })
+            .ok();
         
-        let unspent_notes = notes.values().filter(|note| !note.note.spent).count();
+        let unspent_notes = notes.as_ref()
+            .map(|n| n.values().filter(|note| !note.note.spent).count())
+            .unwrap_or(0);
         
         StorageStats {
-            total_notes: notes.len(),
+            total_notes: notes.as_ref().map(|n| n.len()).unwrap_or(0),
             unspent_notes,
-            total_spending_keys: spending_keys.len(),
-            total_transactions: transactions.len(),
+            total_spending_keys: spending_keys.as_ref().map(|k| k.len()).unwrap_or(0),
+            total_transactions: transactions.as_ref().map(|t| t.len()).unwrap_or(0),
             total_storage_size: 0, // Would calculate actual file sizes
         }
     }
@@ -322,7 +376,8 @@ impl NoteStorage {
     }
 
     fn update_spending_key_note_count(&self, key_id: &str) -> NozyResult<()> {
-        let mut keys = self.spending_keys.lock().unwrap();
+        let mut keys = self.spending_keys.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         if let Some(key) = keys.get_mut(key_id) {
             key.note_count += 1;
             key.last_used = Some(Utc::now());
@@ -331,9 +386,15 @@ impl NoteStorage {
     }
 
     pub fn clear_all(&self) -> NozyResult<()> {
-        self.notes.lock().unwrap().clear();
-        self.spending_keys.lock().unwrap().clear();
-        self.transactions.lock().unwrap().clear();
+        self.notes.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?
+            .clear();
+        self.spending_keys.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?
+            .clear();
+        self.transactions.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?
+            .clear();
         
         self.save_all()?;
         Ok(())
