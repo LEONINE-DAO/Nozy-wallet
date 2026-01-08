@@ -267,7 +267,6 @@ pub async fn create_wallet(
 pub async fn restore_wallet(
     Json(payload): Json<RestoreWalletRequest>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    // Validate mnemonic
     if !validate_mnemonic(&payload.mnemonic) {
         return Err(error_response_with_code(
             StatusCode::BAD_REQUEST,
@@ -617,7 +616,6 @@ pub async fn set_zebra_url(
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::{load_config, save_config};
 
-    // Validate URL
     if !validate_url(&payload.url) {
         return Err(error_response_with_code(
             StatusCode::BAD_REQUEST,

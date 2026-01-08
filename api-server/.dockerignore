@@ -1,0 +1,7 @@
+target/
+.git/
+*.md
+.env
+wallet_data/
+*.log
+.DS_Store
