@@ -5,11 +5,13 @@ const FeatureCard = ({
   title,
   description,
   points,
+  learnMoreLink,
 }: {
   icon: any;
   title: string;
   description: string;
   points: string[];
+  learnMoreLink?: string;
 }) => (
   <div className="bg-zinc-50 rounded-2xl p-8 border border-zinc-100 hover:border-yellow-500/30 transition-all duration-300 hover:shadow-lg hover:shadow-yellow-500/5 group">
     <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center mb-6 shadow-sm border border-zinc-100 group-hover:scale-110 transition-transform duration-300">
@@ -22,7 +24,7 @@ const FeatureCard = ({
     <h3 className="text-xl font-bold text-zinc-900 mb-3">{title}</h3>
     <p className="text-zinc-500 mb-6 leading-relaxed">{description}</p>
 
-    <ul className="space-y-3">
+    <ul className="space-y-3 mb-6">
       {points.map((point, index) => (
         <li
           key={index}
@@ -33,6 +35,17 @@ const FeatureCard = ({
         </li>
       ))}
     </ul>
+
+    {learnMoreLink && (
+      <a
+        href={learnMoreLink}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-yellow-600 hover:text-yellow-700 text-sm font-semibold inline-flex items-center gap-1 group-hover:gap-2 transition-all"
+      >
+        Learn More →
+      </a>
+    )}
   </div>
 );
 
@@ -48,6 +61,7 @@ const Features = () => {
         "Sender, receiver, and amount hidden",
         "Cryptographically proven privacy",
       ],
+      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet#-privacy-guarantees",
     },
     {
       icon: Bolt,
@@ -59,6 +73,7 @@ const Features = () => {
         "Low network fees",
         "Scalable for daily use",
       ],
+      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/PERFORMANCE.md",
     },
     {
       icon: LockPassword,
@@ -70,6 +85,7 @@ const Features = () => {
         "Password protected storage",
         "Open source and auditable",
       ],
+      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/SECURITY.md",
     },
   ];
 

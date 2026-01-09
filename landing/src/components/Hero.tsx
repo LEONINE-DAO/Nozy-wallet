@@ -32,16 +32,26 @@ const Hero = () => {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <button className="w-full sm:w-auto px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-white rounded-xl font-bold transition-all shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 group">
+          <a
+            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-white rounded-xl font-bold transition-all shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 group"
+          >
             <AltArrowDown
               size={20}
               className="group-hover:translate-y-1 transition-transform"
             />
             Download NozyWallet
-          </button>
-          <button className="w-full sm:w-auto px-8 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-semibold transition-all border border-zinc-200 hover:border-zinc-300">
+          </a>
+          <a
+            href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/README.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full sm:w-auto px-8 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-semibold transition-all border border-zinc-200 hover:border-zinc-300"
+          >
             View Documentation
-          </button>
+          </a>
         </div>
 
         <div className="mt-20 pt-10 border-t border-zinc-200 grid grid-cols-1 sm:grid-cols-3 gap-8">

@@ -20,13 +20,23 @@ const About = () => {
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-          <button className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-yellow-500/20 flex items-center gap-3">
+          <a
+            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-yellow-500/20 flex items-center gap-3"
+          >
             <Download size={24} />
             Download For Windows
-          </button>
-          <button className="bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all border border-white/10">
+          </a>
+          <a
+            href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/README.md"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all border border-white/10"
+          >
             Read The Manifesto
-          </button>
+          </a>
         </div>
       </div>
     </section>
