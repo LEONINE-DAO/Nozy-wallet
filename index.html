@@ -31,166 +31,237 @@
     <link rel="stylesheet" crossorigin href="/Nozy-wallet/assets/index-Zl7hyVsg.css">
     <script>
         (function() {
+            let fixedImages = new WeakSet();
+            let isProcessing = false;
+            
             function fixLogoPath() {
+                if (isProcessing) return;
+                isProcessing = true;
+                
                 const images = document.querySelectorAll('img[src="/logo.png"], img[src*="logo.png"]');
+                let fixed = false;
+                
                 images.forEach(img => {
+                    // Skip if already fixed
+                    if (fixedImages.has(img)) return;
+                    
+                    // Only fix if path is wrong
                     if (img.src.includes('/logo.png') && !img.src.includes('/Nozy-wallet/')) {
                         img.src = '/Nozy-wallet/logo.png';
+                        fixedImages.add(img);
+                        fixed = true;
                     }
                 });
+                
+                isProcessing = false;
+                
+                // Stop observing if no new images to fix after initial load
+                if (!fixed && document.readyState === 'complete') {
+                    if (logoObserver) {
+                        logoObserver.disconnect();
+                        logoObserver = null;
+                    }
+                }
             }
             
+            let logoObserver = null;
+            
+            // Initial fix
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', fixLogoPath);
             } else {
                 fixLogoPath();
             }
             
-            const observer = new MutationObserver(fixLogoPath);
-            observer.observe(document.body || document.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['src']
+            // Debounced observer - only watch for new images, not attribute changes
+            let debounceTimer = null;
+            function debouncedFix() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(fixLogoPath, 100);
+            }
+            
+            // Only observe for new nodes, not attribute changes (to avoid React conflicts)
+            logoObserver = new MutationObserver(function(mutations) {
+                let hasNewNodes = false;
+                for (let mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        hasNewNodes = true;
+                        break;
+                    }
+                }
+                if (hasNewNodes) {
+                    debouncedFix();
+                }
             });
             
-            window.addEventListener('load', fixLogoPath);
-        })();
-        
-        (function() {
-            let attempts = 0;
-            const maxAttempts = 20; 
-            
-            function modifyDownloadButtons() {
-                attempts++;
-                
-                const selectors = [
-                    'a[href*="download"]',
-                    'button:has-text("download")',
-                    'a:has-text("Download")',
-                    'button:has-text("Download")',
-                    '[role="button"]:has-text("download")',
-                    'a',
-                    'button'
-                ];
-                
-                let foundButtons = false;
-                
-                document.querySelectorAll('a, button, [role="button"], [onclick*="download"]').forEach(element => {
-                    const text = (element.textContent || '').toLowerCase();
-                    const href = element.getAttribute('href') || '';
-                    const onclick = element.getAttribute('onclick') || '';
-                    const className = element.className || '';
-                    
-                    if (text.includes('download') || 
-                        href.toLowerCase().includes('download') || 
-                        onclick.toLowerCase().includes('download') ||
-                        className.toLowerCase().includes('download')) {
-                        
-                        foundButtons = true;
-                        
-                        element.onclick = null;
-                        element.removeAttribute('onclick');
-                        
-                        if (element.tagName === 'A') {
-                            element.href = 'downloads/';
-                            element.setAttribute('href', 'downloads/');
-                        } else {
-                            element.addEventListener('click', function(e) {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                window.location.href = 'downloads/';
-                                return false;
-                            }, true);
-                        }
-                        
-                        const reactProps = Object.keys(element).filter(key => key.startsWith('__react'));
-                        reactProps.forEach(prop => {
-                            try {
-                                const reactFiber = element[prop];
-                                if (reactFiber && reactFiber.memoizedProps) {
-                                    if (reactFiber.memoizedProps.onClick) {
-                                        const originalOnClick = reactFiber.memoizedProps.onClick;
-                                        reactFiber.memoizedProps.onClick = function(e) {
-                                            e.preventDefault();
-                                            e.stopPropagation();
-                                            window.location.href = 'downloads/';
-                                            return false;
-                                        };
-                                    }
-                                }
-                            } catch (e) {
-                               
-                            }
+            // Start observing only after initial load
+            if (document.body) {
+                logoObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                    // Removed attributes: true to avoid React conflicts
+                });
+            } else {
+                document.addEventListener('DOMContentLoaded', function() {
+                    if (logoObserver && document.body) {
+                        logoObserver.observe(document.body, {
+                            childList: true,
+                            subtree: true
                         });
                     }
                 });
-                
-                if (foundButtons || attempts >= maxAttempts) {
-                    if (foundButtons) {
-                        console.log('✅ Modified download buttons');
+            }
+            
+            window.addEventListener('load', function() {
+                fixLogoPath();
+                // Stop observing after load if no issues
+                setTimeout(function() {
+                    if (logoObserver) {
+                        logoObserver.disconnect();
+                        logoObserver = null;
                     }
-                } else {
-                    setTimeout(modifyDownloadButtons, 500);
+                }, 2000);
+            });
+        })();
+        
+        (function() {
+            let processedButtons = new WeakSet();
+            let buttonObserver = null;
+            let isProcessing = false;
+            let debounceTimer = null;
+            
+            function modifyDownloadButtons() {
+                if (isProcessing) return;
+                isProcessing = true;
+                
+                let foundButtons = false;
+                
+                document.querySelectorAll('a, button, [role="button"]').forEach(element => {
+                    // Skip if already processed
+                    if (processedButtons.has(element)) return;
+                    
+                    const text = (element.textContent || '').toLowerCase();
+                    const href = element.getAttribute('href') || '';
+                    const className = element.className || '';
+                    const id = element.id || '';
+                    
+                    // Only process elements that actually mention download
+                    if (text.includes('download') || 
+                        href.toLowerCase().includes('download') || 
+                        className.toLowerCase().includes('download') ||
+                        id.toLowerCase().includes('download')) {
+                        
+                        // Skip if already pointing to downloads
+                        if (href.includes('downloads/') || href.includes('downloads.html')) {
+                            processedButtons.add(element);
+                            return;
+                        }
+                        
+                        foundButtons = true;
+                        processedButtons.add(element);
+                        
+                        // Only modify non-React elements to avoid conflicts
+                        const hasReactProps = Object.keys(element).some(key => key.startsWith('__react'));
+                        
+                        if (!hasReactProps) {
+                            if (element.tagName === 'A') {
+                                element.href = 'downloads/';
+                            } else {
+                                element.addEventListener('click', function(e) {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    window.location.href = 'downloads/';
+                                    return false;
+                                }, { once: true, capture: true });
+                            }
+                        }
+                    }
+                });
+                
+                isProcessing = false;
+                
+                // Stop observing after initial processing is complete
+                if (!foundButtons && document.readyState === 'complete') {
+                    setTimeout(function() {
+                        if (buttonObserver) {
+                            buttonObserver.disconnect();
+                            buttonObserver = null;
+                        }
+                    }, 1000);
                 }
             }
             
+            // Debounced version for observer
+            function debouncedModify() {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(modifyDownloadButtons, 300);
+            }
+            
+            // Initial processing
             if (document.readyState === 'loading') {
                 document.addEventListener('DOMContentLoaded', modifyDownloadButtons);
             } else {
                 modifyDownloadButtons();
             }
             
-            const observer = new MutationObserver(function(mutations) {
+            // Observer only for new nodes (not attribute changes)
+            buttonObserver = new MutationObserver(function(mutations) {
+                let hasNewNodes = false;
+                for (let mutation of mutations) {
+                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                        hasNewNodes = true;
+                        break;
+                    }
+                }
+                if (hasNewNodes) {
+                    debouncedModify();
+                }
+            });
+            
+            if (document.body) {
+                buttonObserver.observe(document.body, {
+                    childList: true,
+                    subtree: true
+                    // Removed attributes watching to avoid React conflicts
+                });
+            } else {
+                document.addEventListener('DOMContentLoaded', function() {
+                    if (buttonObserver && document.body) {
+                        buttonObserver.observe(document.body, {
+                            childList: true,
+                            subtree: true
+                        });
+                    }
+                });
+            }
+            
+            window.addEventListener('load', function() {
                 modifyDownloadButtons();
+                // Stop observing after load
+                setTimeout(function() {
+                    if (buttonObserver) {
+                        buttonObserver.disconnect();
+                        buttonObserver = null;
+                    }
+                }, 2000);
             });
             
-            observer.observe(document.body || document.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['href', 'onclick']
-            });
-            
-            window.addEventListener('load', modifyDownloadButtons);
-            
+            // Click handler - passive, doesn't interfere with React
             document.addEventListener('click', function(e) {
                 const target = e.target;
                 const text = (target.textContent || '').toLowerCase();
                 const href = target.getAttribute('href') || '';
-                const className = target.className || '';
-                const id = target.id || '';
                 
-                if (text.includes('download') || 
-                    href.toLowerCase().includes('download') || 
-                    className.toLowerCase().includes('download') ||
-                    id.toLowerCase().includes('download')) {
-                    
-                    if (!href.includes('downloads/') && !href.includes('downloads.html')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        window.location.href = 'downloads/';
-                        return false;
-                    }
+                if (text.includes('download') && 
+                    href && 
+                    !href.includes('downloads/') && 
+                    !href.includes('downloads.html')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    window.location.href = 'downloads/';
+                    return false;
                 }
-                
-                let parent = target.parentElement;
-                for (let i = 0; i < 3 && parent; i++) {
-                    const parentText = (parent.textContent || '').toLowerCase();
-                    const parentHref = parent.getAttribute('href') || '';
-                    const parentClass = parent.className || '';
-                    
-                    if (parentText.includes('download') && 
-                        !parentHref.includes('downloads/') &&
-                        (parent.tagName === 'A' || parent.tagName === 'BUTTON')) {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        window.location.href = 'downloads/';
-                        return false;
-                    }
-                    parent = parent.parentElement;
-                }
-            }, true); 
+            }, { capture: true, passive: false }); 
         })();
     </script>
   </head>
@@ -198,3 +269,4 @@
     <div id="root"></div>
   </body>
 </html>
+
