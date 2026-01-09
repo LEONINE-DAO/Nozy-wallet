@@ -61,7 +61,7 @@ const Features = () => {
         "Sender, receiver, and amount hidden",
         "Cryptographically proven privacy",
       ],
-      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet#-privacy-guarantees",
+      learnMoreLink: "https://leonine-dao.github.io/Nozy-wallet/book/features/absolute-privacy.html",
     },
     {
       icon: Bolt,
@@ -73,7 +73,7 @@ const Features = () => {
         "Low network fees",
         "Scalable for daily use",
       ],
-      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/PERFORMANCE.md#overview",
+      learnMoreLink: "https://leonine-dao.github.io/Nozy-wallet/book/features/performance.html",
     },
     {
       icon: LockPassword,
@@ -85,7 +85,7 @@ const Features = () => {
         "Password protected storage",
         "Open source and auditable",
       ],
-      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/SECURITY.md#-security-commitment",
+      learnMoreLink: "https://leonine-dao.github.io/Nozy-wallet/book/features/security.html",
     },
   ];
 

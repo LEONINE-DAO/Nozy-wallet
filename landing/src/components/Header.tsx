@@ -73,6 +73,14 @@ const Header = () => {
             About
           </a>
           <a
+            href="https://leonine-dao.github.io/Nozy-wallet/book/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="hover:text-yellow-600 transition-colors cursor-pointer"
+          >
+            Documentation
+          </a>
+          <a
             href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
             target="_blank"
             rel="noopener noreferrer"
@@ -120,6 +128,14 @@ const Header = () => {
               className="text-lg font-semibold text-zinc-800 hover:text-yellow-600 transition-colors py-3 border-b border-zinc-100"
             >
               About
+            </a>
+            <a
+              href="https://leonine-dao.github.io/Nozy-wallet/book/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-lg font-semibold text-zinc-800 hover:text-yellow-600 transition-colors py-3 border-b border-zinc-100"
+            >
+              Documentation
             </a>
           </div>
           <div className="mt-8">
