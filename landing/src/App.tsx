@@ -10,7 +10,7 @@ function App() {
   return (
     <>
       <Analytics />
-      <Router>
+      <Router basename="/Nozy-wallet">
         <div className="min-h-screen bg-white text-zinc-900 selection:bg-yellow-200 selection:text-yellow-900">
           <Header />
           <main>

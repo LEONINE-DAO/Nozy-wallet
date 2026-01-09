@@ -44,7 +44,7 @@ const Header = () => {
           className="flex items-center gap-3"
         >
           <img
-            src="/logo.png"
+            src={`${import.meta.env.BASE_URL}logo.png`}
             alt="NozyWallet Logo"
             className="h-auto w-32"
           />
