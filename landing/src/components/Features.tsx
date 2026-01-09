@@ -73,7 +73,7 @@ const Features = () => {
         "Low network fees",
         "Scalable for daily use",
       ],
-      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/PERFORMANCE.md",
+      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/PERFORMANCE.md#overview",
     },
     {
       icon: LockPassword,
@@ -85,7 +85,7 @@ const Features = () => {
         "Password protected storage",
         "Open source and auditable",
       ],
-      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/SECURITY.md",
+      learnMoreLink: "https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/SECURITY.md#-security-commitment",
     },
   ];
 

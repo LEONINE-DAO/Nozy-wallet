@@ -30,7 +30,7 @@ const About = () => {
             Download For Windows
           </a>
           <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/README.md"
+            href="https://github.com/LEONINE-DAO/Nozy-wallet#readme"
             target="_blank"
             rel="noopener noreferrer"
             className="bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all border border-white/10"

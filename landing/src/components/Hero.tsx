@@ -45,7 +45,7 @@ const Hero = () => {
             Download NozyWallet
           </a>
           <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/main/README.md"
+            href="https://github.com/LEONINE-DAO/Nozy-wallet#readme"
             target="_blank"
             rel="noopener noreferrer"
             className="w-full sm:w-auto px-8 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-semibold transition-all border border-zinc-200 hover:border-zinc-300"
