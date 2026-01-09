@@ -65,10 +65,11 @@ directories = "5.0"
 bip32 = "0.5"
 bip39 = "2.1"
 
-# Secret Network / Cosmos SDK support
+# Secret Network / Cosmos SDK support (optional feature)
+# Enable with: cargo build --features secret-network
 secp256k1 = { version = "0.28", features = ["global-context", "rand"] }
-cosmrs = "0.8"
-tendermint = "0.35"
+cosmrs = { version = "0.8", optional = true }
+tendermint = { version = "0.35", optional = true }
 
 # Official Zcash libraries - using compatible versions that work together
 # Updated to match Cargo.lock and support NU 6.1 (protocol version 170140)
@@ -99,13 +100,16 @@ rayon = "1.8"
 # Futures utilities for parallel async operations
 futures = "0.3"
 
+[features]
+default = []
+# Enable Secret Network / Cosmos SDK support
+# WARNING: This includes vulnerable dependencies (ed25519-dalek@1.0.1, curve25519-dalek@3.2.0)
+# via cosmrs/tendermint. Only enable if you need Secret Network features.
+secret-network = ["dep:cosmrs", "dep:tendermint"]
+
 [workspace]
 members = ["zeaking", "api-server"]
 resolver = "2"
-
-# Note: Direct dependencies above already specify newer versions for security fixes
-# If transitive dependencies still use old versions, we may need to update parent deps
-# or wait for upstream updates (tendermint/cosmrs ecosystem)
 
 [[bin]]
 name = "nozy"

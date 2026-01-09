@@ -157,7 +157,8 @@ pub enum Commands {
         command: SwapCommand,
     },
     
-    /// Shade Protocol commands
+    /// Shade Protocol commands (requires secret-network feature)
+    #[cfg(feature = "secret-network")]
     #[command(about = "Shade Protocol (Secret Network) integration commands")]
     Shade {
         #[command(subcommand)]
@@ -256,6 +257,7 @@ pub enum SwapCommand {
     },
 }
 
+#[cfg(feature = "secret-network")]
 #[derive(Subcommand)]
 pub enum ShadeCommand {
     Balance {
@@ -1906,6 +1908,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             }
         }
         
+        #[cfg(feature = "secret-network")]
         Commands::Shade { command } => {
             use nozy::secret::SecretWallet;
             use nozy::secret::snip20::shade_tokens;
@@ -2253,7 +2256,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
                     println!("💡 Use 'nozy shade receive' to generate your address");
                 },
             }
-        }
+        },
         
         Commands::Monero { command } => {
             use nozy::monero::MoneroWallet;

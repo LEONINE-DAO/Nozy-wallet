@@ -27,6 +27,7 @@ pub mod privacy_ui;
 pub mod privacy_network;
 pub mod monero;
 pub mod monero_zk_verifier;
+#[cfg(feature = "secret-network")]
 pub mod secret;
 pub mod secret_keys;
 pub mod swap;
@@ -62,6 +63,7 @@ pub use zeaking::{Zeaking, IndexStats, IndexedBlock, IndexedTransaction};
 pub use zeaking_adapter::{ZebraBlockSource, ZebraBlockParser};
 pub use monero::{MoneroWallet, MoneroRpcClient, MoneroTransactionStorage, MoneroTransactionRecord, MoneroTransactionStatus};
 pub use monero_zk_verifier::{MoneroZkVerifier, VerificationLevel, VerificationResult};
+#[cfg(feature = "secret-network")]
 pub use secret::{SecretWallet, SecretRpcClient, Snip20Token, SecretTransactionStorage, SecretTransactionRecord, SecretTransactionStatus};
 pub use secret_keys::{SecretKeyDerivation, SecretKeyPair, SecretDerivationPath, SECRET_COIN_TYPE, SECRET_ADDRESS_PREFIX};
 pub use swap::{SwapService, SwapEngine, SwapDirection, SwapStatus, SwapRequest, SwapResponse};
