@@ -37,31 +37,93 @@ jobs:
         uses: actions/checkout@v4
 
       # Build mdBook documentation
-      - name: Install mdBook
-        id: build-mdbook
-        continue-on-error: true
+      - name: Check for mdBook source
+        id: check-mdbook
         run: |
-          if [ -f "book.toml" ] || [ -d "book/src" ]; then
-            echo "need_mdbook=true" >> $GITHUB_OUTPUT
-            echo "📚 mdBook source found, will build documentation"
-            curl -L https://github.com/rust-lang/mdBook/releases/download/v0.4.36/mdbook-v0.4.36-x86_64-unknown-linux-gnu.tar.gz | tar xz
-            sudo mv mdbook /usr/local/bin/
-            mdbook --version
+          if [ -f "book.toml" ]; then
+            echo "has_book=true" >> $GITHUB_OUTPUT
+            echo "✅ Found book.toml"
+          elif [ -d "book/src" ]; then
+            echo "has_book=true" >> $GITHUB_OUTPUT
+            echo "✅ Found book/src directory"
           else
-            echo "need_mdbook=false" >> $GITHUB_OUTPUT
-            echo "⚠️  No mdBook source found, skipping"
+            echo "has_book=false" >> $GITHUB_OUTPUT
+            echo "⚠️  No mdBook source found, skipping mdBook build"
           fi
 
-      - name: Build mdBook
-        if: steps.build-mdbook.outputs.need_mdbook == 'true'
+      - name: Install mdBook
+        if: steps.check-mdbook.outputs.has_book == 'true'
         run: |
-          mdbook build
-          if [ -d "book/book" ]; then
-            echo "✅ mdBook built successfully"
-            ls -la book/book/ | head -10
+          echo "📚 Installing mdBook..."
+          curl -fL https://github.com/rust-lang/mdBook/releases/download/v0.4.36/mdbook-v0.4.36-x86_64-unknown-linux-gnu.tar.gz -o mdbook.tar.gz
+          tar -xzf mdbook.tar.gz
+          sudo mv mdbook /usr/local/bin/
+          rm mdbook.tar.gz
+          echo "✅ mdBook installed:"
+          mdbook --version
+
+      - name: Build mdBook
+        if: steps.check-mdbook.outputs.has_book == 'true'
+        run: |
+          echo "📚 Building mdBook documentation..."
+          echo "Current directory: $(pwd)"
+          echo "Checking book.toml location:"
+          ls -la book.toml || echo "book.toml not found in current dir"
+          echo ""
+          echo "Checking source directory:"
+          if [ -d "book/src" ]; then
+            echo "✅ book/src exists"
+            echo "SUMMARY.md:"
+            ls -la book/src/SUMMARY.md || echo "SUMMARY.md not found!"
           else
-            echo "⚠️  mdBook build directory not found"
+            echo "❌ book/src does not exist!"
+            exit 1
           fi
+          echo ""
+          echo "Running mdbook build..."
+          # Capture both stdout and stderr
+          set -x
+          mdbook build 2>&1 | tee mdbook-build.log || {
+            echo "❌ mdBook build failed!"
+            echo ""
+            echo "=== Build Error Log ==="
+            cat mdbook-build.log || true
+            echo ""
+            echo "=== Checking for common issues ==="
+            if [ -f "book/src/SUMMARY.md" ]; then
+              echo "SUMMARY.md exists"
+              echo "Checking first few lines:"
+              head -20 book/src/SUMMARY.md || true
+            fi
+            exit 1
+          }
+          set +x
+          
+          echo ""
+          echo "Checking build output..."
+          if [ ! -d "book/book" ]; then
+            echo "❌ Build directory 'book/book' not found after build!"
+            echo "Contents of current directory:"
+            ls -la
+            echo ""
+            echo "Contents of book/ directory:"
+            ls -la book/ || echo "book/ does not exist"
+            exit 1
+          fi
+          
+          if [ ! -f "book/book/index.html" ]; then
+            echo "❌ index.html not found in build output!"
+            echo "Contents of book/book/:"
+            ls -la book/book/ || true
+            exit 1
+          fi
+          
+          echo "✅ mdBook built successfully!"
+          echo "Build output size:"
+          du -sh book/book
+          echo ""
+          echo "First 20 files in build:"
+          find book/book -type f | head -20
 
       # Build landing page
       - name: Setup Node.js
@@ -106,11 +168,26 @@ jobs:
           if [ -d "book/book" ] && [ -f "book/book/index.html" ]; then
             echo "📚 Copying mdBook to /book/..."
             mkdir -p _site/book
-            cp -r book/book/* _site/book/
+            # Copy all contents including hidden files
+            cp -r book/book/. _site/book/ 2>&1 || cp -r book/book/* _site/book/ 2>&1
+            # Verify copy was successful
+            if [ ! -f "_site/book/index.html" ]; then
+              echo "❌ ERROR: Failed to copy mdBook index.html!"
+              exit 1
+            fi
             echo "✅ mdBook deployed to /book/"
-            ls -la _site/book/ | head -5
+            echo "Book files:"
+            ls -la _site/book/ | head -10
+            echo "Total files in /book/:"
+            find _site/book -type f | wc -l
           else
-            echo "⚠️  mdBook not available, skipping /book/"
+            echo "⚠️  mdBook build not found (book/book/index.html missing)"
+            echo "Checking book/ directory:"
+            ls -la book/ 2>/dev/null || echo "book/ directory does not exist"
+            if [ -d "book/book" ]; then
+              echo "book/book exists but no index.html:"
+              ls -la book/book/ | head -10
+            fi
           fi
           
           # 2. Deploy landing page to root (if built)
@@ -234,6 +311,34 @@ jobs:
           
           echo ""
           echo "✅ Deployment structure ready!"
+
+      - name: Verify deployment structure before upload
+        run: |
+          echo "🔍 Final verification before deployment..."
+          echo ""
+          echo "Contents of _site/:"
+          ls -la _site/ || (echo "❌ _site/ directory does not exist!" && exit 1)
+          echo ""
+          if [ ! -f "_site/index.html" ]; then
+            echo "❌ ERROR: Root index.html is required but missing!"
+            exit 1
+          fi
+          echo "✅ Root index.html found"
+          
+          if [ -d "_site/book" ]; then
+            if [ -f "_site/book/index.html" ]; then
+              echo "✅ Book documentation ready at /book/"
+            else
+              echo "⚠️  Warning: /book/ directory exists but index.html is missing"
+            fi
+          else
+            echo "⚠️  Warning: /book/ directory not found (mdBook may not have built)"
+          fi
+          
+          echo ""
+          echo "📊 Deployment summary:"
+          echo "Total files to deploy: $(find _site -type f | wc -l)"
+          echo "Total size: $(du -sh _site | cut -f1)"
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
