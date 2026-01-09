@@ -9,7 +9,6 @@ use serde_json;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -27,7 +26,7 @@ pub struct MoneroTransactionRecord {
     pub block_time: Option<DateTime<Utc>>,
     pub confirmations: u32,
     pub error: Option<String>,
-    pub tx_key: Option<String>, // Transaction key for proving
+    pub tx_key: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -72,7 +71,7 @@ impl MoneroTransactionStorage {
     
     pub fn get_transaction(&self, txid: &str) -> Option<MoneroTransactionRecord> {
         let transactions = self.transactions.lock()
-            .ok()?; // Return None if mutex is poisoned
+            .ok()?; 
         transactions.get(txid).cloned()
     }
     
@@ -141,49 +140,41 @@ impl MoneroTransactionStorage {
         rpc: &MoneroRpcClient,
         txid: &str,
     ) -> NozyResult<bool> {
-        // Query transaction from Monero wallet RPC
-        // Note: monero-wallet-rpc doesn't have a direct "get_transaction" method
-        // We'll check if the transaction appears in the wallet's transaction history
-        
-        // Try to get transaction by querying get_transfer_by_txid
+       
         let result = rpc.call("get_transfer_by_txid", serde_json::json!({
             "txid": txid
         })).await;
         
         match result {
             Ok(transfer_info) => {
-                // Transaction found in wallet
                 let height = transfer_info.get("height")
                     .and_then(|v| v.as_u64());
                 
                 let timestamp = transfer_info.get("timestamp")
                     .and_then(|v| v.as_u64())
                     .map(|ts| {
-                        // Monero timestamps are Unix timestamps
                         DateTime::from_timestamp(ts as i64, 0)
                             .unwrap_or_else(|| Utc::now())
                     });
                 
-                // Get current height for confirmations
                 let current_height = rpc.get_height().await.unwrap_or(0);
                 let confirmations = if let Some(h) = height {
                     if h > 0 {
                         current_height.saturating_sub(h) + 1
                     } else {
-                        0 // In mempool
+                        0 
                     }
                 } else {
                     0
                 };
                 
-                // Update confirmations
+                
                 if let Ok(mut transactions) = self.transactions.lock() {
                     if let Some(tx) = transactions.get_mut(txid) {
                         tx.confirmations = confirmations as u32;
                     }
                 }
                 
-                // If height > 0, transaction is confirmed
                 if let Some(h) = height {
                     if h > 0 {
                         self.update_transaction_status(
@@ -199,8 +190,7 @@ impl MoneroTransactionStorage {
                 Ok(true)
             },
             Err(e) => {
-                // Transaction might not be found yet (still in mempool)
-                // Don't update status, just return false
+                
                 let error_str = e.to_string();
                 if error_str.contains("not found") || error_str.contains("Invalid") {
                     Ok(false)

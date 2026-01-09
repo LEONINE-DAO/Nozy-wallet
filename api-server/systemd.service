@@ -1,0 +1,35 @@
+[Unit]
+Description=NozyWallet API Server
+After=network.target
+
+[Service]
+Type=simple
+User=nozywallet
+Group=nozywallet
+WorkingDirectory=/opt/nozywallet
+ExecStart=/opt/nozywallet/nozywallet-api
+Restart=always
+RestartSec=10
+
+# Environment variables
+Environment="NOZY_PRODUCTION=true"
+Environment="NOZY_API_KEY=CHANGE_THIS_TO_YOUR_SECURE_API_KEY"
+Environment="NOZY_CORS_ORIGINS=https://your-frontend-domain.com"
+Environment="NOZY_HTTP_PORT=3000"
+Environment="NOZY_RATE_LIMIT_REQUESTS=100"
+Environment="NOZY_RATE_LIMIT_WINDOW=60"
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/nozywallet/wallet_data
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nozywallet-api
+
+[Install]
+WantedBy=multi-user.target

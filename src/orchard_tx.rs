@@ -88,7 +88,9 @@ impl OrchardTransactionBuilder {
         };
         let tip_height = zebra_client.get_best_block_height().await?;
         let tree_state = zebra_client.get_orchard_tree_state(tip_height).await?;
-        let anchor = Anchor::from_bytes(tree_state.anchor).unwrap();
+        let anchor = Anchor::from_bytes(tree_state.anchor)
+            .into_option()
+            .ok_or_else(|| NozyError::InvalidOperation("Invalid anchor bytes".to_string()))?;
 
         let mut builder = OrchardBuilder::new(bundle_type, anchor);
 

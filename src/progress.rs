@@ -8,7 +8,7 @@ pub fn create_scan_progress_bar(total: u64) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} blocks ({percent}%) {msg}")
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("#>-")
     );
     pb
@@ -20,7 +20,7 @@ pub fn create_tx_progress_bar() -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_spinner())
     );
     pb
 }
@@ -31,7 +31,7 @@ pub fn create_sync_progress_bar(total: u64) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_bar()
             .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} blocks ({percent}%) {msg}")
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_bar())
             .progress_chars("#>-")
     );
     pb
@@ -44,7 +44,7 @@ pub fn create_general_progress_bar(message: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .unwrap()
+            .unwrap_or_else(|_| ProgressStyle::default_spinner())
     );
     pb
 }

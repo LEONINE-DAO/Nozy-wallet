@@ -374,7 +374,8 @@ impl SentTransactionStorage {
                 serde_json::from_str(&content)
                     .map_err(|e| NozyError::Storage(format!("Failed to parse sent transactions: {}", e)))?;
             
-            *self.transactions.lock().unwrap() = stored_transactions;
+            *self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = stored_transactions;
         }
         
         Ok(())
@@ -382,7 +383,8 @@ impl SentTransactionStorage {
     
     fn save_transactions(&self) -> NozyResult<()> {
         let transactions_path = self.get_transactions_path();
-        let transactions = self.transactions.lock().unwrap();
+        let transactions = self.transactions.lock()
+            .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
         let content = serde_json::to_string_pretty(&*transactions)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize sent transactions: {}", e)))?;
         
@@ -395,7 +397,8 @@ impl SentTransactionStorage {
     pub fn save_transaction(&self, transaction: SentTransactionRecord) -> NozyResult<()> {
         let txid = transaction.txid.clone();
         {
-            let mut transactions = self.transactions.lock().unwrap();
+            let mut transactions = self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             transactions.insert(txid, transaction);
         }
         self.save_transactions()?;
@@ -403,21 +406,36 @@ impl SentTransactionStorage {
     }
     
     pub fn get_transaction(&self, txid: &str) -> Option<SentTransactionRecord> {
-        let transactions = self.transactions.lock().unwrap();
-        transactions.get(txid).cloned()
+        self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_transaction: {}", e);
+            })
+            .ok()
+            .and_then(|transactions| transactions.get(txid).cloned())
     }
     
     pub fn get_all_transactions(&self) -> Vec<SentTransactionRecord> {
-        let transactions = self.transactions.lock().unwrap();
-        transactions.values().cloned().collect()
+        self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_all_transactions: {}", e);
+            })
+            .ok()
+            .map(|transactions| transactions.values().cloned().collect())
+            .unwrap_or_default()
     }
     
     pub fn get_pending_transactions(&self) -> Vec<SentTransactionRecord> {
-        let transactions = self.transactions.lock().unwrap();
-        transactions.values()
-            .filter(|tx| tx.status == TransactionStatus::Pending)
-            .cloned()
-            .collect()
+        self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_pending_transactions: {}", e);
+            })
+            .ok()
+            .map(|transactions| transactions
+                .values()
+                .filter(|tx| tx.status == TransactionStatus::Pending)
+                .cloned()
+                .collect())
+            .unwrap_or_default()
     }
     
     pub fn update_transaction_status(
@@ -429,7 +447,8 @@ impl SentTransactionStorage {
     ) -> NozyResult<bool> {
         let mut updated = false;
         {
-            let mut transactions = self.transactions.lock().unwrap();
+            let mut transactions = self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             if let Some(tx) = transactions.get_mut(txid) {
                 tx.mark_confirmed(block_height, block_time, current_height);
                 updated = true;
@@ -511,7 +530,8 @@ impl SentTransactionStorage {
         let mut updated_count = 0;
         
         {
-            let mut transactions = self.transactions.lock().unwrap();
+            let mut transactions = self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             for tx in transactions.values_mut() {
                 if let Some(block_height) = tx.block_height {
                     let new_confirmations = current_height.saturating_sub(block_height) + 1;
@@ -540,11 +560,17 @@ impl SentTransactionStorage {
         }
         
         let confirmed_txs: Vec<(String, Vec<String>)> = {
-            let transactions = self.transactions.lock().unwrap();
-            transactions.values()
-                .filter(|tx| tx.status == TransactionStatus::Confirmed)
-                .map(|tx| (tx.txid.clone(), tx.spent_note_ids.clone()))
-                .collect()
+            self.transactions.lock()
+                .map_err(|e| {
+                    eprintln!("Warning: Mutex poisoned in mark_spent_notes_for_confirmed_transactions: {}", e);
+                })
+                .ok()
+                .map(|transactions| transactions
+                    .values()
+                    .filter(|tx| tx.status == TransactionStatus::Confirmed)
+                    .map(|tx| (tx.txid.clone(), tx.spent_note_ids.clone()))
+                    .collect())
+                .unwrap_or_default()
         };
         
         if confirmed_txs.is_empty() {
@@ -584,7 +610,8 @@ impl SentTransactionStorage {
     pub fn mark_transaction_failed(&self, txid: &str) -> NozyResult<bool> {
         let mut updated = false;
         {
-            let mut transactions = self.transactions.lock().unwrap();
+            let mut transactions = self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             if let Some(tx) = transactions.get_mut(txid) {
                 tx.mark_failed();
                 updated = true;
@@ -600,7 +627,8 @@ impl SentTransactionStorage {
     
     pub fn remove_transaction(&self, txid: &str) -> NozyResult<bool> {
         let removed = {
-            let mut transactions = self.transactions.lock().unwrap();
+            let mut transactions = self.transactions.lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             transactions.remove(txid).is_some()
         };
         
@@ -612,8 +640,13 @@ impl SentTransactionStorage {
     }
     
     pub fn count(&self) -> usize {
-        let transactions = self.transactions.lock().unwrap();
-        transactions.len()
+        self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in count: {}", e);
+            })
+            .ok()
+            .map(|transactions| transactions.len())
+            .unwrap_or(0)
     }
 
     pub fn query_transactions(
@@ -625,8 +658,14 @@ impl SentTransactionStorage {
         end_date: Option<DateTime<Utc>>,
         recipient_filter: Option<&str>,
     ) -> Vec<SentTransactionRecord> {
-        let transactions = self.transactions.lock().unwrap();
-        transactions.values()
+        let transactions = self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in query_transactions: {}", e);
+            })
+            .ok();
+        
+        if let Some(transactions) = transactions {
+            transactions.values()
             .filter(|tx| {
                 if let Some(ref status) = status_filter {
                     if tx.status != *status {
@@ -666,6 +705,9 @@ impl SentTransactionStorage {
             })
             .cloned()
             .collect()
+        } else {
+            Vec::new()
+        }
     }
 
     pub fn get_transactions_sorted(&self, limit: Option<usize>) -> Vec<SentTransactionRecord> {
@@ -703,32 +745,48 @@ impl SentTransactionStorage {
     }
 
     pub fn get_statistics(&self) -> TransactionStatistics {
-        let transactions = self.transactions.lock().unwrap();
-        let total_count = transactions.len();
-        let pending_count = transactions.values()
-            .filter(|tx| tx.status == TransactionStatus::Pending)
-            .count();
-        let confirmed_count = transactions.values()
-            .filter(|tx| tx.status == TransactionStatus::Confirmed)
-            .count();
-        let failed_count = transactions.values()
-            .filter(|tx| tx.status == TransactionStatus::Failed)
-            .count();
+        let transactions = self.transactions.lock()
+            .map_err(|e| {
+                eprintln!("Warning: Mutex poisoned in get_statistics: {}", e);
+            })
+            .ok();
         
-        let total_sent: u64 = transactions.values()
-            .map(|tx| tx.amount_zatoshis)
-            .sum();
-        let total_fees: u64 = transactions.values()
-            .map(|tx| tx.fee_zatoshis)
-            .sum();
-        
-        TransactionStatistics {
-            total_count,
-            pending_count,
-            confirmed_count,
-            failed_count,
-            total_sent_zatoshis: total_sent,
-            total_fees_zatoshis: total_fees,
+        if let Some(transactions) = transactions {
+            let total_count = transactions.len();
+            let pending_count = transactions.values()
+                .filter(|tx| tx.status == TransactionStatus::Pending)
+                .count();
+            let confirmed_count = transactions.values()
+                .filter(|tx| tx.status == TransactionStatus::Confirmed)
+                .count();
+            let failed_count = transactions.values()
+                .filter(|tx| tx.status == TransactionStatus::Failed)
+                .count();
+            
+            let total_sent: u64 = transactions.values()
+                .map(|tx| tx.amount_zatoshis)
+                .sum();
+            let total_fees: u64 = transactions.values()
+                .map(|tx| tx.fee_zatoshis)
+                .sum();
+            
+            TransactionStatistics {
+                total_count,
+                pending_count,
+                confirmed_count,
+                failed_count,
+                total_sent_zatoshis: total_sent,
+                total_fees_zatoshis: total_fees,
+            }
+        } else {
+            TransactionStatistics {
+                total_count: 0,
+                pending_count: 0,
+                confirmed_count: 0,
+                failed_count: 0,
+                total_sent_zatoshis: 0,
+                total_fees_zatoshis: 0,
+            }
         }
     }
 }

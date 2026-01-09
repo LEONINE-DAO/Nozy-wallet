@@ -46,20 +46,8 @@ build_cli() {
 
 
 build_desktop() {
-    echo -e "${GREEN}Building desktop app...${NC}"
-    
-    
-    cd frontend
-    npm install
-    cd ..
-    
-    
-    cargo tauri build --bundles all
-    
-    
-    cp -r src-tauri/target/release/bundle/* "${RELEASE_DIR}/" || true
-    
-    echo -e "${GREEN}✓ Built desktop installers${NC}"
+    echo -e "${YELLOW}Desktop build disabled - src-tauri removed${NC}"
+    echo -e "${YELLOW}Skipping desktop app build...${NC}"
 }
 
 

@@ -1,0 +1,15 @@
+{
+  "api": {
+    "baseUrl": "http://localhost:3000",
+    "apiKey": null,
+    "timeout": 30000
+  },
+  "wallet": {
+    "autoSync": true,
+    "syncInterval": 30000
+  },
+  "ui": {
+    "theme": "dark",
+    "language": "en"
+  }
+}

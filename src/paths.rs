@@ -44,3 +44,8 @@ pub fn get_wallet_config_path() -> PathBuf {
     get_wallet_config_dir().join("config.json")
 }
 
+/// Get the Zeaking index directory path
+pub fn get_zeaking_index_dir() -> PathBuf {
+    get_wallet_data_dir().join("zeaking")
+}
+

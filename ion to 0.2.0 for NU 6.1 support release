@@ -1,0 +1,50 @@
+[33m1a79cbe[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmaster[m[33m, [m[1;31morigin/master[m[33m, [m[1;31morigin/HEAD[m[33m)[m Add NU 6.1 support module and update README
+[33m1eb138c[m Update README.md
+[33m1f8e42d[m Add security self-audit results and community announcement
+[33mfe70572[m feat: Core NozyWallet improvements
+[33me96d442[m feat: Core NozyWallet improvements
+[33ma02b1f4[m feat: Core NozyWallet improvements
+[33m684f4f9[m Update README.md
+[33md421f70[m Fix security vulnerability: Update dependencies
+[33mea0e764[m Delete CROSSLINK_COMMUNITY_SUMMARY.md
+[33m384d537[m Add Crosslink backend support - First Orchard wallet with Crosslink integration
+[33m06cc57f[m Update README.md
+[33m0f4a5fd[m Improve NozyWallet About description
+[33ma732a96[m Add API server complete documentation and utilities
+[33m9d0b26b[m Add API server utility scripts and gitignore
+[33mff73c47[m Add API server documentation and scripts
+[33m2372b9a[m Add API server with security features and documentation
+[33m5ed61c0[m Minor updates and improvements
+[33m1b0141a[m Update dependencies for new modules
+[33m5668ad7[m Enhance CLI helpers and integration modules
+[33ma63c083[m Add new CLI commands for wallet features
+[33mb60c557[m Enhance transaction history system
+[33mc768bf7[m Add wallet password diagnostic tool
+[33mf47dadc[m Add address book management system
+[33m8976692[m Add transaction confirmation tracker
+[33m6e36bd6[m Add note synchronization manager
+[33mb737f70[m Export NoteIndex module in lib.rs
+[33m495eaa2[m Add note indexing system for fast note lookups
+[33m155fb68[m Add production readiness documentation and connection error troubleshooting tools
+[33ma759ff5[m Create SECURITY.md for security policy
+[33ma020c60[m Fix Dependabot security vulnerability: Update chrono to 0.4.42
+[33m1b755ff[m Complete production-ready transaction flow and optimizations
+[33m381e83b[m Update transaction history and test modules
+[33m7bdab40[m Revert "Fix failing tests and clean up warnings"
+[33m8958d04[m Fix failing tests and clean up warnings
+[33mee433ed[m Add transaction history core data structures
+[33m49e464d[m Fix scan function to check both External and Internal scopes
+[33mefcbe13[m Fix wallet password verification bug - verify password after decryption
+[33m77030ea[m Update .gitignore to exclude all frontend/mobile/api-server work
+[33mf15750e[m Update .gitignore to exclude reference directories
+[33m98952aa[m Add password protection to wallet and test scripts
+[33m848039a[m Fix wallet data storage security (closes #1)
+[33m6c57ba9[m Update GitHub repository URLs to LEONINE-DAO/Nozy-wallet
+[33m172fd18[m Update README with project details and instructions
+[33m976ee69[m URL fix
+[33m4ac09c2[m Fix compilation errors and implement real note decryption
+[33m1ce71fa[m Add local analytics system
+[33mf928e03[m Major code cleanup and optimization - Added comprehensive CLI help examples - Created cli_helpers.rs for reusable patterns - Implemented real password-based key derivation - Added real proving parameters download - Removed 6 backup files and 23 compilation errors - Fixed all unused import warnings - Reduced main.rs from 456 to 365 lines - Zero compilation warnings - Production-ready codebase
+[33mfaf5b0b[m Add documentation links to README - Added links to COMMAND_HELP.md, SEND_ZEC_GUIDE.md, and API_DOCUMENTATION.md - Improved documentation organization for better user experience
+[33mfb7c047[m Add comprehensive help examples and command documentation
+[33m92ddd5d[m Major enhancements: Orchard proving system, performance optimizations, comprehensive testing, and production readiness

@@ -1,9 +1,12 @@
 // Privacy Validator for Bridge Operations
-// Enforces Tier 0 privacy requirements and warns about risks
 
-use crate::error::{NozyError, NozyResult};
+
+use crate::error::NozyResult;
 use crate::privacy_network::proxy::ProxyConfig;
 use crate::config::load_config;
+use crate::monero::transaction_history::MoneroTransactionStorage;
+use chrono::{Utc, Duration};
+use std::collections::HashMap;
 
 pub struct PrivacyValidator {
     privacy_network_active: bool,
@@ -22,12 +25,10 @@ impl PrivacyValidator {
         }
     }
     
-    /// Validate all privacy requirements before swap
     pub async fn validate_privacy_requirements(&mut self) -> NozyResult<PrivacyCheckResult> {
         let mut warnings = Vec::new();
         let mut errors = Vec::new();
         
-        // Check 1: Privacy Network (Tor/I2P) - MANDATORY
         let proxy = ProxyConfig::auto_detect().await;
         if !proxy.enabled {
             errors.push("Privacy network (Tor/I2P) is required but not available".to_string());
@@ -37,7 +38,6 @@ impl PrivacyValidator {
             println!("✅ Privacy network: {:?} active", proxy.network);
         }
         
-        // Check 2: Full Node - WARNING
         if self.is_using_remote_node().await {
             warnings.push("Using remote node - privacy risk!".to_string());
             warnings.push("Recommendation: Run your own full node".to_string());
@@ -49,7 +49,6 @@ impl PrivacyValidator {
             println!("✅ Using local full node");
         }
         
-        // Check 3: Address Reuse - MANDATORY
         if self.check_address_reuse().await? {
             errors.push("Address reuse detected - blocked for privacy".to_string());
             errors.push("Each swap must use a new address".to_string());
@@ -58,7 +57,6 @@ impl PrivacyValidator {
             println!("✅ No address reuse detected");
         }
         
-        // Check 4: Monero Churning - WARNING
         if !self.check_monero_churned().await? {
             warnings.push("Monero outputs not churned - privacy risk!".to_string());
             warnings.push("Recommendation: Churn 1-2 times before swap".to_string());
@@ -80,11 +78,9 @@ impl PrivacyValidator {
         })
     }
     
-    /// Check if using remote node (privacy risk)
     async fn is_using_remote_node(&self) -> bool {
         let config = load_config();
         
-        // Check Zcash node
         let zebra_url = config.zebra_url;
         if !zebra_url.contains("127.0.0.1") && !zebra_url.contains("localhost") {
             return true;
@@ -98,19 +94,66 @@ impl PrivacyValidator {
     
     /// Check for address reuse
     async fn check_address_reuse(&self) -> NozyResult<bool> {
-        // TODO: Implement address tracking
-        // For now, return false (no reuse)
-        Ok(false)
+        // Check transaction history for address reuse
+        // Address reuse is a privacy violation - each swap should use a unique address
+        let tx_storage = MoneroTransactionStorage::new()?;
+        let transactions = tx_storage.get_all_transactions();
+        
+        // Count how many times each address has been used as a recipient
+        let mut address_usage: HashMap<String, usize> = HashMap::new();
+        for tx in transactions {
+            if tx.status == crate::monero::transaction_history::MoneroTransactionStatus::Confirmed {
+                *address_usage.entry(tx.recipient_address).or_insert(0) += 1;
+            }
+        }
+        
+        // Check if any address has been used more than once (reuse detected)
+        let has_reuse = address_usage.values().any(|&count| count > 1);
+        
+        Ok(has_reuse)
     }
     
     /// Check if Monero outputs have been churned
     async fn check_monero_churned(&self) -> NozyResult<bool> {
-        // TODO: Implement churn detection
-        // For now, return false (not churned)
-        Ok(false)
+        // Check transaction history for churn transactions
+        // A churn transaction is typically a self-send (recipient == sender's address)
+        // We detect this by looking for addresses that appear multiple times as recipients
+        // within a recent time window, which indicates churning activity
+        
+        let tx_storage = MoneroTransactionStorage::new()?;
+        let transactions = tx_storage.get_all_transactions();
+        
+        // Filter to only confirmed transactions from the last 48 hours
+        let cutoff_time = Utc::now() - Duration::hours(48);
+        let recent_txs: Vec<_> = transactions
+            .into_iter()
+            .filter(|tx| {
+                tx.status == crate::monero::transaction_history::MoneroTransactionStatus::Confirmed
+                    && tx.block_time.map_or(false, |time| time >= cutoff_time)
+            })
+            .collect();
+        
+        if recent_txs.is_empty() {
+            return Ok(false);
+        }
+        
+        // Check if there are multiple transactions to the same address (potential churn)
+        // Churning typically involves sending to your own address multiple times
+        let mut address_counts: HashMap<String, usize> = HashMap::new();
+        for tx in &recent_txs {
+            *address_counts.entry(tx.recipient_address.clone()).or_insert(0) += 1;
+        }
+        
+        // If we have multiple transactions to the same address, it's likely churning
+        // Also check if we have at least 1-2 recent confirmed transactions (heuristic)
+        let has_multiple_to_same = address_counts.values().any(|&count| count >= 2);
+        let has_recent_activity = recent_txs.len() >= 1;
+        
+        // Consider churned if we have recent activity and multiple transactions to same address
+        // OR if we have at least 2 recent transactions (indicating churn activity)
+        Ok(has_recent_activity && (has_multiple_to_same || recent_txs.len() >= 2))
     }
     
-    /// Display privacy checklist
     pub fn display_privacy_checklist(&self, result: &PrivacyCheckResult) {
         println!();
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
@@ -118,7 +161,6 @@ impl PrivacyValidator {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!();
         
-        // Mandatory checks
         if result.privacy_network_active {
             println!("  ✅ Tor/I2P: Active");
         } else {
@@ -131,7 +173,6 @@ impl PrivacyValidator {
             println!("  ❌ Address Reuse: Detected (BLOCKED)");
         }
         
-        // Recommended checks
         if result.using_full_node {
             println!("  ✅ Full Node: Using local node");
         } else {
@@ -146,7 +187,6 @@ impl PrivacyValidator {
         
         println!();
         
-        // Show errors
         if !result.errors.is_empty() {
             println!("❌ ERRORS (Must fix):");
             for error in &result.errors {
@@ -155,7 +195,6 @@ impl PrivacyValidator {
             println!();
         }
         
-        // Show warnings
         if !result.warnings.is_empty() {
             println!("⚠️  WARNINGS (Recommended):");
             for warning in &result.warnings {

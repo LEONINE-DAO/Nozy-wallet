@@ -1,6 +1,6 @@
 # NozyWallet REST API Server
 
-REST API server for NozyWallet mobile app. This server wraps the Rust wallet backend and exposes it via HTTP endpoints.
+REST API server for NozyWallet. This server wraps the Rust wallet backend and exposes it via HTTP endpoints for frontend applications.
 
 ## 🚀 Quick Start
 

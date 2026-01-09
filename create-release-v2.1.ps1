@@ -35,8 +35,7 @@ if ($existingTag) {
 }
 
 Write-Host "📝 Creating tag v2.1.0..." -ForegroundColor Cyan
-$tagMessage = @"
-NozyWallet v2.1.0 Release
+$tagMessage = 'NozyWallet v2.1.0 Release
 
 Major Features:
 - NU 6.1 Support
@@ -46,8 +45,7 @@ Major Features:
 - Deterministic Scanning Tests
 - Note Indexing System
 - Secret Network/Shade Protocol Support
-- Cross-Chain Swap Framework
-"@
+- Cross-Chain Swap Framework'
 
 git tag -a v2.1.0 -m $tagMessage
 

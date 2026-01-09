@@ -3,7 +3,7 @@
 
 use crate::error::{NozyError, NozyResult};
 use crate::secret::rpc_client::SecretRpcClient;
-use serde_json::{json, Value};
+use serde_json::json;
 
 pub struct Snip20Token {
     contract_address: String,

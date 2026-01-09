@@ -30,17 +30,8 @@ function Build-CLI {
 }
 
 function Build-Desktop {
-    Write-Host "Building desktop app..." -ForegroundColor Green
-    
-    Set-Location frontend
-    npm install
-    Set-Location ..
-    
-    cargo tauri build --bundles all
-    
-    Copy-Item -Path "src-tauri\target\release\bundle\*" -Destination $ReleaseDir -Recurse -Force
-    
-    Write-Host "✓ Built desktop installers" -ForegroundColor Green
+    Write-Host "Desktop build disabled - src-tauri removed" -ForegroundColor Yellow
+    Write-Host "Skipping desktop app build..." -ForegroundColor Yellow
 }
 
 switch ($Platform) {
@@ -53,7 +44,8 @@ switch ($Platform) {
     "all" {
         Write-Host "Building all platforms..." -ForegroundColor Yellow
         Build-CLI "x86_64-pc-windows-msvc" "nozy.exe"
-        Build-Desktop
+        # Desktop build disabled - src-tauri removed
+        # Build-Desktop
     }
     default {
         Write-Host "Unknown platform: $Platform" -ForegroundColor Red

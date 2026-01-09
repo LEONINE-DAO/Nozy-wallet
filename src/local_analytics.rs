@@ -35,7 +35,7 @@ impl LocalAnalytics {
     pub fn new() -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
             .as_secs();
             
         Self {
@@ -73,7 +73,7 @@ impl LocalAnalytics {
             success,
             timestamp: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
-                .unwrap()
+                .unwrap_or_else(|_| std::time::Duration::from_secs(0))
                 .as_secs(),
         };
         self.performance_metrics.push(metric);
@@ -170,7 +170,7 @@ impl LocalAnalytics {
     fn update_last_use(&mut self) {
         self.last_use = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_else(|_| std::time::Duration::from_secs(0))
             .as_secs();
     }
     

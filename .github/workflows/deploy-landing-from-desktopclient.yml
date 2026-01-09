@@ -1,4 +1,4 @@
-name: Deploy Landing Page from DesktopClient
+name: Deploy Landing Page from NozyWallet-landing
 
 on:
   push:
@@ -33,14 +33,14 @@ jobs:
           echo "📥 Downloading landing page from Vercel..."
           curl -L https://nozy-wallet.vercel.app/ -o vercel-landing.html || echo "Failed to download from Vercel"
           
-      - name: Checkout DesktopClient repository (fallback)
-        id: checkout-desktopclient
+      - name: Checkout NozyWallet-landing repository
+        id: checkout-landing
         continue-on-error: true
         uses: actions/checkout@v4
         with:
-          repository: LEONINE-DAO/NozyWallet-DesktopClient
-          path: desktopclient
-          token: ${{ secrets.DESKTOPCLIENT_TOKEN || secrets.GITHUB_TOKEN }}
+          repository: LEONINE-DAO/NozyWallet-landing
+          path: landing-repo
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -50,58 +50,52 @@ jobs:
           # Create site directory
           mkdir -p _site
           
-          # Priority 1: Use local index.html (we host Vercel page directly now)
-          if [ -f main-repo/index.html ]; then
-            echo "✅ Using local index.html (hosting Vercel page directly)"
-            cp main-repo/index.html _site/index.html
-          
-          # Priority 2: Try DesktopClient repo if local not available and checkout succeeded
-          elif [ -d desktopclient ] && [ "${{ steps.checkout-desktopclient.outcome }}" == "success" ]; then
-            echo "✅ DesktopClient repo checked out successfully"
-            # Look for index.html in common locations
-            if [ -f desktopclient/index.html ]; then
+          # Priority 1: Use landing page from NozyWallet-landing repo (docs folder for GitHub Pages)
+          if [ -d landing-repo ] && [ "${{ steps.checkout-landing.outcome }}" == "success" ]; then
+            echo "✅ NozyWallet-landing repo checked out successfully"
+            # Look for index.html in docs/ folder (GitHub Pages deployment folder)
+            if [ -f landing-repo/docs/index.html ]; then
+              echo "📄 Found index.html in docs/ (GitHub Pages)"
+              echo "📦 Copying all files from docs/ folder (includes React build with assets)"
+              cp -r landing-repo/docs/* _site/ 2>/dev/null || true
+              # Ensure index.html is in root
+              if [ -f landing-repo/docs/index.html ]; then
+                cp landing-repo/docs/index.html _site/index.html
+              fi
+            elif [ -f landing-repo/index.html ]; then
               echo "📄 Found index.html in root"
-              cp desktopclient/index.html _site/
-            elif [ -f desktopclient/public/index.html ]; then
+              cp landing-repo/index.html _site/index.html
+            elif [ -f landing-repo/public/index.html ]; then
               echo "📄 Found index.html in public/"
-              cp desktopclient/public/index.html _site/
-            elif [ -f desktopclient/src/index.html ]; then
+              cp landing-repo/public/index.html _site/index.html
+            elif [ -f landing-repo/src/index.html ]; then
               echo "📄 Found index.html in src/"
-              cp desktopclient/src/index.html _site/
-            elif [ -f desktopclient/docs/index.html ]; then
-              echo "📄 Found index.html in docs/"
-              cp desktopclient/docs/index.html _site/
+              cp landing-repo/src/index.html _site/index.html
             else
-              echo "⚠️  Landing page not found in DesktopClient repo, using local fallback"
+              echo "⚠️  Landing page not found in NozyWallet-landing repo, trying local fallback"
               if [ -f main-repo/index.html ]; then
-                cp main-repo/index.html _site/
-              else
-                # Create a simple redirect page
-                cat > _site/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <meta http-equiv="refresh" content="0; url=https://github.com/LEONINE-DAO/NozyWallet-DesktopClient">
-            <title>NozyWallet - Redirecting...</title>
-          </head>
-          <body>
-            <p>Redirecting to <a href="https://github.com/LEONINE-DAO/NozyWallet-DesktopClient">NozyWallet DesktopClient</a>...</p>
-          </body>
-          </html>
-          EOF
+                cp main-repo/index.html _site/index.html
               fi
             fi
             
-            # Copy any assets (CSS, JS, images) from DesktopClient
-            if [ -d desktopclient/public ]; then
-              cp -r desktopclient/public/* _site/ 2>/dev/null || true
+            # Copy assets from landing repo (public, assets, or dist folders)
+            if [ -d landing-repo/public ]; then
+              echo "📦 Copying assets from public/"
+              cp -r landing-repo/public/* _site/ 2>/dev/null || true
             fi
-            if [ -d desktopclient/assets ]; then
-              cp -r desktopclient/assets _site/ 2>/dev/null || true
+            if [ -d landing-repo/assets ]; then
+              echo "📦 Copying assets from assets/"
+              cp -r landing-repo/assets _site/ 2>/dev/null || true
             fi
-            if [ -d desktopclient/static ]; then
-              cp -r desktopclient/static _site/ 2>/dev/null || true
+            if [ -d landing-repo/dist ]; then
+              echo "📦 Copying assets from dist/"
+              cp -r landing-repo/dist/* _site/ 2>/dev/null || true
             fi
+          
+          # Priority 2: Use local index.html as fallback
+          elif [ -f main-repo/index.html ]; then
+            echo "✅ Using local index.html (fallback)"
+            cp main-repo/index.html _site/index.html
           fi
           
           # Final fallback: Ensure index.html exists
@@ -124,7 +118,7 @@ jobs:
             <p>Privacy by Default</p>
             <p><a href="/downloads/">Download NozyWallet</a></p>
             <p style="color: #666; margin-top: 50px;">
-              Note: Landing page from DesktopClient repo not available. 
+              Note: Landing page from NozyWallet-landing repo not available. 
               <br>Using fallback page. Check repository access or use local landing page.
             </p>
           </body>
