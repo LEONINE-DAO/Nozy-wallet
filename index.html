@@ -30,9 +30,12 @@
     <script type="module" crossorigin src="/Nozy-wallet/assets/index-CSzPK1kz.js"></script>
     <link rel="stylesheet" crossorigin href="/Nozy-wallet/assets/index-Zl7hyVsg.css">
     <script>
+       
         (function() {
             let fixedImages = new WeakSet();
             let isProcessing = false;
+            let logoObserver = null;
+            let hasStartedObserving = false;
             
             function fixLogoPath() {
                 if (isProcessing) return;
@@ -42,10 +45,8 @@
                 let fixed = false;
                 
                 images.forEach(img => {
-                    // Skip if already fixed
                     if (fixedImages.has(img)) return;
                     
-                    // Only fix if path is wrong
                     if (img.src.includes('/logo.png') && !img.src.includes('/Nozy-wallet/')) {
                         img.src = '/Nozy-wallet/logo.png';
                         fixedImages.add(img);
@@ -54,81 +55,71 @@
                 });
                 
                 isProcessing = false;
-                
-                // Stop observing if no new images to fix after initial load
-                if (!fixed && document.readyState === 'complete') {
-                    if (logoObserver) {
-                        logoObserver.disconnect();
-                        logoObserver = null;
-                    }
-                }
+                return fixed;
             }
             
-            let logoObserver = null;
-            
-            // Initial fix
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', fixLogoPath);
-            } else {
-                fixLogoPath();
-            }
-            
-            // Debounced observer - only watch for new images, not attribute changes
-            let debounceTimer = null;
-            function debouncedFix() {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(fixLogoPath, 100);
-            }
-            
-            // Only observe for new nodes, not attribute changes (to avoid React conflicts)
-            logoObserver = new MutationObserver(function(mutations) {
-                let hasNewNodes = false;
-                for (let mutation of mutations) {
-                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                        hasNewNodes = true;
-                        break;
-                    }
-                }
-                if (hasNewNodes) {
-                    debouncedFix();
-                }
-            });
-            
-            // Start observing only after initial load
-            if (document.body) {
-                logoObserver.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                    // Removed attributes: true to avoid React conflicts
-                });
-            } else {
-                document.addEventListener('DOMContentLoaded', function() {
-                    if (logoObserver && document.body) {
+            // Wait for React to render first - delay initial fix
+            function initLogoFixer() {
+                // Wait a bit for React to render to root
+                setTimeout(function() {
+                    fixLogoPath();
+                    
+                    // Only start observing after React has rendered
+                    if (!hasStartedObserving && document.body) {
+                        hasStartedObserving = true;
+                        
+                        let debounceTimer = null;
+                        function debouncedFix() {
+                            clearTimeout(debounceTimer);
+                            debounceTimer = setTimeout(fixLogoPath, 200);
+                        }
+                        
+                        logoObserver = new MutationObserver(function(mutations) {
+                            let hasNewNodes = false;
+                            for (let mutation of mutations) {
+                                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                                    hasNewNodes = true;
+                                    break;
+                                }
+                            }
+                            if (hasNewNodes) {
+                                debouncedFix();
+                            }
+                        });
+                        
                         logoObserver.observe(document.body, {
                             childList: true,
                             subtree: true
                         });
+                        
+                        // Auto-stop after initial processing
+                        setTimeout(function() {
+                            if (logoObserver) {
+                                logoObserver.disconnect();
+                                logoObserver = null;
+                            }
+                        }, 5000);
                     }
-                });
+                }, 1000); // Give React 1 second to render first
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initLogoFixer);
+            } else {
+                initLogoFixer();
             }
             
             window.addEventListener('load', function() {
-                fixLogoPath();
-                // Stop observing after load if no issues
-                setTimeout(function() {
-                    if (logoObserver) {
-                        logoObserver.disconnect();
-                        logoObserver = null;
-                    }
-                }, 2000);
+                setTimeout(fixLogoPath, 1500); // Run after React has loaded
             });
         })();
         
+        // Download button modifier - waits for React to render first
         (function() {
             let processedButtons = new WeakSet();
             let buttonObserver = null;
             let isProcessing = false;
-            let debounceTimer = null;
+            let hasStartedObserving = false;
             
             function modifyDownloadButtons() {
                 if (isProcessing) return;
@@ -137,7 +128,6 @@
                 let foundButtons = false;
                 
                 document.querySelectorAll('a, button, [role="button"]').forEach(element => {
-                    // Skip if already processed
                     if (processedButtons.has(element)) return;
                     
                     const text = (element.textContent || '').toLowerCase();
@@ -145,13 +135,11 @@
                     const className = element.className || '';
                     const id = element.id || '';
                     
-                    // Only process elements that actually mention download
                     if (text.includes('download') || 
                         href.toLowerCase().includes('download') || 
                         className.toLowerCase().includes('download') ||
                         id.toLowerCase().includes('download')) {
                         
-                        // Skip if already pointing to downloads
                         if (href.includes('downloads/') || href.includes('downloads.html')) {
                             processedButtons.add(element);
                             return;
@@ -160,7 +148,6 @@
                         foundButtons = true;
                         processedButtons.add(element);
                         
-                        // Only modify non-React elements to avoid conflicts
                         const hasReactProps = Object.keys(element).some(key => key.startsWith('__react'));
                         
                         if (!hasReactProps) {
@@ -179,74 +166,64 @@
                 });
                 
                 isProcessing = false;
-                
-                // Stop observing after initial processing is complete
-                if (!foundButtons && document.readyState === 'complete') {
-                    setTimeout(function() {
-                        if (buttonObserver) {
-                            buttonObserver.disconnect();
-                            buttonObserver = null;
+                return foundButtons;
+            }
+            
+            // Wait for React to render first
+            function initButtonModifier() {
+                setTimeout(function() {
+                    modifyDownloadButtons();
+                    
+                    // Only start observing after React has rendered
+                    if (!hasStartedObserving && document.body) {
+                        hasStartedObserving = true;
+                        
+                        let debounceTimer = null;
+                        function debouncedModify() {
+                            clearTimeout(debounceTimer);
+                            debounceTimer = setTimeout(modifyDownloadButtons, 300);
                         }
-                    }, 1000);
-                }
-            }
-            
-            // Debounced version for observer
-            function debouncedModify() {
-                clearTimeout(debounceTimer);
-                debounceTimer = setTimeout(modifyDownloadButtons, 300);
-            }
-            
-            // Initial processing
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', modifyDownloadButtons);
-            } else {
-                modifyDownloadButtons();
-            }
-            
-            // Observer only for new nodes (not attribute changes)
-            buttonObserver = new MutationObserver(function(mutations) {
-                let hasNewNodes = false;
-                for (let mutation of mutations) {
-                    if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-                        hasNewNodes = true;
-                        break;
-                    }
-                }
-                if (hasNewNodes) {
-                    debouncedModify();
-                }
-            });
-            
-            if (document.body) {
-                buttonObserver.observe(document.body, {
-                    childList: true,
-                    subtree: true
-                    // Removed attributes watching to avoid React conflicts
-                });
-            } else {
-                document.addEventListener('DOMContentLoaded', function() {
-                    if (buttonObserver && document.body) {
+                        
+                        buttonObserver = new MutationObserver(function(mutations) {
+                            let hasNewNodes = false;
+                            for (let mutation of mutations) {
+                                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                                    hasNewNodes = true;
+                                    break;
+                                }
+                            }
+                            if (hasNewNodes) {
+                                debouncedModify();
+                            }
+                        });
+                        
                         buttonObserver.observe(document.body, {
                             childList: true,
                             subtree: true
                         });
+                        
+                        // Auto-stop after processing
+                        setTimeout(function() {
+                            if (buttonObserver) {
+                                buttonObserver.disconnect();
+                                buttonObserver = null;
+                            }
+                        }, 5000);
                     }
-                });
+                }, 1500); // Wait 1.5 seconds for React to render
+            }
+            
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initButtonModifier);
+            } else {
+                initButtonModifier();
             }
             
             window.addEventListener('load', function() {
-                modifyDownloadButtons();
-                // Stop observing after load
-                setTimeout(function() {
-                    if (buttonObserver) {
-                        buttonObserver.disconnect();
-                        buttonObserver = null;
-                    }
-                }, 2000);
+                setTimeout(modifyDownloadButtons, 2000);
             });
             
-            // Click handler - passive, doesn't interfere with React
+            // Click handler - only intercepts clicks, doesn't block rendering
             document.addEventListener('click', function(e) {
                 const target = e.target;
                 const text = (target.textContent || '').toLowerCase();
