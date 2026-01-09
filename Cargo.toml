@@ -103,6 +103,10 @@ futures = "0.3"
 members = ["zeaking", "api-server"]
 resolver = "2"
 
+# Note: Direct dependencies above already specify newer versions for security fixes
+# If transitive dependencies still use old versions, we may need to update parent deps
+# or wait for upstream updates (tendermint/cosmrs ecosystem)
+
 [[bin]]
 name = "nozy"
 path = "src/main.rs"
