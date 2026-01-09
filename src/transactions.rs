@@ -1,6 +1,6 @@
 use crate::error::NozyResult;
 use crate::hd_wallet::HDWallet;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TransactionDetails {
@@ -23,30 +23,31 @@ pub struct TransactionBuilder {
 
 impl TransactionBuilder {
     pub fn new(wallet: HDWallet) -> Self {
-        Self {
-            wallet,
-        }
+        Self { wallet }
     }
 
-    pub async fn build_transaction(&self, recipient: &str, amount: u64, fee: u64) -> NozyResult<SignedTransaction> {
-        use sha2::{Sha256, Digest};
-        
- 
-        
+    pub async fn build_transaction(
+        &self,
+        recipient: &str,
+        amount: u64,
+        fee: u64,
+    ) -> NozyResult<SignedTransaction> {
+        use sha2::{Digest, Sha256};
+
         let mut hasher = Sha256::new();
         hasher.update(recipient.as_bytes());
         hasher.update(&amount.to_le_bytes());
         hasher.update(&fee.to_le_bytes());
         hasher.update(&chrono::Utc::now().timestamp().to_le_bytes());
         let tx_hash = hasher.finalize();
-        
+
         let mut raw_transaction = Vec::new();
-        raw_transaction.extend_from_slice(&5u32.to_le_bytes()); 
-        raw_transaction.extend_from_slice(&0u32.to_le_bytes()); 
-        raw_transaction.extend_from_slice(&amount.to_le_bytes()); 
-        raw_transaction.extend_from_slice(&fee.to_le_bytes()); 
-        raw_transaction.extend_from_slice(recipient.as_bytes()); 
-        
+        raw_transaction.extend_from_slice(&5u32.to_le_bytes());
+        raw_transaction.extend_from_slice(&0u32.to_le_bytes());
+        raw_transaction.extend_from_slice(&amount.to_le_bytes());
+        raw_transaction.extend_from_slice(&fee.to_le_bytes());
+        raw_transaction.extend_from_slice(recipient.as_bytes());
+
         Ok(SignedTransaction {
             raw_transaction,
             txid: hex::encode(tx_hash),
@@ -54,19 +55,18 @@ impl TransactionBuilder {
     }
 
     pub async fn send_transaction(&self, transaction: &SignedTransaction) -> NozyResult<String> {
-       
         if transaction.raw_transaction.len() < 16 {
             return Err(crate::error::NozyError::InvalidOperation(
-                "Transaction too small to be valid".to_string()
+                "Transaction too small to be valid".to_string(),
             ));
         }
-        
+
         if transaction.txid.len() != 64 {
             return Err(crate::error::NozyError::InvalidOperation(
-                "Invalid transaction ID format".to_string()
+                "Invalid transaction ID format".to_string(),
             ));
         }
-        
+
         Ok(transaction.txid.clone())
     }
 }

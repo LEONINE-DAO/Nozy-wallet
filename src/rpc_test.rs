@@ -1,5 +1,5 @@
-use crate::zebra_integration::ZebraClient;
 use crate::error::NozyResult;
+use crate::zebra_integration::ZebraClient;
 
 pub struct RpcTester {
     client: ZebraClient,
@@ -14,7 +14,7 @@ impl RpcTester {
 
     pub async fn test_connectivity(&self) -> NozyResult<()> {
         println!("🔍 Testing Zebra RPC connectivity...");
-        
+
         match self.client.get_block_count().await {
             Ok(count) => println!("✅ get_block_count: {} blocks", count),
             Err(e) => println!("❌ get_block_count failed: {}", e),
@@ -35,7 +35,7 @@ impl RpcTester {
 
     pub async fn test_orchard_functionality(&self) -> NozyResult<()> {
         println!("🌳 Testing Orchard functionality...");
-        
+
         let height = self.client.get_best_block_height().await?;
         println!("📊 Current block height: {}", height);
 
@@ -45,7 +45,7 @@ impl RpcTester {
                 println!("   Height: {}", tree_state.height);
                 println!("   Anchor: {}", hex::encode(tree_state.anchor));
                 println!("   Commitment count: {}", tree_state.commitment_count);
-            },
+            }
             Err(e) => println!("❌ get_orchard_tree_state failed: {}", e),
         }
 
@@ -66,7 +66,7 @@ impl RpcTester {
 
     pub async fn test_transaction_functionality(&self) -> NozyResult<()> {
         println!("💸 Testing transaction functionality...");
-        
+
         match self.client.get_txout_set_info().await {
             Ok(info) => println!("✅ get_txout_set_info: {:?}", info),
             Err(e) => println!("❌ get_txout_set_info failed: {}", e),
@@ -82,16 +82,16 @@ impl RpcTester {
 
     pub async fn run_all_tests(&self) -> NozyResult<()> {
         println!("🚀 Running comprehensive Zebra RPC tests...\n");
-        
+
         self.test_connectivity().await?;
         println!();
-        
+
         self.test_orchard_functionality().await?;
         println!();
-        
+
         self.test_transaction_functionality().await?;
         println!();
-        
+
         println!("✅ All RPC tests completed!");
         Ok(())
     }

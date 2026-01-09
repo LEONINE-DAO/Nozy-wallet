@@ -22,13 +22,13 @@ pub struct ProxyConfig {
 pub trait PrivacyProxy: Send + Sync {
     /// Get proxy URL for HTTP client
     fn proxy_url(&self) -> String;
-    
+
     /// Test if proxy is working
     async fn test_connection(&self) -> NozyResult<bool>;
-    
+
     /// Create HTTP client with proxy configured
     fn create_client(&self) -> NozyResult<Client>;
-    
+
     /// Get network type
     fn network_type(&self) -> PrivacyNetwork;
 }
@@ -41,7 +41,7 @@ impl ProxyConfig {
             enabled: true,
         }
     }
-    
+
     pub fn new_i2p(proxy_url: Option<String>) -> Self {
         Self {
             network: PrivacyNetwork::I2P,
@@ -49,7 +49,7 @@ impl ProxyConfig {
             enabled: true,
         }
     }
-    
+
     pub fn disabled() -> Self {
         Self {
             network: PrivacyNetwork::None,
@@ -57,31 +57,31 @@ impl ProxyConfig {
             enabled: false,
         }
     }
-    
+
     /// Create HTTP client with proxy
     pub fn create_client(&self) -> NozyResult<Client> {
-        let mut builder = Client::builder()
-            .timeout(Duration::from_secs(60));
-        
+        let mut builder = Client::builder().timeout(Duration::from_secs(60));
+
         if self.enabled && !self.proxy_url.is_empty() {
             builder = builder.proxy(
                 reqwest::Proxy::all(&self.proxy_url)
-                    .map_err(|e| NozyError::NetworkError(format!("Invalid proxy URL: {}", e)))?
+                    .map_err(|e| NozyError::NetworkError(format!("Invalid proxy URL: {}", e)))?,
             );
         }
-        
-        builder.build()
+
+        builder
+            .build()
             .map_err(|e| NozyError::NetworkError(format!("Failed to create HTTP client: {}", e)))
     }
-    
+
     /// Test proxy connection
     pub async fn test_connection(&self) -> NozyResult<bool> {
         if !self.enabled {
             return Ok(false);
         }
-        
+
         let client = self.create_client()?;
-        
+
         // Test by checking external IP (should be different from real IP)
         // Using a privacy-friendly IP check service
         match client
@@ -94,7 +94,7 @@ impl ProxyConfig {
             Err(_) => Ok(false),
         }
     }
-    
+
     /// Auto-detect available privacy network
     pub async fn auto_detect() -> Self {
         // Try Tor first
@@ -103,14 +103,14 @@ impl ProxyConfig {
             println!("✅ Tor detected and working");
             return tor_config;
         }
-        
+
         // Try I2P
         let i2p_config = Self::new_i2p(None);
         if i2p_config.test_connection().await.unwrap_or(false) {
             println!("✅ I2P detected and working");
             return i2p_config;
         }
-        
+
         println!("⚠️  No privacy network detected (Tor/I2P)");
         Self::disabled()
     }

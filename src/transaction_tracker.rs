@@ -1,6 +1,6 @@
 use crate::error::NozyResult;
-use crate::zebra_integration::ZebraClient;
 use crate::transaction_history::SentTransactionStorage;
+use crate::zebra_integration::ZebraClient;
 use std::sync::Arc;
 use tokio::time::{interval, Duration};
 
@@ -30,26 +30,34 @@ impl TransactionConfirmationTracker {
 
         tokio::spawn(async move {
             let mut interval = interval(interval_duration);
-            
+
             loop {
                 interval.tick().await;
-                
-                if let Ok(updated_count) = tx_storage.check_all_pending_transactions(&zebra_client).await {
+
+                if let Ok(updated_count) = tx_storage
+                    .check_all_pending_transactions(&zebra_client)
+                    .await
+                {
                     if updated_count > 0 {
                         println!("✅ {} transaction(s) confirmed", updated_count);
                     }
                 }
-                
+
                 let _ = tx_storage.update_confirmations(&zebra_client).await;
             }
         })
     }
 
     pub async fn check_once(&self) -> NozyResult<(usize, usize)> {
-        let updated = self.tx_storage.check_all_pending_transactions(&self.zebra_client).await?;
-        let conf_updated = self.tx_storage.update_confirmations(&self.zebra_client).await?;
-        
+        let updated = self
+            .tx_storage
+            .check_all_pending_transactions(&self.zebra_client)
+            .await?;
+        let conf_updated = self
+            .tx_storage
+            .update_confirmations(&self.zebra_client)
+            .await?;
+
         Ok((updated, conf_updated))
     }
 }
-

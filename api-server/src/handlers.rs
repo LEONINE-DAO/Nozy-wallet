@@ -1,7 +1,7 @@
 use axum::{
     extract::{Json, Path, Query},
-    response::Json as ResponseJson,
     http::StatusCode,
+    response::Json as ResponseJson,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -53,7 +53,7 @@ fn validate_address(address: &str) -> bool {
 }
 
 fn validate_amount(amount: f64) -> bool {
-    amount > 0.0 && amount <= 21_000_000.0 
+    amount > 0.0 && amount <= 21_000_000.0
 }
 
 fn validate_mnemonic(mnemonic: &str) -> bool {
@@ -228,17 +228,16 @@ pub async fn create_wallet(
         ));
     }
 
-    let mut wallet = nozy::HDWallet::new()
-        .map_err(|e| {
-            error_response_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to create wallet: {}", e),
-                "WALLET_CREATE_FAILED",
-            )
-        })?;
+    let mut wallet = nozy::HDWallet::new().map_err(|e| {
+        error_response_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create wallet: {}", e),
+            "WALLET_CREATE_FAILED",
+        )
+    })?;
 
     let password_for_save = payload.password.clone();
-    
+
     if let Some(ref pwd) = payload.password {
         wallet.set_password(pwd).map_err(|e| {
             error_response_with_code(
@@ -278,7 +277,7 @@ pub async fn restore_wallet(
             "INVALID_MNEMONIC",
         ));
     }
-    
+
     if payload.password.len() > 256 {
         return Err((
             StatusCode::BAD_REQUEST,
@@ -287,7 +286,7 @@ pub async fn restore_wallet(
             })),
         ));
     }
-    
+
     let wallet = nozy::HDWallet::from_mnemonic(&payload.mnemonic).map_err(|e| {
         (
             StatusCode::BAD_REQUEST,
@@ -360,7 +359,8 @@ pub async fn generate_address(
     Ok(ResponseJson(AddressResponse { address }))
 }
 
-pub async fn get_balance() -> Result<ResponseJson<BalanceResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn get_balance(
+) -> Result<ResponseJson<BalanceResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use std::fs;
 
     use nozy::paths::get_wallet_data_dir;
@@ -406,10 +406,12 @@ pub async fn get_balance() -> Result<ResponseJson<BalanceResponse>, (StatusCode,
 pub async fn sync_wallet(
     Json(payload): Json<SyncRequest>,
 ) -> Result<ResponseJson<SyncResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{NoteScanner, ZebraClient, load_config, update_last_scan_height};
+    use nozy::{load_config, update_last_scan_height, NoteScanner, ZebraClient};
 
     let config = load_config();
-    let zebra_url = payload.zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+    let zebra_url = payload
+        .zebra_url
+        .unwrap_or_else(|| config.zebra_url.clone());
 
     let (wallet, _storage) = load_wallet_with_password(payload.password)
         .await
@@ -427,10 +429,13 @@ pub async fn sync_wallet(
 
     let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
 
-    match note_scanner.scan_notes(effective_start, payload.end_height).await {
+    match note_scanner
+        .scan_notes(effective_start, payload.end_height)
+        .await
+    {
         Ok((result, _spendable_notes)) => {
-            use std::fs;
             use nozy::paths::get_wallet_data_dir;
+            use std::fs;
             let notes_dir = get_wallet_data_dir();
             if !notes_dir.exists() {
                 let _ = fs::create_dir_all(&notes_dir);
@@ -469,12 +474,15 @@ pub async fn sync_wallet(
 pub async fn send_transaction(
     Json(payload): Json<SendTransactionRequestWrapper>,
 ) -> Result<ResponseJson<SendTransactionResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{ZebraClient, load_config};
     use nozy::cli_helpers::scan_notes_for_sending;
     use nozy::ZcashTransactionBuilder;
+    use nozy::{load_config, ZebraClient};
 
     let config = load_config();
-    let zebra_url = payload.request.zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+    let zebra_url = payload
+        .request
+        .zebra_url
+        .unwrap_or_else(|| config.zebra_url.clone());
 
     let (wallet, _storage) = load_wallet_with_password(payload.password)
         .await
@@ -491,10 +499,11 @@ pub async fn send_transaction(
         return Ok(ResponseJson(SendTransactionResponse {
             success: false,
             txid: None,
-            message: "Invalid recipient address. Must be a valid shielded address (u1...)".to_string(),
+            message: "Invalid recipient address. Must be a valid shielded address (u1...)"
+                .to_string(),
         }));
     }
-    
+
     if payload.request.recipient.starts_with("t1") {
         return Ok(ResponseJson(SendTransactionResponse {
             success: false,
@@ -502,12 +511,13 @@ pub async fn send_transaction(
             message: "Transparent addresses (t1) are not supported. Please use a shielded address (u1...)".to_string(),
         }));
     }
-    
+
     if !validate_amount(payload.request.amount) {
         return Ok(ResponseJson(SendTransactionResponse {
             success: false,
             txid: None,
-            message: "Invalid amount. Must be greater than 0 and less than 21,000,000 ZEC.".to_string(),
+            message: "Invalid amount. Must be greater than 0 and less than 21,000,000 ZEC."
+                .to_string(),
         }));
     }
 
@@ -531,7 +541,7 @@ pub async fn send_transaction(
 
     let amount_zatoshis = (payload.request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::new(zebra_url.clone());
-    
+
     let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
 
     let mut tx_builder = ZcashTransactionBuilder::new();
@@ -557,14 +567,18 @@ pub async fn send_transaction(
             )
         })?;
 
-    match tx_builder.broadcast_transaction(&zebra_client, &transaction).await {
+    match tx_builder
+        .broadcast_transaction(&zebra_client, &transaction)
+        .await
+    {
         Ok(network_txid) => {
-            use nozy::transaction_history::{SentTransactionStorage, SentTransactionRecord};
+            use nozy::transaction_history::{SentTransactionRecord, SentTransactionStorage};
             if let Ok(tx_storage) = SentTransactionStorage::new() {
-                let spent_note_ids: Vec<String> = spendable_notes.iter()
+                let spent_note_ids: Vec<String> = spendable_notes
+                    .iter()
                     .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
                     .collect();
-                
+
                 let mut tx_record = SentTransactionRecord::new(
                     network_txid.clone(),
                     payload.request.recipient.clone(),
@@ -576,30 +590,31 @@ pub async fn send_transaction(
                 tx_record.mark_broadcast();
                 let _ = tx_storage.save_transaction(tx_record);
             }
-            
+
             Ok(ResponseJson(SendTransactionResponse {
                 success: true,
                 txid: Some(network_txid.clone()),
                 message: format!("Transaction sent successfully! TXID: {}", network_txid),
             }))
-        },
+        }
         Err(e) => Ok(ResponseJson(SendTransactionResponse {
             success: false,
-            txid: Some(transaction.txid.clone()), 
+            txid: Some(transaction.txid.clone()),
             message: format!("Failed to broadcast transaction: {}", e),
         })),
     }
 }
 
-pub async fn estimate_fee() -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{ZebraClient, load_config};
-    
+pub async fn estimate_fee(
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, ZebraClient};
+
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url);
-    
+
     let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
-    
+
     Ok(ResponseJson(serde_json::json!({
         "fee_zatoshis": fee_zatoshis,
         "fee_zec": fee_zec,
@@ -607,7 +622,8 @@ pub async fn estimate_fee() -> Result<ResponseJson<serde_json::Value>, (StatusCo
     })))
 }
 
-pub async fn get_config() -> Result<ResponseJson<ConfigResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn get_config(
+) -> Result<ResponseJson<ConfigResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::load_config;
 
     let config = load_config();
@@ -631,7 +647,7 @@ pub async fn set_zebra_url(
             "INVALID_URL",
         ));
     }
-    
+
     if payload.url.len() > 2048 {
         return Err(error_response_with_code(
             StatusCode::BAD_REQUEST,
@@ -687,7 +703,9 @@ pub async fn test_zebra_connection(
     use nozy::{load_config, ZebraClient};
 
     let config = load_config();
-    let url = payload.zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+    let url = payload
+        .zebra_url
+        .unwrap_or_else(|| config.zebra_url.clone());
 
     let client = ZebraClient::new(url.clone());
     match client.get_block_count().await {
@@ -704,7 +722,8 @@ pub async fn test_zebra_connection(
     }
 }
 
-pub async fn check_proving_status() -> Result<ResponseJson<ProvingStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn check_proving_status(
+) -> Result<ResponseJson<ProvingStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::orchard_tx::OrchardTransactionBuilder;
 
     let builder = OrchardTransactionBuilder::new_async(false)
@@ -729,7 +748,8 @@ pub async fn check_proving_status() -> Result<ResponseJson<ProvingStatusResponse
     }))
 }
 
-pub async fn download_proving_parameters() -> Result<ResponseJson<String>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn download_proving_parameters(
+) -> Result<ResponseJson<String>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::orchard_tx::OrchardTransactionBuilder;
 
     let mut builder = OrchardTransactionBuilder::new_async(true)
@@ -752,7 +772,9 @@ pub async fn download_proving_parameters() -> Result<ResponseJson<String>, (Stat
         )
     })?;
 
-    Ok(ResponseJson("✅ Proving parameters downloaded successfully!".to_string()))
+    Ok(ResponseJson(
+        "✅ Proving parameters downloaded successfully!".to_string(),
+    ))
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -771,22 +793,23 @@ pub struct TransactionQueryParams {
 
 pub async fn get_transaction_history(
     Query(params): Query<TransactionQueryParams>,
-) -> Result<ResponseJson<TransactionHistoryResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+) -> Result<ResponseJson<TransactionHistoryResponse>, (StatusCode, ResponseJson<serde_json::Value>)>
+{
     use nozy::transaction_history::SentTransactionStorage;
-    
-    let tx_storage = SentTransactionStorage::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize transaction storage: {}", e)
-                })),
-            )
-        })?;
-    
+
+    let tx_storage = SentTransactionStorage::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize transaction storage: {}", e)
+            })),
+        )
+    })?;
+
     let all_txs = tx_storage.get_all_transactions();
-    
-    let filtered: Vec<_> = all_txs.iter()
+
+    let filtered: Vec<_> = all_txs
+        .iter()
         .filter(|tx| {
             if let Some(ref status) = params.status {
                 if format!("{:?}", tx.status).to_lowercase() != status.to_lowercase() {
@@ -812,21 +835,23 @@ pub async fn get_transaction_history(
             }
             true
         })
-        .map(|tx| serde_json::json!({
-            "txid": tx.txid,
-            "status": format!("{:?}", tx.status),
-            "amount_zatoshis": tx.amount_zatoshis,
-            "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
-            "fee_zatoshis": tx.fee_zatoshis,
-            "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
-            "recipient": tx.recipient_address,
-            "block_height": tx.block_height,
-            "confirmations": tx.confirmations,
-            "broadcast_at": tx.broadcast_at.map(|d| d.to_rfc3339()),
-            "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok())
-        }))
+        .map(|tx| {
+            serde_json::json!({
+                "txid": tx.txid,
+                "status": format!("{:?}", tx.status),
+                "amount_zatoshis": tx.amount_zatoshis,
+                "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
+                "fee_zatoshis": tx.fee_zatoshis,
+                "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
+                "recipient": tx.recipient_address,
+                "block_height": tx.block_height,
+                "confirmations": tx.confirmations,
+                "broadcast_at": tx.broadcast_at.map(|d| d.to_rfc3339()),
+                "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok())
+            })
+        })
         .collect();
-    
+
     Ok(ResponseJson(TransactionHistoryResponse {
         transactions: filtered.clone(),
         total: filtered.len(),
@@ -837,20 +862,19 @@ pub async fn get_transaction(
     Path(txid): Path<String>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::transaction_history::SentTransactionStorage;
-    
-    let tx_storage = SentTransactionStorage::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize transaction storage: {}", e)
-                })),
-            )
-        })?;
-    
+
+    let tx_storage = SentTransactionStorage::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize transaction storage: {}", e)
+            })),
+        )
+    })?;
+
     let all_txs = tx_storage.get_all_transactions();
     let tx = all_txs.iter().find(|t| t.txid == txid);
-    
+
     match tx {
         Some(t) => Ok(ResponseJson(serde_json::json!({
             "txid": t.txid,
@@ -875,26 +899,30 @@ pub async fn get_transaction(
     }
 }
 
-pub async fn check_transaction_confirmations() -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{ZebraClient, load_config, transaction_history::SentTransactionStorage};
-    
+pub async fn check_transaction_confirmations(
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
+
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url);
-    let tx_storage = SentTransactionStorage::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize transaction storage: {}", e)
-                })),
-            )
-        })?;
-    
-    let updated_pending = tx_storage.check_all_pending_transactions(&zebra_client).await
+    let tx_storage = SentTransactionStorage::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize transaction storage: {}", e)
+            })),
+        )
+    })?;
+
+    let updated_pending = tx_storage
+        .check_all_pending_transactions(&zebra_client)
+        .await
         .unwrap_or(0);
-    let updated_confirmations = tx_storage.update_confirmations(&zebra_client).await
+    let updated_confirmations = tx_storage
+        .update_confirmations(&zebra_client)
+        .await
         .unwrap_or(0);
-    
+
     Ok(ResponseJson(serde_json::json!({
         "pending_updated": updated_pending,
         "confirmations_updated": updated_confirmations
@@ -918,20 +946,21 @@ pub struct AddAddressRequest {
     pub notes: Option<String>,
 }
 
-pub async fn list_address_book() -> Result<ResponseJson<Vec<AddressBookEntry>>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn list_address_book(
+) -> Result<ResponseJson<Vec<AddressBookEntry>>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::AddressBook;
-    
-    let address_book = AddressBook::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize address book: {}", e)
-                })),
-            )
-        })?;
-    
-    let entries: Vec<AddressBookEntry> = address_book.list_addresses()
+
+    let address_book = AddressBook::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize address book: {}", e)
+            })),
+        )
+    })?;
+
+    let entries: Vec<AddressBookEntry> = address_book
+        .list_addresses()
         .iter()
         .map(|e| AddressBookEntry {
             name: e.name.clone(),
@@ -942,7 +971,7 @@ pub async fn list_address_book() -> Result<ResponseJson<Vec<AddressBookEntry>>, 
             notes: e.notes.clone(),
         })
         .collect();
-    
+
     Ok(ResponseJson(entries))
 }
 
@@ -950,18 +979,22 @@ pub async fn add_address_book_entry(
     Json(payload): Json<AddAddressRequest>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::AddressBook;
-    
-    let address_book = AddressBook::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize address book: {}", e)
-                })),
-            )
-        })?;
-    
-    address_book.add_address(payload.name.clone(), payload.address.clone(), payload.notes.clone())
+
+    let address_book = AddressBook::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize address book: {}", e)
+            })),
+        )
+    })?;
+
+    address_book
+        .add_address(
+            payload.name.clone(),
+            payload.address.clone(),
+            payload.notes.clone(),
+        )
         .map_err(|e| {
             (
                 StatusCode::BAD_REQUEST,
@@ -970,7 +1003,7 @@ pub async fn add_address_book_entry(
                 })),
             )
         })?;
-    
+
     Ok(ResponseJson(serde_json::json!({
         "success": true,
         "message": format!("Address '{}' added successfully", payload.name)
@@ -981,27 +1014,25 @@ pub async fn remove_address_book_entry(
     Path(name): Path<String>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::AddressBook;
-    
-    let address_book = AddressBook::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize address book: {}", e)
-                })),
-            )
-        })?;
-    
-    let removed = address_book.remove_address(&name)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to remove address: {}", e)
-                })),
-            )
-        })?;
-    
+
+    let address_book = AddressBook::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize address book: {}", e)
+            })),
+        )
+    })?;
+
+    let removed = address_book.remove_address(&name).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to remove address: {}", e)
+            })),
+        )
+    })?;
+
     if removed {
         Ok(ResponseJson(serde_json::json!({
             "success": true,
@@ -1021,19 +1052,19 @@ pub async fn search_address_book(
     Query(params): Query<HashMap<String, String>>,
 ) -> Result<ResponseJson<Vec<AddressBookEntry>>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::AddressBook;
-    
-    let address_book = AddressBook::new()
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to initialize address book: {}", e)
-                })),
-            )
-        })?;
-    
+
+    let address_book = AddressBook::new().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to initialize address book: {}", e)
+            })),
+        )
+    })?;
+
     let query = params.get("q").cloned().unwrap_or_default();
-    let entries: Vec<AddressBookEntry> = address_book.search_addresses(&query)
+    let entries: Vec<AddressBookEntry> = address_book
+        .search_addresses(&query)
         .iter()
         .map(|e| AddressBookEntry {
             name: e.name.clone(),
@@ -1044,7 +1075,7 @@ pub async fn search_address_book(
             notes: e.notes.clone(),
         })
         .collect();
-    
+
     Ok(ResponseJson(entries))
 }
 
@@ -1059,19 +1090,21 @@ pub struct WalletStatusResponse {
     pub blocks_behind: Option<u32>,
 }
 
-pub async fn get_wallet_status() -> Result<ResponseJson<WalletStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, ZebraClient, transaction_history::SentTransactionStorage};
-    use std::fs;
+pub async fn get_wallet_status(
+) -> Result<ResponseJson<WalletStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::paths::get_wallet_data_dir;
-    
+    use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
+    use std::fs;
+
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url.clone());
-    
+
     let notes_path = get_wallet_data_dir().join("notes.json");
     let balance_zatoshis = if notes_path.exists() {
         if let Ok(content) = fs::read_to_string(&notes_path) {
             if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                parsed.as_array()
+                parsed
+                    .as_array()
                     .unwrap_or(&vec![])
                     .iter()
                     .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
@@ -1085,7 +1118,7 @@ pub async fn get_wallet_status() -> Result<ResponseJson<WalletStatusResponse>, (
     } else {
         0
     };
-    
+
     let (pending_count, total_count) = if let Ok(tx_storage) = SentTransactionStorage::new() {
         let pending = tx_storage.get_pending_transactions();
         let all = tx_storage.get_all_transactions();
@@ -1093,14 +1126,15 @@ pub async fn get_wallet_status() -> Result<ResponseJson<WalletStatusResponse>, (
     } else {
         (0, 0)
     };
-    
+
     let current_height = zebra_client.get_block_count().await.ok();
-    let blocks_behind = if let (Some(current), Some(last)) = (current_height, config.last_scan_height) {
-        Some(current.saturating_sub(last))
-    } else {
-        None
-    };
-    
+    let blocks_behind =
+        if let (Some(current), Some(last)) = (current_height, config.last_scan_height) {
+            Some(current.saturating_sub(last))
+        } else {
+            None
+        };
+
     Ok(ResponseJson(WalletStatusResponse {
         balance_zec: balance_zatoshis as f64 / 100_000_000.0,
         balance_zatoshis,
@@ -1120,13 +1154,14 @@ pub struct NotesResponse {
     pub total_balance_zec: f64,
 }
 
-pub async fn get_notes() -> Result<ResponseJson<NotesResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use std::fs;
+pub async fn get_notes(
+) -> Result<ResponseJson<NotesResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::paths::get_wallet_data_dir;
     use nozy::SerializableOrchardNote;
-    
+    use std::fs;
+
     let notes_path = get_wallet_data_dir().join("notes.json");
-    
+
     if !notes_path.exists() {
         return Ok(ResponseJson(NotesResponse {
             notes: vec![],
@@ -1135,41 +1170,42 @@ pub async fn get_notes() -> Result<ResponseJson<NotesResponse>, (StatusCode, Res
             total_balance_zec: 0.0,
         }));
     }
-    
-    let content = fs::read_to_string(&notes_path)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to read notes: {}", e)
-                })),
-            )
-        })?;
-    
-    let notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content)
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to parse notes: {}", e)
-                })),
-            )
-        })?;
-    
+
+    let content = fs::read_to_string(&notes_path).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to read notes: {}", e)
+            })),
+        )
+    })?;
+
+    let notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to parse notes: {}", e)
+            })),
+        )
+    })?;
+
     let total_balance_zatoshis: u64 = notes.iter().map(|n| n.value).sum();
     let total_balance_zec = total_balance_zatoshis as f64 / 100_000_000.0;
-    
-    let notes_json: Vec<serde_json::Value> = notes.iter()
-        .map(|n| serde_json::json!({
-            "value": n.value,
-            "value_zec": n.value as f64 / 100_000_000.0,
-            "block_height": n.block_height,
-            "txid": n.txid,
-            "spent": n.spent,
-            "memo": String::from_utf8(n.memo.clone()).unwrap_or_default()
-        }))
+
+    let notes_json: Vec<serde_json::Value> = notes
+        .iter()
+        .map(|n| {
+            serde_json::json!({
+                "value": n.value,
+                "value_zec": n.value as f64 / 100_000_000.0,
+                "block_height": n.block_height,
+                "txid": n.txid,
+                "spent": n.spent,
+                "memo": String::from_utf8(n.memo.clone()).unwrap_or_default()
+            })
+        })
         .collect();
-    
+
     Ok(ResponseJson(NotesResponse {
         notes: notes_json,
         total: notes.len(),
@@ -1177,4 +1213,3 @@ pub async fn get_notes() -> Result<ResponseJson<NotesResponse>, (StatusCode, Res
         total_balance_zec,
     }))
 }
-

@@ -1,10 +1,10 @@
 use crate::config::{BackendKind, Protocol};
 use crate::error::{NozyError, NozyResult};
 use crate::grpc_client::ZebraGrpcClient;
-use serde::Deserialize;
-use std::collections::HashMap;
-use serde_json::Value;
 use hex;
+use serde::Deserialize;
+use serde_json::Value;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -36,17 +36,19 @@ struct ZebraError {
 }
 
 impl ZebraClient {
-    
     pub fn new(url: String) -> Self {
         Self::new_with_backend(url, BackendKind::Zebra)
     }
 
-  
     pub fn new_with_backend(url: String, backend: BackendKind) -> Self {
         Self::new_with_backend_and_protocol(url, backend, Protocol::JsonRpc)
     }
 
-    pub fn new_with_backend_and_protocol(url: String, backend: BackendKind, protocol: Protocol) -> Self {
+    pub fn new_with_backend_and_protocol(
+        url: String,
+        backend: BackendKind,
+        protocol: Protocol,
+    ) -> Self {
         let url = Self::normalize_url(url.clone());
 
         let is_local = url.contains("127.0.0.1") || url.contains("localhost");
@@ -70,7 +72,6 @@ impl ZebraClient {
         }
     }
 
-   
     pub fn from_config(config: &crate::config::WalletConfig) -> Self {
         let (backend, url) = match &config.backend {
             BackendKind::Zebra => (BackendKind::Zebra, config.zebra_url.clone()),
@@ -88,34 +89,34 @@ impl ZebraClient {
 
         Self::new_with_backend_and_protocol(url, backend, config.protocol.clone())
     }
-    
+
     fn normalize_url(url: String) -> String {
         let mut url = url.trim().to_string();
-        
+
         // Fix double dots in URLs (e.g., "zec..leoninedao.org" -> "zec.leoninedao.org")
         url = url.replace("..", ".");
-        
+
         // Fix triple slashes (e.g., "https:///host" -> "https://host")
         url = url.replace(":///", "://");
-        
+
         // Fix double slashes after protocol (e.g., "https:///host" -> "https://host")
         if url.starts_with("http://") {
             url = url.replace("http:///", "http://");
         } else if url.starts_with("https://") {
             url = url.replace("https:///", "https://");
         }
-        
+
         if url.starts_with("http://") || url.starts_with("https://") {
             // Keep the port if it's specified - don't remove it
             // Only fix path slashes, preserve protocol and port
             // The URL should be in format: https://host:port/path
             // We want to preserve https:// and :port, only fix // in path
-            
+
             // Simple approach: if URL already has proper format, return as-is
             // Only fix if there are obvious issues like triple slashes (already fixed above)
             return url;
         }
-        
+
         if url.contains(':') {
             let parts: Vec<&str> = url.split(':').collect();
             if parts.len() >= 2 {
@@ -128,7 +129,7 @@ impl ZebraClient {
                 }
             }
         }
-        
+
         if url.contains("127.0.0.1") || url.contains("localhost") {
             format!("http://{}", url)
         } else {
@@ -141,7 +142,11 @@ impl ZebraClient {
         self.get_block_by_hash(&block_hash, 2).await
     }
 
-    pub async fn get_block_by_hash(&self, block_hash: &str, verbosity: u32) -> NozyResult<HashMap<String, Value>> {
+    pub async fn get_block_by_hash(
+        &self,
+        block_hash: &str,
+        verbosity: u32,
+    ) -> NozyResult<HashMap<String, Value>> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "getblock",
@@ -150,12 +155,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("No block data in response".to_string()))
     }
 
@@ -168,12 +177,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<String> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("No block hash in response".to_string()))
     }
 
@@ -183,7 +196,7 @@ impl ZebraClient {
                 // Initialize gRPC client if needed
                 let grpc_client = self.get_grpc_client().await?;
                 grpc_client.get_block_count().await
-            },
+            }
             Protocol::JsonRpc => {
                 let request = serde_json::json!({
                     "jsonrpc": "2.0",
@@ -193,13 +206,17 @@ impl ZebraClient {
                 });
 
                 let response: ZebraResponse<u32> = self.make_request(request).await?;
-                
+
                 if let Some(error) = response.error {
-                    return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+                    return Err(NozyError::InvalidOperation(format!(
+                        "Zebra RPC error: {} (code: {})",
+                        error.message, error.code
+                    )));
                 }
 
-                response.result
-                    .ok_or_else(|| NozyError::InvalidOperation("Invalid block height response".to_string()))
+                response.result.ok_or_else(|| {
+                    NozyError::InvalidOperation("Invalid block height response".to_string())
+                })
             }
         }
     }
@@ -218,12 +235,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("No sync status in response".to_string()))
     }
 
@@ -236,12 +257,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("No fee estimate in response".to_string()))
     }
 
@@ -254,13 +279,17 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<String> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
-            .ok_or_else(|| NozyError::InvalidOperation("No transaction hash in response".to_string()))
+        response.result.ok_or_else(|| {
+            NozyError::InvalidOperation("No transaction hash in response".to_string())
+        })
     }
 
     pub async fn get_mempool_info(&self) -> NozyResult<HashMap<String, Value>> {
@@ -272,12 +301,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("Invalid mempool response".to_string()))
     }
 
@@ -290,16 +323,19 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("Invalid network info response".to_string()))
     }
 
-    
     pub async fn get_raw_transaction(&self, txid: &str) -> NozyResult<String> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -309,16 +345,19 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<String> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
-            .ok_or_else(|| NozyError::InvalidOperation("No transaction data in response".to_string()))
+        response.result.ok_or_else(|| {
+            NozyError::InvalidOperation("No transaction data in response".to_string())
+        })
     }
 
-    
     pub async fn decode_raw_transaction(&self, raw_tx: &str) -> NozyResult<HashMap<String, Value>> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -328,13 +367,17 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
-            .ok_or_else(|| NozyError::InvalidOperation("No decoded transaction data in response".to_string()))
+        response.result.ok_or_else(|| {
+            NozyError::InvalidOperation("No decoded transaction data in response".to_string())
+        })
     }
 
     pub async fn get_txout_set_info(&self) -> NozyResult<HashMap<String, Value>> {
@@ -346,12 +389,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("No txout set info in response".to_string()))
     }
 
@@ -364,12 +411,16 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        response.result
+        response
+            .result
             .ok_or_else(|| NozyError::InvalidOperation("No block template in response".to_string()))
     }
 
@@ -379,18 +430,18 @@ impl ZebraClient {
 
     pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
         let block_hash = self.get_block_hash(height).await?;
-        
+
         let _block_info = self.get_block(height).await?;
-        
+
         let mut anchor = [0u8; 32];
         let block_hash_bytes = hex::decode(&block_hash)
             .map_err(|e| NozyError::InvalidOperation(format!("Invalid block hash hex: {}", e)))?;
-        
+
         let hash_len = block_hash_bytes.len().min(32);
         anchor[..hash_len].copy_from_slice(&block_hash_bytes[..hash_len]);
-        
-        let commitment_count = height as u64 * 100; 
-        
+
+        let commitment_count = height as u64 * 100;
+
         Ok(OrchardTreeState {
             height,
             anchor,
@@ -399,34 +450,34 @@ impl ZebraClient {
     }
 
     pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
-        
-        
         let mut position_bytes = [0u8; 4];
         position_bytes.copy_from_slice(&commitment_bytes[0..4]);
         let position = u32::from_le_bytes(position_bytes);
-        
+
         Ok(position)
     }
 
-    pub async fn get_authentication_path(&self, position: u32, anchor: &[u8; 32]) -> NozyResult<Vec<[u8; 32]>> {
-       
-        
+    pub async fn get_authentication_path(
+        &self,
+        position: u32,
+        anchor: &[u8; 32],
+    ) -> NozyResult<Vec<[u8; 32]>> {
         let mut auth_path = Vec::new();
-        
+
         for level in 0u32..32 {
             let mut hash_input = Vec::new();
             hash_input.extend_from_slice(&position.to_le_bytes());
             hash_input.extend_from_slice(anchor);
             hash_input.extend_from_slice(&level.to_le_bytes());
-            
+
             let mut hash = [0u8; 32];
             for (i, byte) in hash_input.iter().enumerate() {
                 hash[i % 32] ^= byte;
             }
-            
+
             auth_path.push(hash);
         }
-        
+
         Ok(auth_path)
     }
 
@@ -436,68 +487,86 @@ impl ZebraClient {
     {
         const MAX_RETRIES: u32 = 3;
         let mut last_error = None;
-        
+
         for attempt in 0..=MAX_RETRIES {
             match self.try_request(&request).await {
                 Ok(response) => return Ok(response),
                 Err(e) => {
                     last_error = Some(e);
-                    
+
                     if attempt < MAX_RETRIES {
                         let error_msg = match &last_error {
                             Some(NozyError::NetworkError(msg)) => msg,
                             _ => {
-                                return Err(last_error.expect("last_error should be Some at this point"));
-                            },
+                                return Err(
+                                    last_error.expect("last_error should be Some at this point")
+                                );
+                            }
                         };
-                        
-                        if error_msg.contains("failed to connect") 
+
+                        if error_msg.contains("failed to connect")
                             || error_msg.contains("Connection refused")
                             || error_msg.contains("timeout")
-                            || error_msg.contains("Connection reset") {
-                            
+                            || error_msg.contains("Connection reset")
+                        {
                             let delay_ms = 100 * (1 << attempt);
                             tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
                             continue;
                         } else {
-                            return Err(last_error.expect("last_error should be Some at this point"));
+                            return Err(
+                                last_error.expect("last_error should be Some at this point")
+                            );
                         }
                     }
                 }
             }
         }
-        
+
         let is_local = self.url.contains("127.0.0.1") || self.url.contains("localhost");
         let error_msg = if is_local {
             format!(
                 "Failed to connect to local Zebra node at {} after {} attempts. \
                 Make sure Zebra is running and RPC is enabled. \
                 Check your ~/.config/zebrad.toml for: [rpc] listen_addr = \"127.0.0.1:8232\"",
-                self.url, MAX_RETRIES + 1
+                self.url,
+                MAX_RETRIES + 1
             )
         } else {
-            format!("Failed to connect to Zebra node at {} after {} attempts: {}", 
-                self.url, MAX_RETRIES + 1, 
-                last_error.as_ref().map(|e| format!("{}", e)).unwrap_or_else(|| "Unknown error".to_string()))
+            format!(
+                "Failed to connect to Zebra node at {} after {} attempts: {}",
+                self.url,
+                MAX_RETRIES + 1,
+                last_error
+                    .as_ref()
+                    .map(|e| format!("{}", e))
+                    .unwrap_or_else(|| "Unknown error".to_string())
+            )
         };
-        
+
         Err(NozyError::NetworkError(error_msg))
     }
-    
+
     async fn try_request<T>(&self, request: &serde_json::Value) -> NozyResult<ZebraResponse<T>>
     where
         T: serde::de::DeserializeOwned,
     {
-        let response = self.client
+        let response = self
+            .client
             .post(&self.url)
             .json(request)
             .send()
             .await
             .map_err(|e| {
                 let error_msg = if e.is_connect() {
-                    format!("Connection failed to {}: {}. Is Zebra running?", self.url, e)
+                    format!(
+                        "Connection failed to {}: {}. Is Zebra running?",
+                        self.url, e
+                    )
                 } else if e.is_timeout() {
-                    format!("Request timeout to {}. The node may be slow or overloaded.", self.url)
+                    format!(
+                        "Request timeout to {}. The node may be slow or overloaded.",
+                        self.url
+                    )
                 } else {
                     format!("HTTP request failed: {}", e)
                 };
@@ -506,8 +575,9 @@ impl ZebraClient {
 
         if !response.status().is_success() {
             return Err(NozyError::NetworkError(format!(
-                "HTTP error {} from {}. The Zebra RPC endpoint may not be configured correctly.", 
-                response.status(), self.url
+                "HTTP error {} from {}. The Zebra RPC endpoint may not be configured correctly.",
+                response.status(),
+                self.url
             )));
         }
 
@@ -516,19 +586,29 @@ impl ZebraClient {
             .await
             .map_err(|e| NozyError::NetworkError(format!("Failed to read response: {}", e)))?;
 
-        let zebra_response: ZebraResponse<T> = serde_json::from_str(&response_text)
-            .map_err(|e| NozyError::InvalidOperation(format!("Invalid JSON response from {}: {}. Response: {}", self.url, e, &response_text[..response_text.len().min(200)])))?;
+        let zebra_response: ZebraResponse<T> =
+            serde_json::from_str(&response_text).map_err(|e| {
+                NozyError::InvalidOperation(format!(
+                    "Invalid JSON response from {}: {}. Response: {}",
+                    self.url,
+                    e,
+                    &response_text[..response_text.len().min(200)]
+                ))
+            })?;
 
         Ok(zebra_response)
     }
-    
+
     pub async fn test_connection(&self) -> NozyResult<()> {
         match self.protocol {
             Protocol::Grpc => {
                 let grpc_client = self.get_grpc_client().await?;
                 grpc_client.test_connection().await?;
-                println!("✅ Successfully connected to Zebra node via gRPC at {}", self.url);
-            },
+                println!(
+                    "✅ Successfully connected to Zebra node via gRPC at {}",
+                    self.url
+                );
+            }
             Protocol::JsonRpc => {
                 let block_count = self.get_block_count().await?;
                 println!("✅ Successfully connected to Zebra node at {}", self.url);
@@ -540,13 +620,13 @@ impl ZebraClient {
 
     pub async fn broadcast_transaction_bytes(&self, raw_transaction: &[u8]) -> NozyResult<String> {
         let tx_hex = hex::encode(raw_transaction);
-        
+
         self.broadcast_transaction(&tx_hex).await
     }
 
     pub async fn get_transaction_details(&self, txid: &str) -> NozyResult<serde_json::Value> {
         let raw_tx = self.get_raw_transaction(txid).await?;
-       
+
         Ok(serde_json::json!({"raw": raw_tx}))
     }
 
@@ -559,19 +639,25 @@ impl ZebraClient {
         });
 
         let response: ZebraResponse<serde_json::Value> = self.make_request(request).await?;
-        
+
         if let Some(error) = response.error {
-            return Err(NozyError::InvalidOperation(format!("Zebra RPC error: {} (code: {})", error.message, error.code)));
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
         }
 
-        let tx_data = response.result
-            .ok_or_else(|| NozyError::InvalidOperation("No transaction data in response".to_string()))?;
+        let tx_data = response.result.ok_or_else(|| {
+            NozyError::InvalidOperation("No transaction data in response".to_string())
+        })?;
 
-        let block_height = tx_data.get("blockheight")
+        let block_height = tx_data
+            .get("blockheight")
             .and_then(|v| v.as_u64())
             .map(|h| h as u32);
-        
-        let block_hash = tx_data.get("blockhash")
+
+        let block_hash = tx_data
+            .get("blockhash")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
 

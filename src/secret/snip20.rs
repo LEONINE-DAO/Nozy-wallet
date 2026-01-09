@@ -18,35 +18,42 @@ impl Snip20Token {
             rpc,
         }
     }
-    
+
     /// Get token info (name, symbol, decimals)
     pub async fn get_token_info(&self) -> NozyResult<TokenInfo> {
         let query = json!({
             "token_info": {}
         });
-        
-        let response = self.rpc.query_contract(&self.contract_address, query).await?;
-        
+
+        let response = self
+            .rpc
+            .query_contract(&self.contract_address, query)
+            .await?;
+
         // Parse response (Secret Network encrypts responses, but LCD API handles decryption)
-        let data = response.get("data")
+        let data = response
+            .get("data")
             .ok_or_else(|| NozyError::NetworkError("No data in response".to_string()))?;
-        
+
         Ok(TokenInfo {
-            name: data.get("name")
+            name: data
+                .get("name")
                 .and_then(|v| v.as_str())
                 .unwrap_or("Unknown")
                 .to_string(),
-            symbol: data.get("symbol")
+            symbol: data
+                .get("symbol")
                 .and_then(|v| v.as_str())
                 .unwrap_or("UNK")
                 .to_string(),
-            decimals: data.get("decimals")
+            decimals: data
+                .get("decimals")
                 .and_then(|v| v.as_u64())
                 .map(|n| n as u8)
                 .unwrap_or(6),
         })
     }
-    
+
     /// Get balance for an address
     pub async fn get_balance(&self, address: &str) -> NozyResult<u128> {
         let query = json!({
@@ -54,20 +61,26 @@ impl Snip20Token {
                 "address": address
             }
         });
-        
-        let response = self.rpc.query_contract(&self.contract_address, query).await?;
-        
-        let data = response.get("data")
+
+        let response = self
+            .rpc
+            .query_contract(&self.contract_address, query)
+            .await?;
+
+        let data = response
+            .get("data")
             .ok_or_else(|| NozyError::NetworkError("No data in response".to_string()))?;
-        
-        let amount = data.get("amount")
+
+        let amount = data
+            .get("amount")
             .and_then(|v| v.as_str())
             .ok_or_else(|| NozyError::NetworkError("Invalid balance response".to_string()))?;
-        
-        amount.parse::<u128>()
+
+        amount
+            .parse::<u128>()
             .map_err(|_| NozyError::NetworkError("Invalid balance format".to_string()))
     }
-    
+
     /// Transfer tokens
     pub async fn transfer(
         &self,
@@ -82,26 +95,27 @@ impl Snip20Token {
                 "amount": amount.to_string()
             }
         });
-        
+
         if let Some(m) = memo {
             transfer_msg["transfer"]["memo"] = json!(m);
         }
-        
-        let response = self.rpc.execute_contract(
-            &self.contract_address,
-            sender,
-            transfer_msg,
-            None,
-        ).await?;
-        
+
+        let response = self
+            .rpc
+            .execute_contract(&self.contract_address, sender, transfer_msg, None)
+            .await?;
+
         // Extract transaction hash from response
-        let tx_hash = response.get("txhash")
+        let tx_hash = response
+            .get("txhash")
             .and_then(|v| v.as_str())
-            .ok_or_else(|| NozyError::NetworkError("No transaction hash in response".to_string()))?;
-        
+            .ok_or_else(|| {
+                NozyError::NetworkError("No transaction hash in response".to_string())
+            })?;
+
         Ok(tx_hash.to_string())
     }
-    
+
     /// Get contract address
     pub fn contract_address(&self) -> &str {
         &self.contract_address

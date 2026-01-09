@@ -23,4 +23,3 @@ pub enum ZeakingError {
 }
 
 pub type ZeakingResult<T> = Result<T, ZeakingError>;
-

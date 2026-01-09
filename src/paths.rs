@@ -7,17 +7,15 @@ pub fn get_wallet_data_dir() -> PathBuf {
         std::fs::create_dir_all(data_dir).ok();
         data_dir.to_path_buf()
     } else {
-       
         let home_dir = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE")) 
+            .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
-        
+
         let fallback = PathBuf::from(&home_dir).join(".nozy").join("data");
         std::fs::create_dir_all(&fallback).ok();
         fallback
     }
 }
-
 
 pub fn get_wallet_config_dir() -> PathBuf {
     if let Some(proj_dirs) = ProjectDirs::from("com", "nozy", "nozy") {
@@ -25,11 +23,10 @@ pub fn get_wallet_config_dir() -> PathBuf {
         std::fs::create_dir_all(config_dir).ok();
         config_dir.to_path_buf()
     } else {
-       
         let home_dir = std::env::var("HOME")
-            .or_else(|_| std::env::var("USERPROFILE")) 
+            .or_else(|_| std::env::var("USERPROFILE"))
             .unwrap_or_else(|_| ".".to_string());
-        
+
         let fallback = PathBuf::from(&home_dir).join(".nozy").join("config");
         std::fs::create_dir_all(&fallback).ok();
         fallback
@@ -48,4 +45,3 @@ pub fn get_wallet_config_path() -> PathBuf {
 pub fn get_zeaking_index_dir() -> PathBuf {
     get_wallet_data_dir().join("zeaking")
 }
-

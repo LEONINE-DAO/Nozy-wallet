@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IndexedBlock {
@@ -28,7 +28,7 @@ pub struct IndexedTransaction {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OrchardActionIndex {
-    pub action_type: String, 
+    pub action_type: String,
     pub nullifier: Option<String>,
     pub commitment: Option<String>,
     pub cv: Option<String>,
@@ -65,4 +65,3 @@ pub struct OrchardActionData {
     pub cmx: [u8; 32],
     pub cv: [u8; 32],
 }
-

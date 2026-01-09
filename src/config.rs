@@ -3,7 +3,7 @@ use crate::paths::get_wallet_config_path;
 use serde::{Deserialize, Serialize};
 use std::fs;
 
-/// Nozy talking to Zebra & Crosslink 
+/// Nozy talking to Zebra & Crosslink
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -25,7 +25,6 @@ pub struct WalletConfig {
     #[serde(default = "default_zebra_url")]
     pub zebra_url: String,
 
-   
     /// If empty, `zebra_url` will be used as a fallback when backend == Crosslink.
     #[serde(default = "default_crosslink_url")]
     pub crosslink_url: String,
@@ -38,7 +37,6 @@ pub struct WalletConfig {
     #[serde(default = "default_theme")]
     pub theme: String,
 
-    
     /// Defaults to `zebra` to preserve existing behavior.
     #[serde(default = "default_backend")]
     pub backend: BackendKind,
@@ -47,19 +45,19 @@ pub struct WalletConfig {
     /// Defaults to JSON-RPC for backward compatibility
     #[serde(default = "default_protocol")]
     pub protocol: Protocol,
-    
+
     /// Privacy network settings
     #[serde(default)]
     pub privacy_network: PrivacyNetworkConfig,
-    
+
     /// ZK verification settings for Monero blocks
     #[serde(default)]
     pub zk_verification: crate::monero_zk_verifier::types::ZkVerificationConfig,
-    
+
     /// Secret Network settings
     #[serde(default)]
     pub secret_network: SecretNetworkConfig,
-    
+
     /// Swap settings
     #[serde(default)]
     pub swap: SwapConfig,
@@ -70,7 +68,7 @@ pub struct SecretNetworkConfig {
     /// Secret Network LCD API URL
     #[serde(default = "default_secret_lcd_url")]
     pub lcd_url: String,
-    
+
     /// Secret Network address (derived from wallet)
     #[serde(default)]
     pub address: Option<String>,
@@ -81,11 +79,11 @@ pub struct SwapConfig {
     /// Automatically churn Monero outputs before swaps
     #[serde(default = "default_false")]
     pub auto_churn: bool,
-    
+
     /// Swap service API URL
     #[serde(default = "default_swap_api_url")]
     pub api_url: String,
-    
+
     /// Swap service API key (optional)
     #[serde(default)]
     pub api_key: Option<String>,
@@ -96,23 +94,23 @@ pub struct PrivacyNetworkConfig {
     /// Enable Tor proxy
     #[serde(default = "default_true")]
     pub tor_enabled: bool,
-    
+
     /// Tor SOCKS5 proxy URL
     #[serde(default = "default_tor_proxy")]
     pub tor_proxy: String,
-    
+
     /// Enable I2P proxy
     #[serde(default = "default_false")]
     pub i2p_enabled: bool,
-    
+
     /// I2P HTTP proxy URL
     #[serde(default = "default_i2p_proxy")]
     pub i2p_proxy: String,
-    
+
     /// Preferred privacy network (tor, i2p, or auto)
     #[serde(default = "default_preferred_network")]
     pub preferred_network: String,
-    
+
     /// Require privacy network (fail if unavailable)
     #[serde(default = "default_true")]
     pub require_privacy_network: bool,
@@ -156,7 +154,6 @@ fn default_zebra_url() -> String {
 }
 
 fn default_crosslink_url() -> String {
-    
     String::new()
 }
 
@@ -223,20 +220,24 @@ impl Default for SwapConfig {
 
 pub fn load_config() -> WalletConfig {
     let config_path = get_wallet_config_path();
-    
+
     if config_path.exists() {
         match fs::read_to_string(&config_path) {
-            Ok(content) => {
-                match serde_json::from_str::<WalletConfig>(&content) {
-                    Ok(config) => config,
-                    Err(e) => {
-                        eprintln!("Warning: Failed to parse config.json: {}. Using defaults.", e);
-                        WalletConfig::default()
-                    }
+            Ok(content) => match serde_json::from_str::<WalletConfig>(&content) {
+                Ok(config) => config,
+                Err(e) => {
+                    eprintln!(
+                        "Warning: Failed to parse config.json: {}. Using defaults.",
+                        e
+                    );
+                    WalletConfig::default()
                 }
             },
             Err(e) => {
-                eprintln!("Warning: Failed to read config.json: {}. Using defaults.", e);
+                eprintln!(
+                    "Warning: Failed to read config.json: {}. Using defaults.",
+                    e
+                );
                 WalletConfig::default()
             }
         }
@@ -247,18 +248,18 @@ pub fn load_config() -> WalletConfig {
 
 pub fn save_config(config: &WalletConfig) -> NozyResult<()> {
     let config_path = get_wallet_config_path();
-    
+
     if let Some(parent) = config_path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| NozyError::Storage(format!("Failed to create config directory: {}", e)))?;
     }
-    
+
     let serialized = serde_json::to_string_pretty(config)
         .map_err(|e| NozyError::Storage(format!("Failed to serialize config: {}", e)))?;
-    
+
     fs::write(&config_path, serialized)
         .map_err(|e| NozyError::Storage(format!("Failed to write config: {}", e)))?;
-    
+
     Ok(())
 }
 
@@ -270,7 +271,10 @@ pub fn update_last_scan_height(height: u32) -> NozyResult<()> {
 
 pub fn ensure_local_zebra_node() -> NozyResult<()> {
     let mut config = load_config();
-    if config.zebra_url != "http://127.0.0.1:8232" && !config.zebra_url.contains("127.0.0.1") && !config.zebra_url.contains("localhost") {
+    if config.zebra_url != "http://127.0.0.1:8232"
+        && !config.zebra_url.contains("127.0.0.1")
+        && !config.zebra_url.contains("localhost")
+    {
         config.zebra_url = "http://127.0.0.1:8232".to_string();
         save_config(&config)?;
     }

@@ -1,13 +1,13 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::SerializableOrchardNote;
-use std::collections::{HashMap, BTreeMap};
+use hex;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
-use serde::{Serialize, Deserialize};
-use hex;
 
 /// Complete index structure for fast note lookups.
-/// 
+///
 /// # Persistence Format
 /// - Version 2: Complete structure (notes + all indexes)
 /// - Version 1: Notes only (legacy, automatically migrated)
@@ -46,13 +46,14 @@ impl NoteIndex {
 
     pub fn add_note(&mut self, note: SerializableOrchardNote) {
         if self.nullifier_index.contains_key(&note.nullifier_bytes) {
-            return; 
+            return;
         }
 
         let idx = self.notes.len();
         self.notes.push(note.clone());
 
-        self.nullifier_index.insert(note.nullifier_bytes.clone(), idx);
+        self.nullifier_index
+            .insert(note.nullifier_bytes.clone(), idx);
 
         self.height_index
             .entry(note.block_height)
@@ -72,7 +73,7 @@ impl NoteIndex {
     }
 
     /// Get notes by height range in deterministic order.
-    /// 
+    ///
     /// # Determinism Guarantees
     /// - Notes are returned in ascending height order
     /// - Within the same height, notes are ordered by their insertion index
@@ -93,7 +94,8 @@ impl NoteIndex {
         self.address_index
             .get(address_bytes)
             .map(|indices| {
-                indices.iter()
+                indices
+                    .iter()
                     .filter_map(|idx| self.notes.get(*idx))
                     .collect()
             })
@@ -101,12 +103,12 @@ impl NoteIndex {
     }
 
     /// Get unspent notes as an iterator (more efficient than collecting to Vec).
-    /// 
+    ///
     /// Returns notes in the order they were added to the index.
     pub fn get_unspent_notes(&self) -> impl Iterator<Item = &SerializableOrchardNote> {
         self.notes.iter().filter(|note| !note.spent)
     }
-    
+
     /// Get unspent notes as a vector (for cases where you need a Vec).
     pub fn get_unspent_notes_vec(&self) -> Vec<&SerializableOrchardNote> {
         self.get_unspent_notes().collect()
@@ -127,35 +129,36 @@ impl NoteIndex {
     }
 
     /// Save the complete index structure to file.
-    /// 
+    ///
     /// Saves both notes and all indexes for fast loading without rebuild.
     /// Uses version 2 format (complete structure).
     pub fn save_to_file(&self, path: &PathBuf) -> NozyResult<()> {
         // Validate indexes before saving to catch any inconsistencies
-        self.validate_indexes()
-            .map_err(|e| NozyError::Storage(format!("Index validation failed before save: {}", e)))?;
-        
+        self.validate_indexes().map_err(|e| {
+            NozyError::Storage(format!("Index validation failed before save: {}", e))
+        })?;
+
         // Save complete structure (version 2 format)
         let serialized = serde_json::to_string_pretty(self)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize index: {}", e)))?;
-        
+
         // Atomic write: write to temp file first, then rename
         let temp_path = path.with_extension("tmp");
         fs::write(&temp_path, serialized)
             .map_err(|e| NozyError::Storage(format!("Failed to write index: {}", e)))?;
-        
+
         fs::rename(&temp_path, path)
             .map_err(|e| NozyError::Storage(format!("Failed to rename temp file: {}", e)))?;
-        
+
         Ok(())
     }
 
     /// Load index from file with automatic format detection and migration.
-    /// 
+    ///
     /// # Format Support
     /// - Version 2: Complete structure (notes + indexes) - loads directly
     /// - Version 1/Legacy: Notes only - automatically migrates to version 2
-    /// 
+    ///
     /// # Migration
     /// If a legacy format is detected, indexes are rebuilt and the file is
     /// automatically upgraded to version 2 format on next save.
@@ -173,12 +176,15 @@ impl NoteIndex {
                 // Validate loaded indexes
                 if let Err(e) = index.validate_indexes() {
                     // If validation fails, rebuild indexes from notes
-                    eprintln!("Warning: Index validation failed, rebuilding indexes: {}", e);
+                    eprintln!(
+                        "Warning: Index validation failed, rebuilding indexes: {}",
+                        e
+                    );
                     let notes = index.notes.clone();
                     index = Self::from_notes(notes);
                 }
                 Ok(index)
-            },
+            }
             Err(_) => {
                 // Fall back to legacy format (notes only)
                 match serde_json::from_str::<Vec<SerializableOrchardNote>>(&content) {
@@ -190,9 +196,10 @@ impl NoteIndex {
                             eprintln!("Warning: Failed to save migrated index: {}", e);
                         }
                         Ok(index)
-                    },
+                    }
                     Err(e) => Err(NozyError::Storage(format!(
-                        "Failed to parse index (tried both v2 and legacy formats): {}", e
+                        "Failed to parse index (tried both v2 and legacy formats): {}",
+                        e
                     ))),
                 }
             }
@@ -200,7 +207,8 @@ impl NoteIndex {
     }
 
     pub fn total_balance(&self) -> u64 {
-        self.notes.iter()
+        self.notes
+            .iter()
             .filter(|note| !note.spent)
             .map(|note| note.value)
             .sum()
@@ -215,11 +223,11 @@ impl NoteIndex {
     }
 
     /// Validate that all indexes are consistent with the notes vector.
-    /// 
+    ///
     /// # Returns
     /// - `Ok(())` if all indexes are consistent
     /// - `Err` with description of first inconsistency found
-    /// 
+    ///
     /// # Checks Performed
     /// - All nullifier_index entries point to valid note indices
     /// - All notes have corresponding nullifier_index entries
@@ -232,7 +240,8 @@ impl NoteIndex {
             if idx >= self.notes.len() {
                 return Err(NozyError::Storage(format!(
                     "Nullifier index points to invalid note index: {} >= {}",
-                    idx, self.notes.len()
+                    idx,
+                    self.notes.len()
                 )));
             }
             let note = &self.notes[idx];
@@ -261,7 +270,9 @@ impl NoteIndex {
                 if idx >= self.notes.len() {
                     return Err(NozyError::Storage(format!(
                         "Height index at height {} points to invalid note index: {} >= {}",
-                        height, idx, self.notes.len()
+                        height,
+                        idx,
+                        self.notes.len()
                     )));
                 }
                 if self.notes[idx].block_height != *height {
@@ -279,7 +290,8 @@ impl NoteIndex {
                 if idx >= self.notes.len() {
                     return Err(NozyError::Storage(format!(
                         "Address index points to invalid note index: {} >= {}",
-                        idx, self.notes.len()
+                        idx,
+                        self.notes.len()
                     )));
                 }
                 if self.notes[idx].address_bytes != *address {
@@ -306,4 +318,3 @@ impl NoteIndex {
         Ok(())
     }
 }
-

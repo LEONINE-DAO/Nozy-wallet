@@ -4,11 +4,11 @@
 pub fn display_mnemonic_safe(mnemonic: &str) -> String {
     let words: Vec<&str> = mnemonic.split_whitespace().collect();
     let word_count = words.len();
-    
+
     if word_count == 0 {
         return "[empty]".to_string();
     }
-    
+
     if word_count <= 6 {
         // For short mnemonics, show first 2 and last 1
         if word_count <= 3 {
@@ -38,19 +38,15 @@ pub fn mask_string(s: &str, visible_start: usize, visible_end: usize) -> String 
     if s.len() <= visible_start + visible_end {
         return "*".repeat(s.len());
     }
-    
-    format!(
-        "{}...{}",
-        &s[..visible_start],
-        &s[s.len() - visible_end..]
-    )
+
+    format!("{}...{}", &s[..visible_start], &s[s.len() - visible_end..])
 }
 
 pub fn mask_private_key(key: &[u8]) -> String {
     if key.len() <= 8 {
         return "****".to_string();
     }
-    
+
     let hex = hex::encode(key);
     mask_string(&hex, 4, 4)
 }
@@ -88,4 +84,4 @@ mod tests {
     }
 }
 
-/*Note in case we have problems in future 
+/* Note in case we have problems in future */

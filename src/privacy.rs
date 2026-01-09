@@ -13,14 +13,14 @@ pub fn validate_shielded_address(address: &str) -> NozyResult<()> {
              Please use a unified address (u1...) or Sapling address (zs1...) for privacy protection.".to_string()
         ));
     }
-    
+
     if !address.starts_with("u1") && !address.starts_with("zs1") && !address.starts_with("utest1") {
         return Err(NozyError::InvalidOperation(
             "Invalid address format! Must be a shielded address for privacy protection. \
              Supported formats: u1 (unified with Orchard), zs1 (Sapling), or utest1 (testnet unified).".to_string()
         ));
     }
-    
+
     Ok(())
 }
 
@@ -31,7 +31,7 @@ pub fn ensure_privacy() -> NozyResult<()> {
     // 1. Address validation (blocks transparent addresses)
     // 2. Transaction building (only Orchard shielded transactions)
     // 3. Wallet design (no transparent address generation)
-    
+
     // This function serves as a reminder that privacy is non-negotiable
     Ok(())
 }
@@ -44,4 +44,3 @@ pub fn privacy_guarantee() -> &'static str {
     - True fungibility - no blacklisted coins
     - Privacy by default - no exceptions"
 }
-

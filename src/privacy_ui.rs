@@ -97,7 +97,7 @@ pub fn show_privacy_badge() {
 /// Validate and show privacy status for recipient address
 pub fn validate_and_show_privacy(address: &str) -> NozyResult<()> {
     use crate::privacy::validate_shielded_address;
-    
+
     match validate_shielded_address(address) {
         Ok(_) => {
             show_address_privacy_status(address);

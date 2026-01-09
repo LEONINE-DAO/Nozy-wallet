@@ -35,10 +35,10 @@ impl OrchardGroth16Prover {
     }
 
     pub fn is_ready(&self) -> bool {
-        self.spend_proving_key.is_some() && 
-        self.output_proving_key.is_some() &&
-        self.spend_verifying_key.is_some() &&
-        self.output_verifying_key.is_some()
+        self.spend_proving_key.is_some()
+            && self.output_proving_key.is_some()
+            && self.spend_verifying_key.is_some()
+            && self.output_verifying_key.is_some()
     }
 }
 
@@ -55,7 +55,11 @@ pub struct OutputCircuit {
 
 impl SpendCircuit {
     pub fn new(nullifier: Vec<u8>, value: u64, anchor: Vec<u8>) -> Self {
-        Self { nullifier, value, anchor }
+        Self {
+            nullifier,
+            value,
+            anchor,
+        }
     }
 }
 

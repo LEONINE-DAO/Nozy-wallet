@@ -1,8 +1,8 @@
 use crate::error::NozyResult;
 use crate::hd_wallet::HDWallet;
-use crate::zebra_integration::ZebraClient;
 use crate::orchard_tx::OrchardTransactionBuilder;
 use crate::proving::OrchardProvingManager;
+use crate::zebra_integration::ZebraClient;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
@@ -49,26 +49,21 @@ impl BenchmarkSuite {
         }
     }
 
-    
     pub async fn run_all(&mut self) -> NozyResult<()> {
         println!("🚀 Starting NozyWallet Performance Benchmarks");
         println!("=============================================");
 
-       
         self.benchmark_wallet_creation().await?;
         self.benchmark_address_generation().await?;
         self.benchmark_password_hashing().await?;
         self.benchmark_wallet_storage().await?;
 
-        
         self.benchmark_proving_initialization().await?;
         self.benchmark_proving_parameters_loading().await?;
 
-        
         self.benchmark_transaction_building().await?;
         self.benchmark_note_scanning().await?;
 
-        
         self.benchmark_zebra_connection().await?;
 
         self.print_summary();
@@ -106,7 +101,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} wallets/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} wallets/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -147,7 +145,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} addresses/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} addresses/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -162,7 +163,7 @@ impl BenchmarkSuite {
 
         let mut wallet = HDWallet::new()?;
         let mut total_duration = Duration::new(0, 0);
-        let iterations = 10; 
+        let iterations = 10;
 
         for i in 0..iterations {
             let start = Instant::now();
@@ -186,7 +187,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} hashes/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} hashes/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -201,7 +205,7 @@ impl BenchmarkSuite {
 
         let wallet = HDWallet::new()?;
         let storage = crate::storage::WalletStorage::new(PathBuf::from("benchmark_wallet_data"));
-        
+
         std::fs::create_dir_all("benchmark_wallet_data").unwrap();
 
         let mut total_duration = Duration::new(0, 0);
@@ -209,7 +213,9 @@ impl BenchmarkSuite {
 
         for i in 0..iterations {
             let start = Instant::now();
-            let result = storage.save_wallet(&wallet, &format!("password_{}", i)).await;
+            let result = storage
+                .save_wallet(&wallet, &format!("password_{}", i))
+                .await;
             let duration = start.elapsed();
 
             if result.is_ok() {
@@ -231,7 +237,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} saves/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} saves/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -273,7 +282,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} initializations/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} initializations/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -317,7 +329,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} loads/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} loads/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -358,7 +373,10 @@ impl BenchmarkSuite {
             duration: avg_duration,
             memory_usage: None,
             success: true,
-            details: format!("Average: {:?}, Throughput: {:.2} builds/sec", avg_duration, throughput),
+            details: format!(
+                "Average: {:?}, Throughput: {:.2} builds/sec",
+                avg_duration, throughput
+            ),
         });
 
         println!("  ✅ Average: {:?}", avg_duration);
@@ -376,7 +394,7 @@ impl BenchmarkSuite {
         let mut scanner = crate::notes::NoteScanner::new(wallet, zebra_client);
 
         let mut total_duration = Duration::new(0, 0);
-        let iterations = 5; 
+        let iterations = 5;
 
         for i in 0..iterations {
             let start = Instant::now();
@@ -386,7 +404,10 @@ impl BenchmarkSuite {
             if result.is_ok() {
                 total_duration += duration;
             } else {
-                println!("  ⚠️  Iteration {} failed (Zebra may not be running)", i + 1);
+                println!(
+                    "  ⚠️  Iteration {} failed (Zebra may not be running)",
+                    i + 1
+                );
                 continue;
             }
 
@@ -402,7 +423,10 @@ impl BenchmarkSuite {
                 duration: avg_duration,
                 memory_usage: None,
                 success: true,
-                details: format!("Average: {:?}, Throughput: {:.2} scans/sec", avg_duration, throughput),
+                details: format!(
+                    "Average: {:?}, Throughput: {:.2} scans/sec",
+                    avg_duration, throughput
+                ),
             });
 
             println!("  ✅ Average: {:?}", avg_duration);
@@ -438,7 +462,10 @@ impl BenchmarkSuite {
             if result.is_ok() {
                 total_duration += duration;
             } else {
-                println!("  ⚠️  Iteration {} failed (Zebra may not be running)", i + 1);
+                println!(
+                    "  ⚠️  Iteration {} failed (Zebra may not be running)",
+                    i + 1
+                );
                 continue;
             }
 
@@ -454,7 +481,10 @@ impl BenchmarkSuite {
                 duration: avg_duration,
                 memory_usage: None,
                 success: true,
-                details: format!("Average: {:?}, Throughput: {:.2} requests/sec", avg_duration, throughput),
+                details: format!(
+                    "Average: {:?}, Throughput: {:.2} requests/sec",
+                    avg_duration, throughput
+                ),
             });
 
             println!("  ✅ Average: {:?}", avg_duration);
@@ -487,7 +517,7 @@ impl BenchmarkSuite {
             if !result.details.is_empty() {
                 println!("    {}", result.details);
             }
-            
+
             if result.success {
                 total_duration += result.duration;
                 successful_benchmarks += 1;
@@ -497,7 +527,11 @@ impl BenchmarkSuite {
         if successful_benchmarks > 0 {
             let avg_duration = total_duration / successful_benchmarks;
             println!("\n📈 Overall Performance:");
-            println!("  Successful benchmarks: {}/{}", successful_benchmarks, self.results.len());
+            println!(
+                "  Successful benchmarks: {}/{}",
+                successful_benchmarks,
+                self.results.len()
+            );
             println!("  Average duration: {:?}", avg_duration);
         }
 
@@ -513,8 +547,9 @@ impl BenchmarkSuite {
     }
 
     pub fn export_json(&self) -> NozyResult<String> {
-        let json = serde_json::to_string_pretty(&self.results)
-            .map_err(|e| crate::error::NozyError::InvalidOperation(format!("JSON serialization failed: {}", e)))?;
+        let json = serde_json::to_string_pretty(&self.results).map_err(|e| {
+            crate::error::NozyError::InvalidOperation(format!("JSON serialization failed: {}", e))
+        })?;
         Ok(json)
     }
 }
@@ -525,9 +560,7 @@ pub struct MemoryTracker {
 
 impl MemoryTracker {
     pub fn new() -> Self {
-        Self {
-            start_memory: None,
-        }
+        Self { start_memory: None }
     }
 
     pub fn start(&mut self) {
@@ -544,7 +577,6 @@ impl MemoryTracker {
     }
 
     fn get_current_memory(&self) -> usize {
-       
         std::process::id() as usize
     }
 }
@@ -571,7 +603,8 @@ impl PerformanceMonitor {
     }
 
     pub fn get_checkpoint_duration(&self, name: &str) -> Option<Duration> {
-        self.checkpoints.iter()
+        self.checkpoints
+            .iter()
             .find(|(n, _)| n == name)
             .map(|(_, time)| time.duration_since(self.start_time))
     }
@@ -580,7 +613,7 @@ impl PerformanceMonitor {
         println!("\n⏱️  Performance Report");
         println!("====================");
         println!("Total elapsed: {:?}", self.get_elapsed());
-        
+
         for (name, time) in &self.checkpoints {
             let duration = time.duration_since(self.start_time);
             println!("  {}: {:?}", name, duration);
@@ -613,7 +646,7 @@ mod tests {
         monitor.checkpoint("test");
         std::thread::sleep(Duration::from_millis(1));
         monitor.checkpoint("test2");
-        
+
         assert!(monitor.get_elapsed().as_millis() > 0);
         assert!(monitor.get_checkpoint_duration("test").is_some());
     }

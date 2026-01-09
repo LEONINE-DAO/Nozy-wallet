@@ -47,11 +47,11 @@ async fn test_basic_connectivity(client: &ZebraClient) -> Result<(), Box<dyn std
     // Test with a simple RPC call
     let response = client.get_block_count().await?;
     println!("   📊 Block count: {}", response);
-    
+
     if response == 0 {
         println!("   ⚠️  Warning: Block count is 0 - node may not be synchronized");
     }
-    
+
     Ok(())
 }
 
@@ -75,51 +75,54 @@ async fn test_rpc_methods(client: &ZebraClient) {
     }
 }
 
-async fn test_single_rpc_method(client: &ZebraClient, method: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn test_single_rpc_method(
+    client: &ZebraClient,
+    method: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Test different methods based on their expected parameters
     match method {
         "getblockcount" => {
             let _ = client.get_block_count().await?;
-        },
+        }
         "getnetworkinfo" => {
             let _ = client.get_network_info().await?;
-        },
+        }
         "getmempoolinfo" => {
             let _ = client.get_mempool_info().await?;
-        },
+        }
         "gettxoutsetinfo" => {
             let _ = client.get_txout_set_info().await?;
-        },
+        }
         "getrawtransaction" => {
             // This would need a real txid, so we'll skip for now
             return Err("Requires real transaction ID".into());
-        },
+        }
         "decoderawtransaction" => {
             // This would need a real raw transaction, so we'll skip for now
             return Err("Requires real raw transaction".into());
-        },
+        }
         "getblocktemplate" => {
             let _ = client.get_block_template().await?;
-        },
+        }
         "estimatefee" => {
             let _ = client.get_fee_estimate().await?;
-        },
+        }
         _ => {
             return Err("Unknown method".into());
         }
     }
-    
+
     Ok(())
 }
 
 async fn test_response_formats(client: &ZebraClient) {
     println!("   🔍 Testing response format compatibility...");
-    
+
     // Test getblockcount response format
     match client.get_block_count().await {
         Ok(count) => {
             println!("   ✅ getblockcount: Returns u32 ({})", count);
-        },
+        }
         Err(e) => {
             println!("   ❌ getblockcount: Format error - {}", e);
         }
@@ -128,11 +131,14 @@ async fn test_response_formats(client: &ZebraClient) {
     // Test getnetworkinfo response format
     match client.get_network_info().await {
         Ok(info) => {
-            println!("   ✅ getnetworkinfo: Returns HashMap with {} fields", info.len());
+            println!(
+                "   ✅ getnetworkinfo: Returns HashMap with {} fields",
+                info.len()
+            );
             if let Some(chain) = info.get("chain") {
                 println!("      Chain: {:?}", chain);
             }
-        },
+        }
         Err(e) => {
             println!("   ❌ getnetworkinfo: Format error - {}", e);
         }
@@ -141,7 +147,7 @@ async fn test_response_formats(client: &ZebraClient) {
 
 async fn test_orchard_functionality(client: &ZebraClient) {
     println!("   🌳 Testing Orchard-specific methods...");
-    
+
     // Test get_orchard_tree_state
     match client.get_orchard_tree_state(1000).await {
         Ok(tree_state) => {
@@ -149,7 +155,7 @@ async fn test_orchard_functionality(client: &ZebraClient) {
             println!("      Height: {}", tree_state.height);
             println!("      Anchor: {}", hex::encode(tree_state.anchor));
             println!("      Commitments: {}", tree_state.commitment_count);
-        },
+        }
         Err(e) => {
             println!("   ❌ get_orchard_tree_state: Error - {}", e);
         }
@@ -160,7 +166,7 @@ async fn test_orchard_functionality(client: &ZebraClient) {
     match client.get_note_position(&test_commitment).await {
         Ok(position) => {
             println!("   ✅ get_note_position: Working (position: {})", position);
-        },
+        }
         Err(e) => {
             println!("   ❌ get_note_position: Error - {}", e);
         }
@@ -170,8 +176,11 @@ async fn test_orchard_functionality(client: &ZebraClient) {
     let test_anchor = [0u8; 32];
     match client.get_authentication_path(0, &test_anchor).await {
         Ok(auth_path) => {
-            println!("   ✅ get_authentication_path: Working ({} hashes)", auth_path.len());
-        },
+            println!(
+                "   ✅ get_authentication_path: Working ({} hashes)",
+                auth_path.len()
+            );
+        }
         Err(e) => {
             println!("   ❌ get_authentication_path: Error - {}", e);
         }
@@ -202,4 +211,3 @@ fn print_troubleshooting_tips() {
     println!("6. Verify Zebra version compatibility:");
     println!("   zebrad --version");
 }
-

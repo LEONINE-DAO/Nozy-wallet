@@ -1,8 +1,7 @@
 use crate::error::{NozyError, NozyResult};
-use std::path::PathBuf;
-use std::fs;
 use std::collections::HashMap;
-
+use std::fs;
+use std::path::PathBuf;
 
 #[derive(Debug)]
 pub struct OrchardProvingManager {
@@ -18,12 +17,11 @@ impl OrchardProvingManager {
         }
     }
 
-    
     pub async fn initialize(&mut self) -> NozyResult<()> {
         println!("🔧 Initializing Orchard proving system...");
         println!("✅ Orchard Halo 2 proving ready - no external parameters required");
         println!("🚀 Ready for shielded transactions!");
-        
+
         Ok(())
     }
 
@@ -59,7 +57,7 @@ impl OrchardProvingManager {
             let path = self.params_dir.join(file);
             let data = fs::read(&path)
                 .map_err(|e| NozyError::Storage(format!("Failed to read {}: {}", file, e)))?;
-            
+
             let data_len = data.len();
             self.parameters.insert(file.to_string(), data);
             println!("📁 Loaded {} ({} bytes)", file, data_len);
@@ -72,34 +70,50 @@ impl OrchardProvingManager {
         let key = match operation {
             "spend" => "orchard-spend.params",
             "output" => "orchard-output.params",
-            _ => return Err(NozyError::InvalidOperation(format!("Unknown operation: {}", operation))),
+            _ => {
+                return Err(NozyError::InvalidOperation(format!(
+                    "Unknown operation: {}",
+                    operation
+                )))
+            }
         };
 
-        self.parameters.get(key)
+        self.parameters
+            .get(key)
             .map(|data| data.as_slice())
-            .ok_or_else(|| NozyError::InvalidOperation(format!("Proving parameters not loaded for {}", operation)))
+            .ok_or_else(|| {
+                NozyError::InvalidOperation(format!(
+                    "Proving parameters not loaded for {}",
+                    operation
+                ))
+            })
     }
 
-    
     pub fn get_verifying_key(&self, operation: &str) -> NozyResult<&[u8]> {
         let key = match operation {
             "spend" => "orchard-spend-verifying.key",
             "output" => "orchard-output-verifying.key",
-            _ => return Err(NozyError::InvalidOperation(format!("Unknown operation: {}", operation))),
+            _ => {
+                return Err(NozyError::InvalidOperation(format!(
+                    "Unknown operation: {}",
+                    operation
+                )))
+            }
         };
 
-        self.parameters.get(key)
+        self.parameters
+            .get(key)
             .map(|data| data.as_slice())
-            .ok_or_else(|| NozyError::InvalidOperation(format!("Verifying key not loaded for {}", operation)))
+            .ok_or_else(|| {
+                NozyError::InvalidOperation(format!("Verifying key not loaded for {}", operation))
+            })
     }
 
     pub fn can_prove(&self) -> bool {
-        
         true
     }
 
     pub fn get_status(&self) -> ProvingStatus {
-        
         ProvingStatus {
             spend_params: true,
             output_params: true,
@@ -110,8 +124,6 @@ impl OrchardProvingManager {
     }
 
     pub async fn download_parameters(&mut self) -> NozyResult<()> {
-        
-        
         println!("⚠️  INFO: Orchard uses Halo 2 proving system");
         println!("   Halo 2 does NOT require external proving parameters");
         println!("   Proving is handled internally by the Orchard library");
@@ -119,10 +131,9 @@ impl OrchardProvingManager {
         println!();
         println!("✅ Orchard Halo 2 proving system is ready!");
         println!("🚀 Your wallet is ready for shielded transactions!");
-        
+
         Ok(())
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -173,7 +184,7 @@ impl OrchardProvingKey {
     }
 
     pub fn is_placeholder(&self) -> bool {
-        false 
+        false
     }
 
     pub fn info(&self) -> String {
@@ -200,9 +211,9 @@ mod tests {
             output_vk: true,
             can_prove: true,
         };
-        
+
         assert!(status.can_prove);
-        
+
         let msg = status.status_message();
         assert!(msg.contains("Orchard proving ready") || msg.contains("Halo 2"));
     }
@@ -215,7 +226,7 @@ mod tests {
             b"REAL_ORCHARD_VK_SPEND".to_vec(),
             b"REAL_ORCHARD_VK_OUTPUT".to_vec(),
         );
-        
+
         assert!(!key.is_placeholder());
         assert!(key.info().contains("Orchard Halo 2 proving system"));
     }

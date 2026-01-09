@@ -20,13 +20,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(count) => {
             println!("✅ SUCCESS: Connected to Zebra node");
             println!("   Block count: {}", count);
-            
+
             if count == 0 {
                 println!("   ⚠️  Warning: Node appears to be starting up (0 blocks)");
             } else {
                 println!("   ✅ Node is synchronized");
             }
-        },
+        }
         Err(e) => {
             println!("❌ FAILED: Cannot connect to Zebra node");
             println!("   Error: {}", e);
@@ -47,7 +47,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             if let Some(chain) = info.get("chain") {
                 println!("   Chain: {:?}", chain);
             }
-        },
+        }
         Err(e) => {
             println!("❌ Network info failed: {}", e);
         }
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("✅ Orchard tree state working");
             println!("   Height: {}", tree_state.height);
             println!("   Commitments: {}", tree_state.commitment_count);
-        },
+        }
         Err(e) => {
             println!("❌ Orchard functionality failed: {}", e);
         }
@@ -68,6 +68,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("\n🎉 Quick test completed!");
     println!("Your Zebra node RPC is compatible with NozyWallet!");
-    
+
     Ok(())
 }

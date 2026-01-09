@@ -22,7 +22,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(_) => {
             println!("\n🎉 All tests passed successfully!");
             println!("Your Zebra RPC integration is working correctly.");
-        },
+        }
         Err(e) => {
             println!("\n❌ Tests failed: {}", e);
             println!("\nTroubleshooting tips:");

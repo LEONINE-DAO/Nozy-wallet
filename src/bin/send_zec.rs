@@ -1,9 +1,7 @@
-use nozy::{
-    HDWallet, ZebraClient, ZcashTransactionBuilder, NoteScanner, load_config,
-};
-use std::io::{self, Write};
 use dialoguer::Password;
-use nozy::{WalletStorage, NozyResult, NozyError};
+use nozy::{load_config, HDWallet, NoteScanner, ZcashTransactionBuilder, ZebraClient};
+use nozy::{NozyError, NozyResult, WalletStorage};
+use std::io::{self, Write};
 
 async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
     use nozy::paths::get_wallet_data_dir;
@@ -17,7 +15,10 @@ async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
         let wallet = storage.load_wallet(&password).await?;
         Ok((wallet, storage))
     } else {
-        Err(NozyError::Storage("No wallet found. Use 'nozy new' or 'nozy restore' to create a wallet first.".to_string()))
+        Err(NozyError::Storage(
+            "No wallet found. Use 'nozy new' or 'nozy restore' to create a wallet first."
+                .to_string(),
+        ))
     }
 }
 
@@ -53,7 +54,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     io::stdin().read_line(&mut memo_input)?;
     let memo_bytes_opt: Option<Vec<u8>> = {
         let trimmed = memo_input.trim();
-        if trimmed.is_empty() { None } else { Some(trimmed.as_bytes().to_vec()) }
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.as_bytes().to_vec())
+        }
     };
 
     println!("🔎 Scanning for spendable notes...");
@@ -65,11 +70,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
     let start_height = tip_height.saturating_sub(10_000);
-    
-    let spendable_notes = match note_scanner.scan_notes(Some(start_height), Some(tip_height)).await {
+
+    let spendable_notes = match note_scanner
+        .scan_notes(Some(start_height), Some(tip_height))
+        .await
+    {
         Ok((_result, spendable)) => spendable,
         Err(e) => {
-            println!("⚠️  Note scan failed: {}. Proceeding with empty note set.", e);
+            println!(
+                "⚠️  Note scan failed: {}. Proceeding with empty note set.",
+                e
+            );
             Vec::new()
         }
     };
@@ -85,31 +96,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     let amount_zatoshis = (amount * 100_000_000.0) as u64;
-    
+
     println!("💸 Estimating transaction fee...");
     let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
 
     println!("🔧 Building transaction...");
-    let transaction = transaction_builder.build_send_transaction(
-        &zebra_client,
-        &spendable_notes,
-        &recipient,
-        amount_zatoshis,
-        fee_zatoshis,
-        memo_bytes_opt.as_deref(),
-    ).await?;
+    let transaction = transaction_builder
+        .build_send_transaction(
+            &zebra_client,
+            &spendable_notes,
+            &recipient,
+            amount_zatoshis,
+            fee_zatoshis,
+            memo_bytes_opt.as_deref(),
+        )
+        .await?;
 
     println!("✅ Transaction built successfully!");
     println!("🆔 Transaction ID: {}", transaction.txid);
-    println!("📏 Transaction size: {} bytes", transaction.raw_transaction.len());
+    println!(
+        "📏 Transaction size: {} bytes",
+        transaction.raw_transaction.len()
+    );
 
     println!("🚀 Broadcasting transaction...");
-    match transaction_builder.broadcast_transaction(&zebra_client, &transaction).await {
+    match transaction_builder
+        .broadcast_transaction(&zebra_client, &transaction)
+        .await
+    {
         Ok(txid) => {
             println!("✅ Transaction broadcast successful!");
             println!("🌐 Network TXID: {}", txid);
-            println!("🔗 Explorer: https://zcashblockexplorer.com/transactions/{}", txid);
-        },
+            println!(
+                "🔗 Explorer: https://zcashblockexplorer.com/transactions/{}",
+                txid
+            );
+        }
         Err(e) => {
             println!("❌ Broadcast failed: {}", e);
         }

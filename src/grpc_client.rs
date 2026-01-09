@@ -1,10 +1,8 @@
-
-
 use crate::error::{NozyError, NozyResult};
-use std::collections::HashMap;
 use serde_json::Value;
-use tonic::transport::Channel;
+use std::collections::HashMap;
 use std::sync::Arc;
+use tonic::transport::Channel;
 
 #[derive(Debug)]
 pub struct ZebraGrpcClient {
@@ -17,7 +15,7 @@ pub struct ZebraGrpcClient {
 impl ZebraGrpcClient {
     pub async fn new(endpoint: String) -> NozyResult<Self> {
         let endpoint = Self::normalize_endpoint(endpoint);
-        
+
         let channel = if endpoint.starts_with("https://") {
             tonic::transport::Channel::from_shared(endpoint.clone())
                 .map_err(|e| NozyError::NetworkError(format!("Invalid gRPC endpoint: {}", e)))?
@@ -25,13 +23,17 @@ impl ZebraGrpcClient {
                 .map_err(|e| NozyError::NetworkError(format!("TLS config error: {}", e)))?
                 .connect()
                 .await
-                .map_err(|e| NozyError::NetworkError(format!("Failed to connect to gRPC endpoint: {}", e)))?
+                .map_err(|e| {
+                    NozyError::NetworkError(format!("Failed to connect to gRPC endpoint: {}", e))
+                })?
         } else {
             tonic::transport::Channel::from_shared(endpoint.clone())
                 .map_err(|e| NozyError::NetworkError(format!("Invalid gRPC endpoint: {}", e)))?
                 .connect()
                 .await
-                .map_err(|e| NozyError::NetworkError(format!("Failed to connect to gRPC endpoint: {}", e)))?
+                .map_err(|e| {
+                    NozyError::NetworkError(format!("Failed to connect to gRPC endpoint: {}", e))
+                })?
         };
 
         Ok(Self {
@@ -42,8 +44,7 @@ impl ZebraGrpcClient {
 
     fn normalize_endpoint(endpoint: String) -> String {
         let endpoint = endpoint.trim().to_string();
-        
-        
+
         if endpoint.starts_with("https://") {
             endpoint
         } else if endpoint.starts_with("http://") {
@@ -57,10 +58,10 @@ impl ZebraGrpcClient {
         }
     }
 
-    
     pub async fn get_block_count(&self) -> NozyResult<u32> {
         Err(NozyError::InvalidOperation(
-            "gRPC implementation requires Zebra proto definitions. Please use JSON-RPC for now.".to_string()
+            "gRPC implementation requires Zebra proto definitions. Please use JSON-RPC for now."
+                .to_string(),
         ))
     }
 
@@ -68,7 +69,8 @@ impl ZebraGrpcClient {
     /// TODO: Implement once Zebra gRPC proto definitions are available
     pub async fn get_block(&self, _height: u32) -> NozyResult<HashMap<String, Value>> {
         Err(NozyError::InvalidOperation(
-            "gRPC implementation requires Zebra proto definitions. Please use JSON-RPC for now.".to_string()
+            "gRPC implementation requires Zebra proto definitions. Please use JSON-RPC for now."
+                .to_string(),
         ))
     }
 
@@ -76,7 +78,8 @@ impl ZebraGrpcClient {
     /// TODO: Implement once Zebra gRPC proto definitions are available
     pub async fn broadcast_transaction(&self, _tx_hex: &str) -> NozyResult<String> {
         Err(NozyError::InvalidOperation(
-            "gRPC implementation requires Zebra proto definitions. Please use JSON-RPC for now.".to_string()
+            "gRPC implementation requires Zebra proto definitions. Please use JSON-RPC for now."
+                .to_string(),
         ))
     }
 
@@ -87,4 +90,3 @@ impl ZebraGrpcClient {
         Ok(())
     }
 }
-

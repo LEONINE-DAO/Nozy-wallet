@@ -4,9 +4,9 @@ use crate::types::{BlockData, TransactionData};
 #[async_trait::async_trait]
 pub trait BlockSource: Send + Sync {
     async fn get_block(&self, height: u32) -> ZeakingResult<BlockData>;
-    
+
     async fn get_block_hash(&self, height: u32) -> ZeakingResult<String>;
-    
+
     async fn get_block_count(&self) -> ZeakingResult<u32>;
 }
 
@@ -16,4 +16,3 @@ pub trait BlockParser: Send + Sync {
         Ok(block_data.transactions)
     }
 }
-

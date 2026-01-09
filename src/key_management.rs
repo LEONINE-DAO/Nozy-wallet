@@ -1,8 +1,8 @@
 // Secure key management with zeroization
 // This module provides utilities for securely handling and zeroizing sensitive keys
 
-use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::error::{NozyError, NozyResult};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecureSeed {
@@ -38,7 +38,7 @@ impl SecureSpendingKeyBytes {
     pub fn as_bytes(&self) -> &[u8] {
         &self.key_bytes
     }
-    
+
     pub fn len(&self) -> usize {
         self.key_bytes.len()
     }
@@ -49,16 +49,15 @@ pub fn zeroize_bytes(bytes: &mut [u8]) {
     bytes.zeroize();
 }
 
-pub fn create_secure_seed_from_mnemonic(mnemonic: &bip39::Mnemonic, passphrase: &str) -> SecureSeed {
+pub fn create_secure_seed_from_mnemonic(
+    mnemonic: &bip39::Mnemonic,
+    passphrase: &str,
+) -> SecureSeed {
     let seed = mnemonic.to_seed(passphrase);
     SecureSeed::new(seed.to_vec())
 }
 
-pub fn derive_and_use_spending_key<F, T>(
-    seed: &[u8],
-    account_id: u32,
-    f: F,
-) -> NozyResult<T>
+pub fn derive_and_use_spending_key<F, T>(seed: &[u8], account_id: u32, f: F) -> NozyResult<T>
 where
     F: FnOnce(&orchard::keys::SpendingKey) -> NozyResult<T>,
 {
@@ -67,9 +66,10 @@ where
 
     let account_id = AccountId::try_from(account_id)
         .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
-    
-    let spending_key = SpendingKey::from_zip32_seed(seed, 133, account_id)
-        .map_err(|e| NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e)))?;
+
+    let spending_key = SpendingKey::from_zip32_seed(seed, 133, account_id).map_err(|e| {
+        NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e))
+    })?;
 
     let result = f(&spending_key)?;
 
@@ -84,7 +84,7 @@ mod tests {
     fn test_secure_seed_zeroization() {
         let mut seed = SecureSeed::new(vec![1, 2, 3, 4, 5]);
         assert_eq!(seed.as_bytes(), &[1, 2, 3, 4, 5]);
-        
+
         drop(seed);
     }
 
@@ -95,4 +95,3 @@ mod tests {
         assert_eq!(bytes, vec![0, 0, 0, 0, 0]);
     }
 }
-

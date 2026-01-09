@@ -1,7 +1,7 @@
 // Bridge Types
 // Common types for Monero-Zcash bridge operations
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SwapDirection {

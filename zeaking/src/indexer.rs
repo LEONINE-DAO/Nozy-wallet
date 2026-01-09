@@ -1,15 +1,17 @@
 use crate::error::{ZeakingError, ZeakingResult};
-use crate::traits::{BlockSource, BlockParser as BlockParserTrait};
-use crate::types::{IndexedBlock, IndexedTransaction, IndexStats, OrchardActionIndex, BlockData, TransactionData};
-use serde::{Serialize, Deserialize};
-use std::collections::{HashMap, BTreeMap};
+use crate::traits::{BlockParser as BlockParserTrait, BlockSource};
+use crate::types::{
+    BlockData, IndexStats, IndexedBlock, IndexedTransaction, OrchardActionIndex, TransactionData,
+};
+use chrono::{DateTime, Utc};
+use hex;
+use serde::{Deserialize, Serialize};
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use chrono::{DateTime, Utc};
-use hex;
 
-/// Main Zeaking indexer 
+/// Main Zeaking indexer
 #[derive(Debug)]
 pub struct Zeaking<BS, BP = DefaultBlockParser>
 where
@@ -43,8 +45,8 @@ struct BlockIndex {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 struct TransactionIndex {
     transactions: HashMap<String, IndexedTransaction>,
-    block_to_txs: BTreeMap<u32, Vec<String>>, 
-    nullifier_to_tx: HashMap<String, String>, 
+    block_to_txs: BTreeMap<u32, Vec<String>>,
+    nullifier_to_tx: HashMap<String, String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,7 +65,11 @@ where
     BS: BlockSource,
     BP: BlockParserTrait,
 {
-    pub async fn new(index_path: PathBuf, block_source: BS, block_parser: BP) -> ZeakingResult<Self> {
+    pub async fn new(
+        index_path: PathBuf,
+        block_source: BS,
+        block_parser: BP,
+    ) -> ZeakingResult<Self> {
         let block_index = Arc::new(Mutex::new(BlockIndex::default()));
         let transaction_index = Arc::new(Mutex::new(TransactionIndex::default()));
         let metadata = Arc::new(Mutex::new(IndexMetadata {
@@ -96,28 +102,33 @@ where
 
     fn load_index(&self) -> ZeakingResult<()> {
         let index_dir = self.get_index_dir();
-        
+
         if !index_dir.exists() {
-            fs::create_dir_all(&index_dir)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to create index directory: {}", e)))?;
+            fs::create_dir_all(&index_dir).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to create index directory: {}", e))
+            })?;
             return Ok(());
         }
 
         let blocks_path = index_dir.join("blocks.json");
         if blocks_path.exists() {
-            let content = fs::read_to_string(&blocks_path)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to read blocks index: {}", e)))?;
-            let block_idx: BlockIndex = serde_json::from_str(&content)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to parse blocks index: {}", e)))?;
+            let content = fs::read_to_string(&blocks_path).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to read blocks index: {}", e))
+            })?;
+            let block_idx: BlockIndex = serde_json::from_str(&content).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to parse blocks index: {}", e))
+            })?;
             *self.block_index.lock().unwrap() = block_idx;
         }
 
         let txs_path = index_dir.join("transactions.json");
         if txs_path.exists() {
-            let content = fs::read_to_string(&txs_path)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to read transactions index: {}", e)))?;
-            let tx_idx: TransactionIndex = serde_json::from_str(&content)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to parse transactions index: {}", e)))?;
+            let content = fs::read_to_string(&txs_path).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to read transactions index: {}", e))
+            })?;
+            let tx_idx: TransactionIndex = serde_json::from_str(&content).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to parse transactions index: {}", e))
+            })?;
             *self.transaction_index.lock().unwrap() = tx_idx;
         }
 
@@ -127,7 +138,7 @@ where
                 .map_err(|e| ZeakingError::Storage(format!("Failed to read metadata: {}", e)))?;
             let mut meta: IndexMetadata = serde_json::from_str(&content)
                 .map_err(|e| ZeakingError::Storage(format!("Failed to parse metadata: {}", e)))?;
-            
+
             if meta.last_saved_height == 0 && meta.last_indexed_height > 0 {
                 meta.last_saved_height = meta.last_indexed_height;
                 meta.last_saved_time = meta.last_indexed_time;
@@ -138,19 +149,22 @@ where
         Ok(())
     }
 
-   
     pub fn save_index(&self) -> ZeakingResult<()> {
         self.save_index_incremental(false)
     }
 
-    
     fn save_index_incremental(&self, incremental: bool) -> ZeakingResult<()> {
         let index_dir = self.get_index_dir();
-        fs::create_dir_all(&index_dir)
-            .map_err(|e| ZeakingError::Storage(format!("Failed to create index directory: {}", e)))?;
+        fs::create_dir_all(&index_dir).map_err(|e| {
+            ZeakingError::Storage(format!("Failed to create index directory: {}", e))
+        })?;
 
         let meta = self.metadata.lock().unwrap();
-        let last_saved = if incremental { meta.last_saved_height } else { 0 };
+        let last_saved = if incremental {
+            meta.last_saved_height
+        } else {
+            0
+        };
         let current_height = meta.last_indexed_height;
         drop(meta);
 
@@ -170,7 +184,7 @@ where
         if incremental {
             let blocks_path = index_dir.join("blocks.json");
             let mut existing_blocks = BlockIndex::default();
-            
+
             if blocks_path.exists() {
                 if let Ok(content) = fs::read_to_string(&blocks_path) {
                     if let Ok(loaded) = serde_json::from_str::<BlockIndex>(&content) {
@@ -182,9 +196,12 @@ where
             let block_idx = self.block_index.lock().unwrap();
             for (height, block) in block_idx.blocks.range((last_saved + 1)..=current_height) {
                 existing_blocks.blocks.insert(*height, block.clone());
-                if let Some(hash) = block_idx.hash_to_height.iter()
+                if let Some(hash) = block_idx
+                    .hash_to_height
+                    .iter()
                     .find(|(_, &h)| h == *height)
-                    .map(|(hash, _)| hash.clone()) {
+                    .map(|(hash, _)| hash.clone())
+                {
                     existing_blocks.hash_to_height.insert(hash, *height);
                 }
             }
@@ -196,7 +213,7 @@ where
 
             let txs_path = index_dir.join("transactions.json");
             let mut existing_txs = TransactionIndex::default();
-            
+
             if txs_path.exists() {
                 if let Ok(content) = fs::read_to_string(&txs_path) {
                     if let Ok(loaded) = serde_json::from_str::<TransactionIndex>(&content) {
@@ -216,18 +233,21 @@ where
                     existing_txs.block_to_txs.insert(height, txids.clone());
                 }
             }
-            
+
             for (nullifier, txid) in &tx_idx.nullifier_to_tx {
                 if let Some(tx) = tx_idx.transactions.get(txid) {
                     if tx.block_height > last_saved {
-                        existing_txs.nullifier_to_tx.insert(nullifier.clone(), txid.clone());
+                        existing_txs
+                            .nullifier_to_tx
+                            .insert(nullifier.clone(), txid.clone());
                     }
                 }
             }
             drop(tx_idx);
 
-            let content = serde_json::to_string_pretty(&existing_txs)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to serialize transactions: {}", e)))?;
+            let content = serde_json::to_string_pretty(&existing_txs).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to serialize transactions: {}", e))
+            })?;
             atomic_write(&txs_path, content)?;
         } else {
             let blocks_path = index_dir.join("blocks.json");
@@ -239,8 +259,9 @@ where
 
             let txs_path = index_dir.join("transactions.json");
             let tx_idx = self.transaction_index.lock().unwrap();
-            let content = serde_json::to_string_pretty(&*tx_idx)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to serialize transactions: {}", e)))?;
+            let content = serde_json::to_string_pretty(&*tx_idx).map_err(|e| {
+                ZeakingError::Storage(format!("Failed to serialize transactions: {}", e))
+            })?;
             drop(tx_idx);
             atomic_write(&txs_path, content)?;
         }
@@ -257,7 +278,6 @@ where
         Ok(())
     }
 
-    
     pub fn save_index_incremental_only(&self) -> ZeakingResult<()> {
         self.save_index_incremental(true)
     }
@@ -266,13 +286,13 @@ where
         {
             let block_idx = self.block_index.lock().unwrap();
             if block_idx.blocks.contains_key(&height) {
-                return Ok(()); 
+                return Ok(());
             }
         }
 
         let block_data = self.block_source.get_block(height).await?;
         let block_hash = self.block_source.get_block_hash(height).await?;
-        
+
         let transactions = self.block_parser.parse_block(block_data.clone()).await?;
 
         let mut orchard_action_count = 0;
@@ -280,7 +300,6 @@ where
             orchard_action_count += tx.orchard_actions.len() as u32;
         }
 
-    
         let indexed_block = IndexedBlock {
             height,
             hash: block_hash.clone(),
@@ -298,7 +317,8 @@ where
         }
 
         for (tx_index, tx) in transactions.iter().enumerate() {
-            self.index_transaction(tx, height, tx_index as u32, &block_hash).await?;
+            self.index_transaction(tx, height, tx_index as u32, &block_hash)
+                .await?;
         }
 
         {
@@ -342,25 +362,30 @@ where
             block_hash: block_hash.to_string(),
             index: tx_index,
             size: tx.raw_data.len() as u32,
-            fee: None, 
+            fee: None,
             orchard_actions,
             transparent_inputs: 0,
-            transparent_outputs: 0, 
+            transparent_outputs: 0,
             indexed_at: Utc::now(),
         };
 
         {
             let mut tx_idx = self.transaction_index.lock().unwrap();
-            tx_idx.transactions.insert(tx.txid.clone(), indexed_tx.clone());
-            
-            tx_idx.block_to_txs
+            tx_idx
+                .transactions
+                .insert(tx.txid.clone(), indexed_tx.clone());
+
+            tx_idx
+                .block_to_txs
                 .entry(block_height)
                 .or_insert_with(Vec::new)
                 .push(tx.txid.clone());
 
             for action in &indexed_tx.orchard_actions {
                 if let Some(ref nullifier) = action.nullifier {
-                    tx_idx.nullifier_to_tx.insert(nullifier.clone(), tx.txid.clone());
+                    tx_idx
+                        .nullifier_to_tx
+                        .insert(nullifier.clone(), tx.txid.clone());
                 }
             }
         }
@@ -373,11 +398,15 @@ where
         Ok(())
     }
 
-    pub async fn index_range(&self, start_height: u32, end_height: u32) -> ZeakingResult<IndexStats> {
-        self.index_range_with_auto_save(start_height, end_height, Some(1000)).await
+    pub async fn index_range(
+        &self,
+        start_height: u32,
+        end_height: u32,
+    ) -> ZeakingResult<IndexStats> {
+        self.index_range_with_auto_save(start_height, end_height, Some(1000))
+            .await
     }
 
-    
     pub async fn index_range_with_auto_save(
         &self,
         start_height: u32,
@@ -392,7 +421,7 @@ where
             match self.index_block(height).await {
                 Ok(_) => {
                     indexed += 1;
-                    
+
                     // Auto-save incrementally if interval is set
                     if let Some(interval) = auto_save_interval {
                         if height - last_save_height >= interval {
@@ -403,7 +432,7 @@ where
                             }
                         }
                     }
-                },
+                }
                 Err(e) => {
                     eprintln!("Failed to index block {}: {}", height, e);
                     errors += 1;
@@ -443,10 +472,12 @@ where
 
     pub fn get_block_transactions(&self, height: u32) -> Vec<IndexedTransaction> {
         let tx_idx = self.transaction_index.lock().unwrap();
-        tx_idx.block_to_txs
+        tx_idx
+            .block_to_txs
             .get(&height)
             .map(|txids| {
-                txids.iter()
+                txids
+                    .iter()
                     .filter_map(|txid| tx_idx.transactions.get(txid).cloned())
                     .collect()
             })
@@ -455,7 +486,8 @@ where
 
     pub fn find_transaction_by_nullifier(&self, nullifier: &str) -> Option<IndexedTransaction> {
         let tx_idx = self.transaction_index.lock().unwrap();
-        tx_idx.nullifier_to_tx
+        tx_idx
+            .nullifier_to_tx
             .get(nullifier)
             .and_then(|txid| tx_idx.transactions.get(txid).cloned())
     }
@@ -482,7 +514,7 @@ where
     pub async fn sync_to_tip(&self) -> ZeakingResult<IndexStats> {
         let last_height = self.get_last_indexed_height();
         let tip_height = self.block_source.get_block_count().await?;
-        
+
         if last_height >= tip_height {
             return Ok(IndexStats {
                 blocks_indexed: 0,
@@ -496,4 +528,3 @@ where
         self.index_range(last_height + 1, tip_height).await
     }
 }
-

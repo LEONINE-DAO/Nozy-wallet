@@ -20,7 +20,7 @@ pub fn create_tx_progress_bar() -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner())
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
     );
     pb
 }
@@ -44,7 +44,7 @@ pub fn create_general_progress_bar(message: &str) -> ProgressBar {
     pb.set_style(
         ProgressStyle::default_spinner()
             .template("{spinner:.green} {msg}")
-            .unwrap_or_else(|_| ProgressStyle::default_spinner())
+            .unwrap_or_else(|_| ProgressStyle::default_spinner()),
     );
     pb
 }

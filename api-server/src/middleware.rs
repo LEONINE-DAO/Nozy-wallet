@@ -9,17 +9,14 @@ use tracing::{info, warn};
 
 pub async fn security_headers(request: Request, next: Next) -> Response {
     let response = next.run(request).await;
-    
+
     let mut headers = HeaderMap::new();
-    
+
     headers.insert(
         "X-Content-Type-Options",
         HeaderValue::from_static("nosniff"),
     );
-    headers.insert(
-        "X-Frame-Options",
-        HeaderValue::from_static("DENY"),
-    );
+    headers.insert("X-Frame-Options", HeaderValue::from_static("DENY"));
     headers.insert(
         "X-XSS-Protection",
         HeaderValue::from_static("1; mode=block"),
@@ -28,18 +25,17 @@ pub async fn security_headers(request: Request, next: Next) -> Response {
         "Referrer-Policy",
         HeaderValue::from_static("strict-origin-when-cross-origin"),
     );
-    
+
     headers.insert(
         "Content-Security-Policy",
         HeaderValue::from_static("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'"),
     );
-    
-    
+
     headers.insert(
         "Permissions-Policy",
         HeaderValue::from_static("geolocation=(), microphone=(), camera=()"),
     );
-    
+
     let mut response = response;
     response.headers_mut().extend(headers);
     response
@@ -50,7 +46,7 @@ pub async fn request_logging(request: Request, next: Next) -> Response {
     let method = request.method().clone();
     let uri = request.uri().clone();
     let path = uri.path();
-    
+
     let client_ip = request
         .headers()
         .get("x-forwarded-for")
@@ -58,18 +54,18 @@ pub async fn request_logging(request: Request, next: Next) -> Response {
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown")
         .to_string();
-    
+
     info!(
         method = %method,
         path = %path,
         client_ip = %client_ip,
         "Incoming request"
     );
-    
+
     let response = next.run(request).await;
     let duration = start.elapsed();
     let status = response.status();
-    
+
     if status.is_success() {
         info!(
             method = %method,
@@ -87,14 +83,14 @@ pub async fn request_logging(request: Request, next: Next) -> Response {
             "Request failed"
         );
     }
-    
+
     response
 }
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
 use std::collections::HashMap;
+use std::sync::Arc;
 use std::time::{Duration, SystemTime};
+use tokio::sync::RwLock;
 
 #[derive(Clone)]
 struct RateLimitEntry {
@@ -117,40 +113,36 @@ impl RateLimiter {
             window_seconds,
         }
     }
-    
+
     pub async fn check_rate_limit(&self, client_ip: &str) -> Result<(u32, u32), StatusCode> {
         let mut limits = self.limits.write().await;
         let now = SystemTime::now();
-        
+
         limits.retain(|_, entry| entry.reset_at > now);
-        
-        let entry = limits.entry(client_ip.to_string()).or_insert_with(|| {
-            RateLimitEntry {
+
+        let entry = limits
+            .entry(client_ip.to_string())
+            .or_insert_with(|| RateLimitEntry {
                 count: 0,
                 reset_at: now + Duration::from_secs(self.window_seconds),
-            }
-        });
-        
+            });
+
         if entry.reset_at <= now {
             entry.count = 0;
             entry.reset_at = now + Duration::from_secs(self.window_seconds);
         }
-        
+
         if entry.count >= self.max_requests {
             return Err(StatusCode::TOO_MANY_REQUESTS);
         }
-        
+
         entry.count += 1;
         let remaining = self.max_requests.saturating_sub(entry.count);
         Ok((self.max_requests, remaining))
     }
 }
 
-pub async fn rate_limit_middleware(
-    request: Request,
-    next: Next,
-    limiter: RateLimiter,
-) -> Response {
+pub async fn rate_limit_middleware(request: Request, next: Next, limiter: RateLimiter) -> Response {
     let client_ip = request
         .headers()
         .get("x-forwarded-for")
@@ -158,17 +150,19 @@ pub async fn rate_limit_middleware(
         .and_then(|h| h.to_str().ok())
         .unwrap_or("unknown")
         .to_string();
-    
+
     match limiter.check_rate_limit(&client_ip).await {
         Ok((limit, remaining)) => {
             let mut response = next.run(request).await;
             response.headers_mut().insert(
                 "X-RateLimit-Limit",
-                HeaderValue::from_str(&limit.to_string()).unwrap_or(HeaderValue::from_static("100")),
+                HeaderValue::from_str(&limit.to_string())
+                    .unwrap_or(HeaderValue::from_static("100")),
             );
             response.headers_mut().insert(
                 "X-RateLimit-Remaining",
-                HeaderValue::from_str(&remaining.to_string()).unwrap_or(HeaderValue::from_static("0")),
+                HeaderValue::from_str(&remaining.to_string())
+                    .unwrap_or(HeaderValue::from_static("0")),
             );
             response
         }
@@ -181,14 +175,12 @@ pub async fn rate_limit_middleware(
                 })),
             )
                 .into_response();
-            response.headers_mut().insert(
-                "X-RateLimit-Limit",
-                HeaderValue::from_static("100"),
-            );
-            response.headers_mut().insert(
-                "X-RateLimit-Remaining",
-                HeaderValue::from_static("0"),
-            );
+            response
+                .headers_mut()
+                .insert("X-RateLimit-Limit", HeaderValue::from_static("100"));
+            response
+                .headers_mut()
+                .insert("X-RateLimit-Remaining", HeaderValue::from_static("0"));
             response
         }
     }
@@ -202,7 +194,7 @@ pub async fn api_key_auth(
     let Some(ref api_key) = expected_api_key else {
         return next.run(request).await;
     };
-    
+
     let provided_key = request
         .headers()
         .get("X-API-Key")
@@ -215,7 +207,7 @@ pub async fn api_key_auth(
                 s.to_string()
             }
         });
-    
+
     match provided_key {
         Some(key) if key == *api_key => next.run(request).await,
         Some(_) => {
@@ -240,6 +232,3 @@ pub async fn api_key_auth(
         }
     }
 }
-
-
-
