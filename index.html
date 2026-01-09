@@ -2,158 +2,78 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <base href="/Nozy-wallet/">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="refresh" content="0; url=https://nozy-wallet.vercel.app/" />
+    <link rel="canonical" href="https://nozy-wallet.vercel.app/" />
     <link
       rel="icon"
       type="image/png"
       href="/Nozy-wallet/assets/logo.png"
     />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0"
-    />
-    <meta
-      name="keywords"
-      content="privacy wallet, zcash wallet, monero alternative, private cryptocurrency, untraceable transactions, zero-knowledge proofs, shielded transactions"
-    />
-    <meta
-      name="description"
-      content="NozyWallet is the only Zcash wallet that enforces complete privacy for every transaction. Same privacy as Monero, but faster and more efficient. Privacy by default."
-    />
-    <!-- Google Fonts: Inter -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <title>
-      NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed
-    </title>
-    <link rel="stylesheet" crossorigin href="/Nozy-wallet/assets/index-Zl7hyVsg.css">
-    <script>
-        // NozyWallet Backend API Configuration
-        (function() {
-            // Detect if running locally or on production
-            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            
-            // API URL configuration - defaults to localhost:3000 for local dev
-            // For production, update this to your deployed API server URL
-            window.NOZY_API_URL = isLocalhost 
-                ? 'http://localhost:3000' 
-                : (window.location.protocol === 'https:' 
-                    ? 'https://api.leonine-dao.github.io' 
-                    : 'http://localhost:3000');
-            
-            // Set as global variable for React app to use
-            window.__NOZY_API_CONFIG__ = {
-                baseUrl: window.NOZY_API_URL,
-                endpoints: {
-                    health: '/health',
-                    walletExists: '/api/wallet/exists',
-                    createWallet: '/api/wallet/create',
-                    unlockWallet: '/api/wallet/unlock',
-                    getBalance: '/api/balance',
-                    sendTransaction: '/api/transaction/send',
-                    getHistory: '/api/transaction/history',
-                    syncWallet: '/api/sync'
-                }
-            };
-            
-            console.log('NozyWallet API configured:', window.__NOZY_API_CONFIG__);
-        })();
-        
-        // Simple API helper function for the React app
-        window.nozyApi = {
-            async request(endpoint, options = {}) {
-                const config = window.__NOZY_API_CONFIG__;
-                const url = `${config.baseUrl}${endpoint}`;
-                
-                const response = await fetch(url, {
-                    ...options,
-                    headers: {
-                        'Content-Type': 'application/json',
-                        ...options.headers
-                    }
-                });
-                
-                if (!response.ok) {
-                    const error = await response.json().catch(() => ({ error: 'Network error' }));
-                    throw new Error(error.error || `HTTP ${response.status}`);
-                }
-                
-                return response.json();
-            },
-            
-            async health() {
-                return this.request('/health');
-            },
-            
-            async checkWalletExists() {
-                return this.request('/api/wallet/exists');
-            },
-            
-            async createWallet(password) {
-                return this.request('/api/wallet/create', {
-                    method: 'POST',
-                    body: JSON.stringify({ password })
-                });
-            },
-            
-            async unlockWallet(password) {
-                return this.request('/api/wallet/unlock', {
-                    method: 'POST',
-                    body: JSON.stringify({ password })
-                });
-            },
-            
-            async getBalance() {
-                return this.request('/api/balance');
-            },
-            
-            async syncWallet() {
-                return this.request('/api/sync', {
-                    method: 'POST'
-                });
-            },
-            
-            async sendTransaction(recipient, amount, memo, password) {
-                return this.request('/api/transaction/send', {
-                    method: 'POST',
-                    body: JSON.stringify({ recipient, amount, memo, password })
-                });
-            },
-            
-            async getTransactionHistory() {
-                return this.request('/api/transaction/history');
-            }
-        };
-    </script>
-    <script type="module" crossorigin src="/Nozy-wallet/assets/index-CSzPK1kz.js"></script>
+    <title>NozyWallet - Privacy by Default | Monero-Level Privacy, Zcash Speed</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        min-height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        text-align: center;
+      }
+      .container {
+        max-width: 600px;
+        padding: 2rem;
+      }
+      h1 {
+        font-size: 3rem;
+        margin-bottom: 1rem;
+        font-weight: 800;
+      }
+      p {
+        font-size: 1.25rem;
+        margin-bottom: 2rem;
+        opacity: 0.9;
+      }
+      a {
+        color: white;
+        text-decoration: underline;
+        font-weight: 600;
+      }
+      .logo {
+        width: 120px;
+        height: 120px;
+        margin: 0 auto 2rem;
+        background: white;
+        border-radius: 24px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.2);
+      }
+      .logo img {
+        max-width: 100px;
+        max-height: 100px;
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div class="container">
+      <div class="logo">
+        <img src="/Nozy-wallet/assets/logo.png" alt="NozyWallet Logo" onerror="this.parentElement.style.display='none'" />
+      </div>
+      <h1>NozyWallet</h1>
+      <p>Privacy by Default</p>
+      <p>
+        <a href="https://nozy-wallet.vercel.app/">Click here if you are not redirected automatically</a>
+      </p>
+    </div>
     <script>
-        // Ensure React root exists and can render
-        window.addEventListener('DOMContentLoaded', function() {
-            const root = document.getElementById('root');
-            if (root && root.innerHTML === '') {
-                // If root is still empty after React should have loaded, show a loading message
-                setTimeout(function() {
-                    if (root.innerHTML === '') {
-                        root.innerHTML = '<div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Inter, sans-serif;"><div style="text-align: center;"><h1 style="color: #333; margin-bottom: 1rem;">NozyWallet</h1><p style="color: #666;">Loading wallet interface...</p><p style="color: #999; font-size: 0.875rem; margin-top: 1rem;">If this message persists, please check your connection to the NozyWallet API server.</p></div></div>';
-                    }
-                }, 2000);
-            }
-        });
-        
-        // Error handler for failed module loading
-        window.addEventListener('error', function(e) {
-            if (e.filename && e.filename.includes('index-CSzPK1kz.js')) {
-                console.error('Failed to load React bundle:', e);
-                const root = document.getElementById('root');
-                if (root) {
-                    root.innerHTML = '<div style="display: flex; justify-content: center; align-items: center; height: 100vh; font-family: Inter, sans-serif;"><div style="text-align: center; max-width: 600px; padding: 2rem;"><h1 style="color: #dc2626; margin-bottom: 1rem;">Failed to Load</h1><p style="color: #666; margin-bottom: 1rem;">Unable to load the NozyWallet application. Please try refreshing the page.</p><p style="color: #999; font-size: 0.875rem;">If the problem persists, the React bundle may be missing. Check that <code>/Nozy-wallet/assets/index-CSzPK1kz.js</code> exists.</p></div></div>';
-                }
-            }
-        }, true);
+      // Immediate redirect for JavaScript-enabled browsers
+      window.location.replace('https://nozy-wallet.vercel.app/');
     </script>
   </body>
 </html>
