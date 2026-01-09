@@ -1,0 +1,79 @@
+@import "tailwindcss";
+
+@theme {
+  --color-primary: #D4AF37; /* Gold */
+  --color-primary-hover: #B5952F; /* Darker Gold */
+  --color-secondary: #18181b; /* Zinc 900 (Black) */
+  --color-background: #ffffff; /* White */
+  --color-surface: #f4f4f5; /* Zinc 100 */
+  --font-family-sans: 'Inter', sans-serif;
+  
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
+  }
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  font-family: var(--font-family-sans);
+  background-color: var(--color-background);
+  color: #18181b;
+  overflow-x: hidden;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 0, 0, 0.05);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
+}
+
+.text-gradient {
+  background: linear-gradient(135deg, #18181b 0%, #52525b 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.text-gradient-primary {
+  background: linear-gradient(135deg, #D4AF37 0%, #F59E0B 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.8s ease-out forwards;
+}
