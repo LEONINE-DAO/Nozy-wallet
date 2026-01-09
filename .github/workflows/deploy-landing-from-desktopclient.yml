@@ -1,4 +1,4 @@
-name: Deploy Landing Page from NozyWallet-landing
+name: Deploy Landing Page
 
 on:
   push:
@@ -6,9 +6,8 @@ on:
       - main
       - master
     paths:
+      - 'landing/**'
       - '.github/workflows/deploy-landing-from-desktopclient.yml'
-      - 'index.html'
-      - 'assets/**'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -22,25 +21,23 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-        with:
-          path: main-repo
-
-      - name: Download landing page from Vercel
-        id: download-vercel
-        continue-on-error: true
-        run: |
-          echo "📥 Downloading landing page from Vercel..."
-          curl -L https://nozy-wallet.vercel.app/ -o vercel-landing.html || echo "Failed to download from Vercel"
-          
-      - name: Checkout NozyWallet-landing repository
-        id: checkout-landing
-        continue-on-error: true
+      - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          repository: LEONINE-DAO/NozyWallet-landing
-          path: landing-repo
-          token: ${{ secrets.GITHUB_TOKEN }}
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Install landing page dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Build landing page
+        working-directory: landing
+        run: npm run build
 
       - name: Setup Pages
         uses: actions/configure-pages@v4
@@ -50,81 +47,31 @@ jobs:
           # Create site directory
           mkdir -p _site
           
-          # Priority 1: Use landing page from NozyWallet-landing repo (docs folder for GitHub Pages)
-          if [ -d landing-repo ] && [ "${{ steps.checkout-landing.outcome }}" == "success" ]; then
-            echo "✅ NozyWallet-landing repo checked out successfully"
-            # Look for index.html in docs/ folder (GitHub Pages deployment folder)
-            if [ -f landing-repo/docs/index.html ]; then
-              echo "📄 Found index.html in docs/ (GitHub Pages)"
-              echo "📦 Copying all files from docs/ folder (includes React build with assets)"
-              cp -r landing-repo/docs/* _site/ 2>/dev/null || true
-              # Ensure index.html is in root
-              if [ -f landing-repo/docs/index.html ]; then
-                cp landing-repo/docs/index.html _site/index.html
-              fi
-            elif [ -f landing-repo/index.html ]; then
-              echo "📄 Found index.html in root"
-              cp landing-repo/index.html _site/index.html
-            elif [ -f landing-repo/public/index.html ]; then
-              echo "📄 Found index.html in public/"
-              cp landing-repo/public/index.html _site/index.html
-            elif [ -f landing-repo/src/index.html ]; then
-              echo "📄 Found index.html in src/"
-              cp landing-repo/src/index.html _site/index.html
-            else
-              echo "⚠️  Landing page not found in NozyWallet-landing repo, trying local fallback"
-              if [ -f main-repo/index.html ]; then
-                cp main-repo/index.html _site/index.html
-              fi
-            fi
-            
-            # Copy assets from landing repo (public, assets, or dist folders)
-            if [ -d landing-repo/public ]; then
-              echo "📦 Copying assets from public/"
-              cp -r landing-repo/public/* _site/ 2>/dev/null || true
-            fi
-            if [ -d landing-repo/assets ]; then
-              echo "📦 Copying assets from assets/"
-              cp -r landing-repo/assets _site/ 2>/dev/null || true
-            fi
-            if [ -d landing-repo/dist ]; then
-              echo "📦 Copying assets from dist/"
-              cp -r landing-repo/dist/* _site/ 2>/dev/null || true
-            fi
-          
-          # Priority 2: Use local index.html as fallback
-          elif [ -f main-repo/index.html ]; then
-            echo "✅ Using local index.html (fallback)"
-            cp main-repo/index.html _site/index.html
+          # Copy built landing page from landing/dist to _site
+          if [ -d landing/dist ]; then
+            echo "✅ Found built landing page in landing/dist/"
+            cp -r landing/dist/* _site/ 2>/dev/null || true
+            echo "✅ Copied landing page files"
+          elif [ -d landing/docs ]; then
+            echo "✅ Found built landing page in landing/docs/"
+            cp -r landing/docs/* _site/ 2>/dev/null || true
+            echo "✅ Copied landing page files from docs/"
+          else
+            echo "⚠️  No built landing page found, checking if we need to build..."
+            exit 1
           fi
           
-          # Final fallback: Ensure index.html exists
-          if [ ! -f _site/index.html ]; then
-            echo "⚠️  No landing page found, creating fallback"
-            if [ -f main-repo/index.html ]; then
-              echo "📄 Using local index.html as final fallback"
-              cp main-repo/index.html _site/index.html
-            else
-              cat > _site/index.html << 'EOF'
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>NozyWallet - Privacy by Default</title>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          </head>
-          <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
-            <h1>🦋 NozyWallet</h1>
-            <p>Privacy by Default</p>
-            <p><a href="/downloads/">Download NozyWallet</a></p>
-            <p style="color: #666; margin-top: 50px;">
-              Note: Landing page from NozyWallet-landing repo not available. 
-              <br>Using fallback page. Check repository access or use local landing page.
-            </p>
-          </body>
-          </html>
-          EOF
-            fi
+          # Copy downloads page from main repo
+          mkdir -p _site/downloads
+          if [ -d downloads ]; then
+            cp -r downloads/* _site/downloads/ 2>/dev/null || true
+            echo "✅ Copied downloads page"
+          fi
+          
+          # Copy assets folder (if exists in root)
+          if [ -d assets ]; then
+            echo "📦 Copying assets folder"
+            cp -r assets _site/ 2>/dev/null || true
           fi
           
           # Verify index.html exists
@@ -132,46 +79,13 @@ jobs:
             echo "✅ Landing page ready: _site/index.html"
             ls -lh _site/index.html
           else
-            echo "❌ ERROR: index.html not created!"
-            exit 1
-          fi
-          
-          # Copy downloads page from main repo
-          mkdir -p _site/downloads
-          if [ -d main-repo/downloads ]; then
-            cp -r main-repo/downloads/* _site/downloads/ 2>/dev/null || true
-          fi
-          
-          # Copy assets folder (REQUIRED for Vercel landing page to work)
-          if [ -d main-repo/assets ]; then
-            echo "📦 Copying assets folder (REQUIRED)"
-            cp -r main-repo/assets _site/ 2>/dev/null || true
-            if [ -d _site/assets ]; then
-              echo "✅ Assets folder copied successfully"
-              ls -la _site/assets/ || true
-            else
-              echo "❌ ERROR: Assets folder not copied!"
-              exit 1
-            fi
-            
-            # React bundle expects /logo.png at root, so copy it there too
-            if [ -f main-repo/assets/logo.png ]; then
-              echo "📦 Copying logo.png to root (React bundle expects /logo.png)"
-              cp main-repo/assets/logo.png _site/logo.png
-              echo "✅ Logo copied to root"
-            fi
-          else
-            echo "❌ ERROR: Assets folder not found in main-repo!"
+            echo "❌ ERROR: index.html not found!"
             exit 1
           fi
           
           # List what we're deploying
           echo "📦 Deploying:"
           find _site -type f | head -20
-          if [ -d _site/assets ]; then
-            echo "✅ Assets folder contents:"
-            ls -la _site/assets/ || true
-          fi
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
@@ -181,4 +95,3 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
-
