@@ -19,7 +19,7 @@ nozy config --show-backend
 nozy test-zebra
 ```
 
-### Step 3: Use It!
+### Step 3: Use It
 
 All commands now use Crosslink:
 ```bash
@@ -59,9 +59,9 @@ nozy test-zebra
 - **Don't use mainnet funds** with Crosslink
 - **Standard Zebra** is safe for production
 
-##  That's It!
+##  done
 
-Your wallet now uses Crosslink! All operations (`sync`, `send`, `balance`) automatically use the configured backend.
+ Nozywallet now uses Crosslink. All operations (`sync`, `send`, `balance`) automatically use the configured backend.
 
 See `CROSSLINK_SETUP_GUIDE.md` for detailed setup instructions.
 
