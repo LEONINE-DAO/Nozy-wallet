@@ -1,13 +1,13 @@
 # Crosslink Backend Setup Guide
 
-## 🎯 Overview
+##  Overview
 
 NozyWallet now supports **Zebra Crosslink** as an alternative backend! This allows you to:
 - Use experimental Crosslink testnet features
 - Prepare for future PoS/staking capabilities
 - Keep NozyWallet ahead of the game
 
-## 📋 Quick Start
+##  Quick Start
 
 ### Option 1: CLI Command (Easiest)
 
@@ -42,7 +42,7 @@ Edit your config file (usually `~/.config/nozy/config.json` or `%APPDATA%\nozy\c
 - `"backend": "crosslink"` - Use Zebra Crosslink
 - `"crosslink_url"` - URL for Crosslink node (required when using Crosslink)
 
-## 🔧 Configuration Details
+##  Configuration Details
 
 ### Backend Options
 
@@ -70,7 +70,7 @@ C:\Users\YourName\AppData\Roaming\nozy\config\config.json
 ~/.config/nozy/config.json
 ```
 
-## 🚀 Setting Up Crosslink Node
+##  Setting Up Crosslink Node
 
 ### 1. Build Zebra Crosslink
 
@@ -100,7 +100,7 @@ nozy config --use-crosslink --crosslink-url http://127.0.0.1:8233
 nozy config --use-crosslink --crosslink-url http://127.0.0.1:8232
 ```
 
-## 📝 CLI Commands
+##  CLI Commands
 
 ### View Current Backend
 
@@ -133,7 +133,7 @@ nozy config --use-zebra
 nozy config --set-crosslink-url http://127.0.0.1:8233
 ```
 
-## ✅ Verification
+##  Verification
 
 ### Test Connection
 
@@ -151,7 +151,7 @@ When you run commands like `sync` or `send`, the wallet will:
 - Connect to the appropriate node
 - Use backend-specific features if available
 
-## 🔄 Switching Between Backends
+##  Switching Between Backends
 
 You can switch backends anytime:
 
@@ -192,7 +192,7 @@ When Crosslink PoS/staking is ready:
 - Staking operations will be available
 - Rewards will be calculated from Crosslink network
 
-## 🐛 Troubleshooting
+##  Troubleshooting
 
 ### "Backend not found" Error
 
@@ -222,7 +222,7 @@ cat ~/.config/nozy/config.json
 3. Ensure firewall allows connections
 4. Try `nozy test-zebra` to diagnose
 
-## 📚 Example Workflow
+##  Example Workflow
 
 ```bash
 # 1. Start Crosslink node (in separate terminal)
@@ -244,9 +244,9 @@ nozy send --recipient u1... --amount 0.1
 nozy config --use-zebra
 ```
 
-## 🎉 You're Ready!
+##  You're Ready!
 
-Your NozyWallet is now configured to use Crosslink! All wallet operations (`sync`, `send`, `balance`, etc.) will automatically use the configured backend.
+ NozyWallet is now configured to use Crosslink. All wallet operations (`sync`, `send`, `balance`, etc.) will automatically use the configured backend.
 
 When Crosslink PoS features are ready, they'll be available automatically through the same backend system.
 
