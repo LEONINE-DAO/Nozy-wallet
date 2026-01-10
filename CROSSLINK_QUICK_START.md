@@ -1,6 +1,6 @@
 # Crosslink Quick Start - Switch Backend in 30 Seconds
 
-## 🚀 Fastest Way to Switch to Crosslink
+##  Fastest Way to Switch to Crosslink
 
 ### Step 1: Switch Backend
 
@@ -28,13 +28,13 @@ nozy balance   # Checks balance via Crosslink
 nozy send ...  # Sends via Crosslink
 ```
 
-## 🔄 Switch Back to Zebra
+##  Switch Back to Zebra
 
 ```bash
 nozy config --use-zebra
 ```
 
-## 📋 All Backend Commands
+##  All Backend Commands
 
 ```bash
 # View current backend
@@ -53,13 +53,13 @@ nozy config --use-zebra
 nozy test-zebra
 ```
 
-## ⚠️ Important
+##  Important
 
 - **Crosslink is experimental** - Use testnet only
 - **Don't use mainnet funds** with Crosslink
 - **Standard Zebra** is safe for production
 
-## ✅ That's It!
+##  That's It!
 
 Your wallet now uses Crosslink! All operations (`sync`, `send`, `balance`) automatically use the configured backend.
 
