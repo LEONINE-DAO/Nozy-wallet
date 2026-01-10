@@ -38,7 +38,7 @@
 - ✅ `src/cli_helpers.rs` - Updated to use `from_config()`
 - ✅ `src/bin/send_zec.rs` - Updated to use `from_config()`
 
-## 🔍 Key Code Sections
+##  Key Code Sections
 
 ### 1. Config System (`src/config.rs`)
 
@@ -97,7 +97,7 @@ Commands::Config {
 }
 ```
 
-## 📊 Integration Points
+##  Integration Points
 
 ### Where Backend is Used
 
@@ -128,7 +128,7 @@ Commands::Config {
 8. **Send ZEC Binary** (`src/bin/send_zec.rs`)
    - Uses `ZebraClient::from_config(&config)`
 
-## ✅ Current Status
+##  Current Status
 
 - **Backend switching**: ✅ Fully implemented
 - **Config system**: ✅ Complete
@@ -137,14 +137,14 @@ Commands::Config {
 - **Documentation**: ✅ Complete guides
 - **Backward compatibility**: ✅ Defaults to Zebra
 
-## 🎯 What Works Now
+## What Works Now
 
 1. Switch backends via CLI or config file
 2. All wallet operations use the configured backend
 3. Transparent switching - no code changes needed
 4. Ready for future Crosslink PoS features
 
-## 📝 Next Steps (When Crosslink PoS is Ready)
+##  Next Steps (When Crosslink PoS is Ready)
 
 1. Add Crosslink-specific RPC methods (if needed)
 2. Implement staking/vault features
