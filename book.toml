@@ -16,7 +16,7 @@ preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/LEONINE-DAO/Nozy-wallet"
 edit-url-template = "https://github.com/LEONINE-DAO/Nozy-wallet/edit/master/{path}"
 # GitHub Pages base path - required for proper asset and link resolution
-site-url = "https://leonine-dao.github.io/Nozy-wallet"
+site-url = "/Nozy-wallet/book/"
 
 [output.html.search]
 enable = true
