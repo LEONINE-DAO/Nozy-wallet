@@ -159,27 +159,54 @@ jobs:
       # Prepare unified deployment structure
       - name: Prepare deployment structure
         run: |
-          # Create site directory
+          # Create site directory (start fresh)
+          rm -rf _site
           mkdir -p _site
           
           echo "📦 Preparing unified deployment structure..."
           
-          # 1. Deploy mdBook to /book/
+          # 0. First, ensure root index.html exists (fallback)
+          if [ -f "index.html" ]; then
+            echo "📄 Copying root index.html..."
+            cp index.html _site/
+          else
+            echo "📄 Root index.html not found, will create fallback later"
+          fi
+          
+          # 1. Deploy mdBook to /book/ (before landing to avoid overwrites)
           if [ -d "book/book" ] && [ -f "book/book/index.html" ]; then
             echo "📚 Copying mdBook to /book/..."
             mkdir -p _site/book
             # Copy all contents including hidden files
             cp -r book/book/. _site/book/ 2>&1 || cp -r book/book/* _site/book/ 2>&1
+            
+            # Fix asset paths for GitHub Pages base path (/Nozy-wallet/)
+            # mdBook generates paths like /book/theme.css but needs /Nozy-wallet/book/theme.css
+            echo "🔧 Fixing asset paths for GitHub Pages base path..."
+            # Fix absolute paths in HTML files
+            find _site/book -type f -name "*.html" -exec sed -i.bak 's|href="/book/|href="/Nozy-wallet/book/|g; s|src="/book/|src="/Nozy-wallet/book/|g; s|action="/book/|action="/Nozy-wallet/book/|g' {} \; 2>/dev/null || \
+            find _site/book -type f -name "*.html" -exec sed -i 's|href="/book/|href="/Nozy-wallet/book/|g; s|src="/book/|src="/Nozy-wallet/book/|g; s|action="/book/|action="/Nozy-wallet/book/|g' {} \;
+            # Clean up backup files if created
+            find _site/book -name "*.bak" -delete 2>/dev/null || true
+            # Also fix in CSS/JS if any (url() references, etc.)
+            find _site/book -type f \( -name "*.css" -o -name "*.js" \) -exec sed -i.bak 's|"/book/|"/Nozy-wallet/book/|g; s|url("/book/|url("/Nozy-wallet/book/|g; s|url(/book/|url(/Nozy-wallet/book/|g' {} \; 2>/dev/null || \
+            find _site/book -type f \( -name "*.css" -o -name "*.js" \) -exec sed -i 's|"/book/|"/Nozy-wallet/book/|g; s|url("/book/|url("/Nozy-wallet/book/|g; s|url(/book/|url(/Nozy-wallet/book/|g' {} \;
+            find _site/book -name "*.bak" -delete 2>/dev/null || true
+            echo "✅ Path fixes applied"
+            
             # Verify copy was successful
             if [ ! -f "_site/book/index.html" ]; then
               echo "❌ ERROR: Failed to copy mdBook index.html!"
               exit 1
             fi
-            echo "✅ mdBook deployed to /book/"
+            
+            echo "✅ mdBook deployed to /book/ with base path fixes"
             echo "Book files:"
             ls -la _site/book/ | head -10
             echo "Total files in /book/:"
             find _site/book -type f | wc -l
+            echo "Sample of fixed paths in index.html:"
+            grep -o 'href="/Nozy-wallet/book/[^"]*"' _site/book/index.html | head -3 || echo "Checking for href patterns..."
           else
             echo "⚠️  mdBook build not found (book/book/index.html missing)"
             echo "Checking book/ directory:"
@@ -190,20 +217,36 @@ jobs:
             fi
           fi
           
-          # 2. Deploy landing page to root (if built)
+          # 2. Deploy landing page to root (if built) - carefully to preserve /book/ directory
           if [ -d "landing/dist" ]; then
             echo "🌐 Copying landing page from landing/dist/ to root..."
-            cp -r landing/dist/* _site/ 2>/dev/null || true
-            echo "✅ Landing page deployed to root"
+            # Copy files individually, avoiding overwriting /book/ directory
+            for file in landing/dist/*; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                cp "$file" "_site/$filename" 2>/dev/null || true
+              elif [ -d "$file" ] && [ "$(basename "$file")" != "book" ]; then
+                # Copy directories except 'book' which we already deployed
+                cp -r "$file" _site/ 2>/dev/null || true
+              fi
+            done
+            echo "✅ Landing page deployed to root (preserved /book/ directory)"
           elif [ -d "landing/docs" ]; then
             echo "🌐 Copying landing page from landing/docs/ to root..."
-            cp -r landing/docs/* _site/ 2>/dev/null || true
-            echo "✅ Landing page deployed to root"
+            for file in landing/docs/*; do
+              if [ -f "$file" ]; then
+                filename=$(basename "$file")
+                cp "$file" "_site/$filename" 2>/dev/null || true
+              elif [ -d "$file" ] && [ "$(basename "$file")" != "book" ]; then
+                cp -r "$file" _site/ 2>/dev/null || true
+              fi
+            done
+            echo "✅ Landing page deployed to root (preserved /book/ directory)"
           else
             echo "⚠️  Landing page build not found, will use root index.html if available"
           fi
           
-          # 3. Ensure root index.html exists (fallback or override)
+          # 3. Ensure root index.html exists (fallback if landing didn't create one)
           if [ ! -f "_site/index.html" ]; then
             if [ -f "index.html" ]; then
               echo "📄 Using root index.html as fallback..."
@@ -290,7 +333,28 @@ jobs:
           echo ""
           if [ -d "_site/book" ]; then
             echo "📚 /book/ directory:"
-            ls -la _site/book/ | head -5 || true
+            ls -la _site/book/ | head -10 || true
+            echo ""
+            echo "Checking for critical book files:"
+            if [ -f "_site/book/index.html" ]; then
+              echo "✅ _site/book/index.html exists"
+              echo "File size: $(stat -f%z _site/book/index.html 2>/dev/null || stat -c%s _site/book/index.html 2>/dev/null || echo 'unknown') bytes"
+              echo "First few lines of index.html:"
+              head -5 _site/book/index.html || true
+            else
+              echo "❌ ERROR: _site/book/index.html MISSING!"
+              exit 1
+            fi
+            # Check for theme/assets
+            if [ -d "_site/book/theme" ]; then
+              echo "✅ Theme directory exists: $(ls _site/book/theme/ | wc -l) files"
+            else
+              echo "⚠️  Theme directory missing"
+            fi
+            echo "Total files in /book/: $(find _site/book -type f | wc -l)"
+          else
+            echo "❌ ERROR: _site/book directory does not exist!"
+            exit 1
           fi
           if [ -d "_site/downloads" ]; then
             echo "📥 /downloads/ directory:"
@@ -311,6 +375,8 @@ jobs:
           
           echo ""
           echo "✅ Deployment structure ready!"
+          echo "Full directory tree (first 30 entries):"
+          find _site -type f | head -30 || true
 
       - name: Verify deployment structure before upload
         run: |
