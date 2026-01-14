@@ -1,59 +1,59 @@
-# Quick disk space and cleanup verification script
+# Check disk space usage
 
-Write-Host "=== Disk Space Check ===" -ForegroundColor Cyan
-$drive = Get-PSDrive C
-$usedGB = [math]::Round($drive.Used / 1GB, 2)
-$freeGB = [math]::Round($drive.Free / 1GB, 2)
-$totalGB = [math]::Round(($drive.Used + $drive.Free) / 1GB, 2)
-$percentUsed = [math]::Round(($drive.Used / ($drive.Used + $drive.Free)) * 100, 1)
-
-Write-Host "C: Drive Status:" -ForegroundColor Yellow
-Write-Host "  Total: $totalGB GB" -ForegroundColor White
-Write-Host "  Used:  $usedGB GB ($percentUsed%)" -ForegroundColor $(if ($percentUsed -gt 95) { "Red" } else { "Green" })
-Write-Host "  Free:  $freeGB GB" -ForegroundColor Green
+Write-Host "Checking C:\ drive usage..." -ForegroundColor Cyan
 Write-Host ""
 
-Write-Host "=== Checking for Node/Bot Data ===" -ForegroundColor Cyan
-
-$locations = @(
-    @{Path="$env:USERPROFILE\OneDrive\Evms\zebra-node"; Name="Zebra node (OneDrive)"},
-    @{Path="$env:USERPROFILE\zebra"; Name="Zebra node"},
-    @{Path="$env:USERPROFILE\zebrad"; Name="Zebrad"},
-    @{Path="$env:USERPROFILE\.zebra"; Name="Zebra (hidden)"},
-    @{Path="$env:USERPROFILE\crypto-price-bot"; Name="Atom bot"},
-    @{Path="$env:USERPROFILE\levana-trading-bot"; Name="ETH bot"},
-    @{Path="$env:USERPROFILE\.juno"; Name="Juno node"},
-    @{Path="$env:USERPROFILE\juno"; Name="Juno"}
-)
-
-foreach ($loc in $locations) {
-    if (Test-Path $loc.Path) {
-        $size = (Get-ChildItem -Path $loc.Path -Recurse -ErrorAction SilentlyContinue | 
-                 Measure-Object -Property Length -Sum).Sum
+# Check user directories
+Write-Host "Top directories in C:\Users\user (excluding Nozy-wallet):" -ForegroundColor Yellow
+Get-ChildItem "C:\Users\user" -Directory -ErrorAction SilentlyContinue | 
+    Where-Object { $_.Name -ne "Nozy-wallet" } |
+    ForEach-Object {
+        $size = (Get-ChildItem $_.FullName -Recurse -ErrorAction SilentlyContinue | 
+                 Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
         $sizeGB = [math]::Round($size / 1GB, 2)
-        if ($sizeGB -gt 0.01) {
-            Write-Host "  FOUND: $($loc.Name) - $sizeGB GB" -ForegroundColor Red
-        } else {
-            Write-Host "  Found: $($loc.Name) - < 0.01 GB (tiny)" -ForegroundColor Yellow
+        if ($sizeGB -gt 0.1) {
+            [PSCustomObject]@{
+                Name = $_.Name
+                "Size (GB)" = $sizeGB
+            }
         }
-    } else {
-        Write-Host "  OK: $($loc.Name) - Not found" -ForegroundColor Green
-    }
-}
+    } | Sort-Object "Size (GB)" -Descending | Format-Table -AutoSize
 
 Write-Host ""
-Write-Host "=== OneDrive Recycle Bin Check ===" -ForegroundColor Cyan
-$recycleBin = "$env:USERPROFILE\OneDrive\Evms"
-if (Test-Path $recycleBin) {
-    $items = Get-ChildItem -Path $recycleBin -Recurse -ErrorAction SilentlyContinue
-    if ($items) {
-        $size = ($items | Measure-Object -Property Length -Sum).Sum
-        $sizeGB = [math]::Round($size / 1GB, 2)
-        Write-Host "  OneDrive/Evms folder exists with $sizeGB GB" -ForegroundColor Yellow
-    } else {
-        Write-Host "  OneDrive/Evms folder is empty" -ForegroundColor Green
-    }
-} else {
-    Write-Host "  OneDrive/Evms folder not found" -ForegroundColor Green
+Write-Host "Checking common large locations:" -ForegroundColor Yellow
+Write-Host ""
+
+# Check Program Files
+$pf = (Get-ChildItem "C:\Program Files" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+Write-Host "Program Files: $([math]::Round($pf, 2)) GB"
+
+# Check Program Files (x86)
+$pfx86 = (Get-ChildItem "C:\Program Files (x86)" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+Write-Host "Program Files (x86): $([math]::Round($pfx86, 2)) GB"
+
+# Check Windows folder
+$win = (Get-ChildItem "C:\Windows" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+Write-Host "Windows: $([math]::Round($win, 2)) GB"
+
+# Check AppData
+$appdata = (Get-ChildItem "C:\Users\user\AppData" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+Write-Host "AppData: $([math]::Round($appdata, 2)) GB"
+
+# Check Downloads
+if (Test-Path "C:\Users\user\Downloads") {
+    $dl = (Get-ChildItem "C:\Users\user\Downloads" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+    Write-Host "Downloads: $([math]::Round($dl, 2)) GB"
 }
 
+# Check Documents
+if (Test-Path "C:\Users\user\Documents") {
+    $docs = (Get-ChildItem "C:\Users\user\Documents" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+    Write-Host "Documents: $([math]::Round($docs, 2)) GB"
+}
+
+# Check Temp folders
+$temp = (Get-ChildItem "C:\Windows\Temp" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+Write-Host "Windows\Temp: $([math]::Round($temp, 2)) GB"
+
+$usertemp = (Get-ChildItem "$env:TEMP" -Recurse -ErrorAction SilentlyContinue | Measure-Object -Property Length -Sum).Sum / 1GB
+Write-Host "User Temp: $([math]::Round($usertemp, 2)) GB"

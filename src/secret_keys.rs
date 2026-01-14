@@ -4,10 +4,10 @@
 use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use bech32::{self, ToBase32, Variant};
-use bip32::{ChildNumber, DerivationPath, XPrv};
+use bip32::DerivationPath;
 use ripemd::{Digest as RipemdDigest, Ripemd160};
 use secp256k1::{ecdsa::Signature, Message, PublicKey, Secp256k1, SecretKey};
-use sha2::{Digest, Sha256};
+use sha2::Sha256;
 use std::str::FromStr;
 
 /// Secret Network BIP44 coin type
@@ -113,7 +113,7 @@ impl SecretKeyDerivation {
         hasher.update(message);
         let message_hash = hasher.finalize();
 
-        let msg = Message::from_slice(&message_hash)
+        let msg = Message::from_digest_slice(&message_hash)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid message: {}", e)))?;
 
         // Sign
@@ -136,7 +136,7 @@ impl SecretKeyDerivation {
         hasher.update(message);
         let message_hash = hasher.finalize();
 
-        let msg = Message::from_slice(&message_hash)
+        let msg = Message::from_digest_slice(&message_hash)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid message: {}", e)))?;
 
         // Parse signature

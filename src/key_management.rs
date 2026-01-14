@@ -6,7 +6,6 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecureSeed {
-    #[zeroize(on_drop)]
     seed: Vec<u8>,
 }
 
@@ -26,7 +25,6 @@ impl SecureSeed {
 
 #[derive(Zeroize, ZeroizeOnDrop)]
 pub struct SecureSpendingKeyBytes {
-    #[zeroize(on_drop)]
     key_bytes: Vec<u8>,
 }
 

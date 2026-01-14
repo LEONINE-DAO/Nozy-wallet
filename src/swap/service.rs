@@ -6,7 +6,7 @@ use crate::privacy_network::proxy::ProxyConfig;
 use crate::swap::types::*;
 use hex;
 use rand::Rng;
-use serde_json::{json, Value};
+use serde_json::json;
 use std::time::Duration;
 
 pub struct SwapService {

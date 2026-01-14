@@ -7,7 +7,6 @@ use bip39::Mnemonic;
 use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
-use zeroize::Zeroize;
 
 // Nozy Unified Address creation
 use orchard::{

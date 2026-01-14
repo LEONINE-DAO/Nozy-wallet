@@ -268,7 +268,19 @@ impl NoteScanner {
                             }
                         };
 
-                        let result = Self::parse_block_data(&block_data, height);
+                        let block_value = match serde_json::to_value(&block_data) {
+                            Ok(value) => value,
+                            Err(e) => {
+                                return (
+                                    height,
+                                    Err(NozyError::InvalidOperation(format!(
+                                        "Failed to serialize block data: {}",
+                                        e
+                                    ))),
+                                )
+                            }
+                        };
+                        let result = Self::parse_block_data(&block_value, height);
                         if let Ok(ref txs) = result {
                             cache.set(cache_key, txs.clone());
                         }
@@ -557,7 +569,10 @@ impl NoteScanner {
     async fn get_block_transactions(&self, height: u32) -> NozyResult<Vec<ParsedTransaction>> {
         let block_hash = self.zebra_client.get_block_hash(height).await?;
         let block_data = self.zebra_client.get_block_by_hash(&block_hash, 2).await?;
-        Self::parse_block_data(&block_data, height)
+        let block_value = serde_json::to_value(&block_data).map_err(|e| {
+            NozyError::InvalidOperation(format!("Failed to serialize block data: {}", e))
+        })?;
+        Self::parse_block_data(&block_value, height)
     }
 
     fn parse_orchard_actions_from_json(

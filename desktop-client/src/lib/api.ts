@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/tauri";
+import { invoke } from "@tauri-apps/api/core";
 import {
   WalletExistsResponse,
   CreateWalletRequest,
@@ -91,7 +91,7 @@ export const walletApi = {
     return { data: null };
   },
 
-  setTheme: async (data: SetThemeRequest) => {
+  setTheme: async (_data: SetThemeRequest) => {
     // Tauri doesn't have theme setting in our current implementation
     // This could be added later as a frontend-only feature
     return { data: null };

@@ -1,8 +1,0 @@
-Improve indexing layer and deterministic behavior
-
-- NoteIndex: Complete persistence (v2 format), validation, deterministic queries
-- NoteScanner: Incremental index building during scan, resumable scans
-- Zeaking: Incremental saves with auto-save, atomic writes
-
-All backward compatible. Tests: 24 passed.
-

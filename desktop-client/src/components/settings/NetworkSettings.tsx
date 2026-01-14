@@ -55,7 +55,7 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
     setTestStatus("idle");
     try {
       const res = await walletApi.testZebraConnection();
-      if (res.status === 200) {
+      if (res?.data) {
         setTestStatus("success");
         toast.success("Node connection successful!", { id: testToast });
       } else {

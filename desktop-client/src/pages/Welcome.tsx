@@ -14,13 +14,13 @@ export function WelcomePage() {
   const [error, setError] = useState<string | null>(null);
   const { setHasWallet } = useWalletStore();
 
-  // Create Wallet State
   const [createPassword, setCreatePassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showCreatePass, setShowCreatePass] = useState(false);
   const [showConfirmPass, setShowConfirmPass] = useState(false);
+  const [generatedMnemonic, setGeneratedMnemonic] = useState<string | null>(null);
+  const [mnemonicCopied, setMnemonicCopied] = useState(false);
 
-  // Restore Wallet State
   const [mnemonic, setMnemonic] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
   const [showRestorePass, setShowRestorePass] = useState(false);
@@ -37,11 +37,16 @@ export function WelcomePage() {
     setIsLoading(true);
     setError(null);
     try {
-      await walletApi.createWallet({ password: createPassword });
-      toast.success("Wallet created successfully!", { id: createToast });
-      setHasWallet(true);
+      const response = await walletApi.createWallet({ password: createPassword });
+      const mnemonic = response?.data;
+      if (mnemonic) {
+        setGeneratedMnemonic(mnemonic);
+        toast.success("Wallet created! Please save your recovery phrase.", { id: createToast });
+      } else {
+        toast.success("Wallet created successfully!", { id: createToast });
+        setHasWallet(true);
+      }
     } catch (err: any) {
-      // console.error(err);
       const errMsg =
         err?.message || "Failed to create wallet. Please try again.";
       setError(errMsg);
@@ -70,7 +75,6 @@ export function WelcomePage() {
       toast.success("Wallet restored successfully!", { id: restoreToast });
       setHasWallet(true);
     } catch (err: any) {
-      // console.error(err);
       const errMsg =
         err?.message || "Failed to restore wallet. Please check your mnemonic.";
       setError(errMsg);
@@ -87,6 +91,19 @@ export function WelcomePage() {
     setConfirmPassword("");
     setMnemonic("");
     setRestorePassword("");
+    setGeneratedMnemonic(null);
+  };
+
+  const handleMnemonicCopied = () => {
+    navigator.clipboard.writeText(generatedMnemonic || "");
+    setMnemonicCopied(true);
+    toast.success("Recovery phrase copied to clipboard!");
+    setTimeout(() => setMnemonicCopied(false), 2000);
+  };
+
+  const handleMnemonicConfirmed = () => {
+    setGeneratedMnemonic(null);
+    setHasWallet(true);
   };
 
   const PasswordToggle = ({
@@ -283,6 +300,63 @@ export function WelcomePage() {
                 </Button>
               </div>
             </form>
+          )}
+
+          {generatedMnemonic && (
+            <div className="p-8 text-center space-y-6 max-w-2xl mx-auto">
+              <div className="space-y-4">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  Save Your Recovery Phrase
+                </h2>
+                <p className="text-gray-600">
+                  Write down these 24 words in order. Store them in a safe place.
+                  You'll need this to recover your wallet.
+                </p>
+                <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4 text-left">
+                  <p className="text-sm font-semibold text-yellow-800 mb-2">
+                    ⚠️ Important: Never share your recovery phrase with anyone!
+                  </p>
+                  <p className="text-xs text-yellow-700">
+                    Anyone with access to these words can control your wallet.
+                  </p>
+                </div>
+              </div>
+
+              <div className="bg-white/80 backdrop-blur-sm rounded-xl border-2 border-gray-200 p-6">
+                <div className="grid grid-cols-3 gap-3 text-left">
+                  {generatedMnemonic.split(" ").map((word, index) => (
+                    <div
+                      key={index}
+                      className="flex items-center gap-2 p-2 rounded-lg bg-gray-50 hover:bg-gray-100 transition-colors"
+                    >
+                      <span className="text-xs text-gray-500 font-mono w-6">
+                        {index + 1}.
+                      </span>
+                      <span className="text-sm font-medium text-gray-900">
+                        {word}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={handleMnemonicCopied}
+                  className="w-full py-6 text-lg"
+                  variant={mnemonicCopied ? "secondary" : "primary"}
+                >
+                  {mnemonicCopied ? "✓ Copied!" : "Copy Recovery Phrase"}
+                </Button>
+                <Button
+                  onClick={handleMnemonicConfirmed}
+                  className="w-full py-6 text-lg"
+                  disabled={!mnemonicCopied}
+                >
+                  I've Saved My Recovery Phrase
+                </Button>
+              </div>
+            </div>
           )}
         </div>
       </div>

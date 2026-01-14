@@ -88,7 +88,7 @@ impl SwapEngine {
 
         // Step 4: Monero churning (if XMR → ZEC)
         if matches!(direction, SwapDirection::XmrToZec) {
-            if let Some(monero_wallet) = &self.monero_wallet {
+            if let Some(_monero_wallet) = &self.monero_wallet {
                 let config = load_config();
                 let should_churn = if config.swap.auto_churn {
                     // Auto-churn enabled in config

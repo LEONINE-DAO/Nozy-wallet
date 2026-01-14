@@ -69,8 +69,7 @@ function App() {
           },
         }}
       />
-      {/* {hasWallet ? <AuthenticatedLayout /> : <WelcomePage />} */}
-      <AuthenticatedLayout />
+      {hasWallet ? <AuthenticatedLayout /> : <WelcomePage />}
     </>
   );
 }

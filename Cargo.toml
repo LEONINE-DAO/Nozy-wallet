@@ -109,6 +109,7 @@ secret-network = ["dep:cosmrs", "dep:tendermint"]
 
 [workspace]
 members = ["zeaking", "api-server"]
+exclude = ["desktop-client/src-tauri"]
 resolver = "2"
 
 [[bin]]

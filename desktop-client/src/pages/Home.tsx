@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useWalletStore } from "../store/walletStore";
 import { useTokenStore } from "../store/tokenStore";
 import { Button } from "../components/Button";
@@ -14,34 +14,10 @@ import { TabId } from "../components/Header";
 import { Modal } from "../components/Modal";
 import { SendForm } from "../components/SendForm";
 import { ReceiveContent } from "../components/ReceiveContent";
+import { walletApi } from "../lib/api";
 
 import { useSettingsStore } from "../store/settingsStore";
 import toast from "react-hot-toast";
-
-// Mock data for side history
-const RECENT_HISTORY = [
-  {
-    id: "1",
-    type: "received",
-    amount: 12.5,
-    date: "2024-03-15",
-    address: "88...9x2a",
-  },
-  {
-    id: "2",
-    type: "sent",
-    amount: 4.2,
-    date: "2024-03-14",
-    address: "44...k8p1",
-  },
-  {
-    id: "3",
-    type: "received",
-    amount: 100.0,
-    date: "2024-03-10",
-    address: "99...m2z5",
-  },
-];
 interface HomePageProps {
   onNavigate: (tab: TabId) => void;
 }
@@ -56,9 +32,26 @@ export function HomePage({ onNavigate }: HomePageProps) {
     null
   );
   const [copied, setCopied] = useState(false);
+  const [recentHistory, setRecentHistory] = useState<any[]>([]);
 
-  // Mock address if null
-  const displayAddress = address || "no address";
+  // Fetch transaction history
+  useEffect(() => {
+    const fetchHistory = async () => {
+      try {
+        const res = await walletApi.getTransactionHistory();
+        if (res?.data && Array.isArray(res.data)) {
+          // Get most recent 3 transactions
+          setRecentHistory(res.data.slice(0, 3));
+        }
+      } catch (e) {
+        // No transactions or error - show empty
+        setRecentHistory([]);
+      }
+    };
+    fetchHistory();
+  }, []);
+
+  const displayAddress = address || "No address available";
 
   const handleCopy = () => {
     navigator.clipboard.writeText(displayAddress);
@@ -188,7 +181,13 @@ export function HomePage({ onNavigate }: HomePageProps) {
           </div>
 
           <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-            {RECENT_HISTORY.map((tx) => (
+            {recentHistory.length === 0 ? (
+              <div className="p-8 text-center text-gray-500">
+                <p className="text-sm">No recent transactions</p>
+                <p className="text-xs mt-1">Your transaction history will appear here</p>
+              </div>
+            ) : (
+              recentHistory.map((tx) => (
               <div
                 key={tx.id}
                 className="p-4 rounded-xl bg-white/60 backdrop-blur-sm border border-white/50 hover:bg-white transition-all cursor-pointer group"
@@ -220,12 +219,13 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 </div>
                 <div className="flex justify-between items-center text-xs text-gray-500">
                   <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600">
-                    {tx.address}
+                    {tx.address || tx.txid || "Unknown"}
                   </span>
-                  <span>{tx.date}</span>
+                  <span>{tx.date || new Date(tx.timestamp * 1000).toLocaleDateString()}</span>
                 </div>
               </div>
-            ))}
+              ))
+            )}
           </div>
         </div>
       </div>

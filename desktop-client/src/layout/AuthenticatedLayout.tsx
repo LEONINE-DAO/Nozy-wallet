@@ -7,36 +7,48 @@ import { HistoryPage } from "../pages/History";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
 import { useSettingsStore } from "../store/settingsStore";
-import toast from "react-hot-toast";
 
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const { showNavigationLabels } = useSettingsStore();
   const { setBalance, setAddress } = useWalletStore();
 
-  // Sync wallet data
+  // Sync wallet data - only if wallet is unlocked
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const addressRes = await walletApi.generateAddress();
-        if (addressRes?.data?.address) {
-          setAddress(addressRes.data.address);
+        // Check wallet status first
+        const statusRes = await walletApi.getWalletStatus();
+        if (!statusRes?.data?.unlocked) {
+          // Wallet not unlocked, don't try to fetch data
+          return;
         }
 
-        const balanceRes = await walletApi.getBalance();
-        const balanceVal =
-          typeof balanceRes?.data === "number"
-            ? balanceRes.data
-            : balanceRes?.data?.balance;
+        // Only fetch address and balance if wallet is unlocked
+        try {
+          const addressRes = await walletApi.generateAddress();
+          if (addressRes?.data?.address) {
+            setAddress(addressRes.data.address);
+          }
+        } catch (e) {
+          // Address generation failed, but continue with balance
+        }
 
-        if (typeof balanceVal === "number") {
-          setBalance(balanceVal);
+        try {
+          const balanceRes = await walletApi.getBalance();
+          const balanceVal =
+            typeof balanceRes?.data === "number"
+              ? balanceRes.data
+              : balanceRes?.data?.balance;
+
+          if (typeof balanceVal === "number") {
+            setBalance(balanceVal);
+          }
+        } catch (e) {
+          // Balance fetch failed
         }
       } catch (error) {
-        // console.error("Failed to sync wallet data:", error);
-        toast.error(
-          "Failed to sync wallet data. Please check your connection."
-        );
+        // Silently fail - wallet might not be unlocked yet
       }
     };
 

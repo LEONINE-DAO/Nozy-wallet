@@ -34,13 +34,14 @@ const Header = () => {
 
   return (
     <header
-      className={`fixed top-0 w-full z-50  border-b border-zinc-200/50 ${
+      className={`fixed top-0 w-full z-50 border-b border-zinc-200/50 ${
         isMenuOpen ? "bg-white" : "backdrop-blur-md bg-white/70"
       }`}
     >
       <div className="max-w-7xl mx-auto px-6 h-24 flex items-center justify-between relative z-50">
+        {/* @ts-expect-error JSX intrinsic elements type workaround */}
         <Link
-          to={"/"}
+          to="/"
           className="flex items-center gap-3"
         >
           <img
