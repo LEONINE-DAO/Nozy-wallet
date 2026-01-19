@@ -13,6 +13,17 @@ if ($LASTEXITCODE -ne 0) {
     cargo audit
 }
 
+Write-Host "`n1.5. Running cargo-chec (parallel checks)..." -ForegroundColor Yellow
+$checInstalled = cargo chec --version 2>&1
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "   ⚠️  cargo-chec not installed. Install with: cargo install cargo-chec" -ForegroundColor Yellow
+    Write-Host "   Skipping cargo-chec checks..." -ForegroundColor Yellow
+} else {
+    Write-Host "   ✅ cargo-chec installed" -ForegroundColor Green
+    Write-Host "   Running parallel checks (check, clippy, fmt, test)..." -ForegroundColor Cyan
+    cargo chec 2>&1 | Select-Object -First 30
+}
+
 Write-Host "`n2. Running cargo clippy (security checks)..." -ForegroundColor Yellow
 cargo clippy -- -D warnings 2>&1 | Select-Object -First 50
 

@@ -122,6 +122,32 @@ jobs:
         run: cargo audit || echo "Security audit found issues - see Dependabot alerts"
         continue-on-error: true
 
+  cargo-chec:
+    name: Cargo Chec (Parallel Checks)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: |
+            zeaking
+            api-server
+
+      - name: Install cargo-chec
+        run: cargo install cargo-chec --locked
+
+      - name: Run cargo-chec (parallel checks)
+        run: cargo chec || echo "Some checks failed - see output above"
+        continue-on-error: true
+
   build:
     name: Build Check
     runs-on: ubuntu-latest

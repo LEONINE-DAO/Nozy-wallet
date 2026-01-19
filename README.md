@@ -39,6 +39,7 @@ Just like Monero, but faster and more efficient.
 
 ###  Implemented Features
 
+#### Core Wallet Features
 - **NU 6.1 Support**: Fully compatible with Zcash Network Upgrade 6.1 (protocol version 170140)
 - **HD Wallet Support**: Hierarchical deterministic wallet with BIP39 mnemonic support
 - **Password Protection**: Argon2-based password hashing for wallet security
@@ -55,6 +56,17 @@ Just like Monero, but faster and more efficient.
 - **Merkle Path Construction**: Convert authentication paths to MerkleHashOrchard arrays
 - **Bundle Authorization Framework**: Complete transaction authorization framework
 
+#### Desktop Application (NEW! 🎉)
+- **✅ Desktop GUI**: Beautiful cross-platform desktop application (Windows, macOS, Linux)
+- **✅ Web3 Browser**: Built-in browser for Zcash dApps with full navigation
+- **✅ dApp Integration**: EIP-1193 compatible provider for seamless dApp connections
+- **✅ Transaction Signing**: Approve and sign transactions from dApps
+- **✅ Message Signing**: Cryptographically sign messages for dApp authentication
+- **✅ Dark Mode**: Full dark mode support with persistent preferences
+- **✅ Enhanced Security**: Phishing detection, rate limiting, security warnings
+- **✅ Modern UI**: Intuitive interface with tabs, bookmarks, and history
+- **📖 [User Guide](desktop-client/USER_GUIDE.md)** | **📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)**
+
 ###  Upcoming Features & Roadmap
 
 >  **Full Roadmap Available**: See **[ENHANCEMENT_ROADMAP.md](ENHANCEMENT_ROADMAP.md)** for complete development plans, priorities, and implementation details.
@@ -63,7 +75,7 @@ NozyWallet is actively being developed with exciting features on the horizon! We
 
 ** High-Priority Features (Looking for Contributors!):**
 
--  **Desktop GUI Application** - Cross-platform desktop app with beautiful UI - **🔄 Migrating to Tauri** for better security & performance - **[See Migration Guide →](TAURI_MIGRATION_GUIDE.md)** | **[See Roadmap →](ENHANCEMENT_ROADMAP.md#15-desktop-gui-application)**
+-  **Desktop GUI Application** - ✅ **RELEASED!** Cross-platform desktop app with beautiful UI, Web3 browser, and dApp integration - **[Download →](desktop-client/)** | **[User Guide →](desktop-client/USER_GUIDE.md)** | **[dApp Integration →](desktop-client/DAPP_INTEGRATION_GUIDE.md)**
 -  **Mobile Applications** - Native iOS and Android apps for on-the-go privacy - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#16-mobile-applications)**
 -  **Hardware Wallet Integration** - Ledger, Trezor, and other hardware wallet support - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#8-enhanced-security-features)**
 -  **Multi-Signature Support** - Enhanced security with multi-sig transactions - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#8-enhanced-security-features)**
@@ -87,6 +99,31 @@ Check out our [Contributing Guide](#-contributing) and the **[Enhancement Roadma
 
 ##  Installation
 
+### Desktop Application (Recommended for Most Users)
+
+**NozyWallet Desktop Client** is now available! A beautiful, user-friendly desktop application with Web3 browser and dApp integration.
+
+**Quick Start:**
+1. Download the installer for your platform (Windows/macOS/Linux)
+2. Install and launch the application
+3. Follow the setup wizard to create or restore your wallet
+
+**Features:**
+- ✅ Beautiful GUI (no command line needed!)
+- ✅ Built-in Web3 browser for Zcash dApps
+- ✅ Transaction and message signing from dApps
+- ✅ Dark mode support
+- ✅ Enhanced security features
+
+**Documentation:**
+- 📖 [User Guide](desktop-client/USER_GUIDE.md) - Complete user documentation
+- 📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md) - For developers
+- 📖 [Changelog](desktop-client/CHANGELOG.md) - Version history
+
+**Note:** Full functionality (balance, sync, sending) requires a Zebra node, but many features work without it (wallet creation, address generation, browser, UI).
+
+### CLI Installation (For Advanced Users)
+
 ### Prerequisites
 
 - Rust 1.70+ (install from [rustup.rs](https://rustup.rs/))
@@ -101,6 +138,14 @@ cargo build --release
 ```
 
 ##  Documentation
+
+### Desktop Client
+- **[User Guide](desktop-client/USER_GUIDE.md)** - Complete guide for desktop users
+- **[dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)** - Developer guide for dApp integration
+- **[Changelog](desktop-client/CHANGELOG.md)** - Desktop client version history
+- **[Feature Coverage](desktop-client/FEATURE_COVERAGE.md)** - What's implemented vs core library
+
+### CLI Documentation
 
 - **[Command Help Guide](COMMAND_HELP.md)** - Complete command reference with examples
 - **[Send ZEC Guide](SEND_ZEC_GUIDE.md)** - Step-by-step sending guide
@@ -932,11 +977,14 @@ cargo test -- --nocapture
 ### CI/CD
 
 All tests run automatically in CI on every push and pull request:
+- **Parallel Checks** - `cargo chec` (runs check, clippy, fmt, test in parallel)
 - **Format Check** - `cargo fmt --check`
 - **Linting** - `cargo clippy -- -D warnings`
 - **Security Audit** - `cargo audit` (scans for vulnerabilities)
 - **Unit Tests** - `cargo test`
 - **Build Verification** - `cargo build --release`
+
+**📖 For cargo-chec setup and usage, see [CARGO_CHEC_SETUP.md](CARGO_CHEC_SETUP.md)**
 
 **📖 For detailed testing documentation, see [TESTING.md](TESTING.md)**  
 **📖 For dependency management and security auditing, see [DEPENDENCY_MANAGEMENT.md](DEPENDENCY_MANAGEMENT.md)**

@@ -67,5 +67,6 @@ push_url_update.ps1
 !TEAM*.md
 !*DEPLOY*.md
 !DIGITALOCEAN*.md
+!CARGO_CHEC_SETUP.md
 
 book/book/
