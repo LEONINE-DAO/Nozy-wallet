@@ -1,42 +1,137 @@
+import { useEffect, useMemo, useState } from "react";
 import { ArrowRightUp, ArrowLeftDown, Calendar } from "@solar-icons/react";
+import { walletApi } from "../lib/api";
+import { Input } from "../components/Input";
 
-// Mock data for history
-const HISTORY_DATA = [
-  {
-    id: "1",
-    type: "received",
-    amount: 12.5,
-    date: "2024-03-15",
-    address: "88...9x2a",
-    status: "confirmed",
-  },
-  {
-    id: "2",
-    type: "sent",
-    amount: 4.2,
-    date: "2024-03-14",
-    address: "44...k8p1",
-    status: "confirmed",
-  },
-  {
-    id: "3",
-    type: "received",
-    amount: 100.0,
-    date: "2024-03-10",
-    address: "99...m2z5",
-    status: "confirmed",
-  },
-  {
-    id: "4",
-    type: "sent",
-    amount: 1.5,
-    date: "2024-03-05",
-    address: "33...j4r9",
-    status: "pending",
-  },
-];
+export interface HistoryTx {
+  id: string;
+  type: "sent" | "received";
+  amount: number;
+  date: string;
+  address: string;
+  status: string;
+  memo?: string;
+}
+
+function normalizeTx(raw: any): HistoryTx {
+  const txid = raw.txid ?? raw.id ?? "";
+  const amountZec = typeof raw.amount_zec === "number"
+    ? raw.amount_zec
+    : (raw.amount_zatoshis != null ? raw.amount_zatoshis / 100_000_000 : 0);
+  const recipient = raw.recipient_address ?? raw.recipient ?? "";
+  const status = raw.status != null
+    ? String(raw.status).toLowerCase().replace(/\s/g, "_")
+    : "unknown";
+  const dateRaw = raw.broadcast_at ?? raw.created_at ?? raw.date ?? raw.block_time;
+  const date =
+    typeof dateRaw === "string"
+      ? dateRaw.slice(0, 10)
+      : dateRaw != null && typeof dateRaw === "object" && "secs_since_epoch" in dateRaw
+        ? new Date((dateRaw as { secs_since_epoch: number }).secs_since_epoch * 1000).toISOString().slice(0, 10)
+        : raw.timestamp != null
+          ? new Date(raw.timestamp * 1000).toISOString().slice(0, 10)
+          : "";
+  const type = (raw.transaction_type ?? raw.type ?? "sent").toString().toLowerCase();
+  const memo = typeof raw.memo === "string" ? raw.memo : undefined;
+
+  return {
+    id: txid,
+    type: type === "received" ? "received" : "sent",
+    amount: amountZec,
+    date,
+    address: recipient || (txid ? `${txid.slice(0, 8)}...${txid.slice(-4)}` : "—"),
+    status: status === "confirmed" ? "confirmed" : status === "pending" ? "pending" : status,
+    memo,
+  };
+}
+
+type FilterType = "all" | "sent" | "received";
+type FilterStatus = "all" | "confirmed" | "pending";
+type FilterDateRange = "all" | "7" | "30" | "90";
+
+function filterAndSortTxs(
+  txs: HistoryTx[],
+  filterType: FilterType,
+  filterStatus: FilterStatus,
+  filterDateRange: FilterDateRange,
+  searchQuery: string
+): HistoryTx[] {
+  const q = searchQuery.trim().toLowerCase();
+  const now = new Date();
+  const cutoffDays = filterDateRange === "all" ? null : parseInt(filterDateRange, 10);
+  const cutoffDate = cutoffDays != null ? (() => {
+    const d = new Date(now);
+    d.setDate(d.getDate() - cutoffDays);
+    return d;
+  })() : null;
+
+  return txs
+    .filter((t) => filterType === "all" || t.type === filterType)
+    .filter((t) => filterStatus === "all" || t.status === filterStatus)
+    .filter((t) => {
+      if (!cutoffDate) return true;
+      const txDate = t.date ? new Date(t.date) : new Date(0);
+      return txDate >= cutoffDate;
+    })
+    .filter((t) => {
+      if (!q) return true;
+      return (
+        t.address.toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q) ||
+        (t.memo ?? "").toLowerCase().includes(q)
+      );
+    })
+    .sort((a, b) => {
+      const da = a.date ? new Date(a.date).getTime() : 0;
+      const db = b.date ? new Date(b.date).getTime() : 0;
+      return db - da;
+    });
+}
 
 export function HistoryPage() {
+  const [txs, setTxs] = useState<HistoryTx[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [filterType, setFilterType] = useState<FilterType>("all");
+  const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
+  const [filterDateRange, setFilterDateRange] = useState<FilterDateRange>("all");
+  const [searchQuery, setSearchQuery] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    walletApi
+      .getTransactionHistory()
+      .then((res) => {
+        if (cancelled) return;
+        const raw = res?.data;
+        if (Array.isArray(raw)) {
+          const normalized = raw.map(normalizeTx).filter((t) => t.id);
+          setTxs(normalized);
+        } else {
+          setTxs([]);
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setError(e?.message ?? "Failed to load history");
+          setTxs([]);
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredTxs = useMemo(
+    () => filterAndSortTxs(txs, filterType, filterStatus, filterDateRange, searchQuery),
+    [txs, filterType, filterStatus, filterDateRange, searchQuery]
+  );
+
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
@@ -45,10 +140,86 @@ export function HistoryPage() {
         </h2>
       </div>
 
+      {!loading && !error && txs.length > 0 && (
+        <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
+          <div className="flex-1 min-w-[200px] max-w-md">
+            <Input
+              type="search"
+              placeholder="Search by address, txid, or memo"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              aria-label="Search transactions"
+              className="bg-white/60 border-white/50"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value as FilterType)}
+              aria-label="Filter by type"
+              className="h-11 rounded-lg border border-gray-200/60 bg-white/60 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            >
+              <option value="all">All types</option>
+              <option value="sent">Sent</option>
+              <option value="received">Received</option>
+            </select>
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
+              aria-label="Filter by status"
+              className="h-11 rounded-lg border border-gray-200/60 bg-white/60 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            >
+              <option value="all">All statuses</option>
+              <option value="confirmed">Confirmed</option>
+              <option value="pending">Pending</option>
+            </select>
+            <select
+              value={filterDateRange}
+              onChange={(e) => setFilterDateRange(e.target.value as FilterDateRange)}
+              aria-label="Filter by date range"
+              className="h-11 rounded-lg border border-gray-200/60 bg-white/60 px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+            >
+              <option value="all">All time</option>
+              <option value="7">Last 7 days</option>
+              <option value="30">Last 30 days</option>
+              <option value="90">Last 90 days</option>
+            </select>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/50 shadow-sm overflow-hidden">
-        {HISTORY_DATA.length > 0 ? (
-          <div className="divide-y divide-gray-100/50">
-            {HISTORY_DATA.map((tx) => (
+        {loading ? (
+          <div className="p-12 flex items-center justify-center gap-2 text-gray-600">
+            <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+            <span>Loading history…</span>
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center">
+            <p className="text-red-600 mb-2">{error}</p>
+            <p className="text-sm text-gray-500">
+              History is stored locally. You do not need a Zebra node to view past transactions.
+            </p>
+          </div>
+        ) : txs.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">
+            <p>No transactions found</p>
+            <p className="text-sm mt-1">Sent and received transactions will appear here.</p>
+          </div>
+        ) : filteredTxs.length === 0 ? (
+          <div className="p-12 text-center text-gray-500">
+            <p>No transactions match your filters or search</p>
+            <p className="text-sm mt-1">Try changing the filters or search term.</p>
+          </div>
+        ) : (
+          <>
+            {(filterType !== "all" || filterStatus !== "all" || filterDateRange !== "all" || searchQuery.trim()) && (
+              <div className="px-4 py-2 border-b border-gray-100/50 text-sm text-gray-600 bg-white/30">
+                Showing {filteredTxs.length} of {txs.length} transactions
+              </div>
+            )}
+            <div className="divide-y divide-gray-100/50">
+            {filteredTxs.map((tx) => (
               <div
                 key={tx.id}
                 className="p-4 hover:bg-white/40 transition-colors flex items-center justify-between group"
@@ -73,10 +244,17 @@ export function HistoryPage() {
                     </p>
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Calendar size={12} />
-                      <span>{tx.date}</span>
+                      <span>{tx.date || "—"}</span>
                       <span className="w-1 h-1 rounded-full bg-gray-300" />
-                      <span className="font-mono">{tx.address}</span>
+                      <span className="font-mono truncate max-w-[140px]" title={tx.address}>
+                        {tx.address}
+                      </span>
                     </div>
+                    {tx.memo && (
+                      <p className="text-xs text-gray-500 mt-0.5 truncate max-w-[200px]" title={tx.memo}>
+                        {tx.memo}
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -89,13 +267,15 @@ export function HistoryPage() {
                     }`}
                   >
                     {tx.type === "received" ? "+" : "-"}
-                    {tx.amount.toFixed(4)} Zec
+                    {tx.amount.toFixed(4)} ZEC
                   </p>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${
                       tx.status === "confirmed"
                         ? "bg-green-100 text-green-700"
-                        : "bg-yellow-100 text-yellow-700"
+                        : tx.status === "pending"
+                          ? "bg-yellow-100 text-yellow-700"
+                          : "bg-gray-100 text-gray-700"
                     }`}
                   >
                     {tx.status}
@@ -103,11 +283,8 @@ export function HistoryPage() {
                 </div>
               </div>
             ))}
-          </div>
-        ) : (
-          <div className="p-12 text-center text-gray-500">
-            <p>No transactions found</p>
-          </div>
+            </div>
+          </>
         )}
       </div>
     </div>
