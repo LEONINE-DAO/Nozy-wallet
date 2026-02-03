@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { ArrowRightUp, ArrowLeftDown, Calendar } from "@solar-icons/react";
 import { walletApi } from "../lib/api";
 import { Input } from "../components/Input";
+import { Modal } from "../components/Modal";
+import { Button } from "../components/Button";
 
 export interface HistoryTx {
   id: string;
@@ -88,6 +90,36 @@ function filterAndSortTxs(
     });
 }
 
+function escapeCsvField(value: string): string {
+  if (value.includes(",") || value.includes('"') || value.includes("\n") || value.includes("\r")) {
+    return `"${value.replace(/"/g, '""')}"`;
+  }
+  return value;
+}
+
+function downloadCsv(txs: HistoryTx[]): void {
+  const header = "Date,Type,Amount (ZEC),Address,Status,Memo,Transaction ID";
+  const rows = txs.map((tx) =>
+    [
+      tx.date || "",
+      tx.type,
+      tx.amount.toFixed(8),
+      tx.address,
+      tx.status,
+      tx.memo ?? "",
+      tx.id,
+    ].map(escapeCsvField).join(",")
+  );
+  const csv = [header, ...rows].join("\r\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `nozy-transactions-${new Date().toISOString().slice(0, 10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function HistoryPage() {
   const [txs, setTxs] = useState<HistoryTx[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,6 +128,9 @@ export function HistoryPage() {
   const [filterStatus, setFilterStatus] = useState<FilterStatus>("all");
   const [filterDateRange, setFilterDateRange] = useState<FilterDateRange>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  const [selectedTx, setSelectedTx] = useState<HistoryTx | null>(null);
+  const [detailExtra, setDetailExtra] = useState<{ confirmations?: number; block_height?: number; fee_zec?: number; broadcast_at?: string } | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -131,6 +166,30 @@ export function HistoryPage() {
     () => filterAndSortTxs(txs, filterType, filterStatus, filterDateRange, searchQuery),
     [txs, filterType, filterStatus, filterDateRange, searchQuery]
   );
+
+  useEffect(() => {
+    if (!selectedTx) {
+      setDetailExtra(null);
+      return;
+    }
+    setDetailLoading(true);
+    setDetailExtra(null);
+    walletApi
+      .getTransaction(selectedTx.id)
+      .then((res) => {
+        const d = res?.data;
+        if (d && typeof d === "object") {
+          setDetailExtra({
+            confirmations: typeof d.confirmations === "number" ? d.confirmations : undefined,
+            block_height: typeof d.block_height === "number" ? d.block_height : undefined,
+            fee_zec: typeof d.fee_zec === "number" ? d.fee_zec : (typeof d.fee_zatoshis === "number" ? d.fee_zatoshis / 100_000_000 : undefined),
+            broadcast_at: typeof d.broadcast_at === "string" ? d.broadcast_at : undefined,
+          });
+        }
+      })
+      .catch(() => setDetailExtra(null))
+      .finally(() => setDetailLoading(false));
+  }, [selectedTx?.id]);
 
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
@@ -184,6 +243,14 @@ export function HistoryPage() {
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
             </select>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => downloadCsv(filteredTxs)}
+              className="h-11 gap-2 bg-white/60 border-white/50 text-gray-700 hover:bg-white/90"
+            >
+              Export CSV
+            </Button>
           </div>
         </div>
       )}
@@ -222,7 +289,11 @@ export function HistoryPage() {
             {filteredTxs.map((tx) => (
               <div
                 key={tx.id}
-                className="p-4 hover:bg-white/40 transition-colors flex items-center justify-between group"
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedTx(tx)}
+                onKeyDown={(e) => e.key === "Enter" && setSelectedTx(tx)}
+                className="p-4 hover:bg-white/40 transition-colors flex items-center justify-between group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-inset"
               >
                 <div className="flex items-center gap-4">
                   <div
@@ -287,6 +358,59 @@ export function HistoryPage() {
           </>
         )}
       </div>
+
+      <Modal
+        isOpen={selectedTx !== null}
+        onClose={() => setSelectedTx(null)}
+        title="Transaction details"
+      >
+        {selectedTx && (
+          <div className="space-y-4">
+            <DetailRow label="Transaction ID" value={selectedTx.id} mono />
+            <DetailRow label="Type" value={selectedTx.type === "received" ? "Received" : "Sent"} />
+            <DetailRow label="Amount" value={`${selectedTx.type === "received" ? "+" : "-"}${selectedTx.amount.toFixed(8)} ZEC`} />
+            <DetailRow label="Date" value={selectedTx.date ? formatDetailDate(selectedTx.date) : "—"} />
+            <DetailRow label="Address" value={selectedTx.address} mono />
+            <DetailRow label="Status" value={selectedTx.status} />
+            {selectedTx.memo && <DetailRow label="Memo" value={selectedTx.memo} />}
+            {detailLoading && (
+              <p className="text-sm text-gray-500">Loading extra details…</p>
+            )}
+            {!detailLoading && detailExtra && (
+              <div className="pt-3 mt-3 border-t border-gray-200 space-y-2">
+                {detailExtra.confirmations != null && (
+                  <DetailRow label="Confirmations" value={String(detailExtra.confirmations)} />
+                )}
+                {detailExtra.block_height != null && (
+                  <DetailRow label="Block height" value={String(detailExtra.block_height)} />
+                )}
+                {detailExtra.fee_zec != null && (
+                  <DetailRow label="Fee" value={`${detailExtra.fee_zec.toFixed(8)} ZEC`} />
+                )}
+                {detailExtra.broadcast_at && (
+                  <DetailRow label="Broadcast at" value={formatDetailDate(detailExtra.broadcast_at)} />
+                )}
+              </div>
+            )}
+          </div>
+        )}
+      </Modal>
     </div>
   );
+}
+
+function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className={`mt-0.5 text-gray-900 break-all ${mono ? "font-mono text-sm" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
+function formatDetailDate(dateStr: string): string {
+  if (!dateStr) return "—";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }
