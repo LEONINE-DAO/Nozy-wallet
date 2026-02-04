@@ -4,6 +4,10 @@ import { walletApi } from "../lib/api";
 import { Input } from "../components/Input";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
+import { Tooltip } from "../components/Tooltip";
+import { useSettingsStore } from "../store/settingsStore";
+import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
+import toast from "react-hot-toast";
 
 export interface HistoryTx {
   id: string;
@@ -131,6 +135,18 @@ export function HistoryPage() {
   const [selectedTx, setSelectedTx] = useState<HistoryTx | null>(null);
   const [detailExtra, setDetailExtra] = useState<{ confirmations?: number; block_height?: number; fee_zec?: number; broadcast_at?: string } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [fiatRate, setFiatRate] = useState<number | null>(null);
+  const [saveContactOpen, setSaveContactOpen] = useState(false);
+  const [saveContactName, setSaveContactName] = useState("");
+  const [saveContactNotes, setSaveContactNotes] = useState("");
+  const [saveContactSaving, setSaveContactSaving] = useState(false);
+
+  const {
+    showFiatEquivalent,
+    fiatCurrency,
+    useLiveFiatPrice,
+    customFiatPerZec,
+  } = useSettingsStore();
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +207,63 @@ export function HistoryPage() {
       .finally(() => setDetailLoading(false));
   }, [selectedTx?.id]);
 
+  // Fiat rate: live (CoinGecko) or custom
+  useEffect(() => {
+    if (!showFiatEquivalent) {
+      setFiatRate(null);
+      return;
+    }
+    if (!useLiveFiatPrice && customFiatPerZec != null) {
+      setFiatRate(customFiatPerZec);
+      return;
+    }
+    if (!useLiveFiatPrice) {
+      setFiatRate(null);
+      return;
+    }
+    getZecPriceInFiat(fiatCurrency).then((rate) => setFiatRate(rate));
+  }, [showFiatEquivalent, useLiveFiatPrice, customFiatPerZec, fiatCurrency]);
+
+  const effectiveFiatRate = showFiatEquivalent
+    ? (useLiveFiatPrice ? fiatRate : customFiatPerZec)
+    : null;
+
+  function fiatLine(amountZec: number): string | null {
+    if (effectiveFiatRate == null || effectiveFiatRate <= 0) return null;
+    const fiat = amountZec * effectiveFiatRate;
+    return formatFiatAmount(fiat, fiatCurrency);
+  }
+
+  const handleSaveToContacts = async () => {
+    if (!selectedTx) return;
+    const name = saveContactName.trim();
+    const addr = selectedTx.address.trim();
+    if (!name || !addr) {
+      toast.error("Name is required");
+      return;
+    }
+    if (!addr.startsWith("u1") && !addr.startsWith("zs1")) {
+      toast.error("Address must be a shielded address (u1 or zs1)");
+      return;
+    }
+    setSaveContactSaving(true);
+    try {
+      await walletApi.addAddressBookEntry({
+        name,
+        address: addr,
+        notes: saveContactNotes.trim() || undefined,
+      });
+      toast.success("Saved to contacts");
+      setSaveContactOpen(false);
+      setSaveContactName("");
+      setSaveContactNotes("");
+    } catch (e) {
+      toast.error((e as Error)?.message ?? "Failed to save contact");
+    } finally {
+      setSaveContactSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
       <div className="flex items-center justify-between">
@@ -243,14 +316,16 @@ export function HistoryPage() {
               <option value="30">Last 30 days</option>
               <option value="90">Last 90 days</option>
             </select>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => downloadCsv(filteredTxs)}
-              className="h-11 gap-2 bg-white/60 border-white/50 text-gray-700 hover:bg-white/90"
-            >
-              Export CSV
-            </Button>
+            <Tooltip content="Download filtered transactions as CSV">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => downloadCsv(filteredTxs)}
+                className="h-11 gap-2 bg-white/60 border-white/50 text-gray-700 hover:bg-white/90"
+              >
+                Export CSV
+              </Button>
+            </Tooltip>
           </div>
         </div>
       )}
@@ -339,6 +414,11 @@ export function HistoryPage() {
                   >
                     {tx.type === "received" ? "+" : "-"}
                     {tx.amount.toFixed(4)} ZEC
+                    {fiatLine(tx.amount) && (
+                      <span className="block text-xs font-normal normal-case text-gray-500 mt-0.5">
+                        ≈ {fiatLine(tx.amount)}
+                      </span>
+                    )}
                   </p>
                   <span
                     className={`text-xs px-2 py-0.5 rounded-full ${
@@ -368,9 +448,29 @@ export function HistoryPage() {
           <div className="space-y-4">
             <DetailRow label="Transaction ID" value={selectedTx.id} mono />
             <DetailRow label="Type" value={selectedTx.type === "received" ? "Received" : "Sent"} />
-            <DetailRow label="Amount" value={`${selectedTx.type === "received" ? "+" : "-"}${selectedTx.amount.toFixed(8)} ZEC`} />
+            <DetailRow
+              label="Amount"
+              value={
+                `${selectedTx.type === "received" ? "+" : "-"}${selectedTx.amount.toFixed(8)} ZEC` +
+                (fiatLine(selectedTx.amount) ? ` (≈ ${fiatLine(selectedTx.amount)})` : "")
+              }
+            />
             <DetailRow label="Date" value={selectedTx.date ? formatDetailDate(selectedTx.date) : "—"} />
-            <DetailRow label="Address" value={selectedTx.address} mono />
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <DetailRow label="Address" value={selectedTx.address} mono />
+              </div>
+              {(selectedTx.address.startsWith("u1") || selectedTx.address.startsWith("zs1")) && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="shrink-0 text-primary hover:bg-primary/10"
+                  onClick={() => setSaveContactOpen(true)}
+                >
+                  Save to contacts
+                </Button>
+              )}
+            </div>
             <DetailRow label="Status" value={selectedTx.status} />
             {selectedTx.memo && <DetailRow label="Memo" value={selectedTx.memo} />}
             {detailLoading && (
@@ -385,7 +485,13 @@ export function HistoryPage() {
                   <DetailRow label="Block height" value={String(detailExtra.block_height)} />
                 )}
                 {detailExtra.fee_zec != null && (
-                  <DetailRow label="Fee" value={`${detailExtra.fee_zec.toFixed(8)} ZEC`} />
+                  <DetailRow
+                    label="Fee"
+                    value={
+                      `${detailExtra.fee_zec.toFixed(8)} ZEC` +
+                      (fiatLine(detailExtra.fee_zec) ? ` (≈ ${fiatLine(detailExtra.fee_zec)})` : "")
+                    }
+                  />
                 )}
                 {detailExtra.broadcast_at && (
                   <DetailRow label="Broadcast at" value={formatDetailDate(detailExtra.broadcast_at)} />
@@ -394,6 +500,35 @@ export function HistoryPage() {
             )}
           </div>
         )}
+      </Modal>
+
+      <Modal
+        isOpen={saveContactOpen}
+        onClose={() => !saveContactSaving && setSaveContactOpen(false)}
+        title="Save to contacts"
+      >
+        <div className="space-y-4">
+          <Input
+            label="Name"
+            placeholder="e.g. Exchange"
+            value={saveContactName}
+            onChange={(e) => setSaveContactName(e.target.value)}
+          />
+          <Input
+            label="Notes (optional)"
+            placeholder="e.g. Withdrawal"
+            value={saveContactNotes}
+            onChange={(e) => setSaveContactNotes(e.target.value)}
+          />
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" onClick={() => setSaveContactOpen(false)} disabled={saveContactSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveToContacts} disabled={saveContactSaving}>
+              {saveContactSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
       </Modal>
     </div>
   );

@@ -1,10 +1,19 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 
+export type FiatCurrency = "USD" | "EUR";
+
 interface SettingsState {
   // UI Settings
   showNavigationLabels: boolean;
   hideBalance: boolean;
+  darkMode: boolean;
+
+  // Fiat display (e.g. in History)
+  showFiatEquivalent: boolean;
+  fiatCurrency: FiatCurrency;
+  useLiveFiatPrice: boolean;
+  customFiatPerZec: number | null;
 
   // Notification Settings
   transactionNotifs: boolean;
@@ -19,9 +28,18 @@ interface SettingsState {
   biometricsEnabled: boolean;
   screenshotProtection: boolean;
 
+  // Onboarding
+  onboardingFirstSyncDismissed: boolean;
+  setOnboardingFirstSyncDismissed: (dismissed: boolean) => void;
+
   // Setters
   setShowNavigationLabels: (show: boolean) => void;
   setHideBalance: (hide: boolean) => void;
+  setDarkMode: (enabled: boolean) => void;
+  setShowFiatEquivalent: (show: boolean) => void;
+  setFiatCurrency: (currency: FiatCurrency) => void;
+  setUseLiveFiatPrice: (use: boolean) => void;
+  setCustomFiatPerZec: (rate: number | null) => void;
   setTransactionNotifs: (show: boolean) => void;
   setSoundEnabled: (enabled: boolean) => void;
   setDndEnabled: (enabled: boolean) => void;
@@ -39,6 +57,11 @@ export const useSettingsStore = create<SettingsState>()(
       // Default values
       showNavigationLabels: false,
       hideBalance: false,
+      darkMode: false,
+      showFiatEquivalent: false,
+      fiatCurrency: "USD",
+      useLiveFiatPrice: true,
+      customFiatPerZec: null,
       transactionNotifs: true,
       soundEnabled: true,
       dndEnabled: false,
@@ -48,10 +71,18 @@ export const useSettingsStore = create<SettingsState>()(
       autoLockMinutes: "15",
       biometricsEnabled: false,
       screenshotProtection: true,
+      onboardingFirstSyncDismissed: false,
+      setOnboardingFirstSyncDismissed: (dismissed) =>
+        set({ onboardingFirstSyncDismissed: dismissed }),
 
       // Setters
       setShowNavigationLabels: (show) => set({ showNavigationLabels: show }),
       setHideBalance: (hide) => set({ hideBalance: hide }),
+      setDarkMode: (enabled) => set({ darkMode: enabled }),
+      setShowFiatEquivalent: (show) => set({ showFiatEquivalent: show }),
+      setFiatCurrency: (currency) => set({ fiatCurrency: currency }),
+      setUseLiveFiatPrice: (use) => set({ useLiveFiatPrice: use }),
+      setCustomFiatPerZec: (rate) => set({ customFiatPerZec: rate }),
       setTransactionNotifs: (show) => set({ transactionNotifs: show }),
       setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
       setDndEnabled: (enabled) => set({ dndEnabled: enabled }),
