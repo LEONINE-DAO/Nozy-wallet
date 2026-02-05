@@ -169,12 +169,10 @@ pub async fn build_and_broadcast_transaction(
                 tx_storage.save_transaction(tx_record)?;
 
                 println!("📝 Transaction saved to history - will track confirmations");
-                
+
                 Ok(network_txid)
             }
-            Err(e) => {
-                Err(e)
-            }
+            Err(e) => Err(e),
         }
     } else {
         Err(NozyError::InvalidOperation(
