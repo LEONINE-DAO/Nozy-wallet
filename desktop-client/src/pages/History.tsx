@@ -7,6 +7,7 @@ import { Button } from "../components/Button";
 import { Tooltip } from "../components/Tooltip";
 import { useSettingsStore } from "../store/settingsStore";
 import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
+import { formatErrorForDisplay } from "../utils/errors";
 import toast from "react-hot-toast";
 
 export interface HistoryTx {
@@ -166,7 +167,7 @@ export function HistoryPage() {
       })
       .catch((e) => {
         if (!cancelled) {
-          setError(e?.message ?? "Failed to load history");
+          setError(formatErrorForDisplay(e, "Failed to load transaction history"));
           setTxs([]);
         }
       })
@@ -258,7 +259,7 @@ export function HistoryPage() {
       setSaveContactName("");
       setSaveContactNotes("");
     } catch (e) {
-      toast.error((e as Error)?.message ?? "Failed to save contact");
+      toast.error(formatErrorForDisplay(e, "Failed to save contact"));
     } finally {
       setSaveContactSaving(false);
     }

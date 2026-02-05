@@ -3,6 +3,7 @@ import { Button } from "../Button";
 import { Input } from "../Input";
 import { ArrowLeft, CheckCircle, Danger, InfoCircle } from "@solar-icons/react";
 import toast from "react-hot-toast";
+import { formatErrorForDisplay } from "../../utils/errors";
 import { walletApi } from "../../lib/api";
 
 interface NetworkSettingsProps {
@@ -30,8 +31,7 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
         toast.success("Network configuration loaded");
       }
     } catch (e) {
-      console.error("Failed to load config", e);
-      toast.error("Failed to load network configuration");
+      toast.error(formatErrorForDisplay(e, "Failed to load network configuration"));
     } finally {
       setIsLoading(false);
     }
@@ -43,8 +43,7 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
       await walletApi.setZebraUrl({ url });
       toast.success("Network configuration saved");
     } catch (e) {
-      console.error("Failed to save config", e);
-      toast.error("Failed to save configuration");
+      toast.error(formatErrorForDisplay(e, "Failed to save configuration"));
     } finally {
       setIsSaving(false);
     }
@@ -64,7 +63,7 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
       }
     } catch (e) {
       setTestStatus("error");
-      toast.error("Failed to connect to node. Check your URL.", {
+      toast.error(formatErrorForDisplay(e, "Failed to connect to node. Check your URL."), {
         id: testToast,
       });
     }

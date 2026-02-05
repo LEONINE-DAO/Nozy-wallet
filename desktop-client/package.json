@@ -1,7 +1,7 @@
 {
   "name": "nozy-wallet-desktop",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -14,6 +14,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.9.1",
+    "@tanstack/react-query": "^5.90.12",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-hot-toast": "^2.6.0"
@@ -21,7 +22,6 @@
   "devDependencies": {
     "@solar-icons/react": "^1.0.1",
     "@tailwindcss/postcss": "^4.1.18",
-    "@tanstack/react-query": "^5.90.12",
     "@tauri-apps/cli": "^2.9.6",
     "@types/react": "^18.2.64",
     "@types/react-dom": "^18.2.21",

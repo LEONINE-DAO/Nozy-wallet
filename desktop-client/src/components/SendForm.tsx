@@ -1,17 +1,23 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import toast from "react-hot-toast";
+import { logger } from "../utils/logger";
+import { formatErrorForDisplay } from "../utils/errors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { Modal } from "../components/Modal";
+import { Tooltip } from "../components/Tooltip";
 import {
   Scanner,
   InfoCircle,
   BoltCircle,
   CheckCircle,
+  User,
 } from "@solar-icons/react";
 import { useWalletStore } from "../store/walletStore";
 import { useTokenStore } from "../store/tokenStore";
 import { walletApi } from "../lib/api";
 import { cn } from "../components/Button";
+import type { AddressBookEntry } from "../lib/types";
 
 type Priority = "slow" | "normal" | "fast";
 
@@ -42,12 +48,52 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [showReview, setShowReview] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [pickContactOpen, setPickContactOpen] = useState(false);
+  const [contacts, setContacts] = useState<AddressBookEntry[]>([]);
+  const [saveContactOpen, setSaveContactOpen] = useState(false);
+  const [saveContactName, setSaveContactName] = useState("");
+  const [saveContactNotes, setSaveContactNotes] = useState("");
+  const [saveContactSaving, setSaveContactSaving] = useState(false);
 
   const isValid =
     amount &&
     address &&
     parseFloat(amount) > 0 &&
     parseFloat(amount) + FEES[priority] <= balance;
+
+  useEffect(() => {
+    if (pickContactOpen) {
+      walletApi.listAddressBook().then((r) => setContacts(Array.isArray(r?.data) ? r.data : []));
+    }
+  }, [pickContactOpen]);
+
+  const handleSaveToContacts = async () => {
+    const name = saveContactName.trim();
+    if (!name || !address.trim()) {
+      toast.error("Name is required");
+      return;
+    }
+    if (!address.startsWith("u1") && !address.startsWith("zs1")) {
+      toast.error("Address must be a shielded address (u1 or zs1)");
+      return;
+    }
+    setSaveContactSaving(true);
+    try {
+      await walletApi.addAddressBookEntry({
+        name,
+        address: address.trim(),
+        notes: saveContactNotes.trim() || undefined,
+      });
+      toast.success("Saved to contacts");
+      setSaveContactOpen(false);
+      setSaveContactName("");
+      setSaveContactNotes("");
+    } catch (e) {
+      toast.error(formatErrorForDisplay(e, "Failed to save contact"));
+    } finally {
+      setSaveContactSaving(false);
+    }
+  };
 
   const handleMax = () => {
     const maxAmount = Math.max(0, balance - FEES[priority]);
@@ -76,16 +122,15 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         setPassword("");
         onSuccess?.();
       }, 2000);
-    } catch (error: any) {
-      // console.error("Send failed", error);
-      toast.error("Send failed. Please check your password and balance.", {
+    } catch (error: unknown) {
+      logger.error("Transaction send failed", error as Error, {
+        recipient: address,
+        amount: parseFloat(amount),
+        hasMemo: !!memo
+      });
+      toast.error(formatErrorForDisplay(error, "Send failed. Please check your password and balance."), {
         id: sendToast,
       });
-      toast.error(
-        error?.message ||
-          "Send failed. Please check your password and balance.",
-        { id: sendToast }
-      );
     } finally {
       setIsSending(false);
     }
@@ -193,12 +238,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </label>
           <div className="text-xs text-gray-400 font-medium">
             Available:{" "}
-            <span
-              className="text-gray-700 cursor-pointer hover:text-primary transition-colors uppercase"
-              onClick={handleMax}
-            >
-              {balance.toLocaleString()} {tokenSymbol}
-            </span>
+            <Tooltip content="Use maximum spendable amount (after fee)">
+              <span
+                className="text-gray-700 cursor-pointer hover:text-primary transition-colors uppercase"
+                onClick={handleMax}
+              >
+                {balance.toLocaleString()} {tokenSymbol}
+              </span>
+            </Tooltip>
           </div>
         </div>
 
@@ -217,14 +264,35 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
       </div>
 
       <div className="space-y-3">
-        <label className="text-sm font-medium text-gray-700 ml-1">
-          Recipient Address
-        </label>
+        <div className="flex items-center justify-between">
+          <label className="text-sm font-medium text-gray-700 ml-1">
+            Recipient Address
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setPickContactOpen(true)}
+              className="text-xs text-primary hover:underline flex items-center gap-1"
+            >
+              <User size={14} />
+              Choose from contacts
+            </button>
+            {address.trim() && (
+              <button
+                type="button"
+                onClick={() => setSaveContactOpen(true)}
+                className="text-xs text-gray-500 hover:text-primary hover:underline"
+              >
+                Save to contacts
+              </button>
+            )}
+          </div>
+        </div>
         <div className="relative group">
           <Input
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="44AFFq5kSiGBoZ... (ZCash Address)"
+            placeholder="u1... or zs1... (Zcash shielded address)"
             className="pr-12 py-3.5 bg-white/50 focus:bg-white ring-none transition-all font-mono text-sm"
           />
           <button className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 hover:text-primary transition-colors">
@@ -232,6 +300,59 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </button>
         </div>
       </div>
+
+      <Modal isOpen={pickContactOpen} onClose={() => setPickContactOpen(false)} title="Choose contact">
+        <ul className="space-y-1 max-h-64 overflow-y-auto">
+          {contacts.length === 0 ? (
+            <p className="text-sm text-gray-500 py-4">No contacts yet. Add some from Contacts.</p>
+          ) : (
+            contacts.map((c) => (
+              <li key={c.name}>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAddress(c.address);
+                    setPickContactOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <p className="font-medium text-gray-900">{c.name}</p>
+                  <p className="text-xs font-mono text-gray-500 truncate">{c.address}</p>
+                </button>
+              </li>
+            ))
+          )}
+        </ul>
+      </Modal>
+
+      <Modal
+        isOpen={saveContactOpen}
+        onClose={() => !saveContactSaving && setSaveContactOpen(false)}
+        title="Save to contacts"
+      >
+        <div className="space-y-4">
+          <Input
+            label="Name"
+            placeholder="e.g. Exchange"
+            value={saveContactName}
+            onChange={(e) => setSaveContactName(e.target.value)}
+          />
+          <Input
+            label="Notes (optional)"
+            placeholder="e.g. Withdrawal"
+            value={saveContactNotes}
+            onChange={(e) => setSaveContactNotes(e.target.value)}
+          />
+          <div className="flex gap-2 justify-end pt-2">
+            <Button variant="outline" onClick={() => setSaveContactOpen(false)} disabled={saveContactSaving}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveToContacts} disabled={saveContactSaving}>
+              {saveContactSaving ? "Saving…" : "Save"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
 
       <div>
         <button
@@ -305,14 +426,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
             Cancel
           </Button>
         )}
-        <Button
-          size="lg"
-          disabled={!isValid}
-          onClick={() => setShowReview(true)}
-          className="flex-1 rounded-xl py-4 text-lg shadow-xl bg-black text-white shadow-primary/30 -hover:translate-y-[2px] transition-all duration-300 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-        >
-          Review
-        </Button>
+        <Tooltip content="Review transaction details before sending">
+          <Button
+            size="lg"
+            disabled={!isValid}
+            onClick={() => setShowReview(true)}
+            className="flex-1 rounded-xl py-4 text-lg shadow-xl bg-black text-white shadow-primary/30 -hover:translate-y-[2px] transition-all duration-300 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
+          >
+            Review
+          </Button>
+        </Tooltip>
       </div>
     </div>
   );

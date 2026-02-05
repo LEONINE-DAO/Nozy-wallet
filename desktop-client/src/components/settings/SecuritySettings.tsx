@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "../Button";
 import { Input } from "../Input";
-import { ArrowLeft, Lock, Shield } from "@solar-icons/react";
+import { ArrowLeft, Lock, Shield, Moon, Sun } from "@solar-icons/react";
 import { useSettingsStore } from "../../store/settingsStore";
 import { Toggle } from "../Toggle";
 import toast from "react-hot-toast";
+import { formatErrorForDisplay } from "../../utils/errors";
+import { walletApi } from "../../lib/api";
 
 interface SecuritySettingsProps {
   onBack: () => void;
@@ -20,6 +22,8 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
     setShowNavigationLabels,
     hideBalance,
     setHideBalance,
+    darkMode,
+    setDarkMode,
     autoLockEnabled,
     setAutoLockEnabled,
     autoLockMinutes,
@@ -30,6 +34,15 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
     setScreenshotProtection,
   } = useSettingsStore();
 
+  // Apply dark mode to document root
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [darkMode]);
+
   const handleToggle =
     (setter: (v: boolean) => void, label: string) => (value: boolean) => {
       setter(value);
@@ -39,25 +52,38 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
     };
 
   const handleChangePassword = async () => {
+    if (!currentPassword) {
+      toast.error("Please enter your current password");
+      return;
+    }
+
+    if (!newPassword) {
+      toast.error("Please enter a new password");
+      return;
+    }
+
     if (newPassword !== confirmPassword) {
-      toast.error("Passwords don't match!");
+      toast.error("New passwords don't match!");
+      return;
+    }
+
+    if (newPassword.length < 8) {
+      toast.error("New password must be at least 8 characters long");
       return;
     }
 
     const passToast = toast.loading("Updating password...");
     try {
-      // Implement password change logic
-      // await walletApi.changePassword({ currentPassword, newPassword });
-      await new Promise((resolve) => setTimeout(resolve, 1000)); // Simulate
+      await walletApi.changePassword({
+        current_password: currentPassword,
+        new_password: newPassword,
+      });
       toast.success("Password updated successfully!", { id: passToast });
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
-    } catch (error: any) {
-      // console.error("Failed to change password:", error);
-      toast.error(error?.message || "Failed to update password", {
-        id: passToast,
-      });
+    } catch (error: unknown) {
+      toast.error(formatErrorForDisplay(error, "Failed to update password"), { id: passToast });
     }
   };
 
@@ -65,28 +91,28 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
     <div className="max-w-2xl mx-auto animate-fade-in">
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 transition-colors"
+        className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-6 transition-colors"
       >
         <ArrowLeft className="w-5 h-5" />
         <span className="font-medium">Back to Settings</span>
       </button>
 
-      <h2 className="text-3xl font-bold text-gray-900 mb-2">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
         Security & Privacy
       </h2>
-      <p className="text-gray-500 mb-8">
+      <p className="text-gray-500 dark:text-gray-400 mb-8">
         Manage your wallet security and privacy settings.
       </p>
 
       <div className="space-y-6">
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
+        <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 dark:border-gray-700/50 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
             <div className="w-10 h-10 rounded-full bg-[#f0a113]-100/50 flex items-center justify-center text-[#f0a113]">
               <Lock size={20} />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Change Password</h3>
-              <p className="text-sm text-gray-500">
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Change Password</h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Update your wallet password
               </p>
             </div>
@@ -124,7 +150,7 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
           </div>
         </div>
 
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
+        <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 dark:border-gray-700/50 shadow-sm">
           <Toggle
             icon={<Shield size={20} />}
             title="Auto-Lock"
@@ -147,7 +173,7 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
           )}
         </div>
 
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
+        <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 dark:border-gray-700/50 shadow-sm">
           <Toggle
             icon={<Shield size={20} />}
             title="Biometric Authentication"
@@ -157,11 +183,18 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
           />
         </div>
 
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
-          <h3 className="font-semibold text-gray-900 mb-4">
+        <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 dark:border-gray-700/50 shadow-sm">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4">
             Privacy & Interface
           </h3>
           <div className="space-y-2">
+            <Toggle
+              icon={darkMode ? <Sun size={20} /> : <Moon size={20} />}
+              title="Dark Mode"
+              description="Switch between light and dark theme"
+              checked={darkMode}
+              onChange={handleToggle(setDarkMode, "Dark mode")}
+            />
             <Toggle
               title="Hide Balance"
               description="Hide balance on home screen"

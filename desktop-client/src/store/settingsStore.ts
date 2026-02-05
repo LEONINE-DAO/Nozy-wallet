@@ -32,6 +32,12 @@ interface SettingsState {
   onboardingFirstSyncDismissed: boolean;
   setOnboardingFirstSyncDismissed: (dismissed: boolean) => void;
 
+  // Multi-account (labels and active; account list is backend-driven later)
+  accountLabels: Record<string, string>;
+  activeAccountId: string;
+  setAccountLabel: (accountId: string, label: string) => void;
+  setActiveAccountId: (accountId: string) => void;
+
   // Setters
   setShowNavigationLabels: (show: boolean) => void;
   setHideBalance: (hide: boolean) => void;
@@ -74,6 +80,14 @@ export const useSettingsStore = create<SettingsState>()(
       onboardingFirstSyncDismissed: false,
       setOnboardingFirstSyncDismissed: (dismissed) =>
         set({ onboardingFirstSyncDismissed: dismissed }),
+
+      accountLabels: { "0": "Default" },
+      activeAccountId: "0",
+      setAccountLabel: (accountId, label) =>
+        set((s) => ({
+          accountLabels: { ...s.accountLabels, [accountId]: label.trim() || s.accountLabels[accountId] || accountId },
+        })),
+      setActiveAccountId: (accountId) => set({ activeAccountId: accountId }),
 
       // Setters
       setShowNavigationLabels: (show) => set({ showNavigationLabels: show }),

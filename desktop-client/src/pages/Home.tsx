@@ -14,6 +14,7 @@ import { TabId } from "../components/Header";
 import { Modal } from "../components/Modal";
 import { SendForm } from "../components/SendForm";
 import { ReceiveContent } from "../components/ReceiveContent";
+import { Tooltip } from "../components/Tooltip";
 import { walletApi } from "../lib/api";
 
 import { useSettingsStore } from "../store/settingsStore";
@@ -25,7 +26,8 @@ interface HomePageProps {
 export function HomePage({ onNavigate }: HomePageProps) {
   const { balance, address } = useWalletStore();
   const { tokens, activeTokenId, getToken } = useTokenStore();
-  const { hideBalance } = useSettingsStore();
+  const { hideBalance, accountLabels, activeAccountId } = useSettingsStore();
+  const activeAccountLabel = accountLabels[activeAccountId] ?? activeAccountId ?? "Default";
   const activeToken = activeTokenId ? getToken(activeTokenId) : tokens[0];
   const [showBalance, setShowBalance] = useState(!hideBalance);
   const [activeModal, setActiveModal] = useState<"send" | "receive" | null>(
@@ -66,23 +68,29 @@ export function HomePage({ onNavigate }: HomePageProps) {
         <div className="flex-1 space-y-8">
           <header className="flex justify-between items-center">
             <div>
-              <h2 className="text-3xl font-bold text-gray-900">Assets</h2>
-              <p className="text-gray-500">Your portfolio</p>
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Assets</h2>
+              <p className="text-gray-500 dark:text-gray-400">
+                {activeAccountLabel} · Your portfolio
+              </p>
             </div>
             <div className="flex gap-3">
-              <Button
-                variant="outline"
-                onClick={() => setActiveModal("receive")}
-                className="gap-2 bg-white/60 backdrop-blur-sm border border-white/50 text-gray-700 hover:bg-white/90"
-              >
-                <ArrowLeftDown size={20} /> Receive
-              </Button>
-              <Button
-                onClick={() => setActiveModal("send")}
-                className="gap-2 shadow-lg shadow-primary/20"
-              >
-                <ArrowRightUp size={20} /> Send
-              </Button>
+              <Tooltip content="Get your receive address">
+                <Button
+                  variant="outline"
+                  onClick={() => setActiveModal("receive")}
+                  className="gap-2 bg-white/60 backdrop-blur-sm border border-white/50 text-gray-700 hover:bg-white/90"
+                >
+                  <ArrowLeftDown size={20} /> Receive
+                </Button>
+              </Tooltip>
+              <Tooltip content="Send ZEC to another address">
+                <Button
+                  onClick={() => setActiveModal("send")}
+                  className="gap-2 shadow-lg shadow-primary/20"
+                >
+                  <ArrowRightUp size={20} /> Send
+                </Button>
+              </Tooltip>
             </div>
           </header>
 
@@ -111,23 +119,25 @@ export function HomePage({ onNavigate }: HomePageProps) {
               </div>
 
               <div className="mt-8 flex items-center justify-between text-sm">
-                <div
-                  className="flex items-center gap-2 text-black/70 hover:text-black cursor-pointer transition-colors group"
-                  onClick={handleCopy}
-                >
-                  <span className="font-medium">{displayAddress}</span>
-                  {copied ? (
-                    <CheckCircle
-                      size={14}
-                      className="text-black"
-                    />
-                  ) : (
-                    <Copy
-                      size={14}
-                      className="group-hover:text-black transition-colors opacity-60 group-hover:opacity-100"
-                    />
-                  )}
-                </div>
+                <Tooltip content="Copy address">
+                  <div
+                    className="flex items-center gap-2 text-black/70 hover:text-black cursor-pointer transition-colors group"
+                    onClick={handleCopy}
+                  >
+                    <span className="font-medium">{displayAddress}</span>
+                    {copied ? (
+                      <CheckCircle
+                        size={14}
+                        className="text-black"
+                      />
+                    ) : (
+                      <Copy
+                        size={14}
+                        className="group-hover:text-black transition-colors opacity-60 group-hover:opacity-100"
+                      />
+                    )}
+                  </div>
+                </Tooltip>
               </div>
             </div>
             <div className="absolute -right-12 -bottom-12 w-64 h-64 bg-white/20 rounded-full blur-3xl pointer-events-none" />

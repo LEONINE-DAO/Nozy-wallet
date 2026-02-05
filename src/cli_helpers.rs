@@ -110,7 +110,7 @@ pub async fn build_and_broadcast_transaction(
     memo: Option<&[u8]>,
     enable_broadcast: bool,
     zebra_url: &str,
-) -> NozyResult<()> {
+) -> NozyResult<String> {
     let fee_zatoshis = if let Some(fee) = fee_zatoshis {
         fee
     } else {
@@ -169,18 +169,18 @@ pub async fn build_and_broadcast_transaction(
                 tx_storage.save_transaction(tx_record)?;
 
                 println!("📝 Transaction saved to history - will track confirmations");
+                
+                Ok(network_txid)
             }
             Err(e) => {
-                return Err(e);
+                Err(e)
             }
         }
     } else {
-        return Err(NozyError::InvalidOperation(
+        Err(NozyError::InvalidOperation(
             "Broadcasting disabled".to_string(),
-        ));
+        ))
     }
-
-    Ok(())
 }
 
 pub fn handle_insufficient_funds_error(error: &NozyError) {

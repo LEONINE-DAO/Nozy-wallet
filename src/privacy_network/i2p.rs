@@ -40,8 +40,8 @@ impl PrivacyProxy for I2PProxy {
         self.proxy_url.clone()
     }
 
-    async fn test_connection(&self) -> NozyResult<bool> {
-        self.test_i2p_connection().await
+    fn test_connection(&self) -> impl std::future::Future<Output = NozyResult<bool>> + Send {
+        self.test_i2p_connection()
     }
 
     fn create_client(&self) -> NozyResult<Client> {

@@ -14,6 +14,7 @@ use std::time::Instant;
 /// Verifies Monero blocks using zero-knowledge proofs
 pub struct MoneroZkVerifier {
     config: ZkVerificationConfig,
+    #[allow(dead_code)] // Reserved for future proof caching functionality
     proof_cache: Option<ProofCache>,
 }
 

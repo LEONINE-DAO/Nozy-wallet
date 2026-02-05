@@ -954,7 +954,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             )
             .await
             {
-                Ok(_) => {
+                Ok(txid) => {
                     let amount_with_fee = amount_zatoshis + fee_zatoshis;
                     let balance_after = balance_before.saturating_sub(amount_with_fee);
 
@@ -962,6 +962,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
                     show_privacy_badge();
 
                     println!("\n✅ Transaction sent successfully!");
+                    println!("🆔 Transaction ID: {}", txid);
                     println!("{}", "=".repeat(60));
                     println!("  Amount sent: {:.8} ZEC", amount);
                     println!(

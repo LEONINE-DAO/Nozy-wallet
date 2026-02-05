@@ -1,12 +1,13 @@
 import { useState } from "react";
-import { Eye, EyeClosed } from "@solar-icons/react";
+import { Eye, EyeClosed, Shield, Lock, Copy, Refresh } from "@solar-icons/react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { useWalletStore } from "../store/walletStore";
 import { walletApi } from "../lib/api";
 import toast from "react-hot-toast";
+import { formatErrorForDisplay } from "../utils/errors";
 
-type ViewState = "initial" | "create" | "restore";
+type ViewState = "initial" | "create" | "restore" | "securityTips";
 
 export function WelcomePage() {
   const [view, setView] = useState<ViewState>("initial");
@@ -46,9 +47,8 @@ export function WelcomePage() {
         toast.success("Wallet created successfully!", { id: createToast });
         setHasWallet(true);
       }
-    } catch (err: any) {
-      const errMsg =
-        err?.message || "Failed to create wallet. Please try again.";
+    } catch (err: unknown) {
+      const errMsg = formatErrorForDisplay(err, "Failed to create wallet. Please try again.");
       setError(errMsg);
       toast.error(errMsg, { id: createToast });
     } finally {
@@ -73,10 +73,9 @@ export function WelcomePage() {
         password: restorePassword,
       });
       toast.success("Wallet restored successfully!", { id: restoreToast });
-      setHasWallet(true);
-    } catch (err: any) {
-      const errMsg =
-        err?.message || "Failed to restore wallet. Please check your mnemonic.";
+      setView("securityTips");
+    } catch (err: unknown) {
+      const errMsg = formatErrorForDisplay(err, "Failed to restore wallet. Please check your mnemonic.");
       setError(errMsg);
       toast.error(errMsg, { id: restoreToast });
     } finally {
@@ -103,6 +102,11 @@ export function WelcomePage() {
 
   const handleMnemonicConfirmed = () => {
     setGeneratedMnemonic(null);
+    setView("securityTips");
+  };
+
+  const handleGetStarted = () => {
+    setView("initial");
     setHasWallet(true);
   };
 
@@ -356,6 +360,73 @@ export function WelcomePage() {
                   I've Saved My Recovery Phrase
                 </Button>
               </div>
+            </div>
+          )}
+
+          {view === "securityTips" && (
+            <div className="p-8 text-left space-y-8 max-w-xl mx-auto animate-fade-in">
+              <div className="text-center">
+                <h2 className="text-2xl font-bold text-gray-800">
+                  A few security tips
+                </h2>
+                <p className="text-gray-500 mt-1">
+                  Keep your wallet and funds safe
+                </p>
+              </div>
+
+              <ul className="space-y-4">
+                <li className="flex gap-4 p-4 rounded-xl bg-white/80 border border-white/50 shadow-sm">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Lock size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Never share your recovery phrase</p>
+                    <p className="text-sm text-gray-600 mt-0.5">
+                      Nozy Wallet and no one else will ever ask for it. Anyone with these words can control your funds.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex gap-4 p-4 rounded-xl bg-white/80 border border-white/50 shadow-sm">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Copy size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Verify addresses before sending</p>
+                    <p className="text-sm text-gray-600 mt-0.5">
+                      Always double-check the recipient address. Transactions cannot be reversed.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex gap-4 p-4 rounded-xl bg-white/80 border border-white/50 shadow-sm">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Refresh size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Sync your wallet</p>
+                    <p className="text-sm text-gray-600 mt-0.5">
+                      After unlocking, sync to load your balance and transaction history from the network.
+                    </p>
+                  </div>
+                </li>
+                <li className="flex gap-4 p-4 rounded-xl bg-white/80 border border-white/50 shadow-sm">
+                  <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <Shield size={20} className="text-primary" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-gray-900">Keep your app updated</p>
+                    <p className="text-sm text-gray-600 mt-0.5">
+                      Updates include security fixes. Download only from official sources.
+                    </p>
+                  </div>
+                </li>
+              </ul>
+
+              <Button
+                onClick={handleGetStarted}
+                className="w-full py-6 text-lg"
+              >
+                Get started
+              </Button>
             </div>
           )}
         </div>

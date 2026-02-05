@@ -68,8 +68,8 @@ impl PrivacyProxy for TorProxy {
         self.proxy_url.clone()
     }
 
-    async fn test_connection(&self) -> NozyResult<bool> {
-        self.test_tor_connection().await
+    fn test_connection(&self) -> impl std::future::Future<Output = NozyResult<bool>> + Send {
+        self.test_tor_connection()
     }
 
     fn create_client(&self) -> NozyResult<Client> {

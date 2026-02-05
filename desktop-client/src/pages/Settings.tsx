@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "../components/Button";
 import toast from "react-hot-toast";
+import { formatErrorForDisplay } from "../utils/errors";
 import {
   User,
   Shield,
@@ -8,12 +9,18 @@ import {
   BoltCircle,
   AltArrowRight,
   Sun,
+  Refresh,
+  Download,
 } from "@solar-icons/react";
 import { NetworkSettings } from "../components/settings/NetworkSettings";
 import { AccountSettings } from "../components/settings/AccountSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
 import { NotificationSettings } from "../components/settings/NotificationSettings";
 import { DisplaySettings } from "../components/settings/DisplaySettings";
+import { MultiSigSettings } from "../components/settings/MultiSigSettings";
+import { AccountListSettings } from "../components/settings/AccountListSettings";
+import { MultiDeviceSyncSettings } from "../components/settings/MultiDeviceSyncSettings";
+import { BackupRestoreSettings } from "../components/settings/BackupRestoreSettings";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
 
@@ -23,7 +30,11 @@ type SettingsSection =
   | "account"
   | "security"
   | "notifications"
-  | "display";
+  | "display"
+  | "multisig"
+  | "accounts"
+  | "multidevice"
+  | "backup";
 
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SettingsSection>("main");
@@ -38,7 +49,7 @@ export function SettingsPage() {
       setAddress("");
       toast.success("Logged out successfully", { id: logoutToast });
     } catch (error) {
-      toast.error("Failed to log out", { id: logoutToast });
+      toast.error(formatErrorForDisplay(error, "Failed to log out"), { id: logoutToast });
     }
   };
 
@@ -48,6 +59,10 @@ export function SettingsPage() {
 
   if (activeSection === "account") {
     return <AccountSettings onBack={() => setActiveSection("main")} />;
+  }
+
+  if (activeSection === "accounts") {
+    return <AccountListSettings onBack={() => setActiveSection("main")} />;
   }
 
   if (activeSection === "security") {
@@ -62,6 +77,18 @@ export function SettingsPage() {
     return <DisplaySettings onBack={() => setActiveSection("main")} />;
   }
 
+  if (activeSection === "multisig") {
+    return <MultiSigSettings onBack={() => setActiveSection("main")} />;
+  }
+
+  if (activeSection === "multidevice") {
+    return <MultiDeviceSyncSettings onBack={() => setActiveSection("main")} />;
+  }
+
+  if (activeSection === "backup") {
+    return <BackupRestoreSettings onBack={() => setActiveSection("main")} />;
+  }
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
       <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-8">Settings</h2>
@@ -72,6 +99,12 @@ export function SettingsPage() {
           title="Account Information"
           description="Manage your keys and seeds"
           onClick={() => setActiveSection("account")}
+        />
+        <SettingsItem
+          icon={<User className="text-primary-600" />}
+          title="Accounts"
+          description="Create, switch, and rename accounts"
+          onClick={() => setActiveSection("accounts")}
         />
         <SettingsItem
           icon={<BoltCircle className="text-primary-600" />}
@@ -96,6 +129,24 @@ export function SettingsPage() {
           title="Display"
           description="Fiat equivalent and display options"
           onClick={() => setActiveSection("display")}
+        />
+        <SettingsItem
+          icon={<Shield className="text-amber-500" />}
+          title="Multi-signature"
+          description="Co-signing flows (in design)"
+          onClick={() => setActiveSection("multisig")}
+        />
+        <SettingsItem
+          icon={<Refresh className="text-primary-600" />}
+          title="Sync across devices"
+          description="Encrypted state sync (in design)"
+          onClick={() => setActiveSection("multidevice")}
+        />
+        <SettingsItem
+          icon={<Download className="text-primary-600" />}
+          title="Backup & restore"
+          description="Encrypted backup file (backend wiring in progress)"
+          onClick={() => setActiveSection("backup")}
         />
       </div>
 

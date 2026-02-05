@@ -1,14 +1,19 @@
 import { useState } from "react";
 import { Button } from "../Button";
+import { Input } from "../Input";
 import {
   ArrowLeft,
   Copy,
   Eye,
   EyeClosed,
   CheckCircle,
+  Lock,
 } from "@solar-icons/react";
 import { useWalletStore } from "../../store/walletStore";
+import { walletApi } from "../../lib/api";
 import toast from "react-hot-toast";
+import { formatErrorForDisplay } from "../../utils/errors";
+import { logger } from "../../utils/logger";
 
 interface AccountSettingsProps {
   onBack: () => void;
@@ -19,17 +24,69 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
   const [showSeed, setShowSeed] = useState(false);
   const [showPrivateKey, setShowPrivateKey] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
-
-  // Mock data - replace with actual wallet data
-  const seedPhrase =
-    "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10 word11 word12";
-  const privateKey = "5KQwrPbwdL6PhXujxW37FSSQZ1JiwsST4cqQzDeyXtP79zkvFD3";
+  const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
+  const [privateKey, setPrivateKey] = useState<string | null>(null);
+  const [password, setPassword] = useState("");
+  const [showPasswordDialog, setShowPasswordDialog] = useState<"mnemonic" | "privateKey" | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
 
   const handleCopy = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
     toast.success(`${type} copied to clipboard`);
     setCopied(type);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleShowMnemonic = () => {
+    if (seedPhrase) {
+      setShowSeed(!showSeed);
+    } else {
+      setShowPasswordDialog("mnemonic");
+    }
+  };
+
+  const handleShowPrivateKey = () => {
+    if (privateKey) {
+      setShowPrivateKey(!showPrivateKey);
+    } else {
+      setShowPasswordDialog("privateKey");
+    }
+  };
+
+  const handlePasswordSubmit = async () => {
+    if (!password) {
+      toast.error("Please enter your password");
+      return;
+    }
+
+    setIsLoading(true);
+    try {
+      if (showPasswordDialog === "mnemonic") {
+        const response = await walletApi.getMnemonic({ password });
+        setSeedPhrase(response.data);
+        setShowSeed(true);
+        toast.success("Mnemonic phrase revealed");
+      } else if (showPasswordDialog === "privateKey") {
+        const response = await walletApi.getPrivateKey({ password });
+        setPrivateKey(response.data);
+        setShowPrivateKey(true);
+        toast.success("Private key revealed");
+      }
+      setPassword("");
+      setShowPasswordDialog(null);
+    } catch (error: unknown) {
+      logger.error("Password verification failed", error as Error, { 
+        action: showPasswordDialog 
+      });
+      toast.error(formatErrorForDisplay(error, "Failed to verify password"));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleCancelPassword = () => {
+    setPassword("");
+    setShowPasswordDialog(null);
   };
 
   return (
@@ -89,14 +146,14 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
               Recovery Seed Phrase
             </h3>
             <button
-              onClick={() => setShowSeed(!showSeed)}
+              onClick={handleShowMnemonic}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
               {showSeed ? <EyeClosed size={20} /> : <Eye size={20} />}
             </button>
           </div>
 
-          {showSeed ? (
+          {showSeed && seedPhrase ? (
             <>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-3">
                 <div className="grid grid-cols-3 gap-3">
@@ -149,7 +206,7 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
           ) : (
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center">
               <p className="text-sm text-gray-500">
-                Click the eye icon to reveal
+                Click the eye icon to reveal (password required)
               </p>
             </div>
           )}
@@ -161,14 +218,14 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
               Private Key
             </h3>
             <button
-              onClick={() => setShowPrivateKey(!showPrivateKey)}
+              onClick={handleShowPrivateKey}
               className="text-gray-400 hover:text-gray-600 transition-colors"
             >
               {showPrivateKey ? <EyeClosed size={20} /> : <Eye size={20} />}
             </button>
           </div>
 
-          {showPrivateKey ? (
+          {showPrivateKey && privateKey ? (
             <>
               <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 font-mono text-sm text-gray-700 break-all mb-3">
                 {privateKey}
@@ -207,12 +264,71 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
           ) : (
             <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center">
               <p className="text-sm text-gray-500">
-                Click the eye icon to reveal
+                Click the eye icon to reveal (password required)
               </p>
             </div>
           )}
         </div>
       </div>
+
+      {/* Password Dialog */}
+      {showPasswordDialog && (
+        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
+                <Lock size={20} className="text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-gray-900 dark:text-gray-100">
+                  Enter Password
+                </h3>
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  {showPasswordDialog === "mnemonic"
+                    ? "Enter your password to view the recovery seed phrase"
+                    : "Enter your password to view the private key"}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <Input
+                type="password"
+                label="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Enter your wallet password"
+                autoFocus
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    handlePasswordSubmit();
+                  } else if (e.key === "Escape") {
+                    handleCancelPassword();
+                  }
+                }}
+              />
+
+              <div className="flex gap-3">
+                <Button
+                  variant="secondary"
+                  onClick={handleCancelPassword}
+                  className="flex-1"
+                  disabled={isLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  onClick={handlePasswordSubmit}
+                  className="flex-1"
+                  disabled={!password || isLoading}
+                >
+                  {isLoading ? "Verifying..." : "Verify"}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

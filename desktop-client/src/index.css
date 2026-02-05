@@ -15,6 +15,12 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+:root.dark {
+  color-scheme: dark;
+  color: #f5f5f5;
+  background-color: #0a0a0a;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -22,6 +28,12 @@ body {
   background: #F5F5F7;
   color: #1a1a1a;
   overflow-x: hidden;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.dark body {
+  background: #0a0a0a;
+  color: #f5f5f5;
 }
 
 /* Scrollbar Styling */
@@ -32,6 +44,10 @@ body {
 ::-webkit-scrollbar-track {
   background: #f1f1f1; 
 }
+
+.dark ::-webkit-scrollbar-track {
+  background: #1a1a1a; 
+}
  
 ::-webkit-scrollbar-thumb {
   background: #c6b354; 
@@ -40,4 +56,12 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: #b09f4b; 
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #4a4a4a; 
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #5a5a5a; 
 }

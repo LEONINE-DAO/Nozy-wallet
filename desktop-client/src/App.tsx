@@ -1,27 +1,41 @@
 import { useQuery } from "@tanstack/react-query";
+import { useEffect } from "react";
 import toast, { Toaster } from "react-hot-toast";
+import { formatErrorForDisplay } from "./utils/errors";
 import { walletApi } from "./lib/api";
 import { useWalletStore } from "./store/walletStore";
+import { useSettingsStore } from "./store/settingsStore";
 import { AuthenticatedLayout } from "./layout/AuthenticatedLayout";
 import { WelcomePage } from "./pages/Welcome";
 
 function App() {
   const { hasWallet, setHasWallet } = useWalletStore();
+  const { darkMode } = useSettingsStore();
 
-  // Check if wallet exists on mount
+  useEffect(() => {
+    if (darkMode) {
+      document.documentElement.classList.add("dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+    }
+  }, [darkMode]);
+
   const { isLoading: isCheckingWallet } = useQuery({
-    queryKey: ["walletExists"],
+    queryKey: ["walletStatus"],
     queryFn: async () => {
       const walletExistsToast = toast.loading("Checking wallet status...");
       try {
-        const res = await walletApi.checkWalletExists();
-        setHasWallet(res.data.exists);
+        const statusRes = await walletApi.getWalletStatus();
+        // Wallet exists and is unlocked = show authenticated layout
+        // Wallet exists but locked = show welcome page with unlock option
+        // No wallet = show welcome page with create/restore options
+        setHasWallet(statusRes.data.exists && statusRes.data.unlocked);
         toast.dismiss(walletExistsToast);
-        return res.data;
+        return statusRes.data;
       } catch (e) {
-        // console.error("Failed to check wallet", e);
-        toast.error("Failed to check wallet status", { id: walletExistsToast });
-        return { exists: false };
+        toast.error(formatErrorForDisplay(e, "Failed to check wallet status"), { id: walletExistsToast });
+        setHasWallet(false);
+        return { exists: false, unlocked: false };
       }
     },
   });
@@ -56,7 +70,7 @@ function App() {
         position="top-right"
         toastOptions={{
           className:
-            "bg-white/90 backdrop-blur-md border border-white/50 shadow-xl rounded-2xl font-medium text-gray-900",
+            "bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border border-white/50 dark:border-gray-700/50 shadow-xl rounded-2xl font-medium text-gray-900 dark:text-gray-100",
           duration: 3000,
           style: {
             padding: "12px 16px",

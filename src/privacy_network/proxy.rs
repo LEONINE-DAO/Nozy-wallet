@@ -24,7 +24,7 @@ pub trait PrivacyProxy: Send + Sync {
     fn proxy_url(&self) -> String;
 
     /// Test if proxy is working
-    async fn test_connection(&self) -> NozyResult<bool>;
+    fn test_connection(&self) -> impl std::future::Future<Output = NozyResult<bool>> + Send;
 
     /// Create HTTP client with proxy configured
     fn create_client(&self) -> NozyResult<Client>;

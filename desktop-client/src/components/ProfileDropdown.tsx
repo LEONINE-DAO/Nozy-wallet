@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from "react";
-import { Settings, User } from "@solar-icons/react";
+import { Settings, User, Users } from "@solar-icons/react";
 import { useQuery } from "@tanstack/react-query";
 import { useWalletStore } from "../store/walletStore";
 import { walletApi } from "../lib/api";
 
 interface ProfileDropdownProps {
-  onNavigate: (path: "settings") => void;
+  onNavigate: (path: "settings" | "contacts") => void;
 }
 
 export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
@@ -79,6 +79,16 @@ export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
               Profile
             </p>
           </div>
+          <button
+            onClick={() => {
+              onNavigate("contacts");
+              setIsOpen(false);
+            }}
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-primary-50 hover:text-primary transition-colors flex items-center gap-2"
+          >
+            <Users size={18} />
+            Contacts
+          </button>
           <button
             onClick={() => {
               onNavigate("settings");

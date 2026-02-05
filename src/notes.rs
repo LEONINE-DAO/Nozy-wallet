@@ -566,6 +566,7 @@ impl NoteScanner {
         Ok(transactions)
     }
 
+    #[allow(dead_code)] // Reserved for future block transaction parsing functionality
     async fn get_block_transactions(&self, height: u32) -> NozyResult<Vec<ParsedTransaction>> {
         let block_hash = self.zebra_client.get_block_hash(height).await?;
         let block_data = self.zebra_client.get_block_by_hash(&block_hash, 2).await?;
@@ -575,6 +576,7 @@ impl NoteScanner {
         Self::parse_block_data(&block_value, height)
     }
 
+    #[allow(dead_code)] // Reserved for future Orchard action parsing functionality
     fn parse_orchard_actions_from_json(
         &self,
         orchard_json: &serde_json::Value,

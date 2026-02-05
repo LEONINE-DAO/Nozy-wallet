@@ -1,10 +1,13 @@
-import React, { useState } from "react";
-import { Home, History, Refresh } from "@solar-icons/react";
+import React from "react";
+import { Home, History, Refresh, Shield } from "@solar-icons/react";
 import toast from "react-hot-toast";
+import { formatErrorForDisplay } from "../utils/errors";
 import { ProfileDropdown } from "./ProfileDropdown";
+import { Tooltip } from "./Tooltip";
 import { walletApi } from "../lib/api";
+import { useWalletStore } from "../store/walletStore";
 
-export type TabId = "home" | "history" | "settings" | "send";
+export type TabId = "home" | "history" | "settings" | "send" | "browser" | "contacts";
 
 interface HeaderProps {
   activeTab: TabId;
@@ -17,7 +20,7 @@ function cn(...classes: (string | boolean | undefined)[]) {
 }
 
 export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
-  const [isSyncing, setIsSyncing] = useState(false);
+  const { isSyncing, setIsSyncing } = useWalletStore();
 
   const handleManualSync = async () => {
     if (isSyncing) return;
@@ -27,8 +30,7 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
       await walletApi.syncWallet();
       toast.success("Wallet synced successfully!", { id: syncToast });
     } catch (error) {
-      // console.error("Manual sync failed:", error);
-      toast.error("Sync failed. Please try again.", { id: syncToast });
+      toast.error(formatErrorForDisplay(error, "Sync failed. Please try again."), { id: syncToast });
     } finally {
       setIsSyncing(false);
     }
@@ -49,38 +51,64 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
             />
           </div>
           <nav className="flex items-center gap-2">
-            <HeaderItem
-              icon={<Home weight="Bold" />}
-              label="Home"
-              showLabel={showLabels}
-              active={activeTab === "home"}
-              onClick={() => onTabChange("home")}
-            />
-            <HeaderItem
-              icon={<History weight="Bold" />}
-              label="History"
-              showLabel={showLabels}
-              active={activeTab === "history"}
-              onClick={() => onTabChange("history")}
-            />
+            <Tooltip content="View balance and recent activity">
+              <div>
+                <HeaderItem
+                  icon={<Home weight="Bold" />}
+                  label="Home"
+                  showLabel={showLabels}
+                  active={activeTab === "home"}
+                  onClick={() => onTabChange("home")}
+                />
+              </div>
+            </Tooltip>
+            <Tooltip content="View and search transaction history">
+              <div>
+                <HeaderItem
+                  icon={<History weight="Bold" />}
+                  label="History"
+                  showLabel={showLabels}
+                  active={activeTab === "history"}
+                  onClick={() => onTabChange("history")}
+                />
+              </div>
+            </Tooltip>
+            <Tooltip content="Browse Zcash dApps">
+              <div>
+                <HeaderItem
+                  icon={<Shield weight="Bold" />}
+                  label="Browser"
+                  showLabel={showLabels}
+                  active={activeTab === "browser"}
+                  onClick={() => onTabChange("browser")}
+                />
+              </div>
+            </Tooltip>
           </nav>
         </div>
 
         <div className="flex items-center gap-3">
-          <button
-            className="p-2.5 rounded-xl text-gray-500 hover:text-primary hover:bg-white/60 hover:shadow-sm border border-transparent hover:border-white/50 transition-all active:scale-95 disabled:opacity-50"
-            title="Sync Wallet"
-            onClick={handleManualSync}
-            disabled={isSyncing}
-          >
-            <Refresh
-              size={20}
+          <Tooltip content={isSyncing ? "Syncing wallet with the network…" : "Sync wallet with the network"}>
+            <button
               className={cn(
-                "transition-transform",
-                isSyncing && "animate-spin"
+                "flex items-center gap-2 px-3 py-2.5 rounded-xl text-gray-500 hover:text-primary hover:bg-white/60 hover:shadow-sm border border-transparent hover:border-white/50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait",
+                isSyncing && "bg-primary/10 text-primary"
               )}
-            />
-          </button>
+              title="Sync Wallet"
+              onClick={handleManualSync}
+              disabled={isSyncing}
+            >
+              <Refresh
+                size={20}
+                className={cn("shrink-0 transition-transform", isSyncing && "animate-spin")}
+              />
+              {(showLabels || isSyncing) && (
+                <span className="text-sm font-medium">
+                  {isSyncing ? "Syncing…" : "Sync"}
+                </span>
+              )}
+            </button>
+          </Tooltip>
           <ProfileDropdown onNavigate={(path) => onTabChange(path)} />
         </div>
       </div>
