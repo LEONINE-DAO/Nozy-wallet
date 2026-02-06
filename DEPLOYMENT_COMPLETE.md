@@ -1,6 +1,6 @@
 # ✅ Deployment Complete!
 
-## 🎉 What's Been Deployed
+## What's Been Deployed
 
 ### ✅ 1. Landing Page Workflow
 - **File**: `.github/workflows/deploy-landing-from-desktopclient.yml`
@@ -72,9 +72,8 @@ After workflow completes:
 
 ---
 
-## 🎯 Your Site Will Be Live At:
+## Site Will Be Live At:
 
 **https://LEONINE-DAO.github.io/Nozy-wallet/**
 
-Perfect for funding presentations! 🚀
 
