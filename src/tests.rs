@@ -5,7 +5,7 @@ use crate::storage::WalletStorage;
 use crate::zebra_integration::ZebraClient;
 use std::path::PathBuf;
 
-// Include deterministic scanning tests
+
 #[cfg(test)]
 #[path = "tests/deterministic_scanning_tests.rs"]
 mod deterministic_scanning_tests;
@@ -13,6 +13,7 @@ mod deterministic_scanning_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zcash_protocol::consensus::NetworkType;
 
     #[test]
     fn test_wallet_creation() {
@@ -54,7 +55,7 @@ mod tests {
     fn test_address_generation() {
         let wallet = HDWallet::new().unwrap();
 
-        let address = wallet.generate_orchard_address(0, 0);
+        let address = wallet.generate_orchard_address(0, 0, NetworkType::Main);
         assert!(address.is_ok());
 
         let address = address.unwrap();
@@ -299,7 +300,7 @@ mod performance_tests {
 
         let start = Instant::now();
         for i in 0..10 {
-            let _address = wallet.generate_orchard_address(0, i).unwrap();
+            let _address = wallet.generate_orchard_address(0, i, NetworkType::Main).unwrap();
         }
         let duration = start.elapsed();
 

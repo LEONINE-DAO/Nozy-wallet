@@ -1,5 +1,5 @@
 use crate::error::{NozyError, NozyResult};
-use crate::key_management::{zeroize_bytes, SecureSeed};
+use crate::key_management::SecureSeed;
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use bip32::{DerivationPath, XPrv};
@@ -8,7 +8,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
 
-// Nozy Unified Address creation
+// Nozy Unified Address creation Nozy people gone be Nozy. 
 use orchard::{
     keys::{DiversifierIndex, FullViewingKey, Scope, SpendingKey},
     Address as OrchardAddress,
@@ -88,10 +88,14 @@ impl HDWallet {
         Ok(derived_key)
     }
 
-    pub fn generate_orchard_address(&self, account: u32, index: u32) -> NozyResult<String> {
-        // Use secure seed that will be zeroized on drop
-        let mut seed_bytes = self.mnemonic.to_seed("").to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes.clone());
+    pub fn generate_orchard_address(
+        &self,
+        account: u32,
+        index: u32,
+        network: NetworkType,
+    ) -> NozyResult<String> {
+        let seed_bytes = self.mnemonic.to_seed("").to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes);
 
         let account_id = AccountId::try_from(account)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
@@ -106,9 +110,7 @@ impl HDWallet {
         let orchard_address: OrchardAddress =
             orchard_fvk.address_at(diversifier_index, Scope::External);
 
-        zeroize_bytes(&mut seed_bytes);
-
-        self.create_unified_address(orchard_address)
+        self.create_unified_address(orchard_address, network)
     }
 
     pub fn generate_multiple_addresses(
@@ -116,11 +118,12 @@ impl HDWallet {
         account: u32,
         start_index: u32,
         count: u32,
+        network: NetworkType,
     ) -> NozyResult<Vec<String>> {
         let mut addresses = Vec::with_capacity(count as usize);
 
-        let mut seed_bytes = self.mnemonic.to_seed("").to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes.clone());
+        let seed_bytes = self.mnemonic.to_seed("").to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes);
 
         let account_id = AccountId::try_from(account)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
@@ -136,16 +139,18 @@ impl HDWallet {
             let diversifier_index = DiversifierIndex::from(start_index + i);
             let orchard_address: OrchardAddress =
                 orchard_fvk.address_at(diversifier_index, Scope::External);
-            let unified_address = self.create_unified_address(orchard_address)?;
+            let unified_address = self.create_unified_address(orchard_address, network)?;
             addresses.push(unified_address);
         }
-
-        zeroize_bytes(&mut seed_bytes);
 
         Ok(addresses)
     }
 
-    fn create_unified_address(&self, orchard_address: OrchardAddress) -> NozyResult<String> {
+    fn create_unified_address(
+        &self,
+        orchard_address: OrchardAddress,
+        network: NetworkType,
+    ) -> NozyResult<String> {
         let orchard_raw = orchard_address.to_raw_address_bytes();
 
         let orchard_receiver = Receiver::Orchard(orchard_raw);
@@ -154,7 +159,6 @@ impl HDWallet {
             NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
         })?;
 
-        let network = NetworkType::Main;
         let encoded = ua.encode(&network);
 
         Ok(encoded)
@@ -171,23 +175,24 @@ impl HDWallet {
                 .map_err(|_| NozyError::Cryptographic("Invalid password".to_string()))?;
         }
 
-        let mut seed_bytes = self.mnemonic.to_seed(password).to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes.clone());
+        let seed_bytes = self.mnemonic.to_seed(password).to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes);
 
         let master_key = XPrv::new(secure_seed.as_bytes())
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to derive master key: {}", e)))?;
 
-        zeroize_bytes(&mut seed_bytes);
-
         Ok(master_key)
     }
 
+    /// Derives a private key for the note. For password-protected wallets, pass the
+    /// same password used to unlock the wallet so the seed lifetime matches.
     pub fn derive_private_key_for_note(
         &self,
         note: &crate::notes::OrchardNote,
+        password: &str,
     ) -> NozyResult<Vec<u8>> {
-        let mut seed_bytes = self.mnemonic.to_seed("").to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes.clone());
+        let seed_bytes = self.mnemonic.to_seed(password).to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes);
 
         let mut hasher = Sha256::new();
         hasher.update(secure_seed.as_bytes());
@@ -195,11 +200,7 @@ impl HDWallet {
         hasher.update(b"spending_key");
 
         let private_key_hash = hasher.finalize();
-        let result = private_key_hash.to_vec();
-
-        zeroize_bytes(&mut seed_bytes);
-
-        Ok(result)
+        Ok(private_key_hash.to_vec())
     }
 
     pub fn decrypt_note(&self, _encrypted_note: &[u8], address: &str) -> NozyResult<String> {
@@ -310,8 +311,8 @@ impl HDWallet {
             ));
         }
 
-        let mut seed_bytes = self.mnemonic.to_seed("").to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes.clone());
+        let seed_bytes = self.mnemonic.to_seed("").to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes);
 
         let account_id = zcash_primitives::zip32::AccountId::try_from(0)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
@@ -324,8 +325,6 @@ impl HDWallet {
         let orchard_fvk = FullViewingKey::from(&orchard_sk);
 
         let ivk = orchard_fvk.to_ivk(orchard::keys::Scope::External);
-
-        zeroize_bytes(&mut seed_bytes);
 
         Ok(ivk)
     }

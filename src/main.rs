@@ -12,7 +12,16 @@ use nozy::{
     ZebraBlockSource, ZebraClient,
 };
 use zcash_address::unified::{Container, Encoding};
+use zcash_protocol::consensus::NetworkType;
 use zeaking::Zeaking;
+
+fn network_type_from_config(network: &str) -> NetworkType {
+    if network == "testnet" {
+        NetworkType::Test
+    } else {
+        NetworkType::Main
+    }
+}
 
 #[derive(Parser)]
 #[command(name = "nozy")]
@@ -104,25 +113,19 @@ pub enum Commands {
         set_network: Option<String>,
         #[arg(long, help = "Use local Zebra node at http://127.0.0.1:8232")]
         use_local: bool,
-        /// Use remote Zebra node
         #[arg(
             long,
             help = "Use remote Zebra node (provide URL: --use-remote http://host:port)"
         )]
         use_remote: Option<String>,
-        /// Use Crosslink backend
         #[arg(long, help = "Use Crosslink backend instead of Zebra")]
         use_crosslink: bool,
-        /// Use Zebra backend (default)
         #[arg(long, help = "Use Zebra backend (default)")]
         use_zebra: bool,
-        /// Set Crosslink RPC URL
         #[arg(long, help = "Set the Crosslink RPC URL")]
         set_crosslink_url: Option<String>,
-        /// Show current backend configuration
-        #[arg(long, help = "Display current backend configuration")]
+\        #[arg(long, help = "Display current backend configuration")]
         show_backend: bool,
-        /// Set protocol version
         #[arg(long, help = "Set protocol version (e.g., 170140 for NU 6.1)")]
         set_protocol: Option<String>,
     },
@@ -136,7 +139,6 @@ pub enum Commands {
         zebra_url: Option<String>,
     },
 
-    /// Manage Orchard proving parameters
     #[command(about = "Download and manage Orchard proving parameters")]
     Proving {
         #[arg(
@@ -170,28 +172,24 @@ pub enum Commands {
         command: AddressBookCommand,
     },
 
-    /// Zeaking indexing commands
     #[command(about = "Commands for Zeaking local blockchain indexer")]
     Zeaking {
         #[command(subcommand)]
         command: ZeakingCommand,
     },
 
-    /// Privacy network utilities
     #[command(about = "Test and manage privacy network connections (Tor, I2P)")]
     PrivacyNetwork {
         #[command(subcommand)]
         command: PrivacyNetworkCommand,
     },
 
-    /// Cross-chain swap commands
     #[command(about = "Cross-chain swap functionality (XMR to ZEC, etc.)")]
     Swap {
         #[command(subcommand)]
         command: SwapCommand,
     },
 
-    /// Shade Protocol commands (requires secret-network feature)
     #[cfg(feature = "secret-network")]
     #[command(about = "Shade Protocol (Secret Network) integration commands")]
     Shade {
@@ -199,14 +197,12 @@ pub enum Commands {
         command: ShadeCommand,
     },
 
-    /// Monero integration commands
     #[command(about = "Monero integration and verification commands")]
     Monero {
         #[command(subcommand)]
         command: MoneroCommand,
     },
 
-    /// Network Upgrade 6.1 information
     #[command(about = "Display information about Zcash Network Upgrade 6.1 (NU 6.1)")]
     Nu61,
 }
@@ -369,24 +365,20 @@ pub enum MoneroCommand {
 
 #[tokio::main]
 async fn main() {
-    // Parse CLI arguments
     let cli = Cli::parse();
 
-    // Initialize logging based on verbose/quiet flags
     if cli.verbose {
         std::env::set_var("RUST_LOG", "debug");
     } else if cli.quiet {
         std::env::set_var("RUST_LOG", "error");
     }
 
-    // Initialize tracing if RUST_LOG is set
     if std::env::var("RUST_LOG").is_ok() {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
     }
 
-    // Handle network override flags
     let mut config = load_config();
     if cli.testnet {
         config.network = "testnet".to_string();
@@ -400,7 +392,6 @@ async fn main() {
         }
     }
 
-    // Handle global Zebra URL override
     if let Some(url) = cli.zebra_url {
         config.zebra_url = url;
         if !cli.quiet {
@@ -408,7 +399,6 @@ async fn main() {
         }
     }
 
-    // Execute command and handle errors
     if let Err(e) = execute_command(cli.command, config).await {
         handle_error(e);
         std::process::exit(1);
@@ -418,41 +408,19 @@ async fn main() {
 async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> NozyResult<()> {
     let cli = Cli::parse();
 
-    // Initialize logging based on verbose/quiet flags
     if cli.verbose {
         std::env::set_var("RUST_LOG", "debug");
     } else if cli.quiet {
         std::env::set_var("RUST_LOG", "error");
     }
 
-    // Initialize tracing if RUST_LOG is set
     if std::env::var("RUST_LOG").is_ok() {
         tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
     }
 
-    // Handle network override flags
-    let mut config = load_config();
-    if cli.testnet {
-        config.network = "testnet".to_string();
-        if !cli.quiet {
-            println!("🌐 Using testnet (overridden by --testnet flag)");
-        }
-    } else if cli.mainnet {
-        config.network = "mainnet".to_string();
-        if !cli.quiet {
-            println!("🌐 Using mainnet (overridden by --mainnet flag)");
-        }
-    }
 
-    // Handle global Zebra URL override
-    if let Some(url) = cli.zebra_url {
-        config.zebra_url = url;
-        if !cli.quiet {
-            println!("🔗 Using Zebra URL: {}", config.zebra_url);
-        }
-    }
 
     match cli.command {
         Commands::New => {
@@ -487,7 +455,6 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             storage.save_wallet(&wallet, &password).await?;
 
             println!("🎉 Wallet created successfully!");
-            // Show full mnemonic only during wallet creation (user explicitly requested it)
             println!("📝 Mnemonic: {}", wallet.get_mnemonic());
             println!();
             println!("⚠️  ⚠️  ⚠️  CRITICAL SECURITY WARNING ⚠️  ⚠️  ⚠️");
@@ -508,7 +475,8 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
                 "   ⚠️  SECURITY: This mnemonic will NOT be shown again for security reasons."
             );
 
-            match wallet.generate_orchard_address(0, 0) {
+            let network = network_type_from_config(&config.network);
+            match wallet.generate_orchard_address(0, 0, network) {
                 Ok(address) => {
                     println!("📍 Your wallet address:");
                     println!("{}", address);
@@ -545,8 +513,9 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
 
         Commands::Receive => {
             let (wallet, _storage) = load_wallet().await?;
+            let network = network_type_from_config(&config.network);
 
-            match wallet.generate_orchard_address(0, 0) {
+            match wallet.generate_orchard_address(0, 0, network) {
                 Ok(address) => {
                     println!("Your wallet address:");
                     println!("{}", address);
@@ -564,8 +533,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             end_height,
             zebra_url,
         } => {
-            // Use config from global flags (already loaded above)
-            // Override with command-specific zebra_url if provided
+        
             if let Some(url) = zebra_url {
                 config.zebra_url = url;
             }
@@ -596,14 +564,12 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
 
             let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
 
-            // Estimate total blocks to scan for progress
             let total_blocks = if let (Some(start), Some(end)) = (effective_start, end_height) {
                 (end.saturating_sub(start)) as u64
             } else if let Some(start) = effective_start {
-                // Estimate ~2.5M blocks total, scan from start to current
                 2_500_000u64.saturating_sub(start as u64)
             } else {
-                2_500_000u64 // Full scan estimate
+                2_500_000u64 
             };
 
             use nozy::progress::create_sync_progress_bar;
@@ -712,7 +678,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
                     recipient.clone()
                 };
 
-            // Enhanced address validation
+            
             use nozy::input_validation::validate_zcash_address;
             if let Err(e) = validate_zcash_address(&actual_recipient) {
                 println!("❌ {}", e);
@@ -1061,7 +1027,6 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
         Commands::Info => {
             let (wallet, _storage) = load_wallet().await?;
             println!("Wallet loaded successfully!");
-            // Never show full mnemonic in Info command - use safe display
             println!(
                 "Mnemonic: {} (masked for security)",
                 display_mnemonic_safe(&wallet.get_mnemonic())

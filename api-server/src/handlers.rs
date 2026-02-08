@@ -347,7 +347,13 @@ pub async fn generate_address(
             )
         })?;
 
-    let address = wallet.generate_orchard_address(0, 0).map_err(|e| {
+    let config = nozy::load_config();
+    let network = if config.network == "testnet" {
+        zcash_protocol::consensus::NetworkType::Test
+    } else {
+        zcash_protocol::consensus::NetworkType::Main
+    };
+    let address = wallet.generate_orchard_address(0, 0, network).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({

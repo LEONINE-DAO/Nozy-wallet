@@ -1,22 +1,21 @@
 use nozy::{HDWallet, NoteScanner, ZebraClient};
+use zcash_protocol::consensus::NetworkType;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🧪 NozyWallet - Production Features Test\n");
 
-    // Create new wallet
     let hd_wallet = HDWallet::new()?;
     let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
     let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
 
-    // Test wallet creation
     println!("✅ Wallet created successfully");
     println!("📝 Mnemonic: {}", hd_wallet.get_mnemonic());
 
-    // Generate addresses
+    let network = NetworkType::Main;
     let mut addresses = Vec::new();
     for i in 0..5 {
-        let addr = hd_wallet.generate_orchard_address(0, i)?;
+        let addr = hd_wallet.generate_orchard_address(0, i, network)?;
         addresses.push(addr);
     }
     println!("🏠 Generated {} addresses:", addresses.len());
@@ -24,7 +23,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         println!("  {}: {}", i + 1, addr);
     }
 
-    // Test Zebra connection
     println!("\n🔗 Testing Zebra connection...");
     match zebra_client.get_block_count().await {
         Ok(height) => {
@@ -37,13 +35,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 
-    // Test note scanning
     println!("\n🔍 Testing note scanning...");
     let tip_height = match zebra_client.get_block_count().await {
         Ok(h) => h,
         Err(_) => 3_066_071,
     };
-    let start_height = tip_height.saturating_sub(100); // Scan last 100 blocks
+    let start_height = tip_height.saturating_sub(100); 
 
     match note_scanner
         .scan_notes(Some(start_height), Some(tip_height))

@@ -9,6 +9,7 @@ use crate::monero_zk_verifier::{MoneroZkVerifier, VerificationLevel};
 use crate::swap::service::SwapService;
 use crate::swap::types::*;
 use crate::HDWallet;
+use zcash_protocol::consensus::NetworkType;
 
 pub struct SwapEngine {
     swap_service: SwapService,
@@ -33,7 +34,6 @@ impl SwapEngine {
         })
     }
 
-    /// Execute a swap with full privacy validation
     pub async fn execute_swap(
         &mut self,
         direction: SwapDirection,
@@ -45,7 +45,6 @@ impl SwapEngine {
         println!("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
         println!();
 
-        // Step 1: Privacy Validation
         println!("Step 1: Privacy Validation");
         let privacy_result = self
             .privacy_validator
@@ -75,26 +74,22 @@ impl SwapEngine {
             }
         }
 
-        // Step 2: Generate new addresses (never reuse!)
         println!();
         println!("Step 2: Generating new addresses (privacy: no reuse)");
         let (from_address, to_address) = self.generate_swap_addresses(direction.clone()).await?;
 
-        // Step 3: Validate addresses not reused
         println!("Step 3: Validating address reuse prevention");
         let is_monero = matches!(direction, SwapDirection::XmrToZec);
         self.address_tracker
             .validate_address_not_reused(&from_address, is_monero)?;
 
-        // Step 4: Monero churning (if XMR → ZEC)
         if matches!(direction, SwapDirection::XmrToZec) {
             if let Some(_monero_wallet) = &self.monero_wallet {
                 let config = load_config();
                 let should_churn = if config.swap.auto_churn {
-                    // Auto-churn enabled in config
+                    
                     true
                 } else {
-                    // Ask user
                     println!();
                     println!("Step 4: Monero Churning (recommended)");
                     let churn_rec = ChurnManager::recommend_churn_parameters();
@@ -117,8 +112,7 @@ impl SwapEngine {
                         churn_rec.times, churn_rec.ring_size
                     );
                     println!("   This may take a few minutes...");
-                    // Note: Churning requires mutable access to wallet
-                    // For now, we'll note that churning should be done separately
+                   
                     println!(
                         "💡 Note: Churning should be performed separately using 'nozy swap churn'"
                     );
@@ -129,7 +123,6 @@ impl SwapEngine {
             }
         }
 
-        // Step 4.5: ZK Block Verification (if XMR → ZEC and enabled)
         if matches!(direction, SwapDirection::XmrToZec) {
             let config = load_config();
             if config.zk_verification.enabled {
@@ -164,7 +157,6 @@ impl SwapEngine {
             }
         }
 
-        // Step 5: Get swap rate
         println!();
         println!("Step 5: Getting swap rate");
         let (from_coin, to_coin) = match direction {
@@ -181,7 +173,6 @@ impl SwapEngine {
             amount, from_coin, rate, to_coin
         );
 
-        // Step 6: Initiate swap
         println!();
         println!("Step 6: Initiating swap");
         let swap_request = SwapRequest {
@@ -193,13 +184,11 @@ impl SwapEngine {
 
         let swap_response = self.swap_service.initiate_swap(swap_request).await?;
 
-        // Step 7: Mark addresses as used
         self.address_tracker
             .mark_address_used(&from_address, is_monero)?;
         self.address_tracker
             .mark_address_used(&to_address, !is_monero)?;
 
-        // Step 8: Save swap to history
         let storage = SwapStorage::new()?;
         let stored_swap = StoredSwap {
             swap_id: swap_response.swap_id.clone(),
@@ -235,14 +224,12 @@ impl SwapEngine {
         Ok(swap_response)
     }
 
-    /// Generate new addresses for swap (never reuse!)
     async fn generate_swap_addresses(
         &self,
         direction: SwapDirection,
     ) -> NozyResult<(String, String)> {
         match direction {
             SwapDirection::XmrToZec => {
-                // From: Monero address (new subaddress)
                 let from_address = if let Some(monero_wallet) = &self.monero_wallet {
                     monero_wallet.create_subaddress(0).await?
                 } else {
@@ -251,9 +238,14 @@ impl SwapEngine {
                     ));
                 };
 
-                // To: Zcash shielded address (new)
+                let config = load_config();
+                let network = if config.network == "testnet" {
+                    NetworkType::Test
+                } else {
+                    NetworkType::Main
+                };
                 let to_address = if let Some(zcash_wallet) = &self.zcash_wallet {
-                    zcash_wallet.generate_orchard_address(0, 0)?.to_string()
+                    zcash_wallet.generate_orchard_address(0, 0, network)?.to_string()
                 } else {
                     return Err(NozyError::InvalidOperation(
                         "Zcash wallet not configured".to_string(),
@@ -263,17 +255,21 @@ impl SwapEngine {
                 Ok((from_address, to_address))
             }
             SwapDirection::ZecToXmr => {
-                // From: Zcash shielded address (new)
+                let config = load_config();
+                let network = if config.network == "testnet" {
+                    NetworkType::Test
+                } else {
+                    NetworkType::Main
+                };
                 let from_address = if let Some(zcash_wallet) = &self.zcash_wallet {
-                    zcash_wallet.generate_orchard_address(0, 0)?.to_string()
+                    zcash_wallet.generate_orchard_address(0, 0, network)?.to_string()
                 } else {
                     return Err(NozyError::InvalidOperation(
                         "Zcash wallet not configured".to_string(),
                     ));
                 };
 
-                // To: Monero address (new subaddress)
-                let to_address = if let Some(monero_wallet) = &self.monero_wallet {
+\                let to_address = if let Some(monero_wallet) = &self.monero_wallet {
                     monero_wallet.create_subaddress(0).await?
                 } else {
                     return Err(NozyError::InvalidOperation(
@@ -286,26 +282,21 @@ impl SwapEngine {
         }
     }
 
-    /// Check swap status
     pub async fn check_swap_status(&self, swap_id: &str) -> NozyResult<SwapStatusResponse> {
         self.swap_service.get_swap_status(swap_id).await
     }
 
-    /// Verify Monero block with ZK proof (for swaps)
     async fn verify_monero_block(
         &self,
         monero_wallet: &MoneroWallet,
     ) -> NozyResult<crate::monero_zk_verifier::types::VerificationResult> {
         let config = load_config();
 
-        // Get current block info
-        let block_height = monero_wallet.get_block_height().await?;
+]        let block_height = monero_wallet.get_block_height().await?;
         let block_hash = monero_wallet.get_current_block_hash().await?;
 
-        // Create verifier
         let verifier = MoneroZkVerifier::new(config.zk_verification.clone())?;
 
-        // Verify block
         let level = VerificationLevel::VerifyBlock {
             block_hash: block_hash.clone(),
             block_height: Some(block_height),

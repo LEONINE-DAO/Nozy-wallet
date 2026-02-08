@@ -5,6 +5,7 @@ use nozy::{
     ZebraClient,
 };
 use std::path::PathBuf;
+use zcash_protocol::consensus::NetworkType;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
@@ -76,11 +77,12 @@ async fn test_wallet_restore_from_mnemonic() {
         restored_wallet.get_mnemonic()
     );
 
+    let network = NetworkType::Main;
     let addr1 = original_wallet
-        .generate_orchard_address(0, 0)
+        .generate_orchard_address(0, 0, network)
         .expect("Failed to generate address");
     let addr2 = restored_wallet
-        .generate_orchard_address(0, 0)
+        .generate_orchard_address(0, 0, network)
         .expect("Failed to generate address");
 
     assert_eq!(addr1, addr2);
@@ -93,9 +95,10 @@ async fn test_address_generation() {
 
     let wallet = HDWallet::new().expect("Failed to create wallet");
 
+    let network = NetworkType::Test; 
     for i in 0..5 {
         let address = wallet
-            .generate_orchard_address(0, i)
+            .generate_orchard_address(0, i, network)
             .expect("Failed to generate address");
 
         assert!(address.starts_with("u1") || address.starts_with("utest1"));
@@ -131,7 +134,7 @@ async fn test_end_to_end_flow_create_scan_send() {
 
     let wallet = HDWallet::new().expect("Failed to create wallet");
     let address = wallet
-        .generate_orchard_address(0, 0)
+        .generate_orchard_address(0, 0, NetworkType::Test)
         .expect("Failed to generate address");
 
     println!("✅ Created wallet, address: {}", address);
@@ -179,7 +182,7 @@ async fn test_end_to_end_flow_create_scan_send() {
 
     let recipient_wallet = HDWallet::new().expect("Failed to create recipient wallet");
     let recipient_address = recipient_wallet
-        .generate_orchard_address(0, 0)
+        .generate_orchard_address(0, 0, NetworkType::Test)
         .expect("Failed to generate recipient address");
 
     let mut builder = OrchardTransactionBuilder::new_async(true)
@@ -257,7 +260,7 @@ async fn test_transaction_building() {
 
     let recipient_wallet = HDWallet::new().expect("Failed to create recipient wallet");
     let recipient_address = recipient_wallet
-        .generate_orchard_address(0, 0)
+        .generate_orchard_address(0, 0, NetworkType::Test)
         .expect("Failed to generate recipient address");
 
     let mut builder = OrchardTransactionBuilder::new_async(true)
@@ -330,9 +333,10 @@ async fn test_multiple_address_generation() {
     let wallet = HDWallet::new().expect("Failed to create wallet");
     let mut addresses = Vec::new();
 
+    let network = NetworkType::Main;
     for i in 0..10 {
         let addr = wallet
-            .generate_orchard_address(0, i)
+            .generate_orchard_address(0, i, network)
             .expect("Failed to generate address");
         addresses.push(addr);
     }

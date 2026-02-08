@@ -121,9 +121,10 @@ impl BenchmarkSuite {
         let mut total_duration = Duration::new(0, 0);
         let iterations = 1000;
 
+        use zcash_protocol::consensus::NetworkType;
         for i in 0..iterations {
             let start = Instant::now();
-            let result = wallet.generate_orchard_address(0, i as u32);
+            let result = wallet.generate_orchard_address(0, i as u32, NetworkType::Main);
             let duration = start.elapsed();
 
             if result.is_ok() {
