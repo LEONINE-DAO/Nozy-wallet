@@ -2,6 +2,14 @@
 
 [Introduction](introduction.md)
 
+# Nozy
+
+- [What is Nozy?](nozy/what-is-nozy.md)
+- [Purpose](nozy/purpose.md)
+- [Identity](nozy/identity.md)
+- [Philosophy](nozy/philosophy.md)
+- [Privacy model](nozy/privacy-model.md)
+
 # Getting Started
 
 - [Installation](getting-started/installation.md)

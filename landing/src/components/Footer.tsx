@@ -16,8 +16,9 @@ const Footer = () => {
 
           <div className="flex flex-col md:flex-row text-sm md:items-center gap-4 md:gap-8">
             <a
-              href="#"
+              href="https://leonine-dao.github.io/Nozy-wallet/book/"
               target="_blank"
+              rel="noopener noreferrer"
               className="text-zinc-500 hover:text-yellow-600 transition-colors"
             >
               Documentation
