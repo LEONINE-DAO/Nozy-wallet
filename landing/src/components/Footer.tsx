@@ -24,6 +24,14 @@ const Footer = () => {
               Documentation
             </a>
             <a
+              href="https://leonine-dao.github.io/Nozy-wallet/book/nozy/manifesto.html"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-zinc-500 hover:text-yellow-600 transition-colors"
+            >
+              Manifesto
+            </a>
+            <a
               href="https://github.com/LEONINE-DAO/Nozy-wallet"
               target="_blank"
               className="text-zinc-500 hover:text-yellow-600 transition-colors"

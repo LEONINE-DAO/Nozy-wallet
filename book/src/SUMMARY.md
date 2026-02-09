@@ -9,6 +9,7 @@
 - [Identity](nozy/identity.md)
 - [Philosophy](nozy/philosophy.md)
 - [Privacy model](nozy/privacy-model.md)
+- [Manifesto](nozy/manifesto.md)
 
 # Getting Started
 
