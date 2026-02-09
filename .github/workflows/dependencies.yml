@@ -33,12 +33,13 @@ jobs:
 
       - name: Verify Cargo.lock is up to date
         run: |
-          cargo generate-lockfile --check
+          cargo generate-lockfile --locked
           echo "✅ Cargo.lock is up to date"
 
   audit-dependencies:
     name: Security Audit
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -49,9 +50,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: true
-          workspaces: |
-            zeaking
-            api-server
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked

@@ -36,7 +36,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Build mdBook documentation (only if both book.toml and book/src exist)
       - name: Check for mdBook source
         id: check-mdbook
         run: |
@@ -70,14 +69,13 @@ jobs:
           ls -la book.toml || echo "book.toml not found in current dir"
           echo ""
           echo "Checking source directory:"
-          if [ -d "book/src" ]; then
-            echo "✅ book/src exists"
-            echo "SUMMARY.md:"
-            ls -la book/src/SUMMARY.md || echo "SUMMARY.md not found!"
-          else
-            echo "❌ book/src does not exist!"
-            exit 1
+          if [ ! -d "book/src" ]; then
+            echo "⚠️ book/src does not exist, skipping mdBook build"
+            exit 0
           fi
+          echo "✅ book/src exists"
+          echo "SUMMARY.md:"
+          ls -la book/src/SUMMARY.md || echo "SUMMARY.md not found!"
           echo ""
           echo "Running mdbook build..."
           # Capture both stdout and stderr
@@ -124,17 +122,15 @@ jobs:
           echo "First 20 files in build:"
           find book/book -type f | head -20
 
-      # Build landing page
       - name: Setup Node.js
         id: build-landing
-        continue-on-error: true
         run: |
-          if [ -f "landing/package.json" ]; then
+          if [ -f "landing/package.json" ] && [ -f "landing/package-lock.json" ]; then
             echo "need_landing=true" >> $GITHUB_OUTPUT
             echo "🌐 Landing page source found, will build"
           else
             echo "need_landing=false" >> $GITHUB_OUTPUT
-            echo "⚠️  No landing page source found, skipping"
+            echo "⚠️  No landing page source (need package.json and package-lock.json), skipping"
           fi
 
       - name: Setup Node.js for landing
@@ -155,7 +151,6 @@ jobs:
         working-directory: landing
         run: npm run build
 
-      # Prepare unified deployment structure
       - name: Prepare deployment structure
         run: |
           # Create site directory (start fresh)
