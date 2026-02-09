@@ -54,9 +54,9 @@ const FAQ = () => {
         "No. NozyWallet blocks transparent addresses to enforce privacy. You can only send shielded transactions.",
     },
     {
-      question: "Why choose NozyWallet over Monero?",
+      question: "Why choose NozyWallet?",
       answer:
-        "Same privacy, but faster block times, lower fees, and better scalability. Plus, clearer regulatory status.",
+        "NozyWallet is the first Zcash wallet built directly on Zebra (the Rust full node). It's fully private by default—shielded-only, no transparent addresses—so you get Monero-level privacy with Zcash speed and efficiency.",
     },
     {
       question: "How does Orchard privacy work?",
