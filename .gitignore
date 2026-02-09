@@ -69,4 +69,7 @@ push_url_update.ps1
 !DIGITALOCEAN*.md
 !CARGO_CHEC_SETUP.md
 
+!book/
+!book/**/*.md
+
 book/book/
