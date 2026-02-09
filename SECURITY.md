@@ -142,12 +142,14 @@ Expected deliverables from a professional audit:
 
 ### Responsible Disclosure
 
-We take security vulnerabilities seriously. If you discover a security vulnerability, please follow responsible disclosure practices.
+We take security vulnerabilities seriously. If you discover a security vulnerability, please follow our **[Responsible Disclosure](responsible_disclosure.md)** process.
+
+**Threat model:** For the security and privacy properties we aim to provide, and known limitations, see **[wallet_threat_model.md](wallet_threat_model.md)**.
 
 ### How to Report
 
-**Email:** security@nozywallet.com (if available)  
-**GitHub Security Advisory:** Use GitHub's private vulnerability reporting  
+**GitHub Security Advisory:** [Open a private security advisory](https://github.com/LEONINE-DAO/Nozy-wallet/security/advisories/new) (preferred)  
+**Email:** lowo88@leoninedao.org (if available)  
 **PGP Key:** (To be added)
 
 **Please include:**
@@ -201,7 +203,7 @@ We take security vulnerabilities seriously. If you discover a security vulnerabi
 **Status:**  **Planned**
 
 We plan to establish a bug bounty program for:
-- Critical vulnerabilities: $1,000 - $10,000
+- Critical vulnerabilities: $1,000 - $3,000
 - High severity: $500 - $2,000
 - Medium severity: $100 - $500
 - Low severity: Recognition and thanks

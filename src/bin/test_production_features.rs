@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(h) => h,
         Err(_) => 3_066_071,
     };
-    let start_height = tip_height.saturating_sub(100); 
+    let start_height = tip_height.saturating_sub(100);
 
     match note_scanner
         .scan_notes(Some(start_height), Some(tip_height))

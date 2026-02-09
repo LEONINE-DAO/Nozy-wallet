@@ -98,6 +98,12 @@ async fn main() -> anyhow::Result<()> {
             "/api/config/test-zebra",
             post(handlers::test_zebra_connection),
         )
+        .route("/api/chain/block-count", get(handlers::chain_block_count))
+        .route("/api/chain/block/:height", get(handlers::chain_block))
+        .route(
+            "/api/transaction/broadcast",
+            post(handlers::broadcast_raw_transaction),
+        )
         .route("/api/proving/status", get(handlers::check_proving_status))
         .route(
             "/api/proving/download",

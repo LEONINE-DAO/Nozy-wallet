@@ -72,7 +72,6 @@ export interface SignMessageResponse {
   signature: string;
 }
 
-/** Address book entry (matches backend AddressEntry). */
 export interface AddressBookEntry {
   name: string;
   address: string;
@@ -82,7 +81,6 @@ export interface AddressBookEntry {
   notes?: string | null;
 }
 
-/** Request to add an address book entry. */
 export interface AddAddressBookRequest {
   name: string;
   address: string;

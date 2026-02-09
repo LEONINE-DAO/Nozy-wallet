@@ -5,7 +5,6 @@ use crate::storage::WalletStorage;
 use crate::zebra_integration::ZebraClient;
 use std::path::PathBuf;
 
-
 #[cfg(test)]
 #[path = "tests/deterministic_scanning_tests.rs"]
 mod deterministic_scanning_tests;
@@ -300,7 +299,9 @@ mod performance_tests {
 
         let start = Instant::now();
         for i in 0..10 {
-            let _address = wallet.generate_orchard_address(0, i, NetworkType::Main).unwrap();
+            let _address = wallet
+                .generate_orchard_address(0, i, NetworkType::Main)
+                .unwrap();
         }
         let duration = start.elapsed();
 

@@ -8,7 +8,7 @@ use rand::RngCore;
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
 
-// Nozy Unified Address creation Nozy people gone be Nozy. 
+// Nozy Unified Address creation Nozy people gone be Nozy.
 use orchard::{
     keys::{DiversifierIndex, FullViewingKey, Scope, SpendingKey},
     Address as OrchardAddress,

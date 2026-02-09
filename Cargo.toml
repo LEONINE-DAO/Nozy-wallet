@@ -39,7 +39,7 @@ zeroize = { version = "1.6", features = ["zeroize_derive"] }
 chrono = { version = "0.4", features = ["serde"] }
 
 # CLI
-clap = { version = "4.0", features = ["derive"] }
+clap = { version = "4.0", features = ["derive", "env"] }
 dialoguer = "0.11"
 indicatif = "0.17"
 
@@ -48,7 +48,8 @@ thiserror = "1.0"
 
 # Force update tracing-subscriber to fix vulnerability (RUSTSEC-2025-0055)
 # This overrides the version from ark-groth16 dependency tree
-tracing-subscriber = "0.3.20"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter"] }
+tracing = "0.1"
 
 # Force update ed25519-dalek to fix vulnerability (RUSTSEC-2022-0093)
 # This overrides the version from tendermint 0.23.8 → cosmrs dependency tree

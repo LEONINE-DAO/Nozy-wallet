@@ -101,7 +101,7 @@ export function AuthenticatedLayout() {
         const balanceVal = typeof balanceRes?.data === "number" ? balanceRes.data : balanceRes?.data?.balance;
         if (typeof balanceVal === "number") setBalance(balanceVal);
       } catch {
-        // ignore
+        
       }
     } catch (e) {
       toast.error(formatErrorForDisplay(e, "Sync failed. You can try again from the header."), { id: syncToast });

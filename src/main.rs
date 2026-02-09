@@ -124,7 +124,7 @@ pub enum Commands {
         use_zebra: bool,
         #[arg(long, help = "Set the Crosslink RPC URL")]
         set_crosslink_url: Option<String>,
-\        #[arg(long, help = "Display current backend configuration")]
+        #[arg(long, help = "Display current backend configuration")]
         show_backend: bool,
         #[arg(long, help = "Set protocol version (e.g., 170140 for NU 6.1)")]
         set_protocol: Option<String>,
@@ -405,7 +405,7 @@ async fn main() {
     }
 }
 
-async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> NozyResult<()> {
+async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> NozyResult<()> {
     let cli = Cli::parse();
 
     if cli.verbose {
@@ -419,8 +419,6 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
     }
-
-
 
     match cli.command {
         Commands::New => {
@@ -533,7 +531,6 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             end_height,
             zebra_url,
         } => {
-        
             if let Some(url) = zebra_url {
                 config.zebra_url = url;
             }
@@ -569,7 +566,7 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
             } else if let Some(start) = effective_start {
                 2_500_000u64.saturating_sub(start as u64)
             } else {
-                2_500_000u64 
+                2_500_000u64
             };
 
             use nozy::progress::create_sync_progress_bar;
@@ -678,7 +675,6 @@ async fn execute_command(command: Commands, mut config: nozy::WalletConfig) -> N
                     recipient.clone()
                 };
 
-            
             use nozy::input_validation::validate_zcash_address;
             if let Err(e) = validate_zcash_address(&actual_recipient) {
                 println!("❌ {}", e);

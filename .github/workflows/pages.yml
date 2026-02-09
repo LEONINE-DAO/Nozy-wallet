@@ -36,19 +36,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Build mdBook documentation
+      # Build mdBook documentation (only if both book.toml and book/src exist)
       - name: Check for mdBook source
         id: check-mdbook
         run: |
-          if [ -f "book.toml" ]; then
+          if [ -f "book.toml" ] && [ -d "book/src" ]; then
             echo "has_book=true" >> $GITHUB_OUTPUT
-            echo "✅ Found book.toml"
-          elif [ -d "book/src" ]; then
-            echo "has_book=true" >> $GITHUB_OUTPUT
-            echo "✅ Found book/src directory"
+            echo "✅ Found book.toml and book/src"
           else
             echo "has_book=false" >> $GITHUB_OUTPUT
-            echo "⚠️  No mdBook source found, skipping mdBook build"
+            echo "⚠️  Skipping mdBook build (need both book.toml and book/src)"
+            if [ ! -f "book.toml" ]; then echo "   - book.toml missing"; fi
+            if [ ! -d "book/src" ]; then echo "   - book/src missing"; fi
           fi
 
       - name: Install mdBook
@@ -353,8 +352,7 @@ jobs:
             fi
             echo "Total files in /book/: $(find _site/book -type f | wc -l)"
           else
-            echo "❌ ERROR: _site/book directory does not exist!"
-            exit 1
+            echo "⚠️  _site/book not found (mdBook was skipped or failed)"
           fi
           if [ -d "_site/downloads" ]; then
             echo "📥 /downloads/ directory:"

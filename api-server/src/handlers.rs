@@ -353,14 +353,16 @@ pub async fn generate_address(
     } else {
         zcash_protocol::consensus::NetworkType::Main
     };
-    let address = wallet.generate_orchard_address(0, 0, network).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseJson(serde_json::json!({
-                "error": format!("Failed to generate address: {}", e)
-            })),
-        )
-    })?;
+    let address = wallet
+        .generate_orchard_address(0, 0, network)
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ResponseJson(serde_json::json!({
+                    "error": format!("Failed to generate address: {}", e)
+                })),
+            )
+        })?;
 
     Ok(ResponseJson(AddressResponse { address }))
 }
@@ -723,6 +725,104 @@ pub async fn test_zebra_connection(
             StatusCode::BAD_REQUEST,
             ResponseJson(serde_json::json!({
                 "error": format!("❌ Failed to connect: {}", e)
+            })),
+        )),
+    }
+}
+
+// ========== Zero-knowledge endpoints (no wallet, no password) ==========
+// Used when client holds keys and does scan/sign locally; server only provides
+// chain data and broadcast. See docs/SERVER_PRIVACY_ZERO_KNOWLEDGE.md.
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChainBlockCountResponse {
+    pub block_count: u32,
+}
+
+pub async fn chain_block_count(
+) -> Result<ResponseJson<ChainBlockCountResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, ZebraClient};
+
+    let config = load_config();
+    let client = ZebraClient::from_config(&config);
+    let block_count = client.get_block_count().await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to get block count from chain: {}", e)
+            })),
+        )
+    })?;
+    Ok(ResponseJson(ChainBlockCountResponse { block_count }))
+}
+
+pub async fn chain_block(
+    Path(height): Path<u32>,
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, ZebraClient};
+
+    let config = load_config();
+    let client = ZebraClient::from_config(&config);
+    let block_data = client.get_block(height).await.map_err(|e| {
+        (
+            StatusCode::BAD_GATEWAY,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to get block at height {}: {}", height, e)
+            })),
+        )
+    })?;
+    Ok(ResponseJson(
+        serde_json::to_value(block_data).unwrap_or(serde_json::Value::Null),
+    ))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BroadcastRawRequest {
+    pub raw_transaction_hex: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct BroadcastRawResponse {
+    pub success: bool,
+    pub txid: Option<String>,
+    pub message: String,
+}
+
+pub async fn broadcast_raw_transaction(
+    Json(payload): Json<BroadcastRawRequest>,
+) -> Result<ResponseJson<BroadcastRawResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, ZebraClient};
+
+    let hex_str = payload.raw_transaction_hex.trim();
+    if hex_str.is_empty() {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            ResponseJson(serde_json::json!({
+                "error": "raw_transaction_hex is required and must be non-empty"
+            })),
+        ));
+    }
+    if hex_str.len() % 2 != 0 || !hex_str.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            ResponseJson(serde_json::json!({
+                "error": "raw_transaction_hex must be valid hex"
+            })),
+        ));
+    }
+
+    let config = load_config();
+    let client = ZebraClient::from_config(&config);
+    match client.broadcast_transaction(hex_str).await {
+        Ok(txid) => Ok(ResponseJson(BroadcastRawResponse {
+            success: true,
+            txid: Some(txid),
+            message: "Transaction broadcast successfully".to_string(),
+        })),
+        Err(e) => Err((
+            StatusCode::BAD_GATEWAY,
+            ResponseJson(serde_json::json!({
+                "error": format!("Broadcast failed: {}", e)
             })),
         )),
     }

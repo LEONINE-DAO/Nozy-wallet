@@ -4,18 +4,17 @@ import { persist } from "zustand/middleware";
 export type FiatCurrency = "USD" | "EUR";
 
 interface SettingsState {
-  // UI Settings
   showNavigationLabels: boolean;
   hideBalance: boolean;
   darkMode: boolean;
 
-  // Fiat display (e.g. in History)
+  // Fiat display ( in History)
   showFiatEquivalent: boolean;
   fiatCurrency: FiatCurrency;
   useLiveFiatPrice: boolean;
   customFiatPerZec: number | null;
 
-  // Notification Settings
+  // Notification Settings so we know when people want to be nozy
   transactionNotifs: boolean;
   soundEnabled: boolean;
   dndEnabled: boolean;
@@ -28,7 +27,6 @@ interface SettingsState {
   biometricsEnabled: boolean;
   screenshotProtection: boolean;
 
-  // Onboarding
   onboardingFirstSyncDismissed: boolean;
   setOnboardingFirstSyncDismissed: (dismissed: boolean) => void;
 

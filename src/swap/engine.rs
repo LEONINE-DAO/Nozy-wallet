@@ -87,7 +87,6 @@ impl SwapEngine {
             if let Some(_monero_wallet) = &self.monero_wallet {
                 let config = load_config();
                 let should_churn = if config.swap.auto_churn {
-                    
                     true
                 } else {
                     println!();
@@ -112,7 +111,7 @@ impl SwapEngine {
                         churn_rec.times, churn_rec.ring_size
                     );
                     println!("   This may take a few minutes...");
-                   
+
                     println!(
                         "💡 Note: Churning should be performed separately using 'nozy swap churn'"
                     );
@@ -245,7 +244,9 @@ impl SwapEngine {
                     NetworkType::Main
                 };
                 let to_address = if let Some(zcash_wallet) = &self.zcash_wallet {
-                    zcash_wallet.generate_orchard_address(0, 0, network)?.to_string()
+                    zcash_wallet
+                        .generate_orchard_address(0, 0, network)?
+                        .to_string()
                 } else {
                     return Err(NozyError::InvalidOperation(
                         "Zcash wallet not configured".to_string(),
@@ -262,14 +263,16 @@ impl SwapEngine {
                     NetworkType::Main
                 };
                 let from_address = if let Some(zcash_wallet) = &self.zcash_wallet {
-                    zcash_wallet.generate_orchard_address(0, 0, network)?.to_string()
+                    zcash_wallet
+                        .generate_orchard_address(0, 0, network)?
+                        .to_string()
                 } else {
                     return Err(NozyError::InvalidOperation(
                         "Zcash wallet not configured".to_string(),
                     ));
                 };
 
-\                let to_address = if let Some(monero_wallet) = &self.monero_wallet {
+                let to_address = if let Some(monero_wallet) = &self.monero_wallet {
                     monero_wallet.create_subaddress(0).await?
                 } else {
                     return Err(NozyError::InvalidOperation(
@@ -292,7 +295,7 @@ impl SwapEngine {
     ) -> NozyResult<crate::monero_zk_verifier::types::VerificationResult> {
         let config = load_config();
 
-]        let block_height = monero_wallet.get_block_height().await?;
+        let block_height = monero_wallet.get_block_height().await?;
         let block_hash = monero_wallet.get_current_block_hash().await?;
 
         let verifier = MoneroZkVerifier::new(config.zk_verification.clone())?;

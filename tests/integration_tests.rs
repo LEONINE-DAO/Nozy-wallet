@@ -5,8 +5,8 @@ use nozy::{
     ZebraClient,
 };
 use std::path::PathBuf;
-use zcash_protocol::consensus::NetworkType;
 use std::sync::Once;
+use zcash_protocol::consensus::NetworkType;
 
 static INIT: Once = Once::new();
 
@@ -95,7 +95,7 @@ async fn test_address_generation() {
 
     let wallet = HDWallet::new().expect("Failed to create wallet");
 
-    let network = NetworkType::Test; 
+    let network = NetworkType::Test;
     for i in 0..5 {
         let address = wallet
             .generate_orchard_address(0, i, network)
