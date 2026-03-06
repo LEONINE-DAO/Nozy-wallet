@@ -61,6 +61,7 @@
 - [Zebra Node Setup](advanced/zebra-node.md)
 - [Proving Parameters](advanced/proving-parameters.md)
 - [API Server Setup](advanced/api-server.md)
+- [Secret Network (ZEC + Secret from One Seed)](advanced/secret-network.md)
 
 # API Reference
 

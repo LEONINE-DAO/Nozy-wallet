@@ -67,6 +67,12 @@ Just like Monero, but faster and more efficient.
 - **✅ Modern UI**: Intuitive interface with tabs, bookmarks, and history
 - **📖 [User Guide](desktop-client/USER_GUIDE.md)** | **📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)**
 
+#### Unified privacy wallet (ZEC + Secret Network)
+
+- **One seed, two chains** — The same BIP39 mnemonic derives both **ZEC (Orchard)** and **Secret Network** (SCRT, SNIP-20 / Shade tokens). One backup recovers both.
+- **CLI:** Build with `cargo build --release --features secret-network`, then use `nozy shade` for balance, send, receive, history (e.g. `nozy shade balance`, `nozy shade receive`).
+- **Docs:** [Secret Network (ZEC + Secret from one seed)](https://leonine-dao.github.io/Nozy-wallet/book/advanced/secret-network.html) in the book; [SECRET_NETWORK_RESEARCH_AND_BUILD.md](SECRET_NETWORK_RESEARCH_AND_BUILD.md) for implementation details and build plan.
+
 ###  Upcoming Features & Roadmap
 
 >  **Full Roadmap Available**: See **[ENHANCEMENT_ROADMAP.md](ENHANCEMENT_ROADMAP.md)** for complete development plans, priorities, and implementation details.
@@ -138,6 +144,9 @@ cargo build --release
 ```
 
 ##  Documentation
+
+### Project
+- **[NozyWallet Whitepaper](docs/NOZYWALLET_WHITEPAPER.md)** — Privacy by default, architecture, threat model, and roadmap (PDF-style document).
 
 ### Desktop Client
 - **[User Guide](desktop-client/USER_GUIDE.md)** - Complete guide for desktop users

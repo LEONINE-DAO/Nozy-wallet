@@ -1252,6 +1252,286 @@ pub async fn get_wallet_status(
     }))
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebEntitlements {
+    pub has_active_subscription: bool,
+    pub includes_nym_privacy: bool,
+    pub includes_encrypted_backup: bool,
+    pub can_host_node: bool,
+    pub vault_features_enabled: bool,
+    pub phase1_watch_only: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebMeResponse {
+    pub user_id: String,
+    pub plan: String,
+    pub entitlements: WebEntitlements,
+}
+
+pub async fn web_me()
+-> Result<ResponseJson<WebMeResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    let has_subscription = std::env::var("NOZY_WEB_SUB_ACTIVE")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    Ok(ResponseJson(WebMeResponse {
+        user_id: "local-dev-user".to_string(),
+        plan: if has_subscription {
+            "nozy-private-standard".to_string()
+        } else {
+            "free-watch-only".to_string()
+        },
+        entitlements: WebEntitlements {
+            has_active_subscription: has_subscription,
+            includes_nym_privacy: has_subscription,
+            includes_encrypted_backup: has_subscription,
+            can_host_node: false,
+            vault_features_enabled: false,
+            phase1_watch_only: true,
+        },
+    }))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebReadStateResponse {
+    pub balance_zec: f64,
+    pub balance_zatoshis: u64,
+    pub last_sync_height: Option<u32>,
+    pub current_block_height: Option<u32>,
+    pub blocks_behind: Option<u32>,
+    pub recent_transactions: Vec<serde_json::Value>,
+}
+
+pub async fn web_read_state()
+-> Result<ResponseJson<WebReadStateResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
+    use std::fs;
+
+    let config = load_config();
+    let zebra_client = ZebraClient::from_config(&config);
+
+    let notes_path = nozy::paths::get_wallet_data_dir().join("notes.json");
+    let balance_zatoshis = if notes_path.exists() {
+        if let Ok(content) = fs::read_to_string(&notes_path) {
+            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
+                parsed
+                    .as_array()
+                    .unwrap_or(&vec![])
+                    .iter()
+                    .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
+                    .sum::<u64>()
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    } else {
+        0
+    };
+
+    let txs: Vec<serde_json::Value> = if let Ok(tx_storage) = SentTransactionStorage::new() {
+        let all = tx_storage.get_all_transactions();
+        all.iter()
+            .take(10)
+            .map(|t| {
+                serde_json::json!({
+                    "txid": t.txid,
+                    "status": format!("{:?}", t.status),
+                    "amount_zatoshis": t.amount_zatoshis,
+                    "amount_zec": t.amount_zatoshis as f64 / 100_000_000.0,
+                    "recipient": t.recipient_address,
+                    "confirmations": t.confirmations,
+                    "broadcast_at": t.broadcast_at.map(|d| d.to_rfc3339())
+                })
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
+    let current_height = zebra_client.get_block_count().await.ok();
+    let blocks_behind =
+        if let (Some(current), Some(last)) = (current_height, config.last_scan_height) {
+            Some(current.saturating_sub(last))
+        } else {
+            None
+        };
+
+    Ok(ResponseJson(WebReadStateResponse {
+        balance_zec: balance_zatoshis as f64 / 100_000_000.0,
+        balance_zatoshis,
+        last_sync_height: config.last_scan_height,
+        current_block_height: current_height,
+        blocks_behind,
+        recent_transactions: txs,
+    }))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebPrivacyStatusResponse {
+    pub strict_mode: bool,
+    pub zebra_url: String,
+    pub is_local_endpoint: bool,
+    pub privacy_route_active: bool,
+    pub selected_route: Option<String>,
+    pub remote_rpc_allowed: bool,
+    pub message: String,
+    pub remediation_steps: Vec<String>,
+}
+
+pub async fn web_privacy_status()
+-> Result<ResponseJson<WebPrivacyStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::load_config;
+    use nozy::privacy_network::proxy::ProxyConfig;
+
+    let config = load_config();
+    let zebra_url = config.zebra_url.clone();
+    let strict_mode = config.privacy_network.require_privacy_network;
+    let is_local_endpoint = zebra_url.contains("127.0.0.1") || zebra_url.contains("localhost");
+    let force_privacy_route_active = std::env::var("NOZY_WEB_FORCE_PRIVACY_ROUTE_ACTIVE")
+        .ok()
+        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+        .unwrap_or(false);
+
+    if is_local_endpoint {
+        return Ok(ResponseJson(WebPrivacyStatusResponse {
+            strict_mode,
+            zebra_url,
+            is_local_endpoint: true,
+            privacy_route_active: false,
+            selected_route: None,
+            remote_rpc_allowed: true,
+            message: "Local Zebra RPC endpoint in use.".to_string(),
+            remediation_steps: vec![
+                "Local endpoint detected. No additional privacy route is required for localhost RPC.".to_string(),
+            ],
+        }));
+    }
+
+    if force_privacy_route_active {
+        return Ok(ResponseJson(WebPrivacyStatusResponse {
+            strict_mode,
+            zebra_url,
+            is_local_endpoint: false,
+            privacy_route_active: true,
+            selected_route: Some("DevSimulated".to_string()),
+            remote_rpc_allowed: true,
+            message: "Remote RPC treated as privacy-routed (development override).".to_string(),
+            remediation_steps: vec![
+                "Development override active via NOZY_WEB_FORCE_PRIVACY_ROUTE_ACTIVE.".to_string(),
+                "For production validation, disable override and run with real Tor/I2P.".to_string(),
+            ],
+        }));
+    }
+
+    let proxy = ProxyConfig::auto_detect().await;
+    if proxy.enabled {
+        return Ok(ResponseJson(WebPrivacyStatusResponse {
+            strict_mode,
+            zebra_url,
+            is_local_endpoint: false,
+            privacy_route_active: true,
+            selected_route: Some(format!("{:?}", proxy.network)),
+            remote_rpc_allowed: true,
+            message: "Remote RPC protected by privacy route.".to_string(),
+            remediation_steps: vec![
+                "Privacy route is active. Continue using this endpoint.".to_string(),
+                "If connectivity fails, verify local Tor/I2P service health and proxy settings.".to_string(),
+            ],
+        }));
+    }
+
+    let remote_rpc_allowed = !strict_mode;
+    let message = if remote_rpc_allowed {
+        "Remote RPC has no privacy route (allowed because strict mode is disabled).".to_string()
+    } else {
+        "Remote RPC blocked: strict privacy mode requires Tor/I2P route.".to_string()
+    };
+    let remediation_steps = if remote_rpc_allowed {
+        vec![
+            "Enable Tor or I2P to improve metadata privacy for remote RPC.".to_string(),
+            "Or switch Zebra RPC to localhost (127.0.0.1/localhost).".to_string(),
+        ]
+    } else {
+        vec![
+            "Start Tor (default socks5://127.0.0.1:9050) or I2P (default http://127.0.0.1:4444).".to_string(),
+            "Verify privacy route status in settings and retry.".to_string(),
+            "If available, switch Zebra RPC to localhost (127.0.0.1/localhost).".to_string(),
+            "Disable strict mode only if you explicitly accept metadata leak risk.".to_string(),
+        ]
+    };
+
+    Ok(ResponseJson(WebPrivacyStatusResponse {
+        strict_mode,
+        zebra_url,
+        is_local_endpoint: false,
+        privacy_route_active: false,
+        selected_route: None,
+        remote_rpc_allowed,
+        message,
+        remediation_steps,
+    }))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct WebNodeStatusResponse {
+    pub backend: String,
+    pub protocol: String,
+    pub zebra_url: String,
+    pub connected: bool,
+    pub block_height: Option<u32>,
+    pub error: Option<String>,
+}
+
+pub async fn web_node_status()
+-> Result<ResponseJson<WebNodeStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::load_config;
+    use nozy::{BackendKind, Protocol, ZebraClient};
+
+    let config = load_config();
+    let zebra_url = if matches!(config.backend, BackendKind::Crosslink) && !config.crosslink_url.is_empty()
+    {
+        config.crosslink_url.clone()
+    } else {
+        config.zebra_url.clone()
+    };
+
+    let backend = match config.backend {
+        BackendKind::Zebra => "zebra",
+        BackendKind::Crosslink => "crosslink",
+    }
+    .to_string();
+
+    let protocol = match config.protocol {
+        Protocol::JsonRpc => "jsonrpc",
+        Protocol::Grpc => "grpc",
+    }
+    .to_string();
+
+    let client = ZebraClient::from_config(&config);
+    match client.get_block_count().await {
+        Ok(block_height) => Ok(ResponseJson(WebNodeStatusResponse {
+            backend,
+            protocol,
+            zebra_url,
+            connected: true,
+            block_height: Some(block_height),
+            error: None,
+        })),
+        Err(e) => Ok(ResponseJson(WebNodeStatusResponse {
+            backend,
+            protocol,
+            zebra_url,
+            connected: false,
+            block_height: None,
+            error: Some(e.to_string()),
+        })),
+    }
+}
+
 #[derive(Debug, Serialize)]
 pub struct NotesResponse {
     pub notes: Vec<serde_json::Value>,

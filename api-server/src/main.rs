@@ -109,6 +109,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/proving/download",
             post(handlers::download_proving_parameters),
         )
+        .route("/api/web/me", get(handlers::web_me))
+        .route("/api/web/read-state", get(handlers::web_read_state))
+        .route("/api/web/privacy-status", get(handlers::web_privacy_status))
+        .route("/api/web/node-status", get(handlers::web_node_status))
         .route("/health", get(health_check))
         .layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {

@@ -1,10 +1,22 @@
 // Secret Network RPC Client
 // Connects to Secret Network nodes via LCD (Light Client Daemon) API
+// Includes retry with exponential backoff for fault tolerance.
 
 use crate::error::{NozyError, NozyResult};
 use crate::privacy_network::proxy::ProxyConfig;
 use serde_json::{json, Value};
 use std::time::Duration;
+
+const MAX_RETRIES: u32 = 3;
+
+fn is_retryable_network_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("failed to connect")
+}
 
 #[derive(Clone)]
 pub struct SecretRpcClient {
@@ -29,11 +41,9 @@ impl SecretRpcClient {
             }
         });
 
-        // Create client with privacy proxy
         let client = if let Some(proxy_config) = proxy {
             proxy_config.create_client()?
         } else {
-            // Fallback to direct connection (privacy network auto-detect is async, skip for now)
             reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
@@ -43,71 +53,104 @@ impl SecretRpcClient {
         Ok(Self { lcd_url, client })
     }
 
-    /// Make GET request to Secret Network LCD API
     async fn get(&self, endpoint: &str) -> NozyResult<Value> {
-        let url = format!("{}{}", self.lcd_url, endpoint);
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            match self.get_once(endpoint).await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    let msg = e.to_string();
+                    let retryable = is_retryable_network_error(&msg);
+                    last_err = Some(e);
+                    if attempt < MAX_RETRIES && retryable {
+                        let delay_ms = 100 * (1 << attempt);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                        continue;
+                    }
+                    return Err(last_err.unwrap());
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| {
+            NozyError::NetworkError("Secret Network API error: Unknown".to_string())
+        }))
+    }
 
+    async fn get_once(&self, endpoint: &str) -> NozyResult<Value> {
+        let url = format!("{}{}", self.lcd_url, endpoint);
         let response = self
             .client
             .get(&url)
             .send()
             .await
             .map_err(|e| NozyError::NetworkError(format!("Secret Network API error: {}", e)))?;
-
         if !response.status().is_success() {
             return Err(NozyError::NetworkError(format!(
                 "Secret Network API error: HTTP {}",
                 response.status()
             )));
         }
-
         let json: Value = response
             .json()
             .await
             .map_err(|e| NozyError::NetworkError(format!("Failed to parse response: {}", e)))?;
-
         Ok(json)
     }
 
-    /// Make POST request to Secret Network LCD API
     async fn post(&self, endpoint: &str, body: Value) -> NozyResult<Value> {
-        let url = format!("{}{}", self.lcd_url, endpoint);
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            match self.post_once(endpoint, &body).await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    let msg = e.to_string();
+                    let retryable = is_retryable_network_error(&msg);
+                    last_err = Some(e);
+                    if attempt < MAX_RETRIES && retryable {
+                        let delay_ms = 100 * (1 << attempt);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                        continue;
+                    }
+                    return Err(last_err.unwrap());
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| {
+            NozyError::NetworkError("Secret Network API error: Unknown".to_string())
+        }))
+    }
 
+    async fn post_once(&self, endpoint: &str, body: &Value) -> NozyResult<Value> {
+        let url = format!("{}{}", self.lcd_url, endpoint);
         let response = self
             .client
             .post(&url)
-            .json(&body)
+            .json(body)
             .send()
             .await
             .map_err(|e| NozyError::NetworkError(format!("Secret Network API error: {}", e)))?;
-
         if !response.status().is_success() {
             return Err(NozyError::NetworkError(format!(
                 "Secret Network API error: HTTP {}",
                 response.status()
             )));
         }
-
         let json: Value = response
             .json()
             .await
             .map_err(|e| NozyError::NetworkError(format!("Failed to parse response: {}", e)))?;
-
         Ok(json)
     }
 
-    /// Get account information
     pub async fn get_account(&self, address: &str) -> NozyResult<Value> {
         let endpoint = format!("/cosmos/auth/v1beta1/accounts/{}", address);
         self.get(&endpoint).await
     }
 
-    /// Get account balance (SCRT)
     pub async fn get_balance(&self, address: &str) -> NozyResult<u64> {
         let endpoint = format!("/cosmos/bank/v1beta1/balances/{}", address);
         let response = self.get(&endpoint).await?;
 
-        // Parse balance from response
         if let Some(balances) = response.get("balances").and_then(|v| v.as_array()) {
             for balance in balances {
                 if let Some(denom) = balance.get("denom").and_then(|v| v.as_str()) {
@@ -125,7 +168,6 @@ impl SecretRpcClient {
         Ok(0)
     }
 
-    /// Query contract (for SNIP-20 tokens)
     pub async fn query_contract(&self, contract_address: &str, query: Value) -> NozyResult<Value> {
         let endpoint = format!("/compute/v1beta1/query/{}", contract_address);
         let body = json!({
@@ -134,8 +176,7 @@ impl SecretRpcClient {
         self.post(&endpoint, body).await
     }
 
-    /// Execute contract (for SNIP-20 transfers, etc.)
-    /// Note: This endpoint requires proper transaction signing
+    /// Note to self this endpoint requires proper transaction signing
     pub async fn execute_contract(
         &self,
         contract_address: &str,
@@ -201,7 +242,6 @@ impl SecretRpcClient {
         Ok(200_000)
     }
 
-    /// Get network info (chain ID, etc.)
     pub async fn get_network_info(&self) -> NozyResult<Value> {
         let response = self
             .get("/cosmos/base/tendermint/v1beta1/node_info")
@@ -209,7 +249,6 @@ impl SecretRpcClient {
         Ok(response)
     }
 
-    /// Get chain ID
     pub async fn get_chain_id(&self) -> NozyResult<String> {
         let info = self.get_network_info().await?;
         let chain_id = info
@@ -222,7 +261,6 @@ impl SecretRpcClient {
         Ok(chain_id)
     }
 
-    /// Get account information
     pub async fn get_account_info(&self, address: &str) -> NozyResult<(u64, u64)> {
         let endpoint = format!("/cosmos/auth/v1beta1/accounts/{}", address);
         let response = self.get(&endpoint).await?;
@@ -246,7 +284,6 @@ impl SecretRpcClient {
         Ok((account_number, sequence))
     }
 
-    /// Get current block height
     pub async fn get_height(&self) -> NozyResult<u64> {
         let response = self
             .get("/cosmos/base/tendermint/v1beta1/blocks/latest")
@@ -263,7 +300,6 @@ impl SecretRpcClient {
         Ok(height)
     }
 
-    /// Test connection to Secret Network
     pub async fn test_connection(&self) -> NozyResult<bool> {
         match self.get_height().await {
             Ok(_) => Ok(true),

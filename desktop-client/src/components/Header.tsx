@@ -7,7 +7,7 @@ import { Tooltip } from "./Tooltip";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
 
-export type TabId = "home" | "history" | "settings" | "send" | "browser" | "contacts";
+export type TabId = "home" | "history" | "settings" | "send" | "browser" | "contacts" | "web";
 
 interface HeaderProps {
   activeTab: TabId;
@@ -21,6 +21,7 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
   const { isSyncing, setIsSyncing } = useWalletStore();
+  const webWatchOnlyEnabled = import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
 
   const handleManualSync = async () => {
     if (isSyncing) return;
@@ -84,6 +85,19 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
                 />
               </div>
             </Tooltip>
+            {webWatchOnlyEnabled && (
+              <Tooltip content="Watch-only web wallet status">
+                <div>
+                  <HeaderItem
+                    icon={<Shield weight="Bold" />}
+                    label="Web"
+                    showLabel={showLabels}
+                    active={activeTab === "web"}
+                    onClick={() => onTabChange("web")}
+                  />
+                </div>
+              </Tooltip>
+            )}
           </nav>
         </div>
 

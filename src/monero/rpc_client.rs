@@ -1,10 +1,22 @@
 // Monero RPC Client with Privacy Proxy Support
 // Connects to monero-wallet-rpc through Tor/I2P
+// Includes retry with exponential backoff for fault tolerance.
 
 use crate::error::{NozyError, NozyResult};
 use crate::privacy_network::proxy::ProxyConfig;
 use serde_json::{json, Value};
 use std::time::Duration;
+
+const MAX_RETRIES: u32 = 3;
+
+fn is_retryable_network_error(msg: &str) -> bool {
+    let lower = msg.to_lowercase();
+    lower.contains("timeout")
+        || lower.contains("connection")
+        || lower.contains("connection reset")
+        || lower.contains("connection refused")
+        || lower.contains("failed to connect")
+}
 
 pub struct MoneroRpcClient {
     url: String,
@@ -23,12 +35,9 @@ impl MoneroRpcClient {
         proxy: Option<ProxyConfig>,
     ) -> NozyResult<Self> {
         let url = url.unwrap_or_else(|| "http://127.0.0.1:18082/json_rpc".to_string());
-
-        // Create client with privacy proxy
         let client = if let Some(proxy_config) = proxy {
             proxy_config.create_client()?
         } else {
-            // Fallback to direct connection (privacy network auto-detect is async, skip for now)
             reqwest::Client::builder()
                 .timeout(Duration::from_secs(30))
                 .build()
@@ -43,8 +52,31 @@ impl MoneroRpcClient {
         })
     }
 
-    /// Make RPC call to Monero wallet
+    /// Make RPC call to Monero wallet (with retry and exponential backoff).
     pub async fn call(&self, method: &str, params: Value) -> NozyResult<Value> {
+        let mut last_err = None;
+        for attempt in 0..=MAX_RETRIES {
+            match self.call_once(method, &params).await {
+                Ok(v) => return Ok(v),
+                Err(e) => {
+                    let msg = e.to_string();
+                    let retryable = is_retryable_network_error(&msg);
+                    last_err = Some(e);
+                    if attempt < MAX_RETRIES && retryable {
+                        let delay_ms = 100 * (1 << attempt);
+                        tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+                        continue;
+                    }
+                    return Err(last_err.unwrap());
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| {
+            NozyError::NetworkError("Monero RPC error: Unknown".to_string())
+        }))
+    }
+
+    async fn call_once(&self, method: &str, params: &Value) -> NozyResult<Value> {
         let mut request = self.client.post(&self.url).json(&json!({
             "jsonrpc": "2.0",
             "id": "0",
@@ -52,7 +84,6 @@ impl MoneroRpcClient {
             "params": params
         }));
 
-        // Add authentication if provided
         if let (Some(user), Some(pass)) = (&self.username, &self.password) {
             request = request.basic_auth(user, Some(pass));
         }
@@ -79,7 +110,6 @@ impl MoneroRpcClient {
             .ok_or_else(|| NozyError::NetworkError("No result in response".to_string()))
     }
 
-    /// Get wallet balance (in atomic units - 1 XMR = 1e12 atomic units)
     pub async fn get_balance(&self) -> NozyResult<u64> {
         let result = self.call("get_balance", json!({})).await?;
 
@@ -91,7 +121,6 @@ impl MoneroRpcClient {
         Ok(balance)
     }
 
-    /// Get wallet address (primary address)
     pub async fn get_address(&self) -> NozyResult<String> {
         let result = self.call("get_address", json!({})).await?;
 
@@ -103,7 +132,6 @@ impl MoneroRpcClient {
         Ok(address.to_string())
     }
 
-    /// Create a new subaddress (for privacy - never reuse addresses!)
     pub async fn create_address(&self, account_index: u32) -> NozyResult<String> {
         let result = self
             .call(
@@ -122,12 +150,11 @@ impl MoneroRpcClient {
         Ok(address.to_string())
     }
 
-    /// Send Monero transaction
-    /// Returns (txid, tx_key, fee_atomic)
+
     pub async fn send(
         &self,
         destination: &str,
-        amount: u64, // in atomic units
+        amount: u64, 
     ) -> NozyResult<(String, Option<String>, Option<u64>)> {
         let result = self
             .call(
@@ -137,8 +164,8 @@ impl MoneroRpcClient {
                         "amount": amount,
                         "address": destination
                     }],
-                    "priority": 1, // Normal priority
-                    "ring_size": 11, // Standard for privacy
+                    "priority": 1, 
+                    "ring_size": 11, 
                     "get_tx_key": true
                 }),
             )
@@ -160,7 +187,6 @@ impl MoneroRpcClient {
         Ok((txid, tx_key, fee_atomic))
     }
 
-    /// Get current block height
     pub async fn get_height(&self) -> NozyResult<u64> {
         let result = self.call("get_height", json!({})).await?;
 
@@ -172,7 +198,6 @@ impl MoneroRpcClient {
         Ok(height)
     }
 
-    /// Get block hash for given height (for ZK verification)
     pub async fn get_block_hash(&self, height: u64) -> NozyResult<String> {
         let result = self
             .call(
@@ -191,13 +216,11 @@ impl MoneroRpcClient {
         Ok(hash.to_string())
     }
 
-    /// Get current block hash
     pub async fn get_current_block_hash(&self) -> NozyResult<String> {
         let height = self.get_height().await?;
         self.get_block_hash(height).await
     }
 
-    /// Test connection to Monero wallet
     pub async fn test_connection(&self) -> NozyResult<bool> {
         match self.get_height().await {
             Ok(_) => Ok(true),

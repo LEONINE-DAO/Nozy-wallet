@@ -6,9 +6,12 @@ import { SettingsPage } from "../pages/Settings";
 import { HistoryPage } from "../pages/History";
 import { BrowserPage } from "../pages/Browser";
 import { ContactsPage } from "../pages/Contacts";
+import { WebWalletWatchOnlyPage } from "../pages/WebWalletWatchOnly";
+import { BrowserSubscriptionGate } from "../components/BrowserSubscriptionGate";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
 import { useSettingsStore } from "../store/settingsStore";
+import { useSubscriptionStore } from "../store/subscriptionStore";
 import { Button } from "../components/Button";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
@@ -16,7 +19,9 @@ import { Refresh, CloseCircle, Download } from "@solar-icons/react";
 
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
+  const webWatchOnlyEnabled = import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
+  const { hasNymSubscription } = useSubscriptionStore();
   const { setBalance, setAddress, isSyncing, setIsSyncing } = useWalletStore();
   const [provingDownloaded, setProvingDownloaded] = useState<boolean | null>(null);
   const [provingDownloading, setProvingDownloading] = useState(false);
@@ -194,7 +199,11 @@ export function AuthenticatedLayout() {
 
       <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 relative">
         {activeTab === "browser" ? (
-          <BrowserPage />
+          hasNymSubscription ? (
+            <BrowserPage />
+          ) : (
+            <BrowserSubscriptionGate onGoToSettings={() => setActiveTab("settings")} />
+          )
         ) : (
           <>
             <div className="absolute top-0 left-0 w-full h-64 bg-linear-to-b from-primary-50/70 to-transparent pointer-events-none" />
@@ -204,6 +213,19 @@ export function AuthenticatedLayout() {
               {activeTab === "send" && <SendPage />}
               {activeTab === "settings" && <SettingsPage />}
               {activeTab === "contacts" && <ContactsPage />}
+              {activeTab === "web" &&
+                (webWatchOnlyEnabled ? (
+                  <WebWalletWatchOnlyPage />
+                ) : (
+                  <div className="max-w-2xl mx-auto py-8">
+                    <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                      Web Watch-Only Disabled
+                    </h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Set `VITE_ENABLE_WEB_WATCH_ONLY=true` to enable the Phase 1 web watch-only panel.
+                    </p>
+                  </div>
+                ))}
             </div>
           </>
         )}

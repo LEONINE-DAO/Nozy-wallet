@@ -21,12 +21,14 @@ import { MultiSigSettings } from "../components/settings/MultiSigSettings";
 import { AccountListSettings } from "../components/settings/AccountListSettings";
 import { MultiDeviceSyncSettings } from "../components/settings/MultiDeviceSyncSettings";
 import { BackupRestoreSettings } from "../components/settings/BackupRestoreSettings";
+import { NetworkPrivacySettings } from "../components/settings/NetworkPrivacySettings";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
 
 type SettingsSection =
   | "main"
   | "network"
+  | "networkprivacy"
   | "account"
   | "security"
   | "notifications"
@@ -55,6 +57,10 @@ export function SettingsPage() {
 
   if (activeSection === "network") {
     return <NetworkSettings onBack={() => setActiveSection("main")} />;
+  }
+
+  if (activeSection === "networkprivacy") {
+    return <NetworkPrivacySettings onBack={() => setActiveSection("main")} />;
   }
 
   if (activeSection === "account") {
@@ -111,6 +117,12 @@ export function SettingsPage() {
           title="Network & Node"
           description="Configure API backend connection"
           onClick={() => setActiveSection("network")}
+        />
+        <SettingsItem
+          icon={<Shield className="text-primary-600" />}
+          title="Network privacy (Nym / NymVPN)"
+          description="Route traffic through Nym for full metadata privacy"
+          onClick={() => setActiveSection("networkprivacy")}
         />
         <SettingsItem
           icon={<Shield className="text-primary-600" />}

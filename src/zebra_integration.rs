@@ -1,4 +1,4 @@
-use crate::config::{BackendKind, Protocol};
+use crate::config::{BackendKind, Protocol, WalletConfig};
 use crate::error::{NozyError, NozyResult};
 use crate::grpc_client::ZebraGrpcClient;
 use hex;
@@ -10,6 +10,8 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 pub struct ZebraClient {
     url: String,
+    /// Fallback Zebra RPC URLs tried in order when primary fails after retries (fault tolerance).
+    fallback_urls: Vec<String>,
     /// Nozy is talking to both `Zebra` and `Crosslink` use the same JSON-RPC
     /// interface from Nozy's perspective, but this flag lets us adapt
     /// behaviour later (for example, staking-specific calls) without
@@ -18,7 +20,9 @@ pub struct ZebraClient {
     backend: BackendKind,
     protocol: Protocol,
     client: Arc<reqwest::Client>,
-    /// gRPC client, initialized on first use when protocol is gRPC
+    privacy_proxy_url: Option<String>,
+    block_remote_without_privacy: bool,
+    privacy_block_reason: Option<String>,
     #[allow(dead_code)]
     grpc_client: Option<Arc<ZebraGrpcClient>>,
 }
@@ -36,6 +40,50 @@ struct ZebraError {
 }
 
 impl ZebraClient {
+    fn is_local_url(url: &str) -> bool {
+        url.contains("127.0.0.1") || url.contains("localhost")
+    }
+
+    fn build_http_client(timeout_secs: u64, proxy_url: Option<&str>) -> Result<reqwest::Client, String> {
+        let mut builder = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(timeout_secs))
+            .tcp_keepalive(std::time::Duration::from_secs(60))
+            .pool_max_idle_per_host(2)
+            .pool_idle_timeout(std::time::Duration::from_secs(10))
+            .danger_accept_invalid_certs(false);
+
+        if let Some(url) = proxy_url {
+            let proxy = reqwest::Proxy::all(url)
+                .map_err(|e| format!("Invalid privacy proxy URL '{}': {}", url, e))?;
+            builder = builder.proxy(proxy);
+        }
+
+        builder
+            .build()
+            .map_err(|e| format!("Failed to create HTTP client: {}", e))
+    }
+
+    fn selected_proxy_from_config(config: &WalletConfig) -> Option<String> {
+        let privacy = &config.privacy_network;
+        let preferred = privacy.preferred_network.to_lowercase();
+
+        match preferred.as_str() {
+            "i2p" if privacy.i2p_enabled && !privacy.i2p_proxy.is_empty() => {
+                Some(privacy.i2p_proxy.clone())
+            }
+            "tor" if privacy.tor_enabled && !privacy.tor_proxy.is_empty() => {
+                Some(privacy.tor_proxy.clone())
+            }
+            _ if privacy.tor_enabled && !privacy.tor_proxy.is_empty() => {
+                Some(privacy.tor_proxy.clone())
+            }
+            _ if privacy.i2p_enabled && !privacy.i2p_proxy.is_empty() => {
+                Some(privacy.i2p_proxy.clone())
+            }
+            _ => None,
+        }
+    }
+
     pub fn new(url: String) -> Self {
         Self::new_with_backend(url, BackendKind::Zebra)
     }
@@ -51,43 +99,94 @@ impl ZebraClient {
     ) -> Self {
         let url = Self::normalize_url(url.clone());
 
-        let is_local = url.contains("127.0.0.1") || url.contains("localhost");
+        let is_local = Self::is_local_url(&url);
         let timeout_secs = if is_local { 10 } else { 30 };
 
-        let client = reqwest::Client::builder()
-            .timeout(std::time::Duration::from_secs(timeout_secs))
-            .tcp_keepalive(std::time::Duration::from_secs(60))
-            .pool_max_idle_per_host(2)
-            .pool_idle_timeout(std::time::Duration::from_secs(10))
-            .danger_accept_invalid_certs(false)
-            .build()
+        let client = Self::build_http_client(timeout_secs, None)
             .unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
             url,
+            fallback_urls: Vec::new(),
             backend,
             protocol,
             client: Arc::new(client),
-            grpc_client: None, // Will be initialized on first use if needed
+            privacy_proxy_url: None,
+            block_remote_without_privacy: false,
+            privacy_block_reason: None,
+            grpc_client: None, 
         }
     }
 
     pub fn from_config(config: &crate::config::WalletConfig) -> Self {
-        let (backend, url) = match &config.backend {
-            BackendKind::Zebra => (BackendKind::Zebra, config.zebra_url.clone()),
+        let (backend, url, fallback_urls) = match &config.backend {
+            BackendKind::Zebra => (
+                BackendKind::Zebra,
+                config.zebra_url.clone(),
+                config.zebra_fallback_urls.clone(),
+            ),
             BackendKind::Crosslink => {
                 let url = if !config.crosslink_url.is_empty() {
                     config.crosslink_url.clone()
                 } else {
-                    // Fallback to zebra_url until a dedicated Crosslink
-                    // endpoint is configured.
                     config.zebra_url.clone()
                 };
-                (BackendKind::Crosslink, url)
+                (
+                    BackendKind::Crosslink,
+                    url,
+                    Vec::new(), 
+                )
             }
         };
 
-        Self::new_with_backend_and_protocol(url, backend, config.protocol.clone())
+        let mut client = Self::new_with_backend_and_protocol(url, backend, config.protocol.clone());
+        client.fallback_urls = fallback_urls
+            .into_iter()
+            .map(Self::normalize_url)
+            .filter(|u| !u.is_empty())
+            .collect();
+
+        let primary_is_remote = !Self::is_local_url(&client.url);
+        let any_fallback_remote = client
+            .fallback_urls
+            .iter()
+            .any(|u| !Self::is_local_url(u));
+        let remote_rpc_possible = primary_is_remote || any_fallback_remote;
+
+        let require_privacy = config.privacy_network.require_privacy_network;
+        let selected_proxy = Self::selected_proxy_from_config(config);
+        client.privacy_proxy_url = selected_proxy.clone();
+
+        let timeout_secs = if Self::is_local_url(&client.url) { 10 } else { 30 };
+        match selected_proxy {
+            Some(proxy_url) => {
+                match Self::build_http_client(timeout_secs, Some(proxy_url.as_str())) {
+                    Ok(http_client) => {
+                        client.client = Arc::new(http_client);
+                        client.block_remote_without_privacy = false;
+                        client.privacy_block_reason = None;
+                    }
+                    Err(proxy_err) => {
+                        if require_privacy && remote_rpc_possible {
+                            client.block_remote_without_privacy = true;
+                            client.privacy_block_reason = Some(format!(
+                                "Remote Zebra RPC blocked: privacy proxy configuration is invalid ({})",
+                                proxy_err
+                            ));
+                        }
+                    }
+                }
+            }
+            None => {
+                if require_privacy && remote_rpc_possible {
+                    client.block_remote_without_privacy = true;
+                    client.privacy_block_reason = Some(
+                        "Remote Zebra RPC blocked: require_privacy_network=true but no Tor/I2P proxy is configured".to_string(),
+                    );
+                }
+            }
+        }
+        client
     }
 
     fn normalize_url(url: String) -> String {
@@ -486,44 +585,67 @@ impl ZebraClient {
         T: serde::de::DeserializeOwned,
     {
         const MAX_RETRIES: u32 = 3;
+        let urls_to_try: Vec<&str> = std::iter::once(self.url.as_str())
+            .chain(self.fallback_urls.iter().map(String::as_str))
+            .collect();
         let mut last_error = None;
+        let mut privacy_notice_printed = false;
 
-        for attempt in 0..=MAX_RETRIES {
-            match self.try_request(&request).await {
-                Ok(response) => return Ok(response),
-                Err(e) => {
-                    last_error = Some(e);
+        for url in &urls_to_try {
+            if self.block_remote_without_privacy && !Self::is_local_url(url) {
+                let reason = self.privacy_block_reason.clone().unwrap_or_else(|| {
+                    "Remote Zebra RPC blocked by privacy policy".to_string()
+                });
+                if !privacy_notice_printed {
+                    eprintln!(
+                        "🛡️ Privacy policy active: blocking remote Zebra RPC to {}. {}. \
+This blocks remote RPC only; localhost RPC remains allowed.",
+                        url, reason
+                    );
+                    privacy_notice_printed = true;
+                }
+                last_error = Some(NozyError::NetworkError(reason));
+                continue;
+            }
 
-                    if attempt < MAX_RETRIES {
-                        let error_msg = match &last_error {
-                            Some(NozyError::NetworkError(msg)) => msg,
-                            _ => {
-                                return Err(
-                                    last_error.expect("last_error should be Some at this point")
-                                );
+            for attempt in 0..=MAX_RETRIES {
+                match self.try_request(url, &request).await {
+                    Ok(response) => return Ok(response),
+                    Err(e) => {
+                        last_error = Some(e);
+
+                        if attempt < MAX_RETRIES {
+                            let error_msg = match &last_error {
+                                Some(NozyError::NetworkError(msg)) => msg,
+                                _ => {
+                                    return Err(
+                                        last_error.expect("last_error should be Some at this point")
+                                    );
+                                }
+                            };
+
+                            if error_msg.contains("failed to connect")
+                                || error_msg.contains("Connection refused")
+                                || error_msg.contains("timeout")
+                                || error_msg.contains("Connection reset")
+                            {
+                                let delay_ms = 100 * (1 << attempt);
+                                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
+                                    .await;
+                                continue;
+                            } else {
+                                return Err(last_error
+                                    .expect("last_error should be Some at this point"));
                             }
-                        };
-
-                        if error_msg.contains("failed to connect")
-                            || error_msg.contains("Connection refused")
-                            || error_msg.contains("timeout")
-                            || error_msg.contains("Connection reset")
-                        {
-                            let delay_ms = 100 * (1 << attempt);
-                            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
-                            continue;
-                        } else {
-                            return Err(
-                                last_error.expect("last_error should be Some at this point")
-                            );
                         }
                     }
                 }
             }
         }
 
+        let tried = urls_to_try.join(", ");
         let is_local = self.url.contains("127.0.0.1") || self.url.contains("localhost");
-        let error_msg = if is_local {
+        let error_msg = if is_local && urls_to_try.len() <= 1 {
             format!(
                 "Failed to connect to local Zebra node at {} after {} attempts. \
                 Make sure Zebra is running and RPC is enabled. \
@@ -533,8 +655,8 @@ impl ZebraClient {
             )
         } else {
             format!(
-                "Failed to connect to Zebra node at {} after {} attempts: {}",
-                self.url,
+                "Failed to connect to Zebra node(s) [{}] after {} attempts each: {}",
+                tried,
                 MAX_RETRIES + 1,
                 last_error
                     .as_ref()
@@ -546,13 +668,17 @@ impl ZebraClient {
         Err(NozyError::NetworkError(error_msg))
     }
 
-    async fn try_request<T>(&self, request: &serde_json::Value) -> NozyResult<ZebraResponse<T>>
+    async fn try_request<T>(
+        &self,
+        url: &str,
+        request: &serde_json::Value,
+    ) -> NozyResult<ZebraResponse<T>>
     where
         T: serde::de::DeserializeOwned,
     {
         let response = self
             .client
-            .post(&self.url)
+            .post(url)
             .json(request)
             .send()
             .await
@@ -560,12 +686,12 @@ impl ZebraClient {
                 let error_msg = if e.is_connect() {
                     format!(
                         "Connection failed to {}: {}. Is Zebra running?",
-                        self.url, e
+                        url, e
                     )
                 } else if e.is_timeout() {
                     format!(
                         "Request timeout to {}. The node may be slow or overloaded.",
-                        self.url
+                        url
                     )
                 } else {
                     format!("HTTP request failed: {}", e)
@@ -577,7 +703,7 @@ impl ZebraClient {
             return Err(NozyError::NetworkError(format!(
                 "HTTP error {} from {}. The Zebra RPC endpoint may not be configured correctly.",
                 response.status(),
-                self.url
+                url
             )));
         }
 
@@ -590,7 +716,7 @@ impl ZebraClient {
             serde_json::from_str(&response_text).map_err(|e| {
                 NozyError::InvalidOperation(format!(
                     "Invalid JSON response from {}: {}. Response: {}",
-                    self.url,
+                    url,
                     e,
                     &response_text[..response_text.len().min(200)]
                 ))
