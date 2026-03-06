@@ -7,12 +7,20 @@ on:
       - 'Cargo.toml'
       - '**/Cargo.toml'
       - 'Cargo.lock'
+      - 'landing/package.json'
+      - 'landing/package-lock.json'
+      - 'desktop-client/package.json'
+      - 'desktop-client/package-lock.json'
   pull_request:
     branches: [main, master]
     paths:
       - 'Cargo.toml'
       - '**/Cargo.toml'
       - 'Cargo.lock'
+      - 'landing/package.json'
+      - 'landing/package-lock.json'
+      - 'desktop-client/package.json'
+      - 'desktop-client/package-lock.json'
   schedule:
     # weekly runs on Mondays to check for outdated dependencies is best practice for nozy.
     - cron: '0 0 * * 1'
@@ -22,6 +30,48 @@ permissions:
   contents: read
 
 jobs:
+  audit-npm-landing:
+    name: NPM Audit (Landing)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: landing/package-lock.json
+
+      - name: Install dependencies
+        working-directory: landing
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: landing
+        run: npm audit --audit-level=moderate
+
+  audit-npm-desktop:
+    name: NPM Audit (Desktop Client)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop-client/package-lock.json
+
+      - name: Install dependencies
+        working-directory: desktop-client
+        run: npm ci
+
+      - name: Run npm audit
+        working-directory: desktop-client
+        run: npm audit --audit-level=moderate
+
   check-lockfile:
     name: Verify Cargo.lock
     runs-on: ubuntu-latest
