@@ -71,9 +71,8 @@ impl MoneroRpcClient {
                 }
             }
         }
-        Err(last_err.unwrap_or_else(|| {
-            NozyError::NetworkError("Monero RPC error: Unknown".to_string())
-        }))
+        Err(last_err
+            .unwrap_or_else(|| NozyError::NetworkError("Monero RPC error: Unknown".to_string())))
     }
 
     async fn call_once(&self, method: &str, params: &Value) -> NozyResult<Value> {
@@ -150,11 +149,10 @@ impl MoneroRpcClient {
         Ok(address.to_string())
     }
 
-
     pub async fn send(
         &self,
         destination: &str,
-        amount: u64, 
+        amount: u64,
     ) -> NozyResult<(String, Option<String>, Option<u64>)> {
         let result = self
             .call(
@@ -164,8 +162,8 @@ impl MoneroRpcClient {
                         "amount": amount,
                         "address": destination
                     }],
-                    "priority": 1, 
-                    "ring_size": 11, 
+                    "priority": 1,
+                    "ring_size": 11,
                     "get_tx_key": true
                 }),
             )

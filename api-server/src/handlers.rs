@@ -1269,8 +1269,8 @@ pub struct WebMeResponse {
     pub entitlements: WebEntitlements,
 }
 
-pub async fn web_me()
--> Result<ResponseJson<WebMeResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn web_me(
+) -> Result<ResponseJson<WebMeResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     let has_subscription = std::env::var("NOZY_WEB_SUB_ACTIVE")
         .ok()
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -1304,8 +1304,8 @@ pub struct WebReadStateResponse {
     pub recent_transactions: Vec<serde_json::Value>,
 }
 
-pub async fn web_read_state()
--> Result<ResponseJson<WebReadStateResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn web_read_state(
+) -> Result<ResponseJson<WebReadStateResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
     use std::fs;
 
@@ -1382,8 +1382,8 @@ pub struct WebPrivacyStatusResponse {
     pub remediation_steps: Vec<String>,
 }
 
-pub async fn web_privacy_status()
--> Result<ResponseJson<WebPrivacyStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn web_privacy_status(
+) -> Result<ResponseJson<WebPrivacyStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::load_config;
     use nozy::privacy_network::proxy::ProxyConfig;
 
@@ -1422,7 +1422,8 @@ pub async fn web_privacy_status()
             message: "Remote RPC treated as privacy-routed (development override).".to_string(),
             remediation_steps: vec![
                 "Development override active via NOZY_WEB_FORCE_PRIVACY_ROUTE_ACTIVE.".to_string(),
-                "For production validation, disable override and run with real Tor/I2P.".to_string(),
+                "For production validation, disable override and run with real Tor/I2P."
+                    .to_string(),
             ],
         }));
     }
@@ -1439,7 +1440,8 @@ pub async fn web_privacy_status()
             message: "Remote RPC protected by privacy route.".to_string(),
             remediation_steps: vec![
                 "Privacy route is active. Continue using this endpoint.".to_string(),
-                "If connectivity fails, verify local Tor/I2P service health and proxy settings.".to_string(),
+                "If connectivity fails, verify local Tor/I2P service health and proxy settings."
+                    .to_string(),
             ],
         }));
     }
@@ -1457,7 +1459,8 @@ pub async fn web_privacy_status()
         ]
     } else {
         vec![
-            "Start Tor (default socks5://127.0.0.1:9050) or I2P (default http://127.0.0.1:4444).".to_string(),
+            "Start Tor (default socks5://127.0.0.1:9050) or I2P (default http://127.0.0.1:4444)."
+                .to_string(),
             "Verify privacy route status in settings and retry.".to_string(),
             "If available, switch Zebra RPC to localhost (127.0.0.1/localhost).".to_string(),
             "Disable strict mode only if you explicitly accept metadata leak risk.".to_string(),
@@ -1486,18 +1489,18 @@ pub struct WebNodeStatusResponse {
     pub error: Option<String>,
 }
 
-pub async fn web_node_status()
--> Result<ResponseJson<WebNodeStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
+pub async fn web_node_status(
+) -> Result<ResponseJson<WebNodeStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::load_config;
     use nozy::{BackendKind, Protocol, ZebraClient};
 
     let config = load_config();
-    let zebra_url = if matches!(config.backend, BackendKind::Crosslink) && !config.crosslink_url.is_empty()
-    {
-        config.crosslink_url.clone()
-    } else {
-        config.zebra_url.clone()
-    };
+    let zebra_url =
+        if matches!(config.backend, BackendKind::Crosslink) && !config.crosslink_url.is_empty() {
+            config.crosslink_url.clone()
+        } else {
+            config.zebra_url.clone()
+        };
 
     let backend = match config.backend {
         BackendKind::Zebra => "zebra",

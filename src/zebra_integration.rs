@@ -44,7 +44,10 @@ impl ZebraClient {
         url.contains("127.0.0.1") || url.contains("localhost")
     }
 
-    fn build_http_client(timeout_secs: u64, proxy_url: Option<&str>) -> Result<reqwest::Client, String> {
+    fn build_http_client(
+        timeout_secs: u64,
+        proxy_url: Option<&str>,
+    ) -> Result<reqwest::Client, String> {
         let mut builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_secs))
             .tcp_keepalive(std::time::Duration::from_secs(60))
@@ -102,8 +105,8 @@ impl ZebraClient {
         let is_local = Self::is_local_url(&url);
         let timeout_secs = if is_local { 10 } else { 30 };
 
-        let client = Self::build_http_client(timeout_secs, None)
-            .unwrap_or_else(|_| reqwest::Client::new());
+        let client =
+            Self::build_http_client(timeout_secs, None).unwrap_or_else(|_| reqwest::Client::new());
 
         Self {
             url,
@@ -114,7 +117,7 @@ impl ZebraClient {
             privacy_proxy_url: None,
             block_remote_without_privacy: false,
             privacy_block_reason: None,
-            grpc_client: None, 
+            grpc_client: None,
         }
     }
 
@@ -131,11 +134,7 @@ impl ZebraClient {
                 } else {
                     config.zebra_url.clone()
                 };
-                (
-                    BackendKind::Crosslink,
-                    url,
-                    Vec::new(), 
-                )
+                (BackendKind::Crosslink, url, Vec::new())
             }
         };
 
@@ -147,17 +146,18 @@ impl ZebraClient {
             .collect();
 
         let primary_is_remote = !Self::is_local_url(&client.url);
-        let any_fallback_remote = client
-            .fallback_urls
-            .iter()
-            .any(|u| !Self::is_local_url(u));
+        let any_fallback_remote = client.fallback_urls.iter().any(|u| !Self::is_local_url(u));
         let remote_rpc_possible = primary_is_remote || any_fallback_remote;
 
         let require_privacy = config.privacy_network.require_privacy_network;
         let selected_proxy = Self::selected_proxy_from_config(config);
         client.privacy_proxy_url = selected_proxy.clone();
 
-        let timeout_secs = if Self::is_local_url(&client.url) { 10 } else { 30 };
+        let timeout_secs = if Self::is_local_url(&client.url) {
+            10
+        } else {
+            30
+        };
         match selected_proxy {
             Some(proxy_url) => {
                 match Self::build_http_client(timeout_secs, Some(proxy_url.as_str())) {
@@ -593,9 +593,10 @@ impl ZebraClient {
 
         for url in &urls_to_try {
             if self.block_remote_without_privacy && !Self::is_local_url(url) {
-                let reason = self.privacy_block_reason.clone().unwrap_or_else(|| {
-                    "Remote Zebra RPC blocked by privacy policy".to_string()
-                });
+                let reason = self
+                    .privacy_block_reason
+                    .clone()
+                    .unwrap_or_else(|| "Remote Zebra RPC blocked by privacy policy".to_string());
                 if !privacy_notice_printed {
                     eprintln!(
                         "🛡️ Privacy policy active: blocking remote Zebra RPC to {}. {}. \
@@ -618,9 +619,8 @@ This blocks remote RPC only; localhost RPC remains allowed.",
                             let error_msg = match &last_error {
                                 Some(NozyError::NetworkError(msg)) => msg,
                                 _ => {
-                                    return Err(
-                                        last_error.expect("last_error should be Some at this point")
-                                    );
+                                    return Err(last_error
+                                        .expect("last_error should be Some at this point"));
                                 }
                             };
 
@@ -634,8 +634,9 @@ This blocks remote RPC only; localhost RPC remains allowed.",
                                     .await;
                                 continue;
                             } else {
-                                return Err(last_error
-                                    .expect("last_error should be Some at this point"));
+                                return Err(
+                                    last_error.expect("last_error should be Some at this point")
+                                );
                             }
                         }
                     }
@@ -684,10 +685,7 @@ This blocks remote RPC only; localhost RPC remains allowed.",
             .await
             .map_err(|e| {
                 let error_msg = if e.is_connect() {
-                    format!(
-                        "Connection failed to {}: {}. Is Zebra running?",
-                        url, e
-                    )
+                    format!("Connection failed to {}: {}. Is Zebra running?", url, e)
                 } else if e.is_timeout() {
                     format!(
                         "Request timeout to {}. The node may be slow or overloaded.",
