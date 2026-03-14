@@ -157,7 +157,7 @@ export function SettingsPage() {
         <SettingsItem
           icon={<Download className="text-primary-600" />}
           title="Backup & restore"
-          description="Encrypted backup file (backend wiring in progress)"
+          description="Export and restore encrypted wallet backups"
           onClick={() => setActiveSection("backup")}
         />
       </div>

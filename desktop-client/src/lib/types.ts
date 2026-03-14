@@ -86,3 +86,13 @@ export interface AddAddressBookRequest {
   address: string;
   notes?: string | null;
 }
+
+export interface BackupPathRequest {
+  backup_path: string;
+}
+
+export interface BackupActionResponse {
+  success: boolean;
+  path: string;
+  message: string;
+}

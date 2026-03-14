@@ -17,12 +17,12 @@ import {
   SignMessageResponse,
   AddressBookEntry,
   AddAddressBookRequest,
+  BackupPathRequest,
+  BackupActionResponse,
 } from "./types";
 
 export const walletApi = {
-  // Health - Tauri doesn't need this, wallet operations are direct
   checkHealth: async () => {
-    // For Tauri, we can check wallet status instead
     return { data: { status: "ok" } };
   },
 
@@ -102,8 +102,7 @@ export const walletApi = {
   },
 
   setTheme: async (_data: SetThemeRequest) => {
-    // Tauri doesn't have theme setting in our current implementation
-    // This could be added later as a frontend-only feature
+    
     return { data: null };
   },
 
@@ -164,6 +163,21 @@ export const walletApi = {
 
   searchAddressBook: async (query: string): Promise<{ data: AddressBookEntry[] }> => {
     const result = await invoke<AddressBookEntry[]>("address_book_search", { query });
+    return { data: result ?? [] };
+  },
+
+  exportBackup: async (data: BackupPathRequest): Promise<{ data: BackupActionResponse }> => {
+    const result = await invoke<BackupActionResponse>("export_backup", { request: data });
+    return { data: result };
+  },
+
+  restoreFromBackup: async (data: BackupPathRequest): Promise<{ data: BackupActionResponse }> => {
+    const result = await invoke<BackupActionResponse>("restore_from_backup", { request: data });
+    return { data: result };
+  },
+
+  listBackups: async (): Promise<{ data: string[] }> => {
+    const result = await invoke<string[]>("list_backups");
     return { data: result ?? [] };
   },
 };

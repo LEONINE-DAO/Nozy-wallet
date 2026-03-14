@@ -1,12 +1,83 @@
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 import { Button } from "../Button";
+import { Input } from "../Input";
+import { walletApi } from "../../lib/api";
+import { formatErrorForDisplay } from "../../utils/errors";
 import { ArrowLeft, Document, Download, Refresh } from "@solar-icons/react";
-import { Tooltip } from "../Tooltip";
 
 interface BackupRestoreSettingsProps {
   onBack: () => void;
 }
 
 export function BackupRestoreSettings({ onBack }: BackupRestoreSettingsProps) {
+  const [backupDir, setBackupDir] = useState("");
+  const [backupFile, setBackupFile] = useState("");
+  const [backups, setBackups] = useState<string[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
+
+  const refreshBackups = async () => {
+    try {
+      const response = await walletApi.listBackups();
+      setBackups(response.data ?? []);
+    } catch {
+      // Intentionally silent; list is best-effort.
+      setBackups([]);
+    }
+  };
+
+  useEffect(() => {
+    void refreshBackups();
+  }, []);
+
+  const handleExportBackup = async () => {
+    if (!backupDir.trim()) {
+      toast.error("Backup destination directory is required.");
+      return;
+    }
+    const toastId = toast.loading("Exporting encrypted backup...");
+    setIsExporting(true);
+    try {
+      const response = await walletApi.exportBackup({ backup_path: backupDir.trim() });
+      toast.success(response.data.message || "Backup exported successfully.", { id: toastId });
+      if (response.data.path) {
+        setBackupFile(response.data.path);
+      }
+      await refreshBackups();
+    } catch (error: unknown) {
+      toast.error(formatErrorForDisplay(error, "Failed to export backup."), { id: toastId });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleRestoreBackup = async () => {
+    if (!backupFile.trim()) {
+      toast.error("Backup file path is required.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Restoring a backup will replace your current wallet file. Continue?"
+    );
+    if (!confirmed) {
+      return;
+    }
+
+    const toastId = toast.loading("Restoring wallet from backup...");
+    setIsRestoring(true);
+    try {
+      const response = await walletApi.restoreFromBackup({ backup_path: backupFile.trim() });
+      toast.success(response.data.message || "Wallet restored from backup.", { id: toastId });
+      await refreshBackups();
+    } catch (error: unknown) {
+      toast.error(formatErrorForDisplay(error, "Failed to restore from backup."), { id: toastId });
+    } finally {
+      setIsRestoring(false);
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
       <button
@@ -25,8 +96,8 @@ export function BackupRestoreSettings({ onBack }: BackupRestoreSettingsProps) {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">
             Backup & restore
           </h2>
-          <p className="text-sm text-amber-600 dark:text-amber-400 font-medium">
-            Backend wiring in progress
+          <p className="text-sm text-primary-600 dark:text-primary-400 font-medium">
+            Encrypted backup tools enabled
           </p>
         </div>
       </div>
@@ -41,7 +112,7 @@ export function BackupRestoreSettings({ onBack }: BackupRestoreSettingsProps) {
           <li>Use the same password you use to unlock the wallet</li>
         </ul>
         <p className="text-sm text-gray-500 dark:text-gray-500">
-          The Rust backend already has <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">create_backup</code> and <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">restore_from_backup</code> in storage. They need to be exposed via Tauri and wired here. See <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">SECURE_BACKUPS_DESIGN.md</code>.
+          Backups are created as encrypted wallet files in your chosen directory. Keep at least one offline copy. See <code className="text-xs bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">SECURE_BACKUPS_DESIGN.md</code>.
         </p>
         <Button
           variant="outline"
@@ -54,33 +125,72 @@ export function BackupRestoreSettings({ onBack }: BackupRestoreSettingsProps) {
         </Button>
       </div>
 
-      <div className="space-y-3">
-        <Tooltip content="Tauri backend must expose export_backup (with user-chosen path). Coming soon.">
-          <div className="flex">
-            <Button
-              variant="outline"
-              disabled
-              className="w-full gap-2 opacity-60 cursor-not-allowed"
+      <div className="space-y-4">
+        <Input
+          label="Backup destination directory"
+          placeholder="e.g. C:\\Users\\you\\Documents\\NozyBackups"
+          value={backupDir}
+          onChange={(e) => setBackupDir(e.target.value)}
+        />
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          onClick={handleExportBackup}
+          disabled={isExporting}
+        >
+          <Download size={18} />
+          {isExporting ? "Exporting backup..." : "Export encrypted backup"}
+        </Button>
+
+        <Input
+          label="Backup file path to restore"
+          placeholder="e.g. C:\\Users\\you\\Documents\\NozyBackups\\wallet_backup_123456.dat"
+          value={backupFile}
+          onChange={(e) => setBackupFile(e.target.value)}
+        />
+        <Button
+          variant="outline"
+          className="w-full gap-2"
+          onClick={handleRestoreBackup}
+          disabled={isRestoring}
+        >
+          <Refresh size={18} />
+          {isRestoring ? "Restoring backup..." : "Restore from backup file"}
+        </Button>
+
+        <div className="rounded-lg border border-gray-200/60 dark:border-gray-700/60 bg-white/50 dark:bg-gray-800/40 p-3">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-gray-800 dark:text-gray-200">
+              Known backups
+            </p>
+            <button
+              type="button"
+              className="text-xs text-primary hover:underline"
+              onClick={() => void refreshBackups()}
             >
-              <Download size={18} />
-              Export encrypted backup (file)
-              <span className="text-xs">(coming soon)</span>
-            </Button>
+              Refresh
+            </button>
           </div>
-        </Tooltip>
-        <Tooltip content="Tauri backend must expose restore_from_backup (with user-chosen file). Coming soon.">
-          <div className="flex">
-            <Button
-              variant="outline"
-              disabled
-              className="w-full gap-2 opacity-60 cursor-not-allowed"
-            >
-              <Refresh size={18} />
-              Restore from backup file
-              <span className="text-xs">(coming soon)</span>
-            </Button>
-          </div>
-        </Tooltip>
+          {backups.length === 0 ? (
+            <p className="text-xs text-gray-500 dark:text-gray-500">
+              No backups discovered in wallet storage yet.
+            </p>
+          ) : (
+            <div className="space-y-2 max-h-40 overflow-auto">
+              {backups.map((path) => (
+                <button
+                  key={path}
+                  type="button"
+                  className="w-full text-left text-xs rounded border border-gray-200/50 dark:border-gray-700/50 px-2 py-1 hover:border-primary/40 hover:bg-primary/5 transition-colors"
+                  onClick={() => setBackupFile(path)}
+                >
+                  {path}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
         <p className="text-xs text-gray-500 dark:text-gray-500">
           Cloud backup (upload/download) is planned for a later phase.
         </p>

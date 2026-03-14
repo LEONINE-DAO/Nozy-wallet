@@ -19,7 +19,6 @@ export function AccountListSettings({ onBack }: AccountListSettingsProps) {
   const [renameValue, setRenameValue] = useState("");
 
   const accountIds = DEFAULT_ACCOUNT_IDS;
-  const activeLabel = accountLabels[activeAccountId] ?? activeAccountId ?? "Default";
 
   const startRename = (id: string) => {
     setRenameId(id);
