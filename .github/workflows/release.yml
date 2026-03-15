@@ -47,7 +47,11 @@ jobs:
 
       - name: Verify Cargo.lock is up to date
         run: |
-          cargo generate-lockfile --check || (echo "❌ Cargo.lock is out of date. Run 'cargo update' and commit Cargo.lock" && exit 1)
+          cargo generate-lockfile
+          if ! git diff --exit-code -- Cargo.lock; then
+            echo "❌ Cargo.lock is out of date. Run 'cargo generate-lockfile' and commit Cargo.lock."
+            exit 1
+          fi
           echo "✅ Cargo.lock is up to date"
 
       - name: Install cargo-audit
@@ -137,7 +141,11 @@ jobs:
 
       - name: Verify Cargo.lock is up to date
         run: |
-          cargo generate-lockfile --check || (echo "❌ Cargo.lock is out of date. Run 'cargo update' and commit Cargo.lock" && exit 1)
+          cargo generate-lockfile
+          if ! git diff --exit-code -- Cargo.lock; then
+            echo "❌ Cargo.lock is out of date. Run 'cargo generate-lockfile' and commit Cargo.lock."
+            exit 1
+          fi
           echo "✅ Cargo.lock is up to date"
 
       - name: Install cargo-audit
