@@ -30,7 +30,7 @@ anyhow = "1.0"
 
 # TLS/HTTPS support
 rustls = "0.21"
-rustls-pemfile = "1.0"
+rustls-pemfile = "2.2"
 tokio-rustls = "0.24"
 axum-server = { version = "0.8", features = ["tls-rustls"] }
 
