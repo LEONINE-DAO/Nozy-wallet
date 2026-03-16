@@ -1,0 +1,7 @@
+# cargo-audit config: https://github.com/rustsec/rustsec/tree/main/cargo-audit
+[advisories]
+ignore = [
+    # rustls-pemfile unmaintained -- 2.2.0 is transitive from tonic; it's a thin
+    # wrapper around rustls-pki-types. Will resolve when tonic drops it.
+    "RUSTSEC-2025-0134",
+]
