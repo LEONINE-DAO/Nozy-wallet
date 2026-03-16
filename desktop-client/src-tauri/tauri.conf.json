@@ -1,49 +1,19 @@
 {
-  "$schema": "https://schema.tauri.app/config/2",
+  "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "productName": "NozyWallet",
-  "version": "1.0.0",
-  "identifier": "com.leoninedao.nozywallet",
+  "version": "2.1.0",
+  "identifier": "com.nozywallet.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
-  },
-  "app": {
-    "withGlobalTauri": false,
-    "windows": [
-      {
-        "title": "NozyWallet",
-        "width": 1200,
-        "height": 800,
-        "minWidth": 800,
-        "minHeight": 600,
-        "resizable": true,
-        "fullscreen": false
-      }
-    ],
-    "security": {
-      "csp": null
-    }
+    "beforeBuildCommand": "npm run build"
   },
   "bundle": {
-    "active": true,
-    "targets": [
-      "msi",
-      "nsis"
-    ],
     "icon": [
+      "icons/icon.png",
       "icons/icon.ico"
     ],
-    "resources": [],
-    "copyright": "",
-    "category": "Finance",
-    "shortDescription": "Privacy-Focused Zcash Wallet",
-    "longDescription": "NozyWallet is a privacy-first Zcash wallet that enforces complete transaction privacy by default.",
-    "windows": {
-      "certificateThumbprint": null,
-      "digestAlgorithm": "sha256",
-      "timestampUrl": ""
-    }
-  }
+    "active": false
+  },
+  "plugins": {}
 }
+

@@ -1,25 +1,54 @@
-use crate::error::TauriResult;
-use serde::{Deserialize, Serialize};
+use crate::error::TauriError;
+use nozy::proving::{OrchardProvingManager, ProvingStatus};
+use nozy::paths::get_wallet_data_dir;
+use serde::Serialize;
+use tauri::command;
+use std::path::PathBuf;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize)]
 pub struct ProvingStatusResponse {
-    pub downloaded: bool,
-    pub progress: f64,
+    pub spend_params: bool,
+    pub output_params: bool,
+    pub spend_vk: bool,
+    pub output_vk: bool,
+    pub can_prove: bool,
+    pub message: String,
 }
 
-#[tauri::command]
-pub async fn check_proving_status() -> TauriResult<ProvingStatusResponse> {
-    // Orchard uses Halo 2 which doesn't require external proving parameters
-    // The proving system is built-in, so it's always "ready"
+#[command]
+pub async fn check_proving_status() -> Result<ProvingStatusResponse, TauriError> {
+    let params_dir = get_wallet_data_dir().join("orchard_params");
+    let mut manager = OrchardProvingManager::new(params_dir);
+    
+    manager.initialize()
+        .await
+        .map_err(|e| TauriError::from(e.to_string()))?;
+    
+    let status = manager.get_status();
+    
     Ok(ProvingStatusResponse {
-        downloaded: true,
-        progress: 100.0,
+        spend_params: status.spend_params,
+        output_params: status.output_params,
+        spend_vk: status.spend_vk,
+        output_vk: status.output_vk,
+        can_prove: status.can_prove,
+        message: status.status_message(),
     })
 }
 
-#[tauri::command]
-pub async fn download_proving_parameters() -> TauriResult<String> {
-    // Orchard uses Halo 2 proving system which doesn't require external parameters
-    // The proving system is built-in and ready to use
-    Ok("Proving system ready - no parameters needed for Orchard Halo 2".to_string())
+#[command]
+pub async fn download_proving_parameters() -> Result<String, TauriError> {
+    let params_dir = get_wallet_data_dir().join("orchard_params");
+    let mut manager = OrchardProvingManager::new(params_dir);
+    
+    manager.initialize()
+        .await
+        .map_err(|e| TauriError::from(e.to_string()))?;
+    
+    manager.download_parameters()
+        .await
+        .map_err(|e| TauriError::from(e.to_string()))?;
+    
+    Ok("Proving parameters downloaded successfully".to_string())
 }
+

@@ -1,43 +1,19 @@
+[workspace]
+
 [package]
-name = "nozy-wallet-desktop"
-version = "1.0.0"
-description = "NozyWallet Desktop Application"
-authors = ["LEONINE-DAO"]
-license = "MIT"
-repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
+name = "nozywallet-desktop"
+version = "2.1.0"
 edition = "2021"
 
-[lib]
-name = "nozy_wallet_desktop_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2.0", features = [] }
-
 [dependencies]
-tauri = { version = "2.10", features = [] }
+tauri = { version = "=2.9.1", features = [] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
-thiserror = "1.0"
-lazy_static = "1.4"
 hex = "0.4"
-sha2 = "0.10"
 
-# Zcash dependencies for wallet and address generation
-orchard = "0.11.0"
-zcash_primitives = "0.24.1"
-zcash_protocol = "0.6.2"
-
-# Use the NozyWallet library from parent directory
+# NozyWallet core - use path to parent directory
 nozy = { path = "../../" }
 
-# Security: force glib 0.20+ on Linux where Tauri uses GTK (RUSTSEC VariantStrIter).
-# Tauri/gtk still pull glib 0.18; full fix blocked on Tauri GTK4 migration.
-# Not needed on Windows/macOS (they use WebView2/Cocoa).
-[target.'cfg(any(target_os = "linux", target_os = "dragonfly", target_os = "freebsd", target_os = "openbsd", target_os = "netbsd"))'.dependencies]
-glib = "0.20"
-
-[features]
-# This feature is used for production builds or when `devPath` points to the filesystem
-custom-protocol = ["tauri/custom-protocol"]
+[build-dependencies]
+tauri-build = { version = "2.5.6", features = [] }

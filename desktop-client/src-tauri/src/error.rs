@@ -1,42 +1,46 @@
-use serde::{Deserialize, Serialize};
-use thiserror::Error;
+use serde::Serialize;
 
-#[derive(Debug, Error, Serialize, Deserialize)]
-pub enum TauriError {
-    #[error("Wallet error: {0}")]
-    Wallet(String),
-    #[error("Storage error: {0}")]
-    Storage(String),
-    #[error("Network error: {0}")]
-    Network(String),
-    #[error("Invalid operation: {0}")]
-    InvalidOperation(String),
-    #[error("Cryptographic error: {0}")]
-    Cryptographic(String),
-    #[error("Configuration error: {0}")]
-    Config(String),
+#[derive(Debug, Serialize)]
+pub struct TauriError {
+    pub message: String,
+    pub code: Option<String>,
 }
 
 impl From<nozy::NozyError> for TauriError {
     fn from(err: nozy::NozyError) -> Self {
-        match err {
-            nozy::NozyError::Storage(msg) => TauriError::Storage(msg),
-            nozy::NozyError::NetworkError(msg) => TauriError::Network(msg),
-            nozy::NozyError::InvalidOperation(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::Cryptographic(msg) => TauriError::Cryptographic(msg),
-            nozy::NozyError::KeyDerivation(msg) => TauriError::Cryptographic(msg),
-            nozy::NozyError::Transaction(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::Rpc(msg) => TauriError::Network(msg),
-            nozy::NozyError::Config(msg) => TauriError::Config(msg),
-            nozy::NozyError::AddressParsing(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::NoteCommitment(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::MerklePath(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::BundleAuthorization(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::NoteScanning(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::InsufficientFunds(msg) => TauriError::InvalidOperation(msg),
-            nozy::NozyError::InvalidInput(msg) => TauriError::InvalidOperation(msg),
+        let code = match &err {
+            nozy::NozyError::Storage(_) => Some("WALLET_NOT_FOUND".to_string()),
+            nozy::NozyError::InvalidInput(_) => Some("INVALID_PASSWORD".to_string()),
+            nozy::NozyError::InsufficientFunds(_) => Some("INSUFFICIENT_FUNDS".to_string()),
+            nozy::NozyError::NetworkError(_) => Some("NETWORK_ERROR".to_string()),
+            nozy::NozyError::Rpc(_) => Some("RPC_ERROR".to_string()),
+            nozy::NozyError::AddressParsing(_) => Some("INVALID_ADDRESS".to_string()),
+            nozy::NozyError::Transaction(_) => Some("TRANSACTION_ERROR".to_string()),
+            _ => None,
+        };
+        
+        TauriError {
+            message: err.user_friendly_message(),
+            code,
         }
     }
 }
 
-pub type TauriResult<T> = Result<T, TauriError>;
+impl From<String> for TauriError {
+    fn from(s: String) -> Self {
+        TauriError {
+            message: s,
+            code: None,
+        }
+    }
+}
+
+impl From<&str> for TauriError {
+    fn from(s: &str) -> Self {
+        TauriError {
+            message: s.to_string(),
+            code: None,
+        }
+    }
+}
+
