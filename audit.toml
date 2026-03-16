@@ -1,7 +1,38 @@
 # cargo-audit config: https://github.com/rustsec/rustsec/tree/main/cargo-audit
+#
+# All ignored advisories are transitive dependencies that cannot be upgraded
+# without replacing entire dependency stacks (ark-*, cosmrs/tendermint, etc.).
+# Each entry documents the source chain and what would need to change.
+
 [advisories]
 ignore = [
-    # rustls-pemfile unmaintained -- 2.2.0 is transitive from tonic; it's a thin
-    # wrapper around rustls-pki-types. Will resolve when tonic drops it.
+    # curve25519-dalek 3.2.0 timing variability -- transitive from
+    # cosmrs -> tendermint 0.23 -> ed25519-dalek 1.x -> curve25519-dalek 3.x
+    # Fix: upgrade cosmrs + tendermint stack to versions using ed25519-dalek 2.x
+    "RUSTSEC-2024-0344",
+
+    # ed25519-dalek 1.0.1 double-public-key oracle -- same chain as above
+    # Fix: upgrade cosmrs + tendermint stack
+    "RUSTSEC-2022-0093",
+
+    # tracing-subscriber 0.2.25 ANSI log poisoning (low severity) -- transitive from
+    # ark-relations -> ark-groth16 (they require ^0.2)
+    # Fix: upgrade ark-* ecosystem to versions using tracing-subscriber 0.3+
+    "RUSTSEC-2025-0055",
+
+    # derivative unmaintained -- transitive from ark-* stack
+    # Fix: upgrade ark-* ecosystem
+    "RUSTSEC-2024-0388",
+
+    # number_prefix unmaintained -- transitive from indicatif (CLI progress bars)
+    # Fix: replace indicatif or wait for upstream to drop number_prefix
+    "RUSTSEC-2025-0119",
+
+    # paste unmaintained -- transitive from ark-ff and tendermint/flex-error
+    # Fix: upgrade ark-* and cosmrs/tendermint stacks
+    "RUSTSEC-2024-0436",
+
+    # rustls-pemfile unmaintained -- 2.2.0 transitive from tonic; thin wrapper
+    # around rustls-pki-types. Will resolve when tonic drops it.
     "RUSTSEC-2025-0134",
 ]
