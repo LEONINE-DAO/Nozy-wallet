@@ -1,0 +1,221 @@
+name: Build Desktop Release
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach assets to (for example: v2.1.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-desktop-windows:
+    name: Build Desktop (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: desktop-client/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: desktop-client
+        run: npm ci
+
+      - name: Build desktop executable (no installer bundle)
+        working-directory: desktop-client
+        run: npm run tauri build -- --bundles none
+
+      - name: Prepare release files and hashes
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path release-files | Out-Null
+          Copy-Item "desktop-client/src-tauri/target/release/nozywallet-desktop.exe" "release-files/nozy-desktop-windows-x86_64.exe"
+          $hash = (Get-FileHash -Path "release-files/nozy-desktop-windows-x86_64.exe" -Algorithm SHA256).Hash.ToLower()
+          "$hash  nozy-desktop-windows-x86_64.exe" | Out-File -FilePath "release-files/nozy-desktop-windows-x86_64.exe.sha256" -Encoding ASCII
+          Compress-Archive -Path "release-files/nozy-desktop-windows-x86_64.exe" -DestinationPath "release-files/nozy-desktop-windows-x86_64.zip" -Force
+          $zipHash = (Get-FileHash -Path "release-files/nozy-desktop-windows-x86_64.zip" -Algorithm SHA256).Hash.ToLower()
+          "$zipHash  nozy-desktop-windows-x86_64.zip" | Out-File -FilePath "release-files/nozy-desktop-windows-x86_64.zip.sha256" -Encoding ASCII
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nozy-desktop-windows-x86_64
+          path: release-files/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Set release tag
+        id: release_tag
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "release") {
+            "tag=${{ github.event.release.tag_name }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding ASCII
+          } else {
+            "tag=${{ inputs.tag }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding ASCII
+          }
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          files: |
+            release-files/nozy-desktop-windows-x86_64.exe
+            release-files/nozy-desktop-windows-x86_64.exe.sha256
+            release-files/nozy-desktop-windows-x86_64.zip
+            release-files/nozy-desktop-windows-x86_64.zip.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-desktop-linux:
+    name: Build Desktop (Linux x64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: desktop-client/package-lock.json
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libappindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install frontend dependencies
+        working-directory: desktop-client
+        run: npm ci
+
+      - name: Build desktop executable (no installer bundle)
+        working-directory: desktop-client
+        run: npm run tauri build -- --bundles none
+
+      - name: Prepare release files and hashes
+        run: |
+          mkdir -p release-files
+          cp desktop-client/src-tauri/target/release/nozywallet-desktop release-files/nozy-desktop-linux-x86_64
+          sha256sum release-files/nozy-desktop-linux-x86_64 > release-files/nozy-desktop-linux-x86_64.sha256
+          tar -czf release-files/nozy-desktop-linux-x86_64.tar.gz -C release-files nozy-desktop-linux-x86_64
+          sha256sum release-files/nozy-desktop-linux-x86_64.tar.gz > release-files/nozy-desktop-linux-x86_64.tar.gz.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nozy-desktop-linux-x86_64
+          path: release-files/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Set release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          files: |
+            release-files/nozy-desktop-linux-x86_64
+            release-files/nozy-desktop-linux-x86_64.sha256
+            release-files/nozy-desktop-linux-x86_64.tar.gz
+            release-files/nozy-desktop-linux-x86_64.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-desktop-macos:
+    name: Build Desktop (macOS ${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-13
+            arch: x86_64
+          - runner: macos-14
+            arch: aarch64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: desktop-client/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: desktop-client
+        run: npm ci
+
+      - name: Build desktop executable (no installer bundle)
+        working-directory: desktop-client
+        run: npm run tauri build -- --bundles none
+
+      - name: Prepare release files and hashes
+        run: |
+          mkdir -p release-files
+          cp desktop-client/src-tauri/target/release/nozywallet-desktop release-files/nozy-desktop-macos-${{ matrix.arch }}
+          shasum -a 256 release-files/nozy-desktop-macos-${{ matrix.arch }} > release-files/nozy-desktop-macos-${{ matrix.arch }}.sha256
+          tar -czf release-files/nozy-desktop-macos-${{ matrix.arch }}.tar.gz -C release-files nozy-desktop-macos-${{ matrix.arch }}
+          shasum -a 256 release-files/nozy-desktop-macos-${{ matrix.arch }}.tar.gz > release-files/nozy-desktop-macos-${{ matrix.arch }}.tar.gz.sha256
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nozy-desktop-macos-${{ matrix.arch }}
+          path: release-files/*
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Set release tag
+        id: release_tag
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "tag=${{ github.event.release.tag_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload assets to GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.release_tag.outputs.tag }}
+          files: |
+            release-files/nozy-desktop-macos-${{ matrix.arch }}
+            release-files/nozy-desktop-macos-${{ matrix.arch }}.sha256
+            release-files/nozy-desktop-macos-${{ matrix.arch }}.tar.gz
+            release-files/nozy-desktop-macos-${{ matrix.arch }}.tar.gz.sha256
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -286,7 +286,7 @@ jobs:
             2. Make it executable: `chmod +x nozy-macos-*`
             3. Run: `./nozy-macos-*`
             
-            **Note:** Desktop client builds are not included in this release. The desktop client is in a separate repository and will be released independently when ready.
+            **Note:** Desktop assets for Windows, Linux, and macOS are attached by the `Build Desktop Release` workflow shortly after this release is published.
             
             ### 🔒 Security
             

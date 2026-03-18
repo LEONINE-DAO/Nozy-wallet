@@ -30,8 +30,32 @@ function Build-CLI {
 }
 
 function Build-Desktop {
-    Write-Host "Desktop build disabled - src-tauri removed" -ForegroundColor Yellow
-    Write-Host "Skipping desktop app build..." -ForegroundColor Yellow
+    Write-Host "Building desktop app for Windows..." -ForegroundColor Green
+
+    Push-Location "desktop-client"
+    try {
+        npm ci
+        npm run tauri build -- --bundles none
+    }
+    finally {
+        Pop-Location
+    }
+
+    $desktopExe = "desktop-client\src-tauri\target\release\nozywallet-desktop.exe"
+    if (-not (Test-Path $desktopExe)) {
+        throw "Desktop executable not found at $desktopExe"
+    }
+
+    Copy-Item $desktopExe "$ReleaseDir\nozy-desktop-windows-x86_64.exe" -Force
+
+    $desktopHash = (Get-FileHash -Path "$ReleaseDir\nozy-desktop-windows-x86_64.exe" -Algorithm SHA256).Hash.ToLower()
+    "$desktopHash  nozy-desktop-windows-x86_64.exe" | Out-File -FilePath "$ReleaseDir\nozy-desktop-windows-x86_64.exe.sha256" -Encoding ASCII
+
+    Compress-Archive -Path "$ReleaseDir\nozy-desktop-windows-x86_64.exe" -DestinationPath "$ReleaseDir\nozy-desktop-windows-x86_64.zip" -Force
+    $desktopZipHash = (Get-FileHash -Path "$ReleaseDir\nozy-desktop-windows-x86_64.zip" -Algorithm SHA256).Hash.ToLower()
+    "$desktopZipHash  nozy-desktop-windows-x86_64.zip" | Out-File -FilePath "$ReleaseDir\nozy-desktop-windows-x86_64.zip.sha256" -Encoding ASCII
+
+    Write-Host "✓ Built desktop Windows executable" -ForegroundColor Green
 }
 
 switch ($Platform) {
@@ -44,8 +68,7 @@ switch ($Platform) {
     "all" {
         Write-Host "Building all platforms..." -ForegroundColor Yellow
         Build-CLI "x86_64-pc-windows-msvc" "nozy.exe"
-        # Desktop build disabled - src-tauri removed
-        # Build-Desktop
+        Build-Desktop
     }
     default {
         Write-Host "Unknown platform: $Platform" -ForegroundColor Red

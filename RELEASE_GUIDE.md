@@ -46,9 +46,16 @@ git push origin v0.2.1
 
 This triggers `.github/workflows/release.yml` which:
 - Builds CLI binaries for Windows, macOS (Intel + ARM), Linux
-- Builds desktop installers (.exe, .dmg, .deb)
+- Builds API server binaries for Windows, macOS (Intel + ARM), Linux
 - Generates SHA256 hashes
-- Creates a GitHub release with all artifacts
+- Creates a GitHub release with artifacts
+
+After the release is published, `.github/workflows/desktop-release.yml` runs and attaches desktop assets for all supported OS targets:
+- Windows x64: `nozy-desktop-windows-x86_64.exe` and `.zip`
+- Linux x64: `nozy-desktop-linux-x86_64` and `.tar.gz`
+- macOS Intel: `nozy-desktop-macos-x86_64` and `.tar.gz`
+- macOS Apple Silicon: `nozy-desktop-macos-aarch64` and `.tar.gz`
+- corresponding `.sha256` files for each artifact
 
 ### 4. Manual Build (Alternative)
 
@@ -71,16 +78,19 @@ This creates `releases/v0.2.1/` with all binaries and hashes.
 
 Check that all files are present:
 - CLI binaries for each platform
-- Desktop installers
+- API server binaries
+- Desktop assets for Windows, Linux, and macOS
 - Hash files (`.sha256` files)
 - Combined `HASHES.txt` file
 
 ### 6. Test Installers
 
-Before publishing, test the installers:
-- **Windows**: Run the `.exe` installer
-- **macOS**: Mount the `.dmg` and test installation
-- **Linux**: Install the `.deb` package
+Before publishing, test downloadable assets:
+- **Windows CLI**: Run `nozy-windows.exe`
+- **Windows Desktop**: Run `nozy-desktop-windows-x86_64.exe`
+- **Linux Desktop**: Run `./nozy-desktop-linux-x86_64`
+- **macOS Desktop**: Run `./nozy-desktop-macos-x86_64` or `./nozy-desktop-macos-aarch64`
+- **Linux/macOS CLI**: run platform CLI binaries and basic smoke tests
 
 ### 7. Create GitHub Release
 
@@ -110,10 +120,10 @@ To manually update:
 - `aarch64-apple-darwin` → macOS Apple Silicon
 - `x86_64-unknown-linux-gnu` → Linux 64-bit
 
-### Desktop Installers
-- Windows: `.exe` installer (NSIS)
-- macOS: `.dmg` disk image
-- Linux: `.deb` package, `.AppImage`, `.rpm`
+### Desktop Assets (Current)
+- Windows: portable `.exe` and `.zip`
+- Linux: portable ELF binary and `.tar.gz`
+- macOS (Intel + Apple Silicon): portable binary and `.tar.gz`
 
 ## Hash Verification
 
