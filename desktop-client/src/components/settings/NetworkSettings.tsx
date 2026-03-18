@@ -81,22 +81,22 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
 
       <h2 className="text-3xl font-bold text-gray-900 mb-2">Network & Node</h2>
       <p className="text-gray-500 mb-8">
-        Configure your connection to the backend API.
+        Configure your connection to a Zebra (Zcash) node for syncing and sending.
       </p>
 
       <div className="space-y-6">
         <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm space-y-4">
           <Input
-            label="Backend API URL"
+            label="Zebra node RPC URL"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://127.0.0.1:8000"
+            placeholder="http://127.0.0.1:8232"
             disabled={isLoading}
           />
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <InfoCircle size={14} />
             <span>
-              Point this to your self-hosted NozyWallet backend instance.
+              Local: <code className="bg-black/5 px-1 rounded">http://127.0.0.1:8232</code>. Zebra on another PC: use that PC&apos;s IP, e.g. <code className="bg-black/5 px-1 rounded">http://192.168.1.10:8232</code>. On the Zebra machine, set <code className="bg-black/5 px-1 rounded">[rpc] listen_addr = &quot;0.0.0.0:8232&quot;</code> so it accepts remote connections.
             </span>
           </div>
 

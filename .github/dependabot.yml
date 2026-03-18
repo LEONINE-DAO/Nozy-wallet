@@ -11,8 +11,11 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # glib: transitive from Tauri/gtk; we add glib 0.20 on Linux. Full fix when Tauri moves to GTK4.
+    # tracing-subscriber 0.2: transitive from nozy -> ark-groth16 -> ark-relations (^0.2). Low severity (ANSI log poisoning). Fix requires ark ecosystem upgrade.
     ignore:
       - dependency-name: "glib"
+      - dependency-name: "tracing-subscriber"
 
   - package-ecosystem: "npm"
     directory: "/desktop-client"

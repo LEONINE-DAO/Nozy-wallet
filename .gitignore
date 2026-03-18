@@ -50,7 +50,9 @@ WALLET_BACKUP.md
 
 frontend/
 mobile/
-/src-tauri/
+src-tauri/
+!desktop-client/src-tauri/
+!desktop-client/src-tauri/**
 tauri-reference/
 react-native-0.73.11/
 rn-template.zip
