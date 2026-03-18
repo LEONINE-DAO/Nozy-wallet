@@ -93,7 +93,7 @@ jobs:
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.friendly_name }}
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell -NoProfile -Command "$h=(Get-FileHash -Path '${{ matrix.friendly_name }}' -Algorithm SHA256).Hash.ToLower(); Set-Content -Path '${{ matrix.friendly_name }}.sha256' -Value ($h + '  ${{ matrix.friendly_name }}') -NoNewline"
+            powershell -NoProfile -Command '$h=(Get-FileHash -Path "${{ matrix.friendly_name }}" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "${{ matrix.friendly_name }}.sha256" -Value ($h + "  ${{ matrix.friendly_name }}") -NoNewline'
           else
             shasum -a 256 ${{ matrix.friendly_name }} > ${{ matrix.friendly_name }}.sha256
           fi
@@ -188,7 +188,7 @@ jobs:
         id: hash
         run: |
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell -NoProfile -Command "$h=(Get-FileHash -Path 'target/${{ matrix.target }}/release/${{ matrix.binary }}' -Algorithm SHA256).Hash.ToLower(); Set-Content -Path 'hash.txt' -Value ($h + '  ${{ matrix.binary }}') -NoNewline"
+            powershell -NoProfile -Command '$h=(Get-FileHash -Path "target/${{ matrix.target }}/release/${{ matrix.binary }}" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "hash.txt" -Value ($h + "  ${{ matrix.binary }}") -NoNewline'
           else
             shasum -a 256 target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
           fi
