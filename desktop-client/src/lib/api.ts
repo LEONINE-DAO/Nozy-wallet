@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke as tauriInvokeRaw } from "@tauri-apps/api/core";
 import {
   WalletExistsResponse,
   CreateWalletRequest,
@@ -20,6 +20,19 @@ import {
   BackupPathRequest,
   BackupActionResponse,
 } from "./types";
+
+const invoke = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
+  const hasTauriRuntime =
+    typeof window !== "undefined" && typeof (window as { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ !== "undefined";
+
+  if (!hasTauriRuntime) {
+    throw new Error(
+      "Nozy desktop backend is unavailable in browser mode. Launch the Tauri desktop app with `cargo tauri dev`."
+    );
+  }
+
+  return tauriInvokeRaw<T>(command, args);
+};
 
 export const walletApi = {
   checkHealth: async () => {

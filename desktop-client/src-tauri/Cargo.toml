@@ -11,6 +11,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 hex = "0.4"
+indexmap = { version = "1.9.3", features = ["std"] }
 
 # NozyWallet core - use path to parent directory
 nozy = { path = "../../" }

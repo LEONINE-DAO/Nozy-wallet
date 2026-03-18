@@ -545,6 +545,15 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             } else {
                 None
             };
+            let scan_start = effective_start.unwrap_or(3_050_000);
+            let scan_end = if let Some(end) = end_height {
+                end.max(scan_start)
+            } else {
+                match zebra_client.get_block_count().await {
+                    Ok(tip) => tip.min(scan_start.saturating_add(1_000)),
+                    Err(_) => scan_start.saturating_add(100),
+                }
+            };
 
             if let Some(start) = effective_start {
                 if let Some(last) = config.last_scan_height {
@@ -561,13 +570,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
             let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
 
-            let total_blocks = if let (Some(start), Some(end)) = (effective_start, end_height) {
-                (end.saturating_sub(start)) as u64
-            } else if let Some(start) = effective_start {
-                2_500_000u64.saturating_sub(start as u64)
-            } else {
-                2_500_000u64
-            };
+            let total_blocks = (scan_end.saturating_sub(scan_start) + 1) as u64;
 
             use nozy::progress::create_sync_progress_bar;
             let pb = if total_blocks > 100 {
@@ -580,7 +583,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 progress_bar.set_message("Scanning blockchain for notes...");
             }
 
-            match note_scanner.scan_notes(effective_start, end_height).await {
+            match note_scanner
+                .scan_notes(Some(scan_start), Some(scan_end))
+                .await
+            {
                 Ok((result, _spendable_notes)) => {
                     if let Some(ref progress_bar) = pb {
                         progress_bar.finish_with_message("✅ Scan complete");
@@ -617,11 +623,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         let _ = fs::write(&notes_path, serialized);
                     }
 
-                    let final_height = if let Some(end) = end_height {
-                        end
-                    } else {
-                        zebra_client.get_block_count().await.unwrap_or(0)
-                    };
+                    let final_height = scan_end;
                     let _ = update_last_scan_height(final_height);
 
                     let total_balance: u64 = existing_notes.iter().map(|n| n.value).sum();

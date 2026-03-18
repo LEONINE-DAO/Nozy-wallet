@@ -3524,6 +3524,7 @@ dependencies = [
  "ed25519-dalek 2.2.0",
  "groth16",
  "hex",
+ "indexmap 1.9.3",
  "indicatif",
  "orchard",
  "prost 0.13.5",
@@ -3552,6 +3553,7 @@ name = "nozywallet-desktop"
 version = "2.1.0"
 dependencies = [
  "hex",
+ "indexmap 1.9.3",
  "nozy",
  "serde",
  "serde_json",

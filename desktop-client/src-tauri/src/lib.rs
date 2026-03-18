@@ -392,11 +392,20 @@ async fn sync_wallet(
     let zebra_url = request.zebra_url.unwrap_or_else(|| config.zebra_url.clone());
     let wallet = load_wallet_for_request(&state, request.password).await?;
     let zebra_client = nozy::ZebraClient::new(zebra_url);
-    let effective_start = request.start_height.or(config.last_scan_height);
+    let effective_start = request.start_height.or_else(|| config.last_scan_height.map(|h| h.saturating_add(1)));
+    let scan_start = effective_start.unwrap_or(3_050_000);
+    let scan_end = if let Some(end) = request.end_height {
+        end.max(scan_start)
+    } else {
+        match zebra_client.get_block_count().await {
+            Ok(tip) => tip.min(scan_start.saturating_add(1_000)),
+            Err(_) => scan_start.saturating_add(100),
+        }
+    };
     let mut note_scanner = nozy::NoteScanner::new(wallet, zebra_client.clone());
 
     let (result, _spendable_notes) = note_scanner
-        .scan_notes(effective_start, request.end_height)
+        .scan_notes(Some(scan_start), Some(scan_end))
         .await
         .map_err(|e| format!("Sync failed: {}", e))?;
 
@@ -409,18 +418,17 @@ async fn sync_wallet(
         let _ = fs::write(&notes_path, serialized);
     }
 
-    if let Some(end) = request.end_height {
-        let _ = nozy::update_last_scan_height(end);
-    } else if let Ok(block_count) = zebra_client.get_block_count().await {
-        let _ = nozy::update_last_scan_height(block_count);
-    }
+    let _ = nozy::update_last_scan_height(scan_end);
 
     let balance_zec = result.total_balance as f64 / 100_000_000.0;
     Ok(SyncResponse {
         success: true,
         balance_zec,
         notes_found: result.notes.len(),
-        message: format!("Sync completed. Balance: {:.8} ZEC", balance_zec),
+        message: format!(
+            "Sync completed for blocks {}-{}. Balance: {:.8} ZEC",
+            scan_start, scan_end, balance_zec
+        ),
     })
 }
 
