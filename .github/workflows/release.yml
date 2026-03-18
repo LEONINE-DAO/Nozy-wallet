@@ -12,6 +12,9 @@ permissions:
 jobs:
   build-cli:
     name: Build CLI Binaries
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -76,7 +79,6 @@ jobs:
           retry = 3
           git-fetch-with-cli = true
           EOF
-        shell: bash
 
       - name: Build CLI binary
         env:
@@ -88,7 +90,6 @@ jobs:
         timeout-minutes: 45
 
       - name: Rename binary to friendly name and generate hash
-        shell: bash
         run: |
           cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.friendly_name }}
           if [[ "${{ runner.os }}" == "Windows" ]]; then
@@ -110,6 +111,9 @@ jobs:
 
   build-api:
     name: Build API Server Binaries
+    defaults:
+      run:
+        shell: bash
     strategy:
       fail-fast: false
       matrix:
@@ -170,7 +174,6 @@ jobs:
           retry = 3
           git-fetch-with-cli = true
           EOF
-        shell: bash
 
       - name: Build API server binary
         env:
@@ -183,7 +186,6 @@ jobs:
 
       - name: Generate SHA256 hash
         id: hash
-        shell: bash
         run: |
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             certutil -hashfile target/${{ matrix.target }}/release/${{ matrix.binary }} SHA256 | findstr /v "SHA256" | findstr /v "certutil" > hash.txt
