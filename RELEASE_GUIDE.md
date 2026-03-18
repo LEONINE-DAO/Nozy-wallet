@@ -51,7 +51,7 @@ This triggers `.github/workflows/release.yml` which:
 - Creates a GitHub release with artifacts
 
 After the release is published, `.github/workflows/desktop-release.yml` runs and attaches desktop assets for all supported OS targets:
-- Windows x64: `nozy-desktop-windows-x86_64.exe` and `.zip`
+- Windows x64: `nozy-desktop-windows-x86_64-installer.exe` (NSIS) and `nozy-desktop-windows-x86_64-installer.msi`
 - Linux x64: `nozy-desktop-linux-x86_64` and `.tar.gz`
 - macOS Intel: `nozy-desktop-macos-x86_64` and `.tar.gz`
 - macOS Apple Silicon: `nozy-desktop-macos-aarch64` and `.tar.gz`
@@ -87,7 +87,7 @@ Check that all files are present:
 
 Before publishing, test downloadable assets:
 - **Windows CLI**: Run `nozy-windows.exe`
-- **Windows Desktop**: Run `nozy-desktop-windows-x86_64.exe`
+- **Windows Desktop**: Run `nozy-desktop-windows-x86_64-installer.exe` (recommended) or `.msi`
 - **Linux Desktop**: Run `./nozy-desktop-linux-x86_64`
 - **macOS Desktop**: Run `./nozy-desktop-macos-x86_64` or `./nozy-desktop-macos-aarch64`
 - **Linux/macOS CLI**: run platform CLI binaries and basic smoke tests
@@ -121,7 +121,7 @@ To manually update:
 - `x86_64-unknown-linux-gnu` → Linux 64-bit
 
 ### Desktop Assets (Current)
-- Windows: portable `.exe` and `.zip`
+- Windows: installer `.exe` (NSIS) and `.msi`
 - Linux: portable ELF binary and `.tar.gz`
 - macOS (Intel + Apple Silicon): portable binary and `.tar.gz`
 

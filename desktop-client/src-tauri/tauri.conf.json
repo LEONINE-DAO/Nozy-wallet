@@ -12,7 +12,7 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
-    "active": false
+    "active": true
   },
   "plugins": {}
 }

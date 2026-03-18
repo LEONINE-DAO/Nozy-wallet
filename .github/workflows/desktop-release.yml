@@ -34,20 +34,76 @@ jobs:
         working-directory: desktop-client
         run: npm ci
 
-      - name: Build desktop executable (no installer bundle)
+      - name: Ensure desktop icons for bundling
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path "desktop-client/src-tauri/icons" | Out-Null
+          python - <<'PY'
+          import struct
+          import zlib
+          from pathlib import Path
+          
+          out_dir = Path("desktop-client/src-tauri/icons")
+          png_path = out_dir / "icon.png"
+          ico_path = out_dir / "icon.ico"
+          
+          w, h = 256, 256
+          r, g, b = 28, 142, 216
+          
+          def chunk(ctype: bytes, data: bytes) -> bytes:
+              c = ctype + data
+              return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+          
+          raw = b"".join(b"\x00" + bytes([r, g, b]) * w for _ in range(h))
+          png = (
+              b"\x89PNG\r\n\x1a\n"
+              + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+              + chunk(b"IDAT", zlib.compress(raw))
+              + chunk(b"IEND", b"")
+          )
+          
+          png_path.write_bytes(png)
+          
+          # ICO format with one 256x256 PNG image payload
+          icon_dir = struct.pack("<HHH", 0, 1, 1)
+          entry = struct.pack(
+              "<BBBBHHII",
+              0,      # width 256 encoded as 0
+              0,      # height 256 encoded as 0
+              0,      # color count
+              0,      # reserved
+              1,      # color planes
+              32,     # bits per pixel
+              len(png),
+              6 + 16, # offset to image data
+          )
+          ico_path.write_bytes(icon_dir + entry + png)
+          
+          print("icons generated:", png_path, ico_path)
+          PY
+
+      - name: Build desktop installers (NSIS and MSI)
         working-directory: desktop-client
-        run: npm run tauri build -- --bundles none
+        run: npm run tauri build -- --bundles nsis,msi
 
       - name: Prepare release files and hashes
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path release-files | Out-Null
-          Copy-Item "desktop-client/src-tauri/target/release/nozywallet-desktop.exe" "release-files/nozy-desktop-windows-x86_64.exe"
-          $hash = (Get-FileHash -Path "release-files/nozy-desktop-windows-x86_64.exe" -Algorithm SHA256).Hash.ToLower()
-          "$hash  nozy-desktop-windows-x86_64.exe" | Out-File -FilePath "release-files/nozy-desktop-windows-x86_64.exe.sha256" -Encoding ASCII
-          Compress-Archive -Path "release-files/nozy-desktop-windows-x86_64.exe" -DestinationPath "release-files/nozy-desktop-windows-x86_64.zip" -Force
-          $zipHash = (Get-FileHash -Path "release-files/nozy-desktop-windows-x86_64.zip" -Algorithm SHA256).Hash.ToLower()
-          "$zipHash  nozy-desktop-windows-x86_64.zip" | Out-File -FilePath "release-files/nozy-desktop-windows-x86_64.zip.sha256" -Encoding ASCII
+          $nsis = Get-ChildItem "desktop-client/src-tauri/target/release/bundle/nsis/*.exe" | Select-Object -First 1
+          $msi = Get-ChildItem "desktop-client/src-tauri/target/release/bundle/msi/*.msi" -Recurse | Select-Object -First 1
+          
+          if (-not $nsis) { throw "NSIS installer not found in bundle output." }
+          if (-not $msi) { throw "MSI installer not found in bundle output." }
+          
+          Copy-Item $nsis.FullName "release-files/nozy-desktop-windows-x86_64-installer.exe"
+          Copy-Item $msi.FullName "release-files/nozy-desktop-windows-x86_64-installer.msi"
+          
+          $nsisHash = (Get-FileHash -Path "release-files/nozy-desktop-windows-x86_64-installer.exe" -Algorithm SHA256).Hash.ToLower()
+          "$nsisHash  nozy-desktop-windows-x86_64-installer.exe" | Out-File -FilePath "release-files/nozy-desktop-windows-x86_64-installer.exe.sha256" -Encoding ASCII
+          
+          $msiHash = (Get-FileHash -Path "release-files/nozy-desktop-windows-x86_64-installer.msi" -Algorithm SHA256).Hash.ToLower()
+          "$msiHash  nozy-desktop-windows-x86_64-installer.msi" | Out-File -FilePath "release-files/nozy-desktop-windows-x86_64-installer.msi.sha256" -Encoding ASCII
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
@@ -72,10 +128,10 @@ jobs:
         with:
           tag_name: ${{ steps.release_tag.outputs.tag }}
           files: |
-            release-files/nozy-desktop-windows-x86_64.exe
-            release-files/nozy-desktop-windows-x86_64.exe.sha256
-            release-files/nozy-desktop-windows-x86_64.zip
-            release-files/nozy-desktop-windows-x86_64.zip.sha256
+            release-files/nozy-desktop-windows-x86_64-installer.exe
+            release-files/nozy-desktop-windows-x86_64-installer.exe.sha256
+            release-files/nozy-desktop-windows-x86_64-installer.msi
+            release-files/nozy-desktop-windows-x86_64-installer.msi.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
