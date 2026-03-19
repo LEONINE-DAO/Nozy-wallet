@@ -5,6 +5,7 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use bip32::{DerivationPath, XPrv};
 use bip39::Mnemonic;
 use rand::RngCore;
+#[cfg(not(target_arch = "wasm32"))]
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
 
@@ -30,6 +31,23 @@ pub struct WalletSecurity {
     password_hash: String,
     salt: String,
     iterations: u32,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OrchardActionCompactData {
+    pub nullifier: [u8; 32],
+    pub cmx: [u8; 32],
+    pub ephemeral_key: [u8; 32],
+    pub encrypted_note: Vec<u8>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OrchardDecryptionResult {
+    pub value: u64,
+    pub address: String,
+    pub nullifier: [u8; 32],
+    pub block_height: u32,
+    pub txid: String,
 }
 
 impl HDWallet {
@@ -209,6 +227,58 @@ impl HDWallet {
             "Decrypted note for address: {} (key derived successfully)",
             address
         ))
+    }
+
+    pub fn decrypt_orchard_action_compact(
+        &self,
+        action: &OrchardActionCompactData,
+        address: &str,
+        block_height: u32,
+        txid: &str,
+    ) -> NozyResult<Option<OrchardDecryptionResult>> {
+        use orchard::{
+            keys::PreparedIncomingViewingKey,
+            note::ExtractedNoteCommitment,
+            note_encryption::{CompactAction, OrchardDomain},
+        };
+        use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
+
+        let ivk = self.derive_incoming_viewing_key_for_address(address)?;
+
+        let nullifier = orchard::note::Nullifier::from_bytes(&action.nullifier)
+            .into_option()
+            .ok_or_else(|| NozyError::InvalidOperation("Invalid nullifier bytes".to_string()))?;
+
+        let cmx = ExtractedNoteCommitment::from_bytes(&action.cmx)
+            .into_option()
+            .ok_or_else(|| NozyError::InvalidOperation("Invalid cmx bytes".to_string()))?;
+
+        let ephemeral_key = EphemeralKeyBytes::from(action.ephemeral_key);
+
+        if action.encrypted_note.len() < 52 {
+            return Err(NozyError::InvalidOperation(
+                "Encrypted note too short for CompactAction".to_string(),
+            ));
+        }
+
+        let mut compact_enc_ciphertext = [0u8; 52];
+        compact_enc_ciphertext.copy_from_slice(&action.encrypted_note[..52]);
+
+        let compact_action =
+            CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
+        let domain = OrchardDomain::for_compact_action(&compact_action);
+        let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
+
+        match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
+            Some((note, note_address)) => Ok(Some(OrchardDecryptionResult {
+                value: note.value().inner(),
+                address: format!("{:?}", note_address),
+                nullifier: action.nullifier,
+                block_height,
+                txid: txid.to_string(),
+            })),
+            None => Ok(None),
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]

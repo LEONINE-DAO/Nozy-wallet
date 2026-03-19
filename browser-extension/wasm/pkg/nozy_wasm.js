@@ -122,6 +122,30 @@ export function restore_wallet(mnemonic_str, password) {
 
 /**
  * @param {string} mnemonic_str
+ * @param {string} address
+ * @param {string} actions_json
+ * @param {number} block_height
+ * @param {string} txid
+ * @returns {any}
+ */
+export function scan_orchard_actions(mnemonic_str, address, actions_json, block_height, txid) {
+    const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(actions_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(txid, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ret = wasm.scan_orchard_actions(ptr0, len0, ptr1, len1, ptr2, len2, block_height, ptr3, len3);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {string} mnemonic_str
  * @param {string} message
  * @returns {string}
  */
@@ -291,6 +315,11 @@ function __wbg_get_imports() {
         __wbindgen_cast_0000000000000003: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
+            return ret;
+        },
+        __wbindgen_cast_0000000000000004: function(arg0) {
+            // Cast intrinsic for `U64 -> Externref`.
+            const ret = BigInt.asUintN(64, arg0);
             return ret;
         },
         __wbindgen_init_externref_table: function() {

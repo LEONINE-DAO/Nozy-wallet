@@ -2,6 +2,22 @@ use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
+pub struct OrchardActionInput {
+    pub nullifier: Vec<u8>,
+    pub cmx: Vec<u8>,
+    pub ephemeral_key: Vec<u8>,
+    pub encrypted_note: Vec<u8>,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ScanResult {
+    pub scanned_actions: usize,
+    pub decrypted_notes: usize,
+    pub total_value_zats: u64,
+    pub notes: Vec<nozy::hd_wallet::OrchardDecryptionResult>,
+}
+
+#[derive(Serialize, Deserialize)]
 pub struct WalletCreationResult {
     pub mnemonic: String,
     pub address: String,
@@ -135,6 +151,57 @@ pub fn sign_message(mnemonic_str: &str, message: &str) -> Result<String, JsError
     let signature = hasher.finalize();
 
     Ok(hex::encode(signature))
+}
+
+#[wasm_bindgen]
+pub fn scan_orchard_actions(
+    mnemonic_str: &str,
+    address: &str,
+    actions_json: &str,
+    block_height: u32,
+    txid: &str,
+) -> Result<JsValue, JsError> {
+    use nozy::hd_wallet::{HDWallet, OrchardActionCompactData};
+
+    let wallet = HDWallet::from_mnemonic(mnemonic_str)
+        .map_err(|e| JsError::new(&format!("Wallet creation failed: {}", e)))?;
+
+    let actions: Vec<OrchardActionInput> = serde_json::from_str(actions_json)
+        .map_err(|e| JsError::new(&format!("Invalid actions JSON: {}", e)))?;
+
+    let mut notes = Vec::new();
+    let mut total_value = 0u64;
+
+    for action in &actions {
+        if action.nullifier.len() != 32 || action.cmx.len() != 32 || action.ephemeral_key.len() != 32 {
+            continue;
+        }
+
+        let compact = OrchardActionCompactData {
+            nullifier: action.nullifier.clone().try_into().map_err(|_| JsError::new("Invalid nullifier length"))?,
+            cmx: action.cmx.clone().try_into().map_err(|_| JsError::new("Invalid cmx length"))?,
+            ephemeral_key: action.ephemeral_key.clone().try_into().map_err(|_| JsError::new("Invalid ephemeral_key length"))?,
+            encrypted_note: action.encrypted_note.clone(),
+        };
+
+        if let Some(note) = wallet
+            .decrypt_orchard_action_compact(&compact, address, block_height, txid)
+            .map_err(|e| JsError::new(&format!("Decrypt action failed: {}", e)))?
+        {
+            total_value = total_value.saturating_add(note.value);
+            notes.push(note);
+        }
+    }
+
+    let result = ScanResult {
+        scanned_actions: actions.len(),
+        decrypted_notes: notes.len(),
+        total_value_zats: total_value,
+        notes,
+    };
+
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsError::new(&format!("Serialization failed: {}", e)))
 }
 
 #[wasm_bindgen]

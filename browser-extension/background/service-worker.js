@@ -269,11 +269,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(ok(await rpcCall("getblock", [params.height])));
           return;
         case "wallet_scan_notes":
+          if (!session.unlocked || !session.mnemonic || !session.address) {
+            throw new Error("Unlock wallet first.");
+          }
           sendResponse(
             ok(
               await callWorker("scan_notes", {
                 startHeight: params.startHeight ?? 0,
-                endHeight: params.endHeight ?? params.startHeight ?? 0
+                endHeight: params.endHeight ?? params.startHeight ?? 0,
+                rpcEndpoint: session.rpcEndpoint,
+                mnemonic: session.mnemonic,
+                address: session.address
               })
             )
           );

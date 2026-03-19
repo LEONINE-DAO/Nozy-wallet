@@ -15,6 +15,8 @@ export function get_zcash_chain_id(): string;
 
 export function restore_wallet(mnemonic_str: string, password: string): any;
 
+export function scan_orchard_actions(mnemonic_str: string, address: string, actions_json: string, block_height: number, txid: string): any;
+
 export function sign_message(mnemonic_str: string, message: string): string;
 
 export function unlock_wallet(encrypted_seed: Uint8Array, password: string): any;
@@ -30,6 +32,7 @@ export interface InitOutput {
     readonly get_nu5_activation_height: () => number;
     readonly get_zcash_chain_id: () => [number, number];
     readonly restore_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly __wbindgen_malloc: (a: number, b: number) => number;

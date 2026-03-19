@@ -8,6 +8,7 @@ export const generate_address: (a: number, b: number, c: number, d: number) => [
 export const get_nu5_activation_height: () => number;
 export const get_zcash_chain_id: () => [number, number];
 export const restore_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
 export const sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
 export const __wbindgen_malloc: (a: number, b: number) => number;
