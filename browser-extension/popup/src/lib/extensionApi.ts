@@ -22,6 +22,29 @@ export type PendingApproval = {
   createdAt: number;
 };
 
+export type MobileSyncDevice = {
+  id: string;
+  name: string;
+  platform: string;
+  sessionId: string;
+  pairedAt: number;
+  status: "paired";
+};
+
+export type MobileSyncState = {
+  schemaVersion: number;
+  pairedDevices: MobileSyncDevice[];
+  activePairing: {
+    sessionId: string;
+    walletAddress: string;
+    verifyCode: string;
+    challenge: string;
+    createdAt: number;
+    expiresAt: number;
+  } | null;
+  pairingPayload: string | null;
+};
+
 function sendMessage<T>(request: ApiRequest): Promise<T> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
@@ -109,6 +132,32 @@ export const extensionApi = {
     }>({
       method: "wallet_prove_transaction",
       params: tx
+    }),
+  mobileSyncGetState: () =>
+    sendMessage<MobileSyncState>({ method: "mobile_sync_get_state" }),
+  mobileSyncGetPairingSchema: () =>
+    sendMessage<{
+      type: string;
+      required: string[];
+      fields: Record<string, string>;
+      notes: string;
+    }>({ method: "mobile_sync_get_pairing_schema" }),
+  mobileSyncInitPairing: () =>
+    sendMessage<{
+      sessionId: string;
+      verifyCode: string;
+      expiresAt: number;
+      payload: string;
+    }>({ method: "mobile_sync_init_pairing" }),
+  mobileSyncConfirmPairing: (sessionId: string, deviceName: string, platform: string) =>
+    sendMessage<MobileSyncDevice>({
+      method: "mobile_sync_confirm_pairing",
+      params: { sessionId, deviceName, platform }
+    }),
+  mobileSyncUnpair: (deviceId: string) =>
+    sendMessage<{ removed: boolean; deviceId: string }>({
+      method: "mobile_sync_unpair",
+      params: { deviceId }
     })
 };
 

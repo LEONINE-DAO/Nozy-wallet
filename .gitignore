@@ -74,6 +74,7 @@ push_url_update.ps1
 !CARGO_CHEC_SETUP.md
 !NOZY_ABOUT_AND_MANIFESTO_NOTE.md
 !NOZY_COIN_AND_DEX_NOTE.md
+!SYNC_PROTOCOL_V1.md
 !book/
 !book/**/*.md
 

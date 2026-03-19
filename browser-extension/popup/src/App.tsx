@@ -1,5 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
-import { extensionApi, type PendingApproval, type WalletStatus } from "./lib/extensionApi";
+import {
+  extensionApi,
+  type MobileSyncState,
+  type PendingApproval,
+  type WalletStatus
+} from "./lib/extensionApi";
 import { TopNav } from "./components/TopNav";
 import { useUiStore } from "./store/uiStore";
 
@@ -212,6 +217,19 @@ function SettingsView({
 }) {
   const [value, setValue] = useState(endpoint);
   const [msg, setMsg] = useState<string | null>(null);
+  const [syncState, setSyncState] = useState<MobileSyncState | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
+  const [schemaMsg, setSchemaMsg] = useState<string | null>(null);
+
+  const refreshSyncState = async () => {
+    const state = await extensionApi.mobileSyncGetState();
+    setSyncState(state);
+  };
+
+  useEffect(() => {
+    refreshSyncState().catch(() => undefined);
+  }, []);
+
   return (
     <div className="space-y-3 p-4 text-sm">
       <h2 className="text-base font-semibold">Settings</h2>
@@ -236,6 +254,117 @@ function SettingsView({
       <button className="rounded bg-white/10 px-3 py-1" onClick={onLock}>
         Lock wallet
       </button>
+
+      <div className="rounded border border-white/10 bg-white/5 p-3">
+        <div className="mb-2 text-white/70">Mobile Sync (Protocol v1 seed-on-device)</div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="rounded bg-amber-500 px-3 py-1 text-black"
+            onClick={async () => {
+              try {
+                const pairing = await extensionApi.mobileSyncInitPairing();
+                setSyncMsg(
+                  `Pairing session ${pairing.sessionId.slice(0, 10)}... code ${pairing.verifyCode}`
+                );
+                await refreshSyncState();
+              } catch (e) {
+                setSyncMsg((e as Error).message);
+              }
+            }}
+          >
+            Start Pairing
+          </button>
+          <button
+            className="rounded bg-white/10 px-3 py-1"
+            onClick={async () => {
+              try {
+                const state = await extensionApi.mobileSyncGetState();
+                if (!state.activePairing) {
+                  setSyncMsg("No active pairing session.");
+                  return;
+                }
+                await extensionApi.mobileSyncConfirmPairing(
+                  state.activePairing.sessionId,
+                  "Nozy Mobile (simulated)",
+                  "ios-android"
+                );
+                setSyncMsg("Pairing confirmed (simulated mobile handshake).");
+                await refreshSyncState();
+              } catch (e) {
+                setSyncMsg((e as Error).message);
+              }
+            }}
+          >
+            Confirm Pairing (Simulated)
+          </button>
+          <button
+            className="rounded bg-white/10 px-3 py-1"
+            onClick={async () => {
+              try {
+                const schema = await extensionApi.mobileSyncGetPairingSchema();
+                setSchemaMsg(JSON.stringify(schema, null, 2));
+              } catch (e) {
+                setSchemaMsg((e as Error).message);
+              }
+            }}
+          >
+            Show Pairing Schema
+          </button>
+        </div>
+
+        {syncState?.activePairing && (
+          <div className="mt-2 break-all text-xs text-white/80">
+            Active session: {syncState.activePairing.sessionId} (code{" "}
+            {syncState.activePairing.verifyCode})
+          </div>
+        )}
+
+        {syncState?.pairingPayload && (
+          <div className="mt-2">
+            <div className="mb-1 text-xs text-white/70">Scan-ready pairing payload</div>
+            <textarea
+              readOnly
+              className="h-20 w-full rounded bg-black/20 p-2 text-xs outline-none"
+              value={syncState.pairingPayload}
+            />
+            <button
+              className="mt-1 rounded bg-white/10 px-2 py-1 text-xs"
+              onClick={async () => {
+                await navigator.clipboard.writeText(syncState.pairingPayload || "");
+                setSyncMsg("Pairing payload copied.");
+              }}
+            >
+              Copy Payload
+            </button>
+          </div>
+        )}
+
+        <div className="mt-2 space-y-1">
+          {(syncState?.pairedDevices || []).map((d) => (
+            <div key={d.id} className="flex items-center justify-between rounded bg-black/20 px-2 py-1">
+              <div className="text-xs">
+                {d.name} ({d.platform})
+              </div>
+              <button
+                className="rounded bg-white/10 px-2 py-1 text-xs"
+                onClick={async () => {
+                  await extensionApi.mobileSyncUnpair(d.id);
+                  await refreshSyncState();
+                }}
+              >
+                Unpair
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {syncMsg && <div className="mt-2 text-xs text-white/70">{syncMsg}</div>}
+        {schemaMsg && (
+          <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/20 p-2 text-[10px] text-white/70">
+            {schemaMsg}
+          </pre>
+        )}
+      </div>
     </div>
   );
 }

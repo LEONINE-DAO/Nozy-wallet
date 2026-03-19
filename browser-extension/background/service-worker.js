@@ -1,6 +1,7 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
+const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
 
 let wasmReady;
 let session = {
@@ -135,6 +136,155 @@ async function loadWalletState() {
 
 async function saveWalletState(state) {
   await storageSet({ [STORAGE_KEY]: state });
+}
+
+async function loadMobileSyncState() {
+  const state = await storageGet(MOBILE_SYNC_KEY);
+  return state || {
+    schemaVersion: 1,
+    pairedDevices: [],
+    activePairing: null,
+    pairingPayload: null,
+    updatedAt: 0
+  };
+}
+
+async function saveMobileSyncState(state) {
+  await storageSet({ [MOBILE_SYNC_KEY]: state });
+}
+
+function randomHex(bytes = 16) {
+  const arr = crypto.getRandomValues(new Uint8Array(bytes));
+  return Array.from(arr, (b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+async function mobileSyncInitPairing(params = {}) {
+  if (!session.unlocked || !session.address) throw new Error("Unlock wallet first.");
+
+  const now = Date.now();
+  const ttlMs = 10 * 60 * 1000;
+  const state = await loadMobileSyncState();
+  const sessionId = `ms_${randomHex(12)}`;
+  const verifyCode = randomHex(3).toUpperCase();
+  const challenge = randomHex(24);
+
+  const pairing = {
+    sessionId,
+    walletAddress: session.address,
+    verifyCode,
+    challenge,
+    createdAt: now,
+    expiresAt: now + ttlMs
+  };
+
+  const payload = JSON.stringify({
+    v: 1,
+    sessionId,
+    walletAddress: session.address,
+    challenge,
+    verifyCode,
+    expiresAt: pairing.expiresAt
+  });
+
+  const next = {
+    ...state,
+    activePairing: pairing,
+    pairingPayload: payload,
+    updatedAt: now
+  };
+  await saveMobileSyncState(next);
+
+  return {
+    sessionId,
+    verifyCode,
+    expiresAt: pairing.expiresAt,
+    payload
+  };
+}
+
+async function mobileSyncConfirmPairing(params = {}) {
+  if (!session.unlocked || !session.address) throw new Error("Unlock wallet first.");
+  const sessionId = String(params.sessionId ?? "");
+  const deviceName = String(params.deviceName ?? "Nozy Mobile");
+  const platform = String(params.platform ?? "unknown");
+  const now = Date.now();
+
+  const state = await loadMobileSyncState();
+  const active = state.activePairing;
+  if (!active) throw new Error("No active pairing session.");
+  if (active.sessionId !== sessionId) throw new Error("Pairing session mismatch.");
+  if (active.expiresAt < now) throw new Error("Pairing session expired.");
+
+  const pairedDevice = {
+    id: `dev_${randomHex(10)}`,
+    name: deviceName,
+    platform,
+    sessionId,
+    pairedAt: now,
+    status: "paired"
+  };
+
+  const next = {
+    ...state,
+    pairedDevices: [...(state.pairedDevices || []), pairedDevice],
+    activePairing: null,
+    pairingPayload: null,
+    updatedAt: now
+  };
+  await saveMobileSyncState(next);
+  return pairedDevice;
+}
+
+async function mobileSyncUnpair(params = {}) {
+  if (!session.unlocked) throw new Error("Unlock wallet first.");
+  const deviceId = String(params.deviceId ?? "");
+  if (!deviceId) throw new Error("Missing deviceId.");
+  const state = await loadMobileSyncState();
+  const next = {
+    ...state,
+    pairedDevices: (state.pairedDevices || []).filter((d) => d.id !== deviceId),
+    updatedAt: Date.now()
+  };
+  await saveMobileSyncState(next);
+  return { removed: true, deviceId };
+}
+
+async function mobileSyncGetState() {
+  const state = await loadMobileSyncState();
+  const now = Date.now();
+  const active = state.activePairing && state.activePairing.expiresAt > now
+    ? state.activePairing
+    : null;
+  if (state.activePairing && !active) {
+    await saveMobileSyncState({
+      ...state,
+      activePairing: null,
+      pairingPayload: null,
+      updatedAt: now
+    });
+  }
+  return {
+    schemaVersion: state.schemaVersion || 1,
+    pairedDevices: state.pairedDevices || [],
+    activePairing: active,
+    pairingPayload: active ? state.pairingPayload || null : null
+  };
+}
+
+function mobileSyncGetPairingSchema() {
+  return {
+    type: "nozy.mobile_sync.pairing.v1",
+    required: ["v", "sessionId", "walletAddress", "challenge", "verifyCode", "expiresAt"],
+    fields: {
+      v: "number",
+      sessionId: "string",
+      walletAddress: "string",
+      challenge: "string",
+      verifyCode: "string",
+      expiresAt: "number"
+    },
+    notes: "Seed and private keys are never included in pairing payload."
+  };
 }
 
 async function walletCreate(password) {
@@ -415,6 +565,21 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               })
             )
           );
+          return;
+        case "mobile_sync_get_state":
+          sendResponse(ok(await mobileSyncGetState()));
+          return;
+        case "mobile_sync_get_pairing_schema":
+          sendResponse(ok(mobileSyncGetPairingSchema()));
+          return;
+        case "mobile_sync_init_pairing":
+          sendResponse(ok(await mobileSyncInitPairing(params)));
+          return;
+        case "mobile_sync_confirm_pairing":
+          sendResponse(ok(await mobileSyncConfirmPairing(params)));
+          return;
+        case "mobile_sync_unpair":
+          sendResponse(ok(await mobileSyncUnpair(params)));
           return;
       }
 
