@@ -132,23 +132,71 @@ function DashboardView({ status }: { status: WalletStatus | null }) {
 }
 
 function SendView() {
+  const [status, setStatus] = useState<string>("");
+  const [busy, setBusy] = useState(false);
   return (
     <div className="space-y-2 p-4 text-sm">
       <h2 className="text-base font-semibold">Send</h2>
       <div className="rounded border border-white/10 bg-white/5 p-3">
-        Transaction proving flow hooks are staged. Full Orchard proving wiring is Phase 3c.
+        Transaction proving worker channel is wired. Full Orchard proving internals are the
+        remaining step in Phase 3c.
       </div>
+      <button
+        className="rounded bg-amber-500 px-3 py-1 text-black disabled:opacity-50"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const result = await extensionApi.walletProveTransaction({
+              to: "u1example",
+              amount: 1
+            });
+            setStatus(`Proving worker response: ${result.txid.slice(0, 16)}...`);
+          } catch (e) {
+            setStatus((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Test Proving Worker
+      </button>
+      {status && <div className="text-xs text-white/70">{status}</div>}
     </div>
   );
 }
 
 function ReceiveView({ status }: { status: WalletStatus | null }) {
+  const [scanInfo, setScanInfo] = useState<string>("");
+  const [busy, setBusy] = useState(false);
   return (
     <div className="space-y-2 p-4 text-sm">
       <h2 className="text-base font-semibold">Receive</h2>
       <div className="rounded border border-white/10 bg-white/5 p-3 break-all">
         {status?.address || "No address yet"}
       </div>
+      <button
+        className="rounded bg-amber-500 px-3 py-1 text-black disabled:opacity-50"
+        disabled={busy}
+        onClick={async () => {
+          setBusy(true);
+          try {
+            const count = await extensionApi.rpcGetBlockCount();
+            const start = Math.max(0, count - 25);
+            const scanned = await extensionApi.walletScanNotes(start, count);
+            setScanInfo(
+              `Scanned ${scanned.scannedBlocks} blocks, notes found: ${scanned.discoveredNotes.length}`
+            );
+          } catch (e) {
+            setScanInfo((e as Error).message);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      >
+        Scan Recent Blocks
+      </button>
+      {scanInfo && <div className="text-xs text-white/70">{scanInfo}</div>}
     </div>
   );
 }

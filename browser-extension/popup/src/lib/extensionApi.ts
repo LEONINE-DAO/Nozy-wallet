@@ -90,6 +90,25 @@ export const extensionApi = {
     }),
   rpcGetStatus: () =>
     sendMessage<{ endpoint: string; connected: boolean }>({ method: "rpc_get_status" }),
-  rpcGetBlockCount: () => sendMessage<number>({ method: "rpc_get_block_count" })
+  rpcGetBlockCount: () => sendMessage<number>({ method: "rpc_get_block_count" }),
+  walletScanNotes: (startHeight: number, endHeight: number) =>
+    sendMessage<{
+      scannedBlocks: number;
+      discoveredNotes: unknown[];
+      totalBalanceZats: number;
+    }>({
+      method: "wallet_scan_notes",
+      params: { startHeight, endHeight }
+    }),
+  walletProveTransaction: (tx: Record<string, unknown>) =>
+    sendMessage<{
+      txid: string;
+      chainId: string;
+      rawTxHex: string;
+      proving: string;
+    }>({
+      method: "wallet_prove_transaction",
+      params: tx
+    })
 };
 

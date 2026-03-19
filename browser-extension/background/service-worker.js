@@ -11,6 +11,9 @@ let session = {
 };
 
 const pendingApprovals = new Map();
+let worker;
+let workerSeq = 0;
+const workerPending = new Map();
 
 async function ensureWasm() {
   if (!wasmReady) {
@@ -18,6 +21,31 @@ async function ensureWasm() {
   }
   await wasmReady;
   return wasm;
+}
+
+function ensureWorker() {
+  if (!worker) {
+    worker = new Worker(chrome.runtime.getURL("background/wallet-worker.js"), {
+      type: "module"
+    });
+    worker.onmessage = (event) => {
+      const { id, result, error } = event.data || {};
+      const pending = workerPending.get(id);
+      if (!pending) return;
+      workerPending.delete(id);
+      if (error) pending.reject(new Error(error));
+      else pending.resolve(result);
+    };
+  }
+}
+
+function callWorker(method, params) {
+  ensureWorker();
+  return new Promise((resolve, reject) => {
+    const id = `w_${++workerSeq}`;
+    workerPending.set(id, { resolve, reject });
+    worker.postMessage({ id, method, params });
+  });
 }
 
 function utf8Encode(str) {
@@ -239,6 +267,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         case "rpc_get_block":
           sendResponse(ok(await rpcCall("getblock", [params.height])));
+          return;
+        case "wallet_scan_notes":
+          sendResponse(
+            ok(
+              await callWorker("scan_notes", {
+                startHeight: params.startHeight ?? 0,
+                endHeight: params.endHeight ?? params.startHeight ?? 0
+              })
+            )
+          );
+          return;
+        case "wallet_prove_transaction":
+          sendResponse(ok(await callWorker("prove_transaction", params)));
           return;
       }
 
