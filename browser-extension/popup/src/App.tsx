@@ -148,8 +148,8 @@ function SendView() {
           setBusy(true);
           try {
             const result = await extensionApi.walletProveTransaction({
-              to: "u1example",
-              amount: 1
+              amount: 1,
+              memo: "nozy-poc"
             });
             setStatus(`Proving worker response: ${result.txid.slice(0, 16)}...`);
           } catch (e) {

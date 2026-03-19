@@ -1,6 +1,36 @@
 /* @ts-self-types="./nozy_wasm.d.ts" */
 
 /**
+ * Build a v5 Orchard-only transaction (spend+output) and return serialized bytes.
+ *
+ * This is a prototype milestone: transparent inputs/outputs and Sapling are omitted.
+ * @param {string} mnemonic_str
+ * @param {string} recipient_address
+ * @param {bigint} amount_zatoshis
+ * @param {string} memo
+ * @param {string} spend_note_json
+ * @param {string} witness_json
+ * @returns {any}
+ */
+export function build_orchard_v5_tx_from_note(mnemonic_str, recipient_address, amount_zatoshis, memo, spend_note_json, witness_json) {
+    const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(recipient_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(spend_note_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passStringToWasm0(witness_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ret = wasm.build_orchard_v5_tx_from_note(ptr0, len0, ptr1, len1, amount_zatoshis, ptr2, len2, ptr3, len3, ptr4, len4);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {string} password
  * @returns {any}
  */
@@ -101,6 +131,51 @@ export function get_zcash_chain_id() {
     } finally {
         wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
     }
+}
+
+/**
+ * @param {string} recipient_address
+ * @param {bigint} amount_zatoshis
+ * @param {string} memo
+ * @returns {any}
+ */
+export function prove_orchard_transaction_dummy(recipient_address, amount_zatoshis, memo) {
+    const ptr0 = passStringToWasm0(recipient_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.prove_orchard_transaction_dummy(ptr0, len0, amount_zatoshis, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
+ * @param {string} mnemonic_str
+ * @param {string} recipient_address
+ * @param {bigint} amount_zatoshis
+ * @param {string} memo
+ * @param {string} spend_note_json
+ * @param {string} witness_json
+ * @returns {any}
+ */
+export function prove_orchard_transaction_spend_from_note(mnemonic_str, recipient_address, amount_zatoshis, memo, spend_note_json, witness_json) {
+    const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(recipient_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ptr2 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len2 = WASM_VECTOR_LEN;
+    const ptr3 = passStringToWasm0(spend_note_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len3 = WASM_VECTOR_LEN;
+    const ptr4 = passStringToWasm0(witness_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ret = wasm.prove_orchard_transaction_spend_from_note(ptr0, len0, ptr1, len1, amount_zatoshis, ptr2, len2, ptr3, len3, ptr4, len4);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
 }
 
 /**
@@ -256,6 +331,10 @@ function __wbg_get_imports() {
         },
         __wbg_node_84ea875411254db1: function(arg0) {
             const ret = arg0.node;
+            return ret;
+        },
+        __wbg_now_16f0c993d5dd6c27: function() {
+            const ret = Date.now();
             return ret;
         },
         __wbg_process_44c7a14e11e9f69e: function(arg0) {

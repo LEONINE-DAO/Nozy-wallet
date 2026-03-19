@@ -27,6 +27,11 @@ function toByteArray(value) {
   return [];
 }
 
+function bytesToHex(bytes) {
+  const arr = Array.isArray(bytes) || bytes instanceof Uint8Array ? bytes : [];
+  return Array.from(arr, (b) => Number(b) & 0xff).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
 function normalizeAction(raw) {
   const nullifier = toByteArray(raw?.nullifier ?? raw?.nf ?? []);
   const cmx = toByteArray(raw?.cmx ?? raw?.note_commitment ?? []);
@@ -116,17 +121,173 @@ self.onmessage = async (event) => {
     }
 
     if (method === "prove_transaction") {
-      // TODO(phase3c): wire full Orchard proving from nozy-wasm core.
-      // This preserves the async worker contract now so UI + background can be stable.
-      const txid = randomTxidLike();
-      const chainId = wasm.get_zcash_chain_id();
+      const recipientAddress = String(
+        params?.recipientAddress ?? params?.to ?? ""
+      );
+      const walletAddress = String(params?.walletAddress ?? "");
+      const mnemonic = String(params?.mnemonic ?? "");
+      const rpcEndpoint = String(params?.rpcEndpoint ?? "");
+      const requestedAmount = Number(params?.amount ?? 0);
+      const memo = String(params?.memo ?? "nozy-poc");
+
+      if (!rpcEndpoint) throw new Error("Missing rpcEndpoint for proving scan.");
+      if (!mnemonic) throw new Error("Missing wallet mnemonic for proving.");
+      if (!walletAddress) throw new Error("Missing wallet address for proving scan.");
+      if (!recipientAddress) throw new Error("Missing recipientAddress.");
+
+      // Approach (Phase 3c):
+      // 1) Scan a small recent window for a decrypted Orchard note.
+      // 2) Fetch the real Merkle witness from Zebra RPC.
+      // 3) Build an Orchard spend+output bundle in WASM and run Halo2 proving.
+      const getBlockCount = async () => {
+        const resp = await fetch(rpcEndpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method: "getblockcount",
+            params: []
+          })
+        });
+        if (!resp.ok) throw new Error(`getblockcount failed: ${resp.status}`);
+        const body = await resp.json();
+        return Number(body?.result ?? 0);
+      };
+
+      const rpcCall = async (method, paramsArr) => {
+        const resp = await fetch(rpcEndpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            jsonrpc: "2.0",
+            id: 1,
+            method,
+            params: paramsArr ?? []
+          })
+        });
+        if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
+        const body = await resp.json();
+        if (body?.error) throw new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
+        return body?.result ?? null;
+      };
+
+      const endHeight = await getBlockCount();
+      const startHeight = Math.max(0, endHeight - 10);
+
+      let selectedNote = null;
+      let selectedHeight = 0;
+      let selectedTxid = "";
+
+      for (let h = startHeight; h <= endHeight; h += 1) {
+        try {
+          const resp = await fetch(rpcEndpoint, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({
+              jsonrpc: "2.0",
+              id: 1,
+              method: "getblock",
+              params: [h]
+            })
+          });
+          if (!resp.ok) continue;
+          const body = await resp.json();
+          if (body?.error || !body?.result) continue;
+          const block = body.result;
+
+          const actions = extractActionsFromBlockJson(block);
+          if (!actions.length) continue;
+
+          const txid = block?.hash || `h${h}`;
+          const scan = wasm.scan_orchard_actions(
+            mnemonic,
+            walletAddress,
+            JSON.stringify(actions),
+            h,
+            txid
+          );
+
+          if (scan?.notes?.length) {
+            selectedNote = scan.notes[0];
+            selectedHeight = h;
+            selectedTxid = txid;
+            break;
+          }
+        } catch (_) {
+          // Continue scanning even if one block fails.
+        }
+      }
+
+      if (!selectedNote) {
+        throw new Error(
+          `No spendable Orchard notes found in blocks ${startHeight}..${endHeight}.`
+        );
+      }
+
+      const spendValue = Number(selectedNote?.value ?? 0);
+      const spendAmount = Math.min(requestedAmount, spendValue);
+
+      if (!spendAmount || spendAmount <= 0) {
+        throw new Error(
+          `Selected note value (${spendValue}) is not sufficient for requested amount (${requestedAmount}).`
+        );
+      }
+
+      // Fetch real anchor + Merkle auth path for the selected note commitment.
+      const cmxHex = bytesToHex(selectedNote?.cmx ?? []);
+      if (!cmxHex || cmxHex.length !== 64) {
+        throw new Error(`Selected note cmx hex invalid (len=${cmxHex.length}).`);
+      }
+
+      const orchardTree = await rpcCall("z_getorchardtree", [selectedHeight]);
+      const anchorHex = String(orchardTree?.anchor ?? "");
+      if (!anchorHex || anchorHex.length < 64) {
+        throw new Error("z_getorchardtree did not return a valid anchor hex.");
+      }
+
+      const posResp = await rpcCall("z_findnoteposition", [cmxHex]);
+      const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
+      if (!Number.isFinite(position) || position < 0) {
+        throw new Error("z_findnoteposition returned invalid position.");
+      }
+
+      const authResp = await rpcCall("z_getauthpath", [position, anchorHex]);
+      const authPathHexes = authResp?.auth_path ?? authResp?.authPath ?? [];
+      if (!Array.isArray(authPathHexes) || authPathHexes.length !== 32) {
+        throw new Error(`z_getauthpath returned unexpected auth_path length: ${authPathHexes.length}`);
+      }
+
+      const witness = {
+        anchor: anchorHex,
+        position: position >>> 0,
+        auth_path: authPathHexes,
+        target_height: selectedHeight
+      };
+
+      const provingResult = wasm.build_orchard_v5_tx_from_note(
+        mnemonic,
+        recipientAddress,
+        spendAmount,
+        memo,
+        JSON.stringify(selectedNote),
+        JSON.stringify(witness)
+      );
+
       self.postMessage({
         id,
         result: {
-          txid,
-          chainId,
-          rawTxHex: "",
-          proving: "placeholder"
+          txid: provingResult?.txid ?? "",
+          chainId: wasm.get_zcash_chain_id(),
+          rawTxHex: provingResult?.rawTxHex ?? "",
+          proving: "orchestrated_orchard_v5_tx_build_wasm",
+          bundle_actions: provingResult?.bundle_actions ?? 0,
+          proof_generated: provingResult?.proof_generated ?? true,
+          selected_note: {
+            value: spendValue,
+            block_height: selectedHeight,
+            txid: selectedTxid
+          }
         }
       });
       return;

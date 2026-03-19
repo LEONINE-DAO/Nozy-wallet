@@ -11,6 +11,7 @@ let session = {
 };
 
 const pendingApprovals = new Map();
+const providerRequestResolvers = new Map();
 let worker;
 let workerSeq = 0;
 const workerPending = new Map();
@@ -62,6 +63,57 @@ function ok(result) {
 
 function fail(message) {
   return { result: null, error: { message } };
+}
+
+function parseNumberMaybeHex(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  if (typeof v === "bigint") return Number(v);
+  if (typeof v === "string") {
+    const s = v.trim();
+    if (s.startsWith("0x")) return Number(BigInt(s));
+    if (!s) return null;
+    return Number(s);
+  }
+  return null;
+}
+
+function parseTxForOrchardV5(tx) {
+  // Minimal adapter: accept common EIP-1193 tx shapes.
+  // We only need recipient `to`, `value` (zats) and an optional `memo`.
+  const to = tx?.to ?? tx?.recipient ?? tx?.receiver ?? tx?.destination ?? null;
+  const value = tx?.value ?? tx?.amount ?? tx?.zatoshis ?? tx?.zats ?? null;
+  const memo = tx?.memo ?? tx?.data ?? tx?.comment ?? "";
+
+  const recipientAddress = typeof to === "string" ? to : "";
+  const amount = parseNumberMaybeHex(value);
+  const memoStr = typeof memo === "string" ? memo : "";
+
+  if (!recipientAddress) {
+    throw new Error("Missing transaction recipient (expected tx.to)");
+  }
+  if (!Number.isFinite(amount) || amount <= 0) {
+    throw new Error("Missing/invalid transaction amount (expected tx.value in zats)");
+  }
+
+  return { recipientAddress, amount, memo: memoStr };
+}
+
+async function waitForTxConfirmation({ rpcEndpoint, txid, timeoutMs = 60_000, pollMs = 2_500 }) {
+  const startedAt = Date.now();
+  while (true) {
+    try {
+      const resp = await rpcCall("getrawtransaction", [txid, true]);
+      const height = resp?.blockheight ?? resp?.blockHeight ?? resp?.block_height ?? null;
+      const bh = typeof height === "number" ? height : parseNumberMaybeHex(height);
+      if (Number.isFinite(bh) && bh > 0) return { confirmed: true, blockHeight: bh };
+    } catch (_) {
+    }
+
+    if (Date.now() - startedAt > timeoutMs) break;
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return { confirmed: false, blockHeight: null };
 }
 
 function storageGet(key) {
@@ -240,10 +292,74 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!approval) throw new Error("Approval request not found");
           pendingApprovals.delete(params.id);
           sendResponse(ok({ approved: true, id: params.id }));
+
+          const resolver = providerRequestResolvers.get(params.id);
+          if (resolver) {
+            providerRequestResolvers.delete(params.id);
+            (async () => {
+              try {
+                if (approval.kind === "sign") {
+                  const message = String(approval.payload?.message ?? "");
+                  if (!message) throw new Error("Missing message for signing");
+                  const signature = wasm.sign_message(session.mnemonic, message);
+                  resolver.sendResponse(ok(signature));
+                  return;
+                }
+
+                if (approval.kind === "transaction") {
+                  const tx = approval.payload?.tx ?? {};
+                  const { recipientAddress, amount, memo } = parseTxForOrchardV5(tx);
+
+                  const proving = await callWorker("prove_transaction", {
+                    recipientAddress,
+                    walletAddress: session.address,
+                    mnemonic: session.mnemonic,
+                    rpcEndpoint: session.rpcEndpoint,
+                    amount,
+                    memo
+                  });
+
+                  if (!proving?.rawTxHex) {
+                    throw new Error("Transaction proving did not return rawTxHex");
+                  }
+
+                  const broadcastResult = await rpcCall("sendrawtransaction", [
+                    proving.rawTxHex
+                  ]);
+
+                  const txid =
+                    broadcastResult?.txid ??
+                    broadcastResult?.result?.txid ??
+                    broadcastResult?.result ??
+                    broadcastResult ??
+                    proving.txid;
+
+                  const confirmation = await waitForTxConfirmation({
+                    rpcEndpoint: session.rpcEndpoint,
+                    txid: String(txid),
+                    timeoutMs: 120_000,
+                    pollMs: 2_000
+                  });
+
+                  resolver.sendResponse(ok(String(txid)));
+                  return;
+                }
+
+                resolver.sendResponse(fail(`Unsupported approval kind: ${approval.kind}`));
+              } catch (e) {
+                resolver.sendResponse(fail(e?.message ?? "Failed to fulfill approved request"));
+              }
+            })();
+          }
           return;
         }
         case "wallet_reject_request":
           pendingApprovals.delete(params.id);
+          if (providerRequestResolvers.has(params.id)) {
+            const resolver = providerRequestResolvers.get(params.id);
+            providerRequestResolvers.delete(params.id);
+            resolver.sendResponse(fail("Request rejected by user"));
+          }
           sendResponse(ok({ approved: false, id: params.id }));
           return;
         case "rpc_set_endpoint":
@@ -285,7 +401,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           );
           return;
         case "wallet_prove_transaction":
-          sendResponse(ok(await callWorker("prove_transaction", params)));
+          if (!session.unlocked || !session.address) {
+            throw new Error("Unlock wallet first.");
+          }
+          sendResponse(
+            ok(
+              await callWorker("prove_transaction", {
+                ...params,
+                recipientAddress: session.address,
+                walletAddress: session.address,
+                mnemonic: session.mnemonic,
+                rpcEndpoint: session.rpcEndpoint
+              })
+            )
+          );
           return;
       }
 
@@ -314,7 +443,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             origin: msg.origin || "",
             message: params?.message || params?.[0] || ""
           });
-          sendResponse(ok({ pendingApproval: approval.id }));
+          providerRequestResolvers.set(approval.id, { sendResponse });
           return;
         }
         case "eth_sendTransaction":
@@ -325,7 +454,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             origin: msg.origin || "",
             tx: params?.tx || params?.[0] || params
           });
-          sendResponse(ok({ pendingApproval: approval.id }));
+          providerRequestResolvers.set(approval.id, { sendResponse });
           return;
         }
       }

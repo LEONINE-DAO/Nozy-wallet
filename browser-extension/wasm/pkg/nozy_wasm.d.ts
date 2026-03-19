@@ -1,6 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 
+/**
+ * Build a v5 Orchard-only transaction (spend+output) and return serialized bytes.
+ *
+ * This is a prototype milestone: transparent inputs/outputs and Sapling are omitted.
+ */
+export function build_orchard_v5_tx_from_note(mnemonic_str: string, recipient_address: string, amount_zatoshis: bigint, memo: string, spend_note_json: string, witness_json: string): any;
+
 export function create_wallet(password: string): any;
 
 export function decrypt_from_storage(encrypted: Uint8Array, password: string): Uint8Array;
@@ -12,6 +19,10 @@ export function generate_address(mnemonic_str: string, account: number, index: n
 export function get_nu5_activation_height(): number;
 
 export function get_zcash_chain_id(): string;
+
+export function prove_orchard_transaction_dummy(recipient_address: string, amount_zatoshis: bigint, memo: string): any;
+
+export function prove_orchard_transaction_spend_from_note(mnemonic_str: string, recipient_address: string, amount_zatoshis: bigint, memo: string, spend_note_json: string, witness_json: string): any;
 
 export function restore_wallet(mnemonic_str: string, password: string): any;
 
@@ -25,12 +36,15 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
     readonly create_wallet: (a: number, b: number) => [number, number, number];
     readonly decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly generate_address: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly get_nu5_activation_height: () => number;
     readonly get_zcash_chain_id: () => [number, number];
+    readonly prove_orchard_transaction_dummy: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number];
+    readonly prove_orchard_transaction_spend_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
     readonly restore_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];

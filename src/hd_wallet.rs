@@ -45,6 +45,10 @@ pub struct OrchardActionCompactData {
 pub struct OrchardDecryptionResult {
     pub value: u64,
     pub address: String,
+    pub cmx: [u8; 32],
+    pub rho: [u8; 32],
+    pub rseed: [u8; 32],
+    pub orchard_address_raw: Vec<u8>,
     pub nullifier: [u8; 32],
     pub block_height: u32,
     pub txid: String,
@@ -273,6 +277,10 @@ impl HDWallet {
             Some((note, note_address)) => Ok(Some(OrchardDecryptionResult {
                 value: note.value().inner(),
                 address: format!("{:?}", note_address),
+                cmx: action.cmx,
+                rho: note.rho().to_bytes(),
+                rseed: *note.rseed().as_bytes(),
+                orchard_address_raw: note_address.to_raw_address_bytes().to_vec(),
                 nullifier: action.nullifier,
                 block_height,
                 txid: txid.to_string(),
