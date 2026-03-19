@@ -11,7 +11,7 @@
     "deploy": "node deploy.js"
   },
   "dependencies": {
-    "@solar-icons/react": "^1.0.1",
+    "@solar-icons/react": "^1.1.0",
     "@tailwindcss/vite": "^4.1.17",
     "@vercel/analytics": "^1.6.1",
     "react": "^19.2.0",
