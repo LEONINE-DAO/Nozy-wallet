@@ -1,0 +1,20 @@
+{
+  "name": "nozy-wasm",
+  "type": "module",
+  "collaborators": [
+    "LEONINE-DAO"
+  ],
+  "description": "NozyWallet WASM core -- first production Orchard proving in the browser",
+  "version": "0.1.0",
+  "license": "MIT",
+  "files": [
+    "nozy_wasm_bg.wasm",
+    "nozy_wasm.js",
+    "nozy_wasm.d.ts"
+  ],
+  "main": "nozy_wasm.js",
+  "types": "nozy_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}

@@ -1,0 +1,35 @@
+[package]
+name = "nozy-wasm-poc"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# WASM bindings
+wasm-bindgen = "0.2"
+
+# Browser-compatible randomness
+getrandom = { version = "0.2", features = ["js"] }
+rand = "0.8"
+
+# Key derivation (expected to compile to WASM)
+bip39 = "2.1"
+bip32 = "0.5"
+
+# Encryption (pure Rust, expected to compile)
+aes-gcm = "0.10"
+argon2 = "0.5"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+hex = "0.4"
+
+# Zcash crypto stack -- disable multicore across the entire chain
+# multicore uses rayon which requires threads/atomics, incompatible with wasm32
+orchard = { version = "0.11.0", default-features = false, features = ["circuit", "std"] }
+zcash_primitives = { version = "0.24.1", default-features = false, features = ["std", "circuits"] }
+zcash_protocol = "0.6.2"
+zcash_note_encryption = "0.4.0"

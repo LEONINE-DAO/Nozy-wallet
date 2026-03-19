@@ -224,12 +224,24 @@ jobs:
       - name: Rename and organize release files
         run: |
           mkdir -p release-files
-          # Copy and rename CLI binaries to friendly names
+          # Copy CLI binaries (already have friendly names)
           find artifacts -type f -name "nozy-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
           find artifacts -type f -name "nozy-*.sha256" -exec cp {} release-files/ \;
-          # Copy API server binaries (keep original names)
-          find artifacts -type f -name "nozywallet-api-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
-          find artifacts -type f -name "nozywallet-api-*.sha256" -exec cp {} release-files/ \; || true
+          # Copy and rename API server binaries using the artifact directory name as the friendly name
+          for dir in artifacts/nozywallet-api-*/; do
+            target_name=$(basename "$dir")
+            for bin in "$dir"nozywallet-api*; do
+              [ -f "$bin" ] || continue
+              base=$(basename "$bin")
+              if [ "$base" = "hash.txt" ]; then
+                continue
+              fi
+              cp "$bin" "release-files/${target_name}"
+            done
+            if [ -f "${dir}hash.txt" ]; then
+              cp "${dir}hash.txt" "release-files/${target_name}.sha256"
+            fi
+          done
 
       - name: Generate hashes file
         run: |
@@ -254,7 +266,7 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: |
-            ## 🎉 NozyWallet ${GITHUB_REF#refs/tags/} Release
+            ## 🎉 NozyWallet ${{ github.ref_name }} Release
             
             ### 📦 Downloads
             

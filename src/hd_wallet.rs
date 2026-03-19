@@ -184,8 +184,7 @@ impl HDWallet {
         Ok(master_key)
     }
 
-    /// Derives a private key for the note. For password-protected wallets, pass the
-    /// same password used to unlock the wallet so the seed lifetime matches.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn derive_private_key_for_note(
         &self,
         note: &crate::notes::OrchardNote,
@@ -212,6 +211,7 @@ impl HDWallet {
         ))
     }
 
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn decrypt_orchard_action(
         &self,
         action: &crate::notes::OrchardActionData,
