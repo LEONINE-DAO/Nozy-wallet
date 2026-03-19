@@ -408,7 +408,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ok(
               await callWorker("prove_transaction", {
                 ...params,
-                recipientAddress: session.address,
+                recipientAddress: params?.recipientAddress ?? params?.to ?? session.address,
                 walletAddress: session.address,
                 mnemonic: session.mnemonic,
                 rpcEndpoint: session.rpcEndpoint

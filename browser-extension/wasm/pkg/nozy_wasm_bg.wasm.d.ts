@@ -1,7 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+export const build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
 export const create_wallet: (a: number, b: number) => [number, number, number];
 export const decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];

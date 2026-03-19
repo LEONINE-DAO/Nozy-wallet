@@ -1,18 +1,16 @@
 /* @ts-self-types="./nozy_wasm.d.ts" */
 
 /**
- * Build a v5 Orchard-only transaction (spend+output) and return serialized bytes.
- *
- * This is a prototype milestone: transparent inputs/outputs and Sapling are omitted.
  * @param {string} mnemonic_str
  * @param {string} recipient_address
  * @param {bigint} amount_zatoshis
+ * @param {bigint} fee_zatoshis
  * @param {string} memo
  * @param {string} spend_note_json
  * @param {string} witness_json
  * @returns {any}
  */
-export function build_orchard_v5_tx_from_note(mnemonic_str, recipient_address, amount_zatoshis, memo, spend_note_json, witness_json) {
+export function build_orchard_v5_tx_from_note(mnemonic_str, recipient_address, amount_zatoshis, fee_zatoshis, memo, spend_note_json, witness_json) {
     const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(recipient_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -23,7 +21,7 @@ export function build_orchard_v5_tx_from_note(mnemonic_str, recipient_address, a
     const len3 = WASM_VECTOR_LEN;
     const ptr4 = passStringToWasm0(witness_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len4 = WASM_VECTOR_LEN;
-    const ret = wasm.build_orchard_v5_tx_from_note(ptr0, len0, ptr1, len1, amount_zatoshis, ptr2, len2, ptr3, len3, ptr4, len4);
+    const ret = wasm.build_orchard_v5_tx_from_note(ptr0, len0, ptr1, len1, amount_zatoshis, fee_zatoshis, ptr2, len2, ptr3, len3, ptr4, len4);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

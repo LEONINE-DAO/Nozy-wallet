@@ -128,6 +128,7 @@ self.onmessage = async (event) => {
       const mnemonic = String(params?.mnemonic ?? "");
       const rpcEndpoint = String(params?.rpcEndpoint ?? "");
       const requestedAmount = Number(params?.amount ?? 0);
+      const requestedFee = Number(params?.fee ?? 10000);
       const memo = String(params?.memo ?? "nozy-poc");
 
       if (!rpcEndpoint) throw new Error("Missing rpcEndpoint for proving scan.");
@@ -173,11 +174,14 @@ self.onmessage = async (event) => {
       };
 
       const endHeight = await getBlockCount();
-      const startHeight = Math.max(0, endHeight - 10);
+      const scanWindow = Number(params?.scanWindow ?? 200);
+      const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
+      const requiredValue = requestedAmount + requestedFee;
+      if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
+        throw new Error(`Invalid amount/fee (amount=${requestedAmount}, fee=${requestedFee}).`);
+      }
 
-      let selectedNote = null;
-      let selectedHeight = 0;
-      let selectedTxid = "";
+      const candidates = [];
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
@@ -209,30 +213,37 @@ self.onmessage = async (event) => {
           );
 
           if (scan?.notes?.length) {
-            selectedNote = scan.notes[0];
-            selectedHeight = h;
-            selectedTxid = txid;
-            break;
+            for (const n of scan.notes) {
+              const v = Number(n?.value ?? 0);
+              if (Number.isFinite(v) && v >= requiredValue) {
+                candidates.push({
+                  note: n,
+                  height: h,
+                  txid,
+                  value: v
+                });
+              }
+            }
           }
         } catch (_) {
           // Continue scanning even if one block fails.
         }
       }
 
-      if (!selectedNote) {
+      if (candidates.length === 0) {
         throw new Error(
-          `No spendable Orchard notes found in blocks ${startHeight}..${endHeight}.`
+          `No Orchard note can cover amount+fee (${requiredValue}) in blocks ${startHeight}..${endHeight}.`
         );
       }
 
-      const spendValue = Number(selectedNote?.value ?? 0);
-      const spendAmount = Math.min(requestedAmount, spendValue);
-
-      if (!spendAmount || spendAmount <= 0) {
-        throw new Error(
-          `Selected note value (${spendValue}) is not sufficient for requested amount (${requestedAmount}).`
-        );
-      }
+      // Prefer the smallest sufficient note to reduce unnecessary change.
+      candidates.sort((a, b) => a.value - b.value || a.height - b.height);
+      const selected = candidates[0];
+      const selectedNote = selected.note;
+      const selectedHeight = selected.height;
+      const selectedTxid = selected.txid;
+      const spendValue = selected.value;
+      const spendAmount = requestedAmount;
 
       // Fetch real anchor + Merkle auth path for the selected note commitment.
       const cmxHex = bytesToHex(selectedNote?.cmx ?? []);
@@ -269,6 +280,7 @@ self.onmessage = async (event) => {
         mnemonic,
         recipientAddress,
         spendAmount,
+        requestedFee,
         memo,
         JSON.stringify(selectedNote),
         JSON.stringify(witness)
@@ -287,7 +299,8 @@ self.onmessage = async (event) => {
             value: spendValue,
             block_height: selectedHeight,
             txid: selectedTxid
-          }
+          },
+          fee: requestedFee
         }
       });
       return;

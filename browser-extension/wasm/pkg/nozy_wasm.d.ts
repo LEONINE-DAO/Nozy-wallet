@@ -1,12 +1,7 @@
 /* tslint:disable */
 /* eslint-disable */
 
-/**
- * Build a v5 Orchard-only transaction (spend+output) and return serialized bytes.
- *
- * This is a prototype milestone: transparent inputs/outputs and Sapling are omitted.
- */
-export function build_orchard_v5_tx_from_note(mnemonic_str: string, recipient_address: string, amount_zatoshis: bigint, memo: string, spend_note_json: string, witness_json: string): any;
+export function build_orchard_v5_tx_from_note(mnemonic_str: string, recipient_address: string, amount_zatoshis: bigint, fee_zatoshis: bigint, memo: string, spend_note_json: string, witness_json: string): any;
 
 export function create_wallet(password: string): any;
 
@@ -36,7 +31,7 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+    readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly create_wallet: (a: number, b: number) => [number, number, number];
     readonly decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];

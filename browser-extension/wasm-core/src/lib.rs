@@ -566,6 +566,7 @@ pub fn build_orchard_v5_tx_from_note(
     mnemonic_str: &str,
     recipient_address: &str,
     amount_zatoshis: u64,
+    fee_zatoshis: u64,
     memo: &str,
     spend_note_json: &str,
     witness_json: &str,
@@ -596,9 +597,11 @@ pub fn build_orchard_v5_tx_from_note(
     struct DummySaplingSpendProver;
     struct DummySaplingOutputProver;
 
-    struct ZeroFeeRule;
+    struct FixedFeeRule {
+        fee: Zatoshis,
+    }
 
-    impl FeeRule for ZeroFeeRule {
+    impl FeeRule for FixedFeeRule {
         type Error = core::convert::Infallible;
 
         fn fee_required<P: zcash_protocol::consensus::Parameters>(
@@ -611,7 +614,7 @@ pub fn build_orchard_v5_tx_from_note(
             _sapling_output_count: usize,
             _orchard_action_count: usize,
         ) -> Result<Zatoshis, Self::Error> {
-            Ok(Zatoshis::ZERO)
+            Ok(self.fee)
         }
     }
 
@@ -807,8 +810,9 @@ pub fn build_orchard_v5_tx_from_note(
     let transparent_signing_set = TransparentSigningSet::new();
     let sapling_extsks: &[sapling::zip32::ExtendedSpendingKey] = &[];
 
-    // Fee rule: fixed fee of 0 Zatoshis (prototype).
-    let fee_rule = ZeroFeeRule;
+    let fee = Zatoshis::from_u64(fee_zatoshis)
+        .map_err(|_| JsError::new("Invalid fee amount"))?;
+    let fee_rule = FixedFeeRule { fee };
 
     // Add Orchard spend + outputs.
     let mut builder = tx_builder;
@@ -821,6 +825,13 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Failed to add Orchard spend: {e:?}")))?;
 
     let recipient_value = amount_zatoshis;
+    let total_required = recipient_value.saturating_add(fee_zatoshis);
+    if spend_note.value < total_required {
+        return Err(JsError::new(&format!(
+            "Insufficient note value for amount+fee: note={} required={}",
+            spend_note.value, total_required
+        )));
+    }
     let memo_bytes = MemoBytes::from_bytes(memo.as_bytes()).map_err(|e| {
         JsError::new(&format!("Invalid memo: {e}"))
     })?;
@@ -834,7 +845,7 @@ pub fn build_orchard_v5_tx_from_note(
         )
         .map_err(|e| JsError::new(&format!("Failed to add Orchard output: {e:?}")))?;
 
-    let change_amount = spend_note.value.saturating_sub(recipient_value);
+    let change_amount = spend_note.value.saturating_sub(total_required);
     if change_amount > 0 {
         builder
             .add_orchard_output::<core::convert::Infallible>(
