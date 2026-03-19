@@ -1,14 +1,12 @@
 (function () {
-  // Minimal EIP-1193-like provider injected into dApp pages.
-  // Full approval + signing UI will be wired in later phases.
-
   const makeRequest = (method, params) => {
     return new Promise((resolve, reject) => {
       chrome.runtime.sendMessage(
         {
           type: "NOZY_REQUEST",
           method,
-          params: params ?? {}
+          params: params ?? {},
+          origin: location.origin
         },
         (response) => {
           if (chrome.runtime.lastError) {
@@ -16,7 +14,7 @@
             return;
           }
           if (!response) {
-            reject(new Error("No response from background"));
+            reject(new Error("No response from NozyWallet"));
             return;
           }
           if (response.error) {
@@ -29,25 +27,31 @@
     });
   };
 
+  const listeners = new Map();
   const provider = {
     isNozyWallet: true,
-    request: ({ method, params } = {}) => {
-      return makeRequest(method, params);
-    },
-    // Some dApps check selectedAddress/isConnected.
     selectedAddress: null,
-    isConnected: () => false
+    chainId: "0x5ba3",
+    request: ({ method, params } = {}) => makeRequest(method, params),
+    on: (event, handler) => {
+      if (!listeners.has(event)) listeners.set(event, []);
+      listeners.get(event).push(handler);
+    },
+    removeListener: (event, handler) => {
+      const arr = listeners.get(event) || [];
+      listeners.set(
+        event,
+        arr.filter((h) => h !== handler)
+      );
+    },
+    isConnected: () => true
   };
 
-  // Inject into the page window for dApps that look for these.
   window.zcash = provider;
   window.ethereum = provider;
   window.nozy = provider;
 
-  // Signal initialization (EVM wallets commonly dispatch this).
   window.dispatchEvent(new Event("ethereum#initialized"));
-
-  // EIP-6963 provider discovery (best-effort).
   try {
     window.dispatchEvent(
       new CustomEvent("eip6963:announceProvider", {
@@ -59,8 +63,6 @@
         }
       })
     );
-  } catch (_) {
-    // Ignore if CustomEvent or EIP-6963 is not supported.
-  }
+  } catch (_) {}
 })();
 

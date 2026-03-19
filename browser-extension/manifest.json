@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Privacy-first Zcash Orchard wallet (WASM core)",
   "action": {
-    "default_popup": "popup/index.html"
+    "default_popup": "popup/dist/index.html"
   },
   "background": {
     "service_worker": "background/service-worker.js",
