@@ -40,11 +40,7 @@ pub trait NoteScanning {
         block_height: u32,
     ) -> NozyResult<Vec<DecryptedNote>>;
 
-    fn compute_nullifier(
-        &self,
-        note: &DecryptedNote,
-        key: &[u8],
-    ) -> NozyResult<Vec<u8>>;
+    fn compute_nullifier(&self, note: &DecryptedNote, key: &[u8]) -> NozyResult<Vec<u8>>;
 }
 
 /// Output description for building a transaction.
@@ -78,11 +74,7 @@ pub trait TransactionProving {
         proving_key: &Self::ProvingKey,
     ) -> NozyResult<ProvedTransaction>;
 
-    fn estimate_proving_time_ms(
-        &self,
-        num_inputs: usize,
-        num_outputs: usize,
-    ) -> u64;
+    fn estimate_proving_time_ms(&self, num_inputs: usize, num_outputs: usize) -> u64;
 }
 
 /// Storage abstraction for platform-independent persistence.

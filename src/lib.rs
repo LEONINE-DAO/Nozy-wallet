@@ -2,7 +2,6 @@
 // WASM-safe modules (available on all targets)
 // ============================================================
 pub mod error;
-pub mod traits;
 pub mod groth16_prover_simple;
 pub mod hd_wallet;
 pub mod input_validation;
@@ -11,6 +10,7 @@ pub mod privacy;
 pub mod safe_display;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod secret_keys;
+pub mod traits;
 pub mod transactions;
 
 // ============================================================
