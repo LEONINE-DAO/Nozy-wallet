@@ -15,6 +15,24 @@ export type WalletStatus = {
   rpcEndpoint: string;
 };
 
+export type TxStateEntry = {
+  id: string;
+  txid: string | null;
+  state: "built" | "broadcast" | "pending" | "confirmed" | "failed";
+  origin: string;
+  recipientAddress: string;
+  amount: number;
+  fee: number | null;
+  memo: string;
+  createdAt: number;
+  updatedAt: number;
+  error: string | null;
+  blockHeight?: number | null;
+  rawTxHex?: string | null;
+  inputsUsed?: number;
+  inputMode?: "single" | "multi" | string;
+};
+
 export type PendingApproval = {
   id: string;
   kind: "sign" | "transaction";
@@ -106,6 +124,15 @@ export const extensionApi = {
       method: "wallet_reject_request",
       params: { id }
     }),
+  walletSetSessionPolicy: (autoLockMs: number) =>
+    sendMessage<{ autoLockMs: number }>({
+      method: "wallet_set_session_policy",
+      params: { autoLockMs }
+    }),
+  walletGetTransactions: () =>
+    sendMessage<{ txs: TxStateEntry[]; updatedAt: number }>({ method: "wallet_get_transactions" }),
+  walletRetryBroadcast: (id: string) =>
+    sendMessage<{ txid: string }>({ method: "wallet_retry_broadcast", params: { id } }),
   rpcSetEndpoint: (url: string) =>
     sendMessage<{ rpcEndpoint: string }>({
       method: "rpc_set_endpoint",
@@ -129,6 +156,17 @@ export const extensionApi = {
       chainId: string;
       rawTxHex: string;
       proving: string;
+      selected_notes_count?: number;
+      selected_notes_total_value?: number;
+      selected_notes?: Array<{
+        value: number;
+        cmx: string;
+        block_height: number;
+      }>;
+      selected_witnesses_count?: number;
+      inputs_used?: number;
+      input_mode?: "single" | "multi";
+      fee?: number;
     }>({
       method: "wallet_prove_transaction",
       params: tx
@@ -149,10 +187,15 @@ export const extensionApi = {
       expiresAt: number;
       payload: string;
     }>({ method: "mobile_sync_init_pairing" }),
-  mobileSyncConfirmPairing: (sessionId: string, deviceName: string, platform: string) =>
+  mobileSyncConfirmPairing: (
+    sessionId: string,
+    deviceName: string,
+    platform: string,
+    challengeSignature: string
+  ) =>
     sendMessage<MobileSyncDevice>({
       method: "mobile_sync_confirm_pairing",
-      params: { sessionId, deviceName, platform }
+      params: { sessionId, deviceName, platform, challengeSignature }
     }),
   mobileSyncUnpair: (deviceId: string) =>
     sendMessage<{ removed: boolean; deviceId: string }>({

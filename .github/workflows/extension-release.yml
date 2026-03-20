@@ -1,0 +1,50 @@
+name: extension-release-bundles
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Release version (example: 0.1.1)"
+        required: true
+        type: string
+
+jobs:
+  build-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: browser-extension/popup/package-lock.json
+      - name: Build popup
+        working-directory: browser-extension/popup
+        run: |
+          npm ci
+          npm run build
+      - name: Compose extension directory
+        run: |
+          mkdir -p dist/nozy-extension
+          cp browser-extension/manifest.json dist/nozy-extension/manifest.json
+          cp -r browser-extension/background dist/nozy-extension/background
+          rm -f dist/nozy-extension/background/*.test.mjs
+          cp -r browser-extension/content dist/nozy-extension/content
+          cp -r browser-extension/wasm dist/nozy-extension/wasm
+          cp -r browser-extension/popup/dist dist/nozy-extension/popup
+      - name: Package Chrome/Edge bundle
+        run: |
+          cd dist
+          zip -r "nozy-extension-chromium-${{ github.event.inputs.version }}.zip" nozy-extension
+      - name: Package Firefox bundle
+        run: |
+          cp dist/nozy-extension/manifest.json dist/nozy-extension/manifest.firefox.json
+          cd dist
+          zip -r "nozy-extension-firefox-${{ github.event.inputs.version }}.zip" nozy-extension
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nozy-extension-release-bundles
+          path: |
+            dist/nozy-extension-chromium-${{ github.event.inputs.version }}.zip
+            dist/nozy-extension-firefox-${{ github.event.inputs.version }}.zip
+

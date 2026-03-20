@@ -2,6 +2,8 @@
 
 **Monero-Level Privacy, Zcash Speed**
 
+> Delivery mode: extension-first. See `EXTENSION_FIRST_SCOPE.md` and `EXTENSION_BRANCH_WORKFLOW.md`.
+
 NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet **only supports shielded transactions** - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees.
 
 >  **Want to help build the future of private cryptocurrency?** Check out our **[Enhancement Roadmap](ENHANCEMENT_ROADMAP.md)** to see exciting features we're building, including **Desktop GUI**, **Mobile Apps**, **Hardware Wallet Support**, and more! We welcome contributors!

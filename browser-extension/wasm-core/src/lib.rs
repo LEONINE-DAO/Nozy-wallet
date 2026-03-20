@@ -32,7 +32,8 @@ pub struct WalletUnlockResult {
 #[derive(Serialize, Deserialize)]
 pub struct ProveOrchardTxResult {
     pub txid: String,
-    pub rawTxHex: String,
+    #[serde(rename = "rawTxHex")]
+    pub raw_tx_hex: String,
     pub bundle_actions: usize,
     pub proof_generated: bool,
 }
@@ -307,7 +308,7 @@ pub fn prove_orchard_transaction_dummy(
 
     let result = ProveOrchardTxResult {
         txid,
-        rawTxHex: String::new(),
+        raw_tx_hex: String::new(),
         bundle_actions,
         proof_generated: true,
     };
@@ -542,7 +543,7 @@ pub fn prove_orchard_transaction_spend_from_note(
 
     let result = ProveOrchardTxResult {
         txid,
-        rawTxHex: String::new(),
+        raw_tx_hex: String::new(),
         bundle_actions,
         proof_generated: true,
     };
@@ -555,7 +556,8 @@ pub fn prove_orchard_transaction_spend_from_note(
 #[derive(Serialize, Deserialize)]
 pub struct BuiltOrchardTxResult {
     pub txid: String,
-    pub rawTxHex: String,
+    #[serde(rename = "rawTxHex")]
+    pub raw_tx_hex: String,
     pub bundle_actions: usize,
     pub proof_generated: bool,
 }
@@ -681,15 +683,33 @@ pub fn build_orchard_v5_tx_from_note(
         target_height: u32,
     }
 
-    let witness: OrchardWitnessInput = serde_json::from_str(witness_json).map_err(|e| {
-        JsError::new(&format!("Invalid witness_json: {e}"))
-    })?;
+    let witnesses: Vec<OrchardWitnessInput> = match serde_json::from_str::<serde_json::Value>(witness_json)
+        .map_err(|e| JsError::new(&format!("Invalid witness_json: {e}")))? {
+        serde_json::Value::Array(_) => serde_json::from_str(witness_json)
+            .map_err(|e| JsError::new(&format!("Invalid witness_json array: {e}")))?,
+        _ => vec![serde_json::from_str(witness_json)
+            .map_err(|e| JsError::new(&format!("Invalid witness_json object: {e}")))?],
+    };
 
-    let spend_note: OrchardDecryptionResult = serde_json::from_str(spend_note_json).map_err(|e| {
-        JsError::new(&format!("Invalid spend_note_json: {e}"))
-    })?;
+    let spend_notes: Vec<OrchardDecryptionResult> = match serde_json::from_str::<serde_json::Value>(spend_note_json)
+        .map_err(|e| JsError::new(&format!("Invalid spend_note_json: {e}")))? {
+        serde_json::Value::Array(_) => serde_json::from_str(spend_note_json)
+            .map_err(|e| JsError::new(&format!("Invalid spend_note_json array: {e}")))?,
+        _ => vec![serde_json::from_str(spend_note_json)
+            .map_err(|e| JsError::new(&format!("Invalid spend_note_json object: {e}")))?],
+    };
 
-    let target_height_bh: BlockHeight = BlockHeight::from(witness.target_height);
+    if spend_notes.is_empty() {
+        return Err(JsError::new("No spend notes provided"));
+    }
+    if witnesses.is_empty() {
+        return Err(JsError::new("No witnesses provided"));
+    }
+    if spend_notes.len() != witnesses.len() {
+        return Err(JsError::new("Spend notes and witnesses length mismatch"));
+    }
+
+    let target_height_bh: BlockHeight = BlockHeight::from(witnesses[0].target_height);
 
     let (_network, ua) = UnifiedAddress::decode(recipient_address).map_err(|e| {
         JsError::new(&format!("Invalid recipient address: {e}"))
@@ -711,7 +731,8 @@ pub fn build_orchard_v5_tx_from_note(
         .into_option()
         .ok_or_else(|| JsError::new("Invalid Orchard receiver bytes"))?;
 
-    let spend_orchard_receiver_raw: [u8; 43] = spend_note
+    let first_spend_note = &spend_notes[0];
+    let spend_orchard_receiver_raw: [u8; 43] = first_spend_note
         .orchard_address_raw
         .as_slice()
         .try_into()
@@ -721,20 +742,8 @@ pub fn build_orchard_v5_tx_from_note(
         .into_option()
         .ok_or_else(|| JsError::new("Invalid spend note recipient bytes"))?;
 
-    let rho = Rho::from_bytes(&spend_note.rho)
-        .into_option()
-        .ok_or_else(|| JsError::new("Invalid spend note rho bytes"))?;
-
-    let rseed = RandomSeed::from_bytes(spend_note.rseed, &rho)
-        .into_option()
-        .ok_or_else(|| JsError::new("Invalid spend note rseed bytes"))?;
-
-    let note_value = NoteValue::from_raw(spend_note.value);
-    let note = Note::from_parts(note_recipient, note_value, rho, rseed)
-        .into_option()
-        .ok_or_else(|| JsError::new("Invalid spend note reconstruction"))?;
-
-    let anchor_bytes_vec = hex::decode(witness.anchor.trim_start_matches("0x"))
+    let first_witness = &witnesses[0];
+    let anchor_bytes_vec = hex::decode(first_witness.anchor.trim_start_matches("0x"))
         .map_err(|e| JsError::new(&format!("Invalid witness anchor hex: {e}")))?;
 
     if anchor_bytes_vec.len() != 32 {
@@ -749,41 +758,6 @@ pub fn build_orchard_v5_tx_from_note(
     let anchor = Anchor::from_bytes(anchor_bytes)
         .into_option()
         .ok_or_else(|| JsError::new("Invalid witness anchor bytes"))?;
-
-    if witness.auth_path.len() != 32 {
-        return Err(JsError::new("Witness auth_path must have 32 elements"));
-    }
-
-    let merkle_hashes_vec: Vec<MerkleHashOrchard> = witness
-        .auth_path
-        .iter()
-        .enumerate()
-        .map(|(i, h)| {
-            let bytes_vec = hex::decode(h.trim_start_matches("0x")).map_err(|e| {
-                JsError::new(&format!("Invalid auth_path[{}] hex: {}", i, e))
-            })?;
-            if bytes_vec.len() != 32 {
-                return Err(JsError::new(&format!(
-                    "auth_path[{}] must be 32 bytes",
-                    i
-                )));
-            }
-
-            let arr: [u8; 32] = bytes_vec.as_slice().try_into().map_err(|_| {
-                JsError::new(&format!("auth_path[{}] length mismatch", i))
-            })?;
-
-            MerkleHashOrchard::from_bytes(&arr)
-                .into_option()
-                .ok_or_else(|| JsError::new(&format!("Invalid merkle hash bytes at {}", i)))
-        })
-        .collect::<Result<Vec<_>, JsError>>()?;
-
-    let merkle_hashes: [MerkleHashOrchard; 32] = merkle_hashes_vec
-        .try_into()
-        .map_err(|_| JsError::new("auth_path conversion to fixed array failed"))?;
-
-    let merkle_path = MerklePath::from_parts(witness.position, merkle_hashes);
 
     let mnemonic: Mnemonic = mnemonic_str
         .parse()
@@ -814,22 +788,90 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|_| JsError::new("Invalid fee amount"))?;
     let fee_rule = FixedFeeRule { fee };
 
-    // Add Orchard spend + outputs.
+    // Add Orchard spends + outputs.
     let mut builder = tx_builder;
-    builder
-        .add_orchard_spend::<core::convert::Infallible>(
-            fvk,
-            note,
-            merkle_path,
-        )
-        .map_err(|e| JsError::new(&format!("Failed to add Orchard spend: {e:?}")))?;
+    let mut total_input_value: u64 = 0;
+    for (idx, (spend_note, witness)) in spend_notes.iter().zip(witnesses.iter()).enumerate() {
+        let witness_anchor_bytes_vec = hex::decode(witness.anchor.trim_start_matches("0x"))
+            .map_err(|e| JsError::new(&format!("Invalid witness anchor hex at {idx}: {e}")))?;
+        if witness_anchor_bytes_vec.len() != 32 {
+            return Err(JsError::new(&format!("Witness anchor must be 32 bytes at index {idx}")));
+        }
+        let witness_anchor_bytes: [u8; 32] = witness_anchor_bytes_vec
+            .as_slice()
+            .try_into()
+            .map_err(|_| JsError::new(&format!("Witness anchor length mismatch at index {idx}")))?;
+        if witness_anchor_bytes != anchor_bytes {
+            return Err(JsError::new("All spend witnesses must share the same Orchard anchor"));
+        }
+
+        let spend_orchard_receiver_raw: [u8; 43] = spend_note
+            .orchard_address_raw
+            .as_slice()
+            .try_into()
+            .map_err(|_| JsError::new(&format!("Invalid spend note receiver bytes at index {idx}")))?;
+        let spend_note_recipient = OrchardAddress::from_raw_address_bytes(&spend_orchard_receiver_raw)
+            .into_option()
+            .ok_or_else(|| JsError::new(&format!("Invalid spend note recipient at index {idx}")))?;
+
+        let rho = Rho::from_bytes(&spend_note.rho)
+            .into_option()
+            .ok_or_else(|| JsError::new(&format!("Invalid spend note rho bytes at index {idx}")))?;
+        let rseed = RandomSeed::from_bytes(spend_note.rseed, &rho)
+            .into_option()
+            .ok_or_else(|| JsError::new(&format!("Invalid spend note rseed bytes at index {idx}")))?;
+        let note_value = NoteValue::from_raw(spend_note.value);
+        let note = Note::from_parts(spend_note_recipient, note_value, rho, rseed)
+            .into_option()
+            .ok_or_else(|| JsError::new(&format!("Invalid spend note reconstruction at index {idx}")))?;
+
+        if witness.auth_path.len() != 32 {
+            return Err(JsError::new(&format!("Witness auth_path must have 32 elements at index {idx}")));
+        }
+        let merkle_hashes_vec: Vec<MerkleHashOrchard> = witness
+            .auth_path
+            .iter()
+            .enumerate()
+            .map(|(i, h)| {
+                let bytes_vec = hex::decode(h.trim_start_matches("0x")).map_err(|e| {
+                    JsError::new(&format!("Invalid auth_path[{}] hex at spend {}: {}", i, idx, e))
+                })?;
+                if bytes_vec.len() != 32 {
+                    return Err(JsError::new(&format!(
+                        "auth_path[{}] must be 32 bytes at spend {}",
+                        i, idx
+                    )));
+                }
+                let arr: [u8; 32] = bytes_vec.as_slice().try_into().map_err(|_| {
+                    JsError::new(&format!("auth_path[{}] length mismatch at spend {}", i, idx))
+                })?;
+                MerkleHashOrchard::from_bytes(&arr)
+                    .into_option()
+                    .ok_or_else(|| JsError::new(&format!("Invalid merkle hash bytes at {} for spend {}", i, idx)))
+            })
+            .collect::<Result<Vec<_>, JsError>>()?;
+        let merkle_hashes: [MerkleHashOrchard; 32] = merkle_hashes_vec
+            .try_into()
+            .map_err(|_| JsError::new("auth_path conversion to fixed array failed"))?;
+        let merkle_path = MerklePath::from_parts(witness.position, merkle_hashes);
+
+        builder
+            .add_orchard_spend::<core::convert::Infallible>(
+                fvk.clone(),
+                note,
+                merkle_path,
+            )
+            .map_err(|e| JsError::new(&format!("Failed to add Orchard spend at index {idx}: {e:?}")))?;
+
+        total_input_value = total_input_value.saturating_add(spend_note.value);
+    }
 
     let recipient_value = amount_zatoshis;
     let total_required = recipient_value.saturating_add(fee_zatoshis);
-    if spend_note.value < total_required {
+    if total_input_value < total_required {
         return Err(JsError::new(&format!(
-            "Insufficient note value for amount+fee: note={} required={}",
-            spend_note.value, total_required
+            "Insufficient input value for amount+fee: inputs={} required={}",
+            total_input_value, total_required
         )));
     }
     let memo_bytes = MemoBytes::from_bytes(memo.as_bytes()).map_err(|e| {
@@ -845,7 +887,7 @@ pub fn build_orchard_v5_tx_from_note(
         )
         .map_err(|e| JsError::new(&format!("Failed to add Orchard output: {e:?}")))?;
 
-    let change_amount = spend_note.value.saturating_sub(total_required);
+    let change_amount = total_input_value.saturating_sub(total_required);
     if change_amount > 0 {
         builder
             .add_orchard_output::<core::convert::Infallible>(
@@ -859,7 +901,7 @@ pub fn build_orchard_v5_tx_from_note(
             })?;
     }
 
-    let mut rng = OsRng;
+    let rng = OsRng;
     let spend_prover = DummySaplingSpendProver;
     let output_prover = DummySaplingOutputProver;
 
@@ -886,7 +928,7 @@ pub fn build_orchard_v5_tx_from_note(
 
     let result = BuiltOrchardTxResult {
         txid,
-        rawTxHex: raw_tx_hex,
+        raw_tx_hex,
         bundle_actions: 0,
         proof_generated: true,
     };
@@ -962,4 +1004,93 @@ fn decrypt_data(encrypted: &[u8], password: &str) -> Result<Vec<u8>, JsError> {
 
     cipher.decrypt(nonce, ciphertext)
         .map_err(|_| JsError::new("Decryption failed: wrong password or corrupted data"))
+}
+
+#[cfg(test)]
+mod multi_input_parsing_tests {
+    use super::*;
+    use nozy::hd_wallet::OrchardDecryptionResult;
+
+    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
+    struct OrchardWitnessInputTest {
+        anchor: String,
+        position: u32,
+        auth_path: Vec<String>,
+        target_height: u32,
+    }
+
+    fn parse_payloads(
+        spend_note_json: &str,
+        witness_json: &str,
+    ) -> Result<(Vec<OrchardDecryptionResult>, Vec<OrchardWitnessInputTest>), String> {
+        let witnesses: Vec<OrchardWitnessInputTest> = match serde_json::from_str::<serde_json::Value>(witness_json)
+            .map_err(|e| format!("Invalid witness_json: {e}"))? {
+            serde_json::Value::Array(_) => serde_json::from_str(witness_json)
+                .map_err(|e| format!("Invalid witness_json array: {e}"))?,
+            _ => vec![serde_json::from_str(witness_json)
+                .map_err(|e| format!("Invalid witness_json object: {e}"))?],
+        };
+
+        let notes: Vec<OrchardDecryptionResult> = match serde_json::from_str::<serde_json::Value>(spend_note_json)
+            .map_err(|e| format!("Invalid spend_note_json: {e}"))? {
+            serde_json::Value::Array(_) => serde_json::from_str(spend_note_json)
+                .map_err(|e| format!("Invalid spend_note_json array: {e}"))?,
+            _ => vec![serde_json::from_str(spend_note_json)
+                .map_err(|e| format!("Invalid spend_note_json object: {e}"))?],
+        };
+
+        if notes.len() != witnesses.len() {
+            return Err("Spend notes and witnesses length mismatch".to_string());
+        }
+        Ok((notes, witnesses))
+    }
+
+    fn sample_note_json() -> String {
+        serde_json::json!({
+            "value": 12000u64,
+            "address": "u1sample",
+            "cmx": vec![0; 32],
+            "rho": vec![0; 32],
+            "rseed": vec![0; 32],
+            "orchard_address_raw": vec![0; 43],
+            "nullifier": vec![0; 32],
+            "block_height": 1,
+            "txid": "abc"
+        })
+        .to_string()
+    }
+
+    fn sample_witness_json() -> String {
+        serde_json::json!({
+            "anchor": format!("{:064x}", 0),
+            "position": 0,
+            "auth_path": vec![format!("{:064x}", 0); 32],
+            "target_height": 1
+        })
+        .to_string()
+    }
+
+    #[test]
+    fn parses_single_object_payloads() {
+        let parsed = parse_payloads(&sample_note_json(), &sample_witness_json()).unwrap();
+        assert_eq!(parsed.0.len(), 1);
+        assert_eq!(parsed.1.len(), 1);
+    }
+
+    #[test]
+    fn parses_array_payloads() {
+        let notes = format!("[{},{}]", sample_note_json(), sample_note_json());
+        let witnesses = format!("[{},{}]", sample_witness_json(), sample_witness_json());
+        let parsed = parse_payloads(&notes, &witnesses).unwrap();
+        assert_eq!(parsed.0.len(), 2);
+        assert_eq!(parsed.1.len(), 2);
+    }
+
+    #[test]
+    fn rejects_length_mismatch() {
+        let notes = format!("[{},{}]", sample_note_json(), sample_note_json());
+        let err = parse_payloads(&notes, &sample_witness_json()).unwrap_err();
+        assert!(err.contains("length mismatch"));
+    }
 }

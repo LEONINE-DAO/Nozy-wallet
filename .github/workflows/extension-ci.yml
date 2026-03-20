@@ -1,0 +1,84 @@
+name: extension-ci
+
+on:
+  pull_request:
+    paths:
+      - "browser-extension/**"
+      - ".github/workflows/extension-ci.yml"
+  push:
+    branches: [master]
+    paths:
+      - "browser-extension/**"
+      - ".github/workflows/extension-ci.yml"
+
+jobs:
+  wasm-core-check:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-extension/wasm-core
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - name: Host compile check
+        run: cargo check
+      - name: WASM target compile check
+        run: cargo check --target wasm32-unknown-unknown
+      - name: Worker utility tests
+        working-directory: .
+        run: node --test browser-extension/background/tx-utils.test.mjs
+
+  popup-quality:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: browser-extension/popup
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: browser-extension/popup/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - run: npm audit --audit-level=moderate
+
+  package-smoke:
+    runs-on: ubuntu-latest
+    needs:
+      - popup-quality
+      - wasm-core-check
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: browser-extension/popup/package-lock.json
+      - name: Build popup
+        working-directory: browser-extension/popup
+        run: |
+          npm ci
+          npm run build
+      - name: Build extension bundle
+        run: |
+          mkdir -p dist/nozy-extension
+          cp browser-extension/manifest.json dist/nozy-extension/manifest.json
+          cp -r browser-extension/background dist/nozy-extension/background
+          rm -f dist/nozy-extension/background/*.test.mjs
+          cp -r browser-extension/content dist/nozy-extension/content
+          cp -r browser-extension/wasm dist/nozy-extension/wasm
+          cp -r browser-extension/popup/dist dist/nozy-extension/popup
+      - name: Validate manifest exists
+        run: test -f dist/nozy-extension/manifest.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nozy-extension-smoke
+          path: dist/nozy-extension
+

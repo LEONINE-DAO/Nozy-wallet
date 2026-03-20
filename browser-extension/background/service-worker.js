@@ -2,13 +2,18 @@ import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
 const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
+const TX_STATE_KEY = "nozy_tx_state_v1";
+const SESSION_POLICY_KEY = "nozy_session_policy_v1";
+const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 
 let wasmReady;
 let session = {
   unlocked: false,
   mnemonic: null,
   address: null,
-  rpcEndpoint: "http://127.0.0.1:8232"
+  rpcEndpoint: "http://127.0.0.1:8232",
+  autoLockMs: DEFAULT_AUTO_LOCK_MS,
+  lastActivityAt: 0
 };
 
 const pendingApprovals = new Map();
@@ -16,6 +21,51 @@ const providerRequestResolvers = new Map();
 let worker;
 let workerSeq = 0;
 const workerPending = new Map();
+
+function nowMs() {
+  return Date.now();
+}
+
+function touchSession() {
+  session.lastActivityAt = nowMs();
+}
+
+function isLikelyUnifiedOrchardAddress(value) {
+  return typeof value === "string" && /^u1[0-9a-z]{20,}$/i.test(value);
+}
+
+function validateMemo(memo) {
+  if (typeof memo !== "string") throw new Error("Memo must be a string.");
+  const bytes = utf8Encode(memo);
+  if (bytes.length > 512) {
+    throw new Error(`Memo too long: ${bytes.length} bytes (max 512).`);
+  }
+  return memo;
+}
+
+function validateRecipientAddress(addr) {
+  if (!isLikelyUnifiedOrchardAddress(addr)) {
+    throw new Error("Invalid recipient address. Expected a unified shielded address (u1...).");
+  }
+  return addr;
+}
+
+function assessOriginRisk(origin) {
+  const value = String(origin || "");
+  if (!value) return "high";
+  if (value.startsWith("https://")) return "low";
+  if (value.startsWith("http://localhost") || value.startsWith("http://127.0.0.1")) return "medium";
+  return "high";
+}
+
+function validateRequestEnvelope(msg) {
+  if (!msg || typeof msg !== "object") throw new Error("Invalid request envelope.");
+  if (msg.type !== "NOZY_REQUEST") throw new Error("Unsupported message type.");
+  if (typeof msg.method !== "string" || !msg.method) throw new Error("Missing request method.");
+  if (msg.params !== undefined && (msg.params === null || typeof msg.params !== "object")) {
+    throw new Error("Invalid request params.");
+  }
+}
 
 async function ensureWasm() {
   if (!wasmReady) {
@@ -90,14 +140,49 @@ function parseTxForOrchardV5(tx) {
   const amount = parseNumberMaybeHex(value);
   const memoStr = typeof memo === "string" ? memo : "";
 
-  if (!recipientAddress) {
-    throw new Error("Missing transaction recipient (expected tx.to)");
-  }
+  validateRecipientAddress(recipientAddress);
   if (!Number.isFinite(amount) || amount <= 0) {
     throw new Error("Missing/invalid transaction amount (expected tx.value in zats)");
   }
+  validateMemo(memoStr);
 
   return { recipientAddress, amount, memo: memoStr };
+}
+
+function parseFeeToZats(v) {
+  if (typeof v !== "number" || !Number.isFinite(v)) return null;
+  if (v < 0) return null;
+  const zats = Math.round(v * 100_000_000);
+  return Number.isFinite(zats) ? zats : null;
+}
+
+async function buildTxPreflight(tx) {
+  const { recipientAddress, amount, memo } = parseTxForOrchardV5(tx);
+  const fee = await estimateFeeZats();
+  const proving = await callWorker("prove_transaction", {
+    recipientAddress,
+    walletAddress: session.address,
+    mnemonic: session.mnemonic,
+    rpcEndpoint: session.rpcEndpoint,
+    amount,
+    fee,
+    memo
+  });
+  if (!proving?.rawTxHex) {
+    throw new Error("Transaction preflight did not return rawTxHex");
+  }
+  return {
+    recipientAddress,
+    amount,
+    memo,
+    fee,
+    txid: String(proving.txid || ""),
+    rawTxHex: String(proving.rawTxHex || ""),
+    inputs_used: Number(proving.inputs_used ?? 0),
+    input_mode: String(
+      proving.input_mode ?? (Number(proving.inputs_used ?? 0) <= 1 ? "single" : "multi")
+    )
+  };
 }
 
 async function waitForTxConfirmation({ rpcEndpoint, txid, timeoutMs = 60_000, pollMs = 2_500 }) {
@@ -127,6 +212,74 @@ function storageSet(data) {
   return new Promise((resolve) => {
     chrome.storage.local.set(data, () => resolve());
   });
+}
+
+async function loadSessionPolicy() {
+  const state = await storageGet(SESSION_POLICY_KEY);
+  return state || { autoLockMs: DEFAULT_AUTO_LOCK_MS };
+}
+
+async function saveSessionPolicy(state) {
+  await storageSet({ [SESSION_POLICY_KEY]: state });
+}
+
+async function loadTxState() {
+  const state = await storageGet(TX_STATE_KEY);
+  return (
+    state || {
+      txs: [],
+      updatedAt: 0
+    }
+  );
+}
+
+async function saveTxState(state) {
+  await storageSet({ [TX_STATE_KEY]: state });
+}
+
+async function appendTxState(entry) {
+  const state = await loadTxState();
+  const txs = Array.isArray(state.txs) ? state.txs : [];
+  txs.push(entry);
+  await saveTxState({ txs, updatedAt: nowMs() });
+}
+
+async function patchTxState(txid, patch) {
+  const state = await loadTxState();
+  const txs = Array.isArray(state.txs) ? state.txs : [];
+  const next = txs.map((tx) => (tx.txid === txid ? { ...tx, ...patch, updatedAt: nowMs() } : tx));
+  await saveTxState({ txs: next, updatedAt: nowMs() });
+}
+
+async function patchTxStateById(id, patch) {
+  const state = await loadTxState();
+  const txs = Array.isArray(state.txs) ? state.txs : [];
+  const next = txs.map((tx) => (tx.id === id ? { ...tx, ...patch, updatedAt: nowMs() } : tx));
+  await saveTxState({ txs: next, updatedAt: nowMs() });
+}
+
+async function retryBroadcastById(id) {
+  const state = await loadTxState();
+  const txs = Array.isArray(state.txs) ? state.txs : [];
+  const tx = txs.find((t) => t.id === id);
+  if (!tx) throw new Error("Transaction record not found.");
+  if (!tx.rawTxHex) throw new Error("No raw transaction available for retry.");
+  const broadcastResult = await rpcCallWithRetry("sendrawtransaction", [tx.rawTxHex], {
+    retries: 2,
+    baseDelayMs: 500
+  });
+  const txid =
+    broadcastResult?.txid ??
+    broadcastResult?.result?.txid ??
+    broadcastResult?.result ??
+    broadcastResult ??
+    tx.txid;
+  await patchTxStateById(id, {
+    txid: String(txid),
+    state: "broadcast",
+    error: null
+  });
+  return String(txid);
 }
 
 async function loadWalletState() {
@@ -179,6 +332,7 @@ async function mobileSyncInitPairing(params = {}) {
 
   const payload = JSON.stringify({
     v: 1,
+    sigAlg: "nozy-sign-message-v1",
     sessionId,
     walletAddress: session.address,
     challenge,
@@ -207,6 +361,7 @@ async function mobileSyncConfirmPairing(params = {}) {
   const sessionId = String(params.sessionId ?? "");
   const deviceName = String(params.deviceName ?? "Nozy Mobile");
   const platform = String(params.platform ?? "unknown");
+  const challengeSignature = String(params.challengeSignature ?? "");
   const now = Date.now();
 
   const state = await loadMobileSyncState();
@@ -214,12 +369,20 @@ async function mobileSyncConfirmPairing(params = {}) {
   if (!active) throw new Error("No active pairing session.");
   if (active.sessionId !== sessionId) throw new Error("Pairing session mismatch.");
   if (active.expiresAt < now) throw new Error("Pairing session expired.");
+  if (!challengeSignature) throw new Error("Missing challenge signature.");
+
+  // Seed-on-device handshake: mobile must prove it can sign the challenge.
+  const expectedSignature = wasm.sign_message(session.mnemonic, active.challenge);
+  if (challengeSignature !== expectedSignature) {
+    throw new Error("Invalid pairing signature for challenge.");
+  }
 
   const pairedDevice = {
     id: `dev_${randomHex(10)}`,
     name: deviceName,
     platform,
     sessionId,
+    signaturePrefix: challengeSignature.slice(0, 12),
     pairedAt: now,
     status: "paired"
   };
@@ -306,6 +469,7 @@ async function walletCreate(password) {
   session.unlocked = true;
   session.mnemonic = mnemonic;
   session.address = address;
+  touchSession();
 
   return { address };
 }
@@ -328,6 +492,7 @@ async function walletRestore(mnemonic, password) {
   session.unlocked = true;
   session.mnemonic = mnemonic;
   session.address = address;
+  touchSession();
 
   return { address };
 }
@@ -350,6 +515,7 @@ async function walletUnlock(password) {
   session.mnemonic = mnemonic;
   session.address = address;
   session.rpcEndpoint = state.rpcEndpoint || session.rpcEndpoint;
+  touchSession();
 
   return { address };
 }
@@ -357,6 +523,7 @@ async function walletUnlock(password) {
 function walletLock() {
   session.unlocked = false;
   session.mnemonic = null;
+  session.address = null;
   return true;
 }
 
@@ -372,6 +539,7 @@ async function getWalletStatus() {
 
 async function getAccounts() {
   if (!session.unlocked || !session.address) return [];
+  touchSession();
   return [session.address];
 }
 
@@ -380,6 +548,14 @@ async function requestApproval(kind, payload) {
   const approval = { id, kind, payload, createdAt: Date.now() };
   pendingApprovals.set(id, approval);
   return approval;
+}
+
+async function ensureSessionInitialized() {
+  const wallet = (await loadWalletState()) || {};
+  session.rpcEndpoint = wallet.rpcEndpoint || session.rpcEndpoint;
+  const policy = await loadSessionPolicy();
+  session.autoLockMs = Number(policy.autoLockMs) || DEFAULT_AUTO_LOCK_MS;
+  if (!session.lastActivityAt) touchSession();
 }
 
 async function rpcCall(method, params = []) {
@@ -400,14 +576,57 @@ async function rpcCall(method, params = []) {
   return body.result;
 }
 
+async function rpcCallWithRetry(method, params = [], opts = {}) {
+  const retries = Number.isFinite(opts.retries) ? opts.retries : 3;
+  const baseDelayMs = Number.isFinite(opts.baseDelayMs) ? opts.baseDelayMs : 250;
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      return await rpcCall(method, params);
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+      }
+    }
+  }
+  throw lastErr || new Error(`RPC ${method} failed`);
+}
+
+async function estimateFeeZats() {
+  try {
+    const feeResult = await rpcCallWithRetry("estimatefee", [1], { retries: 1, baseDelayMs: 200 });
+    const fromRoot = parseFeeToZats(feeResult);
+    const fromObj = parseFeeToZats(feeResult?.feerate);
+    const candidate = fromRoot ?? fromObj;
+    if (candidate && candidate > 0) {
+      return Math.max(1_000, Math.min(candidate, 250_000));
+    }
+  } catch (_) {
+    // ignore and fallback
+  }
+  return 10_000;
+}
+
+setInterval(() => {
+  if (!session.unlocked) return;
+  if (!session.lastActivityAt) return;
+  if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
+    walletLock();
+  }
+}, 20_000);
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== "NOZY_REQUEST") return;
 
   (async () => {
     try {
+      validateRequestEnvelope(msg);
+      await ensureSessionInitialized();
       await ensureWasm();
       const method = msg.method;
       const params = msg.params ?? {};
+      touchSession();
 
       // Popup/UI control methods.
       switch (method) {
@@ -425,6 +644,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         case "wallet_status":
           sendResponse(ok(await getWalletStatus()));
+          return;
+        case "wallet_set_session_policy": {
+          const autoLockMs = Number(params.autoLockMs ?? DEFAULT_AUTO_LOCK_MS);
+          const bounded = Math.max(60_000, Math.min(autoLockMs, 24 * 60 * 60 * 1000));
+          session.autoLockMs = bounded;
+          await saveSessionPolicy({ autoLockMs: bounded });
+          sendResponse(ok({ autoLockMs: bounded }));
+          return;
+        }
+        case "wallet_get_transactions":
+          sendResponse(ok(await loadTxState()));
+          return;
+        case "wallet_retry_broadcast":
+          sendResponse(ok({ txid: await retryBroadcastById(String(params.id ?? "")) }));
           return;
         case "wallet_generate_address":
           if (!session.unlocked || !session.mnemonic) throw new Error("Wallet is locked");
@@ -458,24 +691,39 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
                 if (approval.kind === "transaction") {
                   const tx = approval.payload?.tx ?? {};
-                  const { recipientAddress, amount, memo } = parseTxForOrchardV5(tx);
-
-                  const proving = await callWorker("prove_transaction", {
-                    recipientAddress,
-                    walletAddress: session.address,
-                    mnemonic: session.mnemonic,
-                    rpcEndpoint: session.rpcEndpoint,
-                    amount,
-                    memo
-                  });
-
+                  const createdAt = nowMs();
+                  let proving = approval.payload?.preflight ?? null;
+                  if (!proving?.rawTxHex) {
+                    proving = await buildTxPreflight(tx);
+                  }
                   if (!proving?.rawTxHex) {
                     throw new Error("Transaction proving did not return rawTxHex");
                   }
 
-                  const broadcastResult = await rpcCall("sendrawtransaction", [
+                  const txStateId = crypto.randomUUID();
+                  await appendTxState({
+                    id: txStateId,
+                    txid: String(proving?.txid || ""),
+                    state: "built",
+                    origin: String(approval.payload?.origin ?? ""),
+                    recipientAddress: String(proving.recipientAddress),
+                    amount: Number(proving.amount),
+                    fee: Number(proving.fee),
+                    memo: String(proving.memo),
+                    inputsUsed: Number(proving?.inputs_used ?? 0),
+                    inputMode: String(
+                      proving?.input_mode ??
+                        (Number(proving?.inputs_used ?? 0) <= 1 ? "single" : "multi")
+                    ),
+                    rawTxHex: proving.rawTxHex,
+                    createdAt,
+                    updatedAt: createdAt,
+                    error: null
+                  });
+
+                  const broadcastResult = await rpcCallWithRetry("sendrawtransaction", [
                     proving.rawTxHex
-                  ]);
+                  ], { retries: 3, baseDelayMs: 400 });
 
                   const txid =
                     broadcastResult?.txid ??
@@ -483,12 +731,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                     broadcastResult?.result ??
                     broadcastResult ??
                     proving.txid;
+                  await patchTxStateById(txStateId, {
+                    txid: String(txid),
+                    state: "broadcast",
+                    error: null
+                  });
 
                   const confirmation = await waitForTxConfirmation({
                     rpcEndpoint: session.rpcEndpoint,
                     txid: String(txid),
                     timeoutMs: 120_000,
                     pollMs: 2_000
+                  });
+                  await patchTxStateById(txStateId, {
+                    txid: String(txid),
+                    state: confirmation.confirmed ? "confirmed" : "pending",
+                    blockHeight: confirmation.blockHeight ?? null
                   });
 
                   resolver.sendResponse(ok(String(txid)));
@@ -497,7 +755,52 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
                 resolver.sendResponse(fail(`Unsupported approval kind: ${approval.kind}`));
               } catch (e) {
-                resolver.sendResponse(fail(e?.message ?? "Failed to fulfill approved request"));
+                const errMsg = e?.message ?? "Failed to fulfill approved request";
+                if (approval?.kind === "transaction") {
+                  const existingBuiltId = await (async () => {
+                    const state = await loadTxState();
+                    const txs = Array.isArray(state.txs) ? state.txs : [];
+                    const candidate = txs
+                      .slice()
+                      .reverse()
+                      .find(
+                        (t) =>
+                          t.state === "built" &&
+                          t.origin === String(approval.payload?.origin ?? "") &&
+                          t.updatedAt >= nowMs() - 5 * 60 * 1000
+                      );
+                    return candidate?.id || null;
+                  })();
+                  if (existingBuiltId) {
+                    await patchTxStateById(existingBuiltId, {
+                      state: "failed",
+                      error: errMsg
+                    });
+                  } else {
+                    await appendTxState({
+                    id: crypto.randomUUID(),
+                    txid: null,
+                    state: "failed",
+                    origin: String(approval.payload?.origin ?? ""),
+                    recipientAddress: String(approval.payload?.tx?.to ?? ""),
+                    amount: parseNumberMaybeHex(approval.payload?.tx?.value ?? approval.payload?.tx?.amount) ?? 0,
+                    fee: null,
+                    memo: String(approval.payload?.tx?.memo ?? ""),
+                    inputsUsed: Number(approval.payload?.preflight?.inputs_used ?? 0),
+                    inputMode: String(
+                      approval.payload?.preflight?.input_mode ??
+                        (Number(approval.payload?.preflight?.inputs_used ?? 0) <= 1
+                          ? "single"
+                          : "multi")
+                    ),
+                    rawTxHex: null,
+                    createdAt: nowMs(),
+                    updatedAt: nowMs(),
+                    error: errMsg
+                  });
+                  }
+                }
+                resolver.sendResponse(fail(errMsg));
               }
             })();
           }
@@ -524,15 +827,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(
             ok({
               endpoint: session.rpcEndpoint,
-              connected: !!(await rpcCall("getblockcount", []))
+              connected: !!(await rpcCallWithRetry("getblockcount", [], { retries: 1 }))
             })
           );
           return;
         case "rpc_get_block_count":
-          sendResponse(ok(await rpcCall("getblockcount", [])));
+          sendResponse(ok(await rpcCallWithRetry("getblockcount", [])));
           return;
         case "rpc_get_block":
-          sendResponse(ok(await rpcCall("getblock", [params.height])));
+          sendResponse(ok(await rpcCallWithRetry("getblock", [params.height])));
           return;
         case "wallet_scan_notes":
           if (!session.unlocked || !session.mnemonic || !session.address) {
@@ -589,6 +892,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "zcash_chainId":
           sendResponse(ok(wasm.get_zcash_chain_id()));
           return;
+        case "eth_getBalance":
+          sendResponse(ok("0x0"));
+          return;
+        case "wallet_watchAsset":
+          sendResponse(ok(false));
+          return;
         case "eth_accounts":
         case "zcash_accounts":
           sendResponse(ok(await getAccounts()));
@@ -614,10 +923,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "eth_sendTransaction":
         case "zcash_sendTransaction": {
           if (!session.unlocked) throw new Error("Unlock wallet first.");
+          const origin = String(msg.origin || "");
+          const txPayload = params?.tx || params?.[0] || params;
+          let preflight = null;
+          let preflightError = null;
+          try {
+            preflight = await buildTxPreflight(txPayload);
+          } catch (e) {
+            preflightError = e?.message ?? "Transaction preflight failed";
+          }
           const approval = await requestApproval("transaction", {
             method,
-            origin: msg.origin || "",
-            tx: params?.tx || params?.[0] || params
+            origin,
+            risk: assessOriginRisk(origin),
+            tx: txPayload,
+            preflight,
+            preflightError
           });
           providerRequestResolvers.set(approval.id, { sendResponse });
           return;

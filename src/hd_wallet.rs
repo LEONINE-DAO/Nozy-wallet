@@ -5,7 +5,7 @@ use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use bip32::{DerivationPath, XPrv};
 use bip39::Mnemonic;
 use rand::RngCore;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(feature = "native")]
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
 
@@ -206,7 +206,7 @@ impl HDWallet {
         Ok(master_key)
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     pub fn derive_private_key_for_note(
         &self,
         note: &crate::notes::OrchardNote,
@@ -289,7 +289,7 @@ impl HDWallet {
         }
     }
 
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(feature = "native")]
     pub fn decrypt_orchard_action(
         &self,
         action: &crate::notes::OrchardActionData,

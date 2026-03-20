@@ -1,4 +1,5 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
+import { rpcFallbackWithRequester, selectNotesForSpend } from "./tx-utils.js";
 
 let ready;
 async function ensureReady() {
@@ -32,6 +33,43 @@ function bytesToHex(bytes) {
   return Array.from(arr, (b) => Number(b) & 0xff).map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
+async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
+  const retries = Number.isFinite(opts.retries) ? opts.retries : 2;
+  const baseDelayMs = Number.isFinite(opts.baseDelayMs) ? opts.baseDelayMs : 200;
+  let lastErr;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const resp = await fetch(rpcEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method,
+          params
+        })
+      });
+      if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
+      const body = await resp.json();
+      if (body?.error) throw new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
+      return body?.result ?? null;
+    } catch (err) {
+      lastErr = err;
+      if (attempt < retries) {
+        await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+      }
+    }
+  }
+  throw lastErr || new Error(`RPC ${method} failed`);
+}
+
+async function rpcFallback(rpcEndpoint, attempts) {
+  return rpcFallbackWithRequester(
+    (at) => rpcRequest(rpcEndpoint, at.method, at.params ?? [], at.opts ?? {}),
+    attempts
+  );
+}
+
 function normalizeAction(raw) {
   const nullifier = toByteArray(raw?.nullifier ?? raw?.nf ?? []);
   const cmx = toByteArray(raw?.cmx ?? raw?.note_commitment ?? []);
@@ -55,6 +93,50 @@ function extractActionsFromBlockJson(block) {
     }
   }
   return actions;
+}
+
+async function fetchOrchardAnchor(rpcEndpoint, targetHeight) {
+  const orchardTree = await rpcFallback(rpcEndpoint, [
+    { method: "z_getorchardtree", params: [targetHeight] },
+    { method: "z_gettreestate", params: [targetHeight] }
+  ]);
+  const anchorHex = String(orchardTree?.anchor ?? orchardTree?.orchardTree?.anchor ?? "");
+  if (!anchorHex || anchorHex.length < 64) {
+    throw new Error("RPC did not return a valid Orchard anchor.");
+  }
+  return anchorHex;
+}
+
+async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetHeight) {
+  const cmxHex = bytesToHex(selectedNote?.note?.cmx ?? []);
+  if (!cmxHex || cmxHex.length !== 64) {
+    throw new Error(`Selected note cmx hex invalid (len=${cmxHex.length}).`);
+  }
+
+  const posResp = await rpcFallback(rpcEndpoint, [
+    { method: "z_findnoteposition", params: [cmxHex] },
+    { method: "z_findnoteposition", params: [cmxHex, selectedNote.height] }
+  ]);
+  const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
+  if (!Number.isFinite(position) || position < 0) {
+    throw new Error("z_findnoteposition returned invalid position.");
+  }
+
+  const authResp = await rpcFallback(rpcEndpoint, [
+    { method: "z_getauthpath", params: [position, anchorHex] },
+    { method: "z_getauthpath", params: [position] }
+  ]);
+  const authPathHexes = authResp?.auth_path ?? authResp?.authPath ?? authResp?.path ?? [];
+  if (!Array.isArray(authPathHexes) || authPathHexes.length !== 32) {
+    throw new Error(`z_getauthpath returned unexpected auth_path length: ${authPathHexes.length}`);
+  }
+
+  return {
+    anchor: anchorHex,
+    position: position >>> 0,
+    auth_path: authPathHexes,
+    target_height: targetHeight
+  };
 }
 
 self.onmessage = async (event) => {
@@ -136,44 +218,11 @@ self.onmessage = async (event) => {
       if (!walletAddress) throw new Error("Missing wallet address for proving scan.");
       if (!recipientAddress) throw new Error("Missing recipientAddress.");
 
-      // Approach (Phase 3c):
-      // 1) Scan a small recent window for a decrypted Orchard note.
-      // 2) Fetch the real Merkle witness from Zebra RPC.
-      // 3) Build an Orchard spend+output bundle in WASM and run Halo2 proving.
-      const getBlockCount = async () => {
-        const resp = await fetch(rpcEndpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "getblockcount",
-            params: []
-          })
-        });
-        if (!resp.ok) throw new Error(`getblockcount failed: ${resp.status}`);
-        const body = await resp.json();
-        return Number(body?.result ?? 0);
-      };
-
-      const rpcCall = async (method, paramsArr) => {
-        const resp = await fetch(rpcEndpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method,
-            params: paramsArr ?? []
-          })
-        });
-        if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
-        const body = await resp.json();
-        if (body?.error) throw new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
-        return body?.result ?? null;
-      };
-
-      const endHeight = await getBlockCount();
+      // Approach:
+      // 1) Scan a recent window for decryptable Orchard notes.
+      // 2) Fetch witness data with RPC method fallbacks across node variants.
+      // 3) Build Orchard v5 transaction in WASM.
+      const endHeight = Number(await rpcRequest(rpcEndpoint, "getblockcount", []));
       const scanWindow = Number(params?.scanWindow ?? 200);
       const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
       const requiredValue = requestedAmount + requestedFee;
@@ -182,6 +231,7 @@ self.onmessage = async (event) => {
       }
 
       const candidates = [];
+      let scannedValue = 0;
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
@@ -215,7 +265,8 @@ self.onmessage = async (event) => {
           if (scan?.notes?.length) {
             for (const n of scan.notes) {
               const v = Number(n?.value ?? 0);
-              if (Number.isFinite(v) && v >= requiredValue) {
+              if (Number.isFinite(v) && v > 0) {
+                scannedValue += v;
                 candidates.push({
                   note: n,
                   height: h,
@@ -232,49 +283,33 @@ self.onmessage = async (event) => {
 
       if (candidates.length === 0) {
         throw new Error(
-          `No Orchard note can cover amount+fee (${requiredValue}) in blocks ${startHeight}..${endHeight}.`
+          `No spendable Orchard notes in blocks ${startHeight}..${endHeight}.`
         );
       }
 
-      // Prefer the smallest sufficient note to reduce unnecessary change.
-      candidates.sort((a, b) => a.value - b.value || a.height - b.height);
-      const selected = candidates[0];
-      const selectedNote = selected.note;
-      const selectedHeight = selected.height;
-      const selectedTxid = selected.txid;
-      const spendValue = selected.value;
+      const selected = selectNotesForSpend(candidates, requiredValue);
+      if (selected.length === 0) {
+        throw new Error(
+          `Insufficient funds for amount+fee (${requiredValue}). Scanned spendable value: ${scannedValue}.`
+        );
+      }
+      const selectedNote = selected[0].note;
+      const selectedHeight = selected[0].height;
+      const selectedTxid = selected[0].txid;
+      const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
       const spendAmount = requestedAmount;
-
-      // Fetch real anchor + Merkle auth path for the selected note commitment.
-      const cmxHex = bytesToHex(selectedNote?.cmx ?? []);
-      if (!cmxHex || cmxHex.length !== 64) {
-        throw new Error(`Selected note cmx hex invalid (len=${cmxHex.length}).`);
+      const targetHeight = endHeight;
+      const sharedAnchor = await fetchOrchardAnchor(rpcEndpoint, targetHeight);
+      const selectedWitnesses = [];
+      for (const noteSel of selected) {
+        const witness = await fetchWitnessForNote(
+          rpcEndpoint,
+          noteSel,
+          sharedAnchor,
+          targetHeight
+        );
+        selectedWitnesses.push(witness);
       }
-
-      const orchardTree = await rpcCall("z_getorchardtree", [selectedHeight]);
-      const anchorHex = String(orchardTree?.anchor ?? "");
-      if (!anchorHex || anchorHex.length < 64) {
-        throw new Error("z_getorchardtree did not return a valid anchor hex.");
-      }
-
-      const posResp = await rpcCall("z_findnoteposition", [cmxHex]);
-      const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
-      if (!Number.isFinite(position) || position < 0) {
-        throw new Error("z_findnoteposition returned invalid position.");
-      }
-
-      const authResp = await rpcCall("z_getauthpath", [position, anchorHex]);
-      const authPathHexes = authResp?.auth_path ?? authResp?.authPath ?? [];
-      if (!Array.isArray(authPathHexes) || authPathHexes.length !== 32) {
-        throw new Error(`z_getauthpath returned unexpected auth_path length: ${authPathHexes.length}`);
-      }
-
-      const witness = {
-        anchor: anchorHex,
-        position: position >>> 0,
-        auth_path: authPathHexes,
-        target_height: selectedHeight
-      };
 
       const provingResult = wasm.build_orchard_v5_tx_from_note(
         mnemonic,
@@ -282,8 +317,8 @@ self.onmessage = async (event) => {
         spendAmount,
         requestedFee,
         memo,
-        JSON.stringify(selectedNote),
-        JSON.stringify(witness)
+        JSON.stringify(selected.map((s) => s.note)),
+        JSON.stringify(selectedWitnesses)
       );
 
       self.postMessage({
@@ -300,6 +335,16 @@ self.onmessage = async (event) => {
             block_height: selectedHeight,
             txid: selectedTxid
           },
+          selected_notes_count: selected.length,
+          selected_notes_total_value: spendValue,
+          selected_notes: selected.map((s) => ({
+            value: Number(s?.note?.value ?? 0),
+            cmx: bytesToHex(s?.note?.cmx ?? []).slice(0, 16),
+            block_height: s.height
+          })),
+          selected_witnesses_count: selectedWitnesses.length,
+          inputs_used: selected.length,
+          input_mode: selected.length <= 1 ? "single" : "multi",
           fee: requestedFee
         }
       });
