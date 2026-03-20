@@ -369,6 +369,7 @@ function SettingsView({
   const [pairingSignature, setPairingSignature] = useState("");
   const [pairingQrDataUrl, setPairingQrDataUrl] = useState<string | null>(null);
   const [mobileResponsePayload, setMobileResponsePayload] = useState("");
+  const [deviceDraftNames, setDeviceDraftNames] = useState<Record<string, string>>({});
 
   const refreshSyncState = async () => {
     const state = await extensionApi.mobileSyncGetState();
@@ -578,19 +579,60 @@ function SettingsView({
 
         <div className="mt-2 space-y-1">
           {(syncState?.pairedDevices || []).map((d) => (
-            <div key={d.id} className="flex items-center justify-between rounded bg-black/20 px-2 py-1">
-              <div className="text-xs">
-                {d.name} ({d.platform})
+            <div key={d.id} className="rounded bg-black/20 px-2 py-2">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="text-xs">
+                  {d.name} ({d.platform})
+                  <span
+                    className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${
+                      d.status === "revoked"
+                        ? "bg-red-500/20 text-red-200"
+                        : "bg-green-500/20 text-green-200"
+                    }`}
+                  >
+                    {d.status}
+                  </span>
+                </div>
+                <div className="text-[10px] text-white/50">
+                  trust: {d.trustLevel || "signed-challenge-v1"}
+                </div>
               </div>
-              <button
-                className="rounded bg-white/10 px-2 py-1 text-xs"
-                onClick={async () => {
-                  await extensionApi.mobileSyncUnpair(d.id);
-                  await refreshSyncState();
-                }}
-              >
-                Unpair
-              </button>
+              <div className="flex items-center gap-2">
+                <input
+                  className="flex-1 rounded bg-white/10 p-1.5 text-xs outline-none"
+                  value={deviceDraftNames[d.id] ?? d.name}
+                  onChange={(e) =>
+                    setDeviceDraftNames((prev) => ({ ...prev, [d.id]: e.target.value }))
+                  }
+                  placeholder="Device name"
+                />
+                <button
+                  className="rounded bg-white/10 px-2 py-1 text-xs"
+                  onClick={async () => {
+                    const name = (deviceDraftNames[d.id] ?? d.name).trim();
+                    await extensionApi.mobileSyncRenameDevice(d.id, name);
+                    setSyncMsg("Device name updated.");
+                    await refreshSyncState();
+                  }}
+                >
+                  Rename
+                </button>
+                <button
+                  className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-200"
+                  onClick={async () => {
+                    await extensionApi.mobileSyncRevokeDevice(d.id);
+                    setSyncMsg("Device revoked.");
+                    await refreshSyncState();
+                  }}
+                >
+                  Revoke
+                </button>
+              </div>
+              <div className="mt-1 text-[10px] text-white/50">
+                paired {new Date(d.pairedAt).toLocaleString()}
+                {d.renamedAt ? ` | renamed ${new Date(d.renamedAt).toLocaleString()}` : ""}
+                {d.revokedAt ? ` | revoked ${new Date(d.revokedAt).toLocaleString()}` : ""}
+              </div>
             </div>
           ))}
         </div>

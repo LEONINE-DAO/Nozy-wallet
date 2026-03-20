@@ -33,6 +33,12 @@ jobs:
           cp -r browser-extension/wasm dist/nozy-extension/wasm
           mkdir -p dist/nozy-extension/popup
           cp -r browser-extension/popup/dist dist/nozy-extension/popup/dist
+      - name: Validate release bundle and docs
+        run: |
+          test -f dist/nozy-extension/manifest.json
+          test -f dist/nozy-extension/popup/dist/index.html
+          test -f browser-extension/CHANGELOG.md
+          test -f browser-extension/STORE_SUBMISSION_CHECKLIST.md
       - name: Package Chrome/Edge bundle
         run: |
           cd dist

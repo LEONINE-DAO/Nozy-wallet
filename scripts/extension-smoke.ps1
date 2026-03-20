@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "== Nozy Extension Smoke ==" -ForegroundColor Cyan
 
-function Run-Step {
+function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
         [Parameter(Mandatory = $true)][scriptblock]$Action
@@ -17,11 +17,11 @@ function Run-Step {
 
 Push-Location $PSScriptRoot\..
 try {
-    Run-Step "Worker utility tests" {
-        node --test "browser-extension/background/tx-utils.test.mjs"
+    Invoke-Step "Worker utility tests" {
+        node --test "browser-extension/background/tx-utils.test.mjs" "browser-extension/background/mobile-sync.test.mjs" "browser-extension/background/tx-lifecycle.test.mjs"
     }
 
-    Run-Step "Popup typecheck + build" {
+    Invoke-Step "Popup typecheck + build" {
         Push-Location "browser-extension/popup"
         try {
             npm run typecheck
@@ -31,7 +31,7 @@ try {
         }
     }
 
-    Run-Step "WASM core host compile check" {
+    Invoke-Step "WASM core host compile check" {
         Push-Location "browser-extension/wasm-core"
         try {
             cargo check
@@ -40,7 +40,7 @@ try {
         }
     }
 
-    Run-Step "WASM core unit tests" {
+    Invoke-Step "WASM core unit tests" {
         Push-Location "browser-extension/wasm-core"
         try {
             cargo test --lib
@@ -49,7 +49,7 @@ try {
         }
     }
 
-    Run-Step "WASM target compile check" {
+    Invoke-Step "WASM target compile check" {
         Push-Location "browser-extension/wasm-core"
         try {
             if (-not (rustup target list --installed | Select-String -Pattern "^wasm32-unknown-unknown$")) {

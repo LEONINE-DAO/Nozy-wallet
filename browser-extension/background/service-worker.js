@@ -1,4 +1,20 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
+import {
+  MOBILE_SYNC_SCHEMA_VERSION,
+  MOBILE_SYNC_PAIRING_TTL_MS,
+  cleanupMobileSyncState,
+  consumeSession,
+  isSessionConsumed,
+  migrateMobileSyncState,
+  sanitizeDeviceName
+} from "./mobile-sync.js";
+import {
+  buildBuiltTxStateEntry,
+  buildFailedTxStateEntry,
+  findRecentBuiltTxId,
+  nextLifecycleStateFromConfirmation,
+  resolveTxidFromBroadcast
+} from "./tx-lifecycle.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
 const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
@@ -268,12 +284,7 @@ async function retryBroadcastById(id) {
     retries: 2,
     baseDelayMs: 500
   });
-  const txid =
-    broadcastResult?.txid ??
-    broadcastResult?.result?.txid ??
-    broadcastResult?.result ??
-    broadcastResult ??
-    tx.txid;
+  const txid = resolveTxidFromBroadcast(broadcastResult, tx.txid);
   await patchTxStateById(id, {
     txid: String(txid),
     state: "broadcast",
@@ -293,17 +304,20 @@ async function saveWalletState(state) {
 
 async function loadMobileSyncState() {
   const state = await storageGet(MOBILE_SYNC_KEY);
-  return state || {
-    schemaVersion: 1,
-    pairedDevices: [],
-    activePairing: null,
-    pairingPayload: null,
-    updatedAt: 0
-  };
+  return migrateMobileSyncState(state, nowMs());
 }
 
 async function saveMobileSyncState(state) {
   await storageSet({ [MOBILE_SYNC_KEY]: state });
+}
+
+async function cleanupStaleMobileSyncState() {
+  const loaded = await loadMobileSyncState();
+  const { state, changed } = cleanupMobileSyncState(loaded, nowMs());
+  if (changed) {
+    await saveMobileSyncState(state);
+  }
+  return state;
 }
 
 function randomHex(bytes = 16) {
@@ -314,9 +328,10 @@ function randomHex(bytes = 16) {
 async function mobileSyncInitPairing(params = {}) {
   if (!session.unlocked || !session.address) throw new Error("Unlock wallet first.");
 
-  const now = Date.now();
-  const ttlMs = 10 * 60 * 1000;
-  const state = await loadMobileSyncState();
+  const now = nowMs();
+  const ttlMs = Number(params.ttlMs ?? MOBILE_SYNC_PAIRING_TTL_MS);
+  const boundedTtlMs = Math.max(60_000, Math.min(ttlMs, 30 * 60 * 1000));
+  const state = await cleanupStaleMobileSyncState();
   const sessionId = `ms_${randomHex(12)}`;
   const verifyCode = randomHex(3).toUpperCase();
   const challenge = randomHex(24);
@@ -327,12 +342,13 @@ async function mobileSyncInitPairing(params = {}) {
     verifyCode,
     challenge,
     createdAt: now,
-    expiresAt: now + ttlMs
+    expiresAt: now + boundedTtlMs
   };
 
   const payload = JSON.stringify({
-    v: 1,
+    v: MOBILE_SYNC_SCHEMA_VERSION,
     sigAlg: "nozy-sign-message-v1",
+    replayProtection: "session-consume-v1",
     sessionId,
     walletAddress: session.address,
     challenge,
@@ -359,14 +375,17 @@ async function mobileSyncInitPairing(params = {}) {
 async function mobileSyncConfirmPairing(params = {}) {
   if (!session.unlocked || !session.address) throw new Error("Unlock wallet first.");
   const sessionId = String(params.sessionId ?? "");
-  const deviceName = String(params.deviceName ?? "Nozy Mobile");
+  const deviceName = sanitizeDeviceName(params.deviceName);
   const platform = String(params.platform ?? "unknown");
   const challengeSignature = String(params.challengeSignature ?? "");
-  const now = Date.now();
+  const now = nowMs();
 
-  const state = await loadMobileSyncState();
+  const state = await cleanupStaleMobileSyncState();
   const active = state.activePairing;
   if (!active) throw new Error("No active pairing session.");
+  if (isSessionConsumed(state, sessionId, now)) {
+    throw new Error("Replay detected: pairing session already consumed.");
+  }
   if (active.sessionId !== sessionId) throw new Error("Pairing session mismatch.");
   if (active.expiresAt < now) throw new Error("Pairing session expired.");
   if (!challengeSignature) throw new Error("Missing challenge signature.");
@@ -377,19 +396,26 @@ async function mobileSyncConfirmPairing(params = {}) {
     throw new Error("Invalid pairing signature for challenge.");
   }
 
+  const existing = (state.pairedDevices || []).find((d) => d.sessionId === sessionId && d.status !== "revoked");
   const pairedDevice = {
-    id: `dev_${randomHex(10)}`,
+    id: existing?.id || `dev_${randomHex(10)}`,
     name: deviceName,
     platform,
     sessionId,
     signaturePrefix: challengeSignature.slice(0, 12),
-    pairedAt: now,
+    pairedAt: existing?.pairedAt || now,
+    renamedAt: existing?.renamedAt || null,
+    revokedAt: null,
+    lastSeenAt: now,
+    trustLevel: "signed-challenge-v1",
     status: "paired"
   };
 
+  const remainingDevices = (state.pairedDevices || []).filter((d) => d.id !== pairedDevice.id);
+  const withConsumedSession = consumeSession(state, sessionId, now);
   const next = {
-    ...state,
-    pairedDevices: [...(state.pairedDevices || []), pairedDevice],
+    ...withConsumedSession,
+    pairedDevices: [...remainingDevices, pairedDevice],
     activePairing: null,
     pairingPayload: null,
     updatedAt: now
@@ -412,22 +438,54 @@ async function mobileSyncUnpair(params = {}) {
   return { removed: true, deviceId };
 }
 
-async function mobileSyncGetState() {
+async function mobileSyncRenameDevice(params = {}) {
+  if (!session.unlocked) throw new Error("Unlock wallet first.");
+  const deviceId = String(params.deviceId ?? "");
+  const name = sanitizeDeviceName(params.name);
+  if (!deviceId) throw new Error("Missing deviceId.");
+  const now = nowMs();
   const state = await loadMobileSyncState();
-  const now = Date.now();
-  const active = state.activePairing && state.activePairing.expiresAt > now
-    ? state.activePairing
-    : null;
-  if (state.activePairing && !active) {
-    await saveMobileSyncState({
-      ...state,
-      activePairing: null,
-      pairingPayload: null,
-      updatedAt: now
-    });
-  }
+  const devices = Array.isArray(state.pairedDevices) ? state.pairedDevices : [];
+  const index = devices.findIndex((d) => d.id === deviceId);
+  if (index < 0) throw new Error("Device not found.");
+  const nextDevices = [...devices];
+  nextDevices[index] = {
+    ...nextDevices[index],
+    name,
+    renamedAt: now,
+    lastSeenAt: now
+  };
+  const next = { ...state, pairedDevices: nextDevices, updatedAt: now };
+  await saveMobileSyncState(next);
+  return nextDevices[index];
+}
+
+async function mobileSyncRevokeDevice(params = {}) {
+  if (!session.unlocked) throw new Error("Unlock wallet first.");
+  const deviceId = String(params.deviceId ?? "");
+  if (!deviceId) throw new Error("Missing deviceId.");
+  const now = nowMs();
+  const state = await loadMobileSyncState();
+  const devices = Array.isArray(state.pairedDevices) ? state.pairedDevices : [];
+  const index = devices.findIndex((d) => d.id === deviceId);
+  if (index < 0) throw new Error("Device not found.");
+  const nextDevices = [...devices];
+  nextDevices[index] = {
+    ...nextDevices[index],
+    status: "revoked",
+    revokedAt: now,
+    lastSeenAt: now
+  };
+  const next = { ...state, pairedDevices: nextDevices, updatedAt: now };
+  await saveMobileSyncState(next);
+  return nextDevices[index];
+}
+
+async function mobileSyncGetState() {
+  const state = await cleanupStaleMobileSyncState();
+  const active = state.activePairing;
   return {
-    schemaVersion: state.schemaVersion || 1,
+    schemaVersion: state.schemaVersion || MOBILE_SYNC_SCHEMA_VERSION,
     pairedDevices: state.pairedDevices || [],
     activePairing: active,
     pairingPayload: active ? state.pairingPayload || null : null
@@ -436,7 +494,7 @@ async function mobileSyncGetState() {
 
 function mobileSyncGetPairingSchema() {
   return {
-    type: "nozy.mobile_sync.pairing.v1",
+    type: "nozy.mobile_sync.pairing.v2",
     required: ["v", "sessionId", "walletAddress", "challenge", "verifyCode", "expiresAt"],
     fields: {
       v: "number",
@@ -444,9 +502,10 @@ function mobileSyncGetPairingSchema() {
       walletAddress: "string",
       challenge: "string",
       verifyCode: "string",
-      expiresAt: "number"
+      expiresAt: "number",
+      replayProtection: "string"
     },
-    notes: "Seed and private keys are never included in pairing payload."
+    notes: "Seed and private keys are never included in pairing payload. Session IDs are one-time-use."
   };
 }
 
@@ -616,6 +675,10 @@ setInterval(() => {
   }
 }, 20_000);
 
+setInterval(() => {
+  cleanupStaleMobileSyncState().catch(() => undefined);
+}, 30_000);
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== "NOZY_REQUEST") return;
 
@@ -701,36 +764,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                   }
 
                   const txStateId = crypto.randomUUID();
-                  await appendTxState({
-                    id: txStateId,
-                    txid: String(proving?.txid || ""),
-                    state: "built",
-                    origin: String(approval.payload?.origin ?? ""),
-                    recipientAddress: String(proving.recipientAddress),
-                    amount: Number(proving.amount),
-                    fee: Number(proving.fee),
-                    memo: String(proving.memo),
-                    inputsUsed: Number(proving?.inputs_used ?? 0),
-                    inputMode: String(
-                      proving?.input_mode ??
-                        (Number(proving?.inputs_used ?? 0) <= 1 ? "single" : "multi")
-                    ),
-                    rawTxHex: proving.rawTxHex,
-                    createdAt,
-                    updatedAt: createdAt,
-                    error: null
-                  });
+                  await appendTxState(
+                    buildBuiltTxStateEntry({
+                      id: txStateId,
+                      origin: String(approval.payload?.origin ?? ""),
+                      proving,
+                      createdAt
+                    })
+                  );
 
                   const broadcastResult = await rpcCallWithRetry("sendrawtransaction", [
                     proving.rawTxHex
                   ], { retries: 3, baseDelayMs: 400 });
 
-                  const txid =
-                    broadcastResult?.txid ??
-                    broadcastResult?.result?.txid ??
-                    broadcastResult?.result ??
-                    broadcastResult ??
-                    proving.txid;
+                  const txid = resolveTxidFromBroadcast(broadcastResult, proving.txid);
                   await patchTxStateById(txStateId, {
                     txid: String(txid),
                     state: "broadcast",
@@ -745,7 +792,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                   });
                   await patchTxStateById(txStateId, {
                     txid: String(txid),
-                    state: confirmation.confirmed ? "confirmed" : "pending",
+                    state: nextLifecycleStateFromConfirmation(confirmation),
                     blockHeight: confirmation.blockHeight ?? null
                   });
 
@@ -757,19 +804,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               } catch (e) {
                 const errMsg = e?.message ?? "Failed to fulfill approved request";
                 if (approval?.kind === "transaction") {
+                  const now = nowMs();
                   const existingBuiltId = await (async () => {
                     const state = await loadTxState();
                     const txs = Array.isArray(state.txs) ? state.txs : [];
-                    const candidate = txs
-                      .slice()
-                      .reverse()
-                      .find(
-                        (t) =>
-                          t.state === "built" &&
-                          t.origin === String(approval.payload?.origin ?? "") &&
-                          t.updatedAt >= nowMs() - 5 * 60 * 1000
-                      );
-                    return candidate?.id || null;
+                    return findRecentBuiltTxId(txs, String(approval.payload?.origin ?? ""), now);
                   })();
                   if (existingBuiltId) {
                     await patchTxStateById(existingBuiltId, {
@@ -777,27 +816,17 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                       error: errMsg
                     });
                   } else {
-                    await appendTxState({
-                    id: crypto.randomUUID(),
-                    txid: null,
-                    state: "failed",
-                    origin: String(approval.payload?.origin ?? ""),
-                    recipientAddress: String(approval.payload?.tx?.to ?? ""),
-                    amount: parseNumberMaybeHex(approval.payload?.tx?.value ?? approval.payload?.tx?.amount) ?? 0,
-                    fee: null,
-                    memo: String(approval.payload?.tx?.memo ?? ""),
-                    inputsUsed: Number(approval.payload?.preflight?.inputs_used ?? 0),
-                    inputMode: String(
-                      approval.payload?.preflight?.input_mode ??
-                        (Number(approval.payload?.preflight?.inputs_used ?? 0) <= 1
-                          ? "single"
-                          : "multi")
-                    ),
-                    rawTxHex: null,
-                    createdAt: nowMs(),
-                    updatedAt: nowMs(),
-                    error: errMsg
-                  });
+                    await appendTxState(
+                      buildFailedTxStateEntry({
+                        id: crypto.randomUUID(),
+                        origin: String(approval.payload?.origin ?? ""),
+                        tx: approval.payload?.tx ?? {},
+                        preflight: approval.payload?.preflight ?? {},
+                        error: errMsg,
+                        createdAt: now,
+                        parseAmount: parseNumberMaybeHex
+                      })
+                    );
                   }
                 }
                 resolver.sendResponse(fail(errMsg));
@@ -883,6 +912,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         case "mobile_sync_unpair":
           sendResponse(ok(await mobileSyncUnpair(params)));
+          return;
+        case "mobile_sync_rename_device":
+          sendResponse(ok(await mobileSyncRenameDevice(params)));
+          return;
+        case "mobile_sync_revoke_device":
+          sendResponse(ok(await mobileSyncRevokeDevice(params)));
           return;
       }
 

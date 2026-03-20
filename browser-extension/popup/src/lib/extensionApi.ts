@@ -46,7 +46,11 @@ export type MobileSyncDevice = {
   platform: string;
   sessionId: string;
   pairedAt: number;
-  status: "paired";
+  status: "paired" | "revoked";
+  renamedAt?: number | null;
+  revokedAt?: number | null;
+  lastSeenAt?: number;
+  trustLevel?: string;
 };
 
 export type MobileSyncState = {
@@ -200,6 +204,16 @@ export const extensionApi = {
   mobileSyncUnpair: (deviceId: string) =>
     sendMessage<{ removed: boolean; deviceId: string }>({
       method: "mobile_sync_unpair",
+      params: { deviceId }
+    }),
+  mobileSyncRenameDevice: (deviceId: string, name: string) =>
+    sendMessage<MobileSyncDevice>({
+      method: "mobile_sync_rename_device",
+      params: { deviceId, name }
+    }),
+  mobileSyncRevokeDevice: (deviceId: string) =>
+    sendMessage<MobileSyncDevice>({
+      method: "mobile_sync_revoke_device",
       params: { deviceId }
     })
 };
