@@ -31,7 +31,8 @@ jobs:
           rm -f dist/nozy-extension/background/*.test.mjs
           cp -r browser-extension/content dist/nozy-extension/content
           cp -r browser-extension/wasm dist/nozy-extension/wasm
-          cp -r browser-extension/popup/dist dist/nozy-extension/popup
+          mkdir -p dist/nozy-extension/popup
+          cp -r browser-extension/popup/dist dist/nozy-extension/popup/dist
       - name: Package Chrome/Edge bundle
         run: |
           cd dist

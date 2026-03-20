@@ -19,6 +19,9 @@ jobs:
         working-directory: browser-extension/wasm-core
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
       - name: Set up Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -74,9 +77,12 @@ jobs:
           rm -f dist/nozy-extension/background/*.test.mjs
           cp -r browser-extension/content dist/nozy-extension/content
           cp -r browser-extension/wasm dist/nozy-extension/wasm
-          cp -r browser-extension/popup/dist dist/nozy-extension/popup
+          mkdir -p dist/nozy-extension/popup
+          cp -r browser-extension/popup/dist dist/nozy-extension/popup/dist
       - name: Validate manifest exists
         run: test -f dist/nozy-extension/manifest.json
+      - name: Validate popup entry path exists
+        run: test -f dist/nozy-extension/popup/dist/index.html
       - uses: actions/upload-artifact@v4
         with:
           name: nozy-extension-smoke
