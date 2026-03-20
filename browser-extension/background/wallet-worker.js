@@ -1,5 +1,6 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 import { rpcFallbackWithRequester, selectNotesForSpend } from "./tx-utils.js";
+import { normalizeRpcEndpoint, rpcNetworkErrorMessage } from "./rpc-utils.js";
 
 let ready;
 async function ensureReady() {
@@ -34,12 +35,18 @@ function bytesToHex(bytes) {
 }
 
 async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
+  let endpoint;
+  try {
+    endpoint = normalizeRpcEndpoint(rpcEndpoint);
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
   const retries = Number.isFinite(opts.retries) ? opts.retries : 2;
   const baseDelayMs = Number.isFinite(opts.baseDelayMs) ? opts.baseDelayMs : 200;
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      const resp = await fetch(rpcEndpoint, {
+      const resp = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
@@ -49,12 +56,23 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
           params
         })
       });
+      if (resp.status === 401 || resp.status === 403) {
+        throw new Error(
+          `RPC ${method} returned HTTP ${resp.status} (authentication required). ` +
+            `For Zebra local dev, disable cookie auth or use a credentialed proxy.`
+        );
+      }
       if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
       const body = await resp.json();
       if (body?.error) throw new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
       return body?.result ?? null;
     } catch (err) {
-      lastErr = err;
+      const msg = String(err?.message ?? err ?? "");
+      if (msg === "Failed to fetch" || /NetworkError|network failed|Load failed/i.test(msg)) {
+        lastErr = new Error(rpcNetworkErrorMessage(endpoint, err));
+      } else {
+        lastErr = err instanceof Error ? err : new Error(String(err));
+      }
       if (attempt < retries) {
         await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
       }
@@ -150,6 +168,12 @@ self.onmessage = async (event) => {
       const rpcEndpoint = String(params?.rpcEndpoint ?? "");
       const mnemonic = String(params?.mnemonic ?? "");
       const address = String(params?.address ?? "");
+      let endpoint;
+      try {
+        endpoint = normalizeRpcEndpoint(rpcEndpoint);
+      } catch (e) {
+        throw e instanceof Error ? e : new Error(String(e));
+      }
       let scannedBlocks = 0;
       let totalBalanceZats = 0;
       const discoveredNotes = [];
@@ -157,7 +181,7 @@ self.onmessage = async (event) => {
       for (let h = startHeight; h <= endHeight; h += 1) {
         scannedBlocks += 1;
         try {
-          const resp = await fetch(rpcEndpoint, {
+          const resp = await fetch(endpoint, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -218,11 +242,18 @@ self.onmessage = async (event) => {
       if (!walletAddress) throw new Error("Missing wallet address for proving scan.");
       if (!recipientAddress) throw new Error("Missing recipientAddress.");
 
+      let endpoint;
+      try {
+        endpoint = normalizeRpcEndpoint(rpcEndpoint);
+      } catch (e) {
+        throw e instanceof Error ? e : new Error(String(e));
+      }
+
       // Approach:
       // 1) Scan a recent window for decryptable Orchard notes.
       // 2) Fetch witness data with RPC method fallbacks across node variants.
       // 3) Build Orchard v5 transaction in WASM.
-      const endHeight = Number(await rpcRequest(rpcEndpoint, "getblockcount", []));
+      const endHeight = Number(await rpcRequest(endpoint, "getblockcount", []));
       const scanWindow = Number(params?.scanWindow ?? 200);
       const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
       const requiredValue = requestedAmount + requestedFee;
@@ -235,7 +266,7 @@ self.onmessage = async (event) => {
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
-          const resp = await fetch(rpcEndpoint, {
+          const resp = await fetch(endpoint, {
             method: "POST",
             headers: { "content-type": "application/json" },
             body: JSON.stringify({
@@ -299,11 +330,11 @@ self.onmessage = async (event) => {
       const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
       const spendAmount = requestedAmount;
       const targetHeight = endHeight;
-      const sharedAnchor = await fetchOrchardAnchor(rpcEndpoint, targetHeight);
+      const sharedAnchor = await fetchOrchardAnchor(endpoint, targetHeight);
       const selectedWitnesses = [];
       for (const noteSel of selected) {
         const witness = await fetchWitnessForNote(
-          rpcEndpoint,
+          endpoint,
           noteSel,
           sharedAnchor,
           targetHeight

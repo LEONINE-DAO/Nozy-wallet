@@ -3259,7 +3259,6 @@ dependencies = [
  "futures",
  "groth16",
  "hex",
- "indexmap 1.9.3",
  "indicatif",
  "orchard",
  "prost 0.13.5",

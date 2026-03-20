@@ -52,7 +52,9 @@ try {
     Invoke-Step "WASM target compile check" {
         Push-Location "browser-extension/wasm-core"
         try {
-            if (-not (rustup target list --installed | Select-String -Pattern "^wasm32-unknown-unknown$")) {
+            $installedTargets = rustup target list --installed
+            $hasWasmTarget = @($installedTargets | Select-String -Pattern "^wasm32-unknown-unknown$").Count -gt 0
+            if (-not $hasWasmTarget) {
                 rustup target add wasm32-unknown-unknown
             }
             $env:CARGO_BUILD_RUSTC = (rustup which --toolchain stable rustc)

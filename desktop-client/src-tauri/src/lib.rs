@@ -156,7 +156,9 @@ struct BackupActionResponse {
 }
 
 fn wallet_file_exists() -> bool {
-    nozy::paths::get_wallet_data_dir().join("wallet.dat").exists()
+    nozy::paths::get_wallet_data_dir()
+        .join("wallet.dat")
+        .exists()
 }
 
 async fn wallet_exists_with_password_flag() -> WalletExistsResponse {
@@ -190,7 +192,10 @@ fn get_cached_wallet(state: &tauri::State<AppState>) -> Result<Option<nozy::HDWa
         .map(|w| w.clone())
 }
 
-fn set_cached_wallet(state: &tauri::State<AppState>, wallet: Option<nozy::HDWallet>) -> Result<(), String> {
+fn set_cached_wallet(
+    state: &tauri::State<AppState>,
+    wallet: Option<nozy::HDWallet>,
+) -> Result<(), String> {
     let mut guard = state
         .wallet
         .lock()
@@ -242,7 +247,8 @@ async fn create_wallet(
         return Err("A wallet already exists. Restore or remove it first.".to_string());
     }
 
-    let mut wallet = nozy::HDWallet::new().map_err(|e| format!("Failed to create wallet: {}", e))?;
+    let mut wallet =
+        nozy::HDWallet::new().map_err(|e| format!("Failed to create wallet: {}", e))?;
     let password = request.password.unwrap_or_default();
     if !password.is_empty() {
         wallet
@@ -340,7 +346,9 @@ async fn change_password(
 }
 
 #[tauri::command]
-async fn generate_address(state: tauri::State<'_, AppState>) -> Result<GenerateAddressResponse, String> {
+async fn generate_address(
+    state: tauri::State<'_, AppState>,
+) -> Result<GenerateAddressResponse, String> {
     let wallet = load_wallet_for_request(&state, None).await?;
     let address = wallet
         .generate_orchard_address(0, 0, network_from_config())
@@ -358,7 +366,8 @@ async fn get_balance() -> Result<BalanceResponse, String> {
         });
     }
 
-    let content = fs::read_to_string(notes_path).map_err(|e| format!("Failed to read notes: {}", e))?;
+    let content =
+        fs::read_to_string(notes_path).map_err(|e| format!("Failed to read notes: {}", e))?;
     let parsed: serde_json::Value =
         serde_json::from_str(&content).map_err(|e| format!("Failed to parse notes: {}", e))?;
 
@@ -389,10 +398,14 @@ async fn sync_wallet(
     });
 
     let config = nozy::load_config();
-    let zebra_url = request.zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+    let zebra_url = request
+        .zebra_url
+        .unwrap_or_else(|| config.zebra_url.clone());
     let wallet = load_wallet_for_request(&state, request.password).await?;
     let zebra_client = nozy::ZebraClient::new(zebra_url);
-    let effective_start = request.start_height.or_else(|| config.last_scan_height.map(|h| h.saturating_add(1)));
+    let effective_start = request
+        .start_height
+        .or_else(|| config.last_scan_height.map(|h| h.saturating_add(1)));
     let scan_start = effective_start.unwrap_or(3_050_000);
     let scan_end = if let Some(end) = request.end_height {
         end.max(scan_start)
@@ -453,7 +466,10 @@ async fn send_transaction(
     }
 
     let config = nozy::load_config();
-    let zebra_url = request.zebra_url.clone().unwrap_or_else(|| config.zebra_url.clone());
+    let zebra_url = request
+        .zebra_url
+        .clone()
+        .unwrap_or_else(|| config.zebra_url.clone());
     let wallet = load_wallet_for_request(&state, request.password.clone()).await?;
     let spendable_notes = nozy::cli_helpers::scan_notes_for_sending(wallet, &zebra_url)
         .await
@@ -485,7 +501,10 @@ async fn send_transaction(
         .await
         .map_err(|e| format!("Failed to build transaction: {}", e))?;
 
-    match tx_builder.broadcast_transaction(&zebra_client, &transaction).await {
+    match tx_builder
+        .broadcast_transaction(&zebra_client, &transaction)
+        .await
+    {
         Ok(network_txid) => {
             if let Ok(tx_storage) = nozy::transaction_history::SentTransactionStorage::new() {
                 let spent_note_ids: Vec<String> = spendable_notes
@@ -644,9 +663,12 @@ async fn download_proving_parameters() -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn get_wallet_status(state: tauri::State<'_, AppState>) -> Result<WalletStatusResponse, String> {
+async fn get_wallet_status(
+    state: tauri::State<'_, AppState>,
+) -> Result<WalletStatusResponse, String> {
     let exists_info = wallet_exists_with_password_flag().await;
-    let unlocked = get_cached_wallet(&state)?.is_some() || (exists_info.exists && !exists_info.has_password);
+    let unlocked =
+        get_cached_wallet(&state)?.is_some() || (exists_info.exists && !exists_info.has_password);
     let address = if unlocked {
         match load_wallet_for_request(&state, None).await {
             Ok(wallet) => wallet
@@ -711,7 +733,8 @@ async fn sign_message(
 
 #[tauri::command]
 fn address_book_list() -> Result<Vec<AddressBookEntry>, String> {
-    let address_book = nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
+    let address_book =
+        nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
     let entries = address_book
         .list_addresses()
         .iter()
@@ -729,7 +752,8 @@ fn address_book_list() -> Result<Vec<AddressBookEntry>, String> {
 
 #[tauri::command]
 fn address_book_add(request: AddAddressBookRequest) -> Result<(), String> {
-    let address_book = nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
+    let address_book =
+        nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
     address_book
         .add_address(request.name, request.address, request.notes)
         .map_err(|e| format!("Failed to add address: {}", e))
@@ -737,7 +761,8 @@ fn address_book_add(request: AddAddressBookRequest) -> Result<(), String> {
 
 #[tauri::command]
 fn address_book_remove(name: String) -> Result<bool, String> {
-    let address_book = nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
+    let address_book =
+        nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
     address_book
         .remove_address(&name)
         .map_err(|e| format!("Failed to remove address: {}", e))
@@ -745,7 +770,8 @@ fn address_book_remove(name: String) -> Result<bool, String> {
 
 #[tauri::command]
 fn address_book_get(name: String) -> Result<Option<AddressBookEntry>, String> {
-    let address_book = nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
+    let address_book =
+        nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
     Ok(address_book.get_address(&name).map(|e| AddressBookEntry {
         name: e.name,
         address: e.address,
@@ -758,7 +784,8 @@ fn address_book_get(name: String) -> Result<Option<AddressBookEntry>, String> {
 
 #[tauri::command]
 fn address_book_search(query: String) -> Result<Vec<AddressBookEntry>, String> {
-    let address_book = nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
+    let address_book =
+        nozy::AddressBook::new().map_err(|e| format!("Address book error: {}", e))?;
     let entries = address_book
         .search_addresses(&query)
         .iter()

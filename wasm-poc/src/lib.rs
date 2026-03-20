@@ -17,8 +17,8 @@ pub fn test_key_derivation() -> String {
 /// Pure Rust crypto, should compile.
 #[wasm_bindgen]
 pub fn test_encryption() -> bool {
-    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use rand::RngCore;
 
     let mut key_bytes = [0u8; 32];
@@ -30,8 +30,12 @@ pub fn test_encryption() -> bool {
     let nonce = Nonce::from_slice(&nonce_bytes);
 
     let plaintext = b"nozy wallet test";
-    let ciphertext = cipher.encrypt(nonce, plaintext.as_ref()).expect("encrypt failed");
-    let decrypted = cipher.decrypt(nonce, ciphertext.as_ref()).expect("decrypt failed");
+    let ciphertext = cipher
+        .encrypt(nonce, plaintext.as_ref())
+        .expect("encrypt failed");
+    let decrypted = cipher
+        .decrypt(nonce, ciphertext.as_ref())
+        .expect("decrypt failed");
 
     decrypted == plaintext
 }
@@ -40,7 +44,7 @@ pub fn test_encryption() -> bool {
 /// This is the critical test - it pulls in the full orchard + halo2_proofs stack.
 #[wasm_bindgen]
 pub fn test_orchard_address() -> String {
-    use orchard::keys::{SpendingKey, FullViewingKey, Scope};
+    use orchard::keys::{FullViewingKey, Scope, SpendingKey};
 
     let seed = [42u8; 32];
     let sk = SpendingKey::from_bytes(seed).expect("spending key failed");

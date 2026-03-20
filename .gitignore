@@ -17,6 +17,8 @@ build/
 .cache/
 !browser-extension/popup/dist/
 !browser-extension/popup/dist/**
+!browser-extension/wasm-core/popup/dist/
+!browser-extension/wasm-core/popup/dist/**
 
 .vscode/
 .idea/
@@ -55,6 +57,8 @@ mobile/
 src-tauri/
 !desktop-client/src-tauri/
 !desktop-client/src-tauri/**
+# Re-ignore build output (must come after un-ignore above)
+desktop-client/src-tauri/target/
 tauri-reference/
 react-native-0.73.11/
 rn-template.zip
@@ -77,5 +81,6 @@ push_url_update.ps1
 !SYNC_PROTOCOL_V1.md
 !book/
 !book/**/*.md
+!browser-extension/LOCAL_RPC.md
 
 book/book/

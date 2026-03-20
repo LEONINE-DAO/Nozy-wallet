@@ -10,6 +10,24 @@ import {
 import { TopNav } from "./components/TopNav";
 import { useUiStore } from "./store/uiStore";
 
+function debugLog(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
+  // #region agent log
+  fetch("http://127.0.0.1:7329/ingest/c5393905-43e3-4b8f-b8be-a6ad09348f60", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7680bd" },
+    body: JSON.stringify({
+      sessionId: "7680bd",
+      runId: "extension-runtime",
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now()
+    })
+  }).catch(() => undefined);
+  // #endregion
+}
+
 function WelcomeView({
   onCreated,
   onRestored
@@ -714,21 +732,48 @@ export function App() {
   const [status, setStatus] = useState<WalletStatus | null>(null);
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [txs, setTxs] = useState<TxStateEntry[]>([]);
+  const [bootDebug, setBootDebug] = useState<string | null>(null);
   const endpoint = useMemo(() => status?.rpcEndpoint || "http://127.0.0.1:8232", [status]);
 
   const refresh = async () => {
-    const nextStatus = await extensionApi.walletStatus();
-    setStatus(nextStatus);
-    if (!nextStatus.exists) setView("welcome");
-    else if (!nextStatus.unlocked) setView("unlock");
-    else if (view === "welcome" || view === "unlock") setView("dashboard");
-    setApprovals(await extensionApi.walletGetPendingApprovals());
-    const txState = await extensionApi.walletGetTransactions();
-    setTxs(Array.isArray(txState.txs) ? txState.txs : []);
+    debugLog("H4", "App.tsx:refresh", "refresh start", { view });
+    try {
+      setBootDebug("startup: wallet_status");
+      const nextStatus = await extensionApi.walletStatus();
+      setStatus(nextStatus);
+      if (!nextStatus.exists) setView("welcome");
+      else if (!nextStatus.unlocked) setView("unlock");
+      else if (view === "welcome" || view === "unlock") setView("dashboard");
+
+      setBootDebug("startup: wallet_get_pending_approvals");
+      const nextApprovals = await extensionApi.walletGetPendingApprovals();
+      setApprovals(nextApprovals);
+
+      setBootDebug("startup: wallet_get_transactions");
+      const txState = await extensionApi.walletGetTransactions();
+      setTxs(Array.isArray(txState.txs) ? txState.txs : []);
+      setBootDebug(null);
+
+      debugLog("H4", "App.tsx:refresh", "refresh success", {
+        exists: !!nextStatus.exists,
+        unlocked: !!nextStatus.unlocked,
+        approvalsCount: nextApprovals.length
+      });
+      return;
+    } catch (err) {
+      const msg = String((err as Error)?.message || err || "unknown");
+      setBootDebug(`startup-error: ${msg}`);
+      throw err;
+    }
   };
 
   useEffect(() => {
-    refresh().catch(console.error);
+    refresh().catch((err) => {
+      debugLog("H4", "App.tsx:useEffect", "initial refresh failed", {
+        error: String((err as Error)?.message || err || "unknown")
+      });
+      console.error(err);
+    });
     const id = setInterval(() => {
       extensionApi.walletGetPendingApprovals().then(setApprovals).catch(() => undefined);
     }, 1500);
@@ -737,6 +782,11 @@ export function App() {
 
   return (
     <div className="h-full overflow-auto">
+      {bootDebug && (
+        <div className="mx-3 mt-3 rounded border border-red-400/40 bg-red-500/10 px-2 py-1 text-[10px] text-red-200">
+          {bootDebug}
+        </div>
+      )}
       <PendingApprovals
         approvals={approvals}
         onApprove={async (id) => {

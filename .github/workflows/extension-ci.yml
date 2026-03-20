@@ -29,7 +29,9 @@ jobs:
       - name: Host compile check
         run: cargo check
       - name: WASM target compile check
-        run: cargo check --target wasm32-unknown-unknown
+        run: |
+          export CARGO_BUILD_RUSTC="$(rustup which --toolchain stable rustc)"
+          rustup run stable cargo check --target wasm32-unknown-unknown
       - name: Worker utility tests
         working-directory: .
         run: node --test browser-extension/background/tx-utils.test.mjs browser-extension/background/mobile-sync.test.mjs browser-extension/background/tx-lifecycle.test.mjs

@@ -15,6 +15,7 @@ import {
   nextLifecycleStateFromConfirmation,
   resolveTxidFromBroadcast
 } from "./tx-lifecycle.js";
+import { normalizeRpcEndpoint, rpcNetworkErrorMessage } from "./rpc-utils.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
 const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
@@ -37,6 +38,34 @@ const providerRequestResolvers = new Map();
 let worker;
 let workerSeq = 0;
 const workerPending = new Map();
+
+function debugLog(hypothesisId, location, message, data = {}) {
+  // #region agent log
+  fetch("http://127.0.0.1:7329/ingest/c5393905-43e3-4b8f-b8be-a6ad09348f60", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7680bd" },
+    body: JSON.stringify({
+      sessionId: "7680bd",
+      runId: "extension-runtime",
+      hypothesisId,
+      location,
+      message,
+      data,
+      timestamp: Date.now()
+    })
+  }).catch(() => {});
+  // #endregion
+}
+
+// #region agent log
+debugLog("H7", "service-worker.js:module", "Service worker module loaded", {
+  hasChromeRuntime: typeof chrome?.runtime?.id === "string"
+});
+try {
+  chrome.action.setBadgeBackgroundColor({ color: "#2563eb" });
+  chrome.action.setBadgeText({ text: "DBG" });
+} catch (_) {}
+// #endregion
 
 function nowMs() {
   return Date.now();
@@ -618,17 +647,33 @@ async function ensureSessionInitialized() {
 }
 
 async function rpcCall(method, params = []) {
-  const endpoint = session.rpcEndpoint;
-  const resp = await fetch(endpoint, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method,
-      params
-    })
-  });
+  let endpoint;
+  try {
+    endpoint = normalizeRpcEndpoint(session.rpcEndpoint);
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+  let resp;
+  try {
+    resp = await fetch(endpoint, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method,
+        params
+      })
+    });
+  } catch (err) {
+    throw new Error(rpcNetworkErrorMessage(endpoint, err));
+  }
+  if (resp.status === 401 || resp.status === 403) {
+    throw new Error(
+      `RPC returned HTTP ${resp.status} (authentication required). ` +
+        `For Zebra, set enable_cookie_auth=false in zebrad.toml for local JSON-RPC, or run a small proxy that adds the expected credentials.`
+    );
+  }
   if (!resp.ok) throw new Error(`RPC HTTP ${resp.status}`);
   const body = await resp.json();
   if (body.error) throw new Error(body.error.message || "RPC error");
@@ -681,12 +726,23 @@ setInterval(() => {
 
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== "NOZY_REQUEST") return;
+  debugLog("H1", "service-worker.js:onMessage", "Received NOZY_REQUEST", {
+    method: String(msg.method || ""),
+    hasParams: !!msg.params
+  });
+  try {
+    chrome.action.setBadgeText({ text: "MSG" });
+  } catch (_) {}
 
   (async () => {
     try {
       validateRequestEnvelope(msg);
       await ensureSessionInitialized();
       await ensureWasm();
+      debugLog("H2", "service-worker.js:onMessage", "Session and wasm initialized", {
+        unlocked: !!session.unlocked,
+        hasAddress: !!session.address
+      });
       const method = msg.method;
       const params = msg.params ?? {};
       touchSession();
@@ -706,7 +762,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(ok(walletLock()));
           return;
         case "wallet_status":
-          sendResponse(ok(await getWalletStatus()));
+          {
+            const status = await getWalletStatus();
+            debugLog("H3", "service-worker.js:wallet_status", "wallet_status response prepared", {
+              exists: !!status.exists,
+              unlocked: !!status.unlocked,
+              hasAddress: !!status.address
+            });
+            sendResponse(ok(status));
+          }
           return;
         case "wallet_set_session_policy": {
           const autoLockMs = Number(params.autoLockMs ?? DEFAULT_AUTO_LOCK_MS);
@@ -844,14 +908,20 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           }
           sendResponse(ok({ approved: false, id: params.id }));
           return;
-        case "rpc_set_endpoint":
-          session.rpcEndpoint = params.url || session.rpcEndpoint;
+        case "rpc_set_endpoint": {
+          const next = params.url || session.rpcEndpoint;
+          try {
+            session.rpcEndpoint = normalizeRpcEndpoint(next);
+          } catch (e) {
+            throw e instanceof Error ? e : new Error(String(e));
+          }
           {
             const existing = (await loadWalletState()) || {};
             await saveWalletState({ ...existing, rpcEndpoint: session.rpcEndpoint });
           }
           sendResponse(ok({ rpcEndpoint: session.rpcEndpoint }));
           return;
+        }
         case "rpc_get_status":
           sendResponse(
             ok({
@@ -982,6 +1052,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       sendResponse(fail(`Unsupported method: ${method}`));
     } catch (e) {
+      debugLog("H2", "service-worker.js:onMessage:catch", "Request handling failed", {
+        method: String(msg?.method || ""),
+        error: String(e?.message || e || "unknown")
+      });
       sendResponse(fail(e?.message ?? String(e)));
     }
   })();

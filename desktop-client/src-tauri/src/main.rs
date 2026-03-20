@@ -23,27 +23,20 @@ fn main() {
             restore_wallet,
             unlock_wallet,
             get_wallet_status,
-            
             generate_address,
-            
             get_balance,
             sync_wallet,
-            
             send_transaction,
             estimate_fee,
             get_transaction_history,
             get_transaction,
-            
             get_config,
             set_zebra_url,
             test_zebra_connection,
-            
             check_proving_status,
             download_proving_parameters,
-            
             get_notes,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }
-

@@ -18,7 +18,7 @@ impl From<nozy::NozyError> for TauriError {
             nozy::NozyError::Transaction(_) => Some("TRANSACTION_ERROR".to_string()),
             _ => None,
         };
-        
+
         TauriError {
             message: err.user_friendly_message(),
             code,
@@ -43,4 +43,3 @@ impl From<&str> for TauriError {
         }
     }
 }
-
