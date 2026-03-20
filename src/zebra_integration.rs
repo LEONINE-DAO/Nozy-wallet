@@ -116,7 +116,12 @@ impl ZebraClient {
         }
 
         if let Ok(home) = std::env::var("HOME") {
-            paths.push(PathBuf::from(home).join(".cache").join("zebra").join(".cookie"));
+            paths.push(
+                PathBuf::from(home)
+                    .join(".cache")
+                    .join("zebra")
+                    .join(".cookie"),
+            );
         }
         if let Ok(profile) = std::env::var("USERPROFILE") {
             paths.push(
@@ -753,22 +758,19 @@ This blocks remote RPC only; localhost RPC remains allowed.",
             req = req.basic_auth(user, Some(pass));
         }
 
-        let response = req
-            .send()
-            .await
-            .map_err(|e| {
-                let error_msg = if e.is_connect() {
-                    format!("Connection failed to {}: {}. Is Zebra running?", url, e)
-                } else if e.is_timeout() {
-                    format!(
-                        "Request timeout to {}. The node may be slow or overloaded.",
-                        url
-                    )
-                } else {
-                    format!("HTTP request failed: {}", e)
-                };
-                NozyError::NetworkError(error_msg)
-            })?;
+        let response = req.send().await.map_err(|e| {
+            let error_msg = if e.is_connect() {
+                format!("Connection failed to {}: {}. Is Zebra running?", url, e)
+            } else if e.is_timeout() {
+                format!(
+                    "Request timeout to {}. The node may be slow or overloaded.",
+                    url
+                )
+            } else {
+                format!("HTTP request failed: {}", e)
+            };
+            NozyError::NetworkError(error_msg)
+        })?;
 
         if !response.status().is_success() {
             return Err(NozyError::NetworkError(format!(
