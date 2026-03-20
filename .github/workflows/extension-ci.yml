@@ -40,14 +40,14 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: browser-extension/popup
+        working-directory: browser-extension/wasm-core/popup
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: browser-extension/popup/package-lock.json
+          cache-dependency-path: browser-extension/wasm-core/popup/package-lock.json
       - run: npm ci
       - run: npm run typecheck
       - run: npm run test
@@ -65,9 +65,9 @@ jobs:
         with:
           node-version: 22
           cache: npm
-          cache-dependency-path: browser-extension/popup/package-lock.json
+          cache-dependency-path: browser-extension/wasm-core/popup/package-lock.json
       - name: Build popup
-        working-directory: browser-extension/popup
+        working-directory: browser-extension/wasm-core/popup
         run: |
           npm ci
           npm run build
@@ -80,7 +80,7 @@ jobs:
           cp -r browser-extension/content dist/nozy-extension/content
           cp -r browser-extension/wasm dist/nozy-extension/wasm
           mkdir -p dist/nozy-extension/popup
-          cp -r browser-extension/popup/dist dist/nozy-extension/popup/dist
+          cp -r browser-extension/wasm-core/popup/dist dist/nozy-extension/popup/dist
       - name: Validate manifest exists
         run: test -f dist/nozy-extension/manifest.json
       - name: Validate popup entry path exists

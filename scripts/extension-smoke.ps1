@@ -22,7 +22,7 @@ try {
     }
 
     Invoke-Step "Popup typecheck + build" {
-        Push-Location "browser-extension/popup"
+        Push-Location "browser-extension/wasm-core/popup"
         try {
             npm run typecheck
             npm run build
