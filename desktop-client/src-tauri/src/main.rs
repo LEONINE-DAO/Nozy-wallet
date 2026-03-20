@@ -6,6 +6,15 @@ mod error;
 
 use commands::*;
 
+fn network_from_config() -> zcash_protocol::consensus::NetworkType {
+    let config = nozy::load_config();
+    if config.network == "testnet" {
+        zcash_protocol::consensus::NetworkType::Test
+    } else {
+        zcash_protocol::consensus::NetworkType::Main
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![

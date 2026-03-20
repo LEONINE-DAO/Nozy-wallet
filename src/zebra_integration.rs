@@ -5,6 +5,8 @@ use hex;
 use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fs;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -20,6 +22,7 @@ pub struct ZebraClient {
     backend: BackendKind,
     protocol: Protocol,
     client: Arc<reqwest::Client>,
+    rpc_auth: Option<(String, String)>,
     privacy_proxy_url: Option<String>,
     block_remote_without_privacy: bool,
     privacy_block_reason: Option<String>,
@@ -87,6 +90,73 @@ impl ZebraClient {
         }
     }
 
+    fn parse_cookie_pair(cookie: &str) -> Option<(String, String)> {
+        let trimmed = cookie.trim();
+        let (user, pass) = trimmed.split_once(':')?;
+        if user.is_empty() || pass.is_empty() {
+            return None;
+        }
+        Some((user.to_string(), pass.to_string()))
+    }
+
+    fn candidate_cookie_paths() -> Vec<PathBuf> {
+        let mut paths = Vec::new();
+
+        if let Ok(path) = std::env::var("ZEBRA_RPC_COOKIE_PATH") {
+            if !path.trim().is_empty() {
+                paths.push(PathBuf::from(path));
+            }
+        }
+
+        if let Ok(cookie_inline) = std::env::var("ZEBRA_RPC_COOKIE") {
+            if let Some(pair) = Self::parse_cookie_pair(&cookie_inline) {
+                // Inline cookie env is handled in `resolve_rpc_auth`; no file path to add.
+                let _ = pair;
+            }
+        }
+
+        if let Ok(home) = std::env::var("HOME") {
+            paths.push(PathBuf::from(home).join(".cache").join("zebra").join(".cookie"));
+        }
+        if let Ok(profile) = std::env::var("USERPROFILE") {
+            paths.push(
+                PathBuf::from(profile)
+                    .join(".cache")
+                    .join("zebra")
+                    .join(".cookie"),
+            );
+        }
+
+        paths
+    }
+
+    fn resolve_rpc_auth() -> Option<(String, String)> {
+        if let (Ok(user), Ok(pass)) = (
+            std::env::var("ZEBRA_RPC_USER"),
+            std::env::var("ZEBRA_RPC_PASS"),
+        ) {
+            if !user.trim().is_empty() && !pass.trim().is_empty() {
+                return Some((user, pass));
+            }
+        }
+
+        if let Ok(cookie_inline) = std::env::var("ZEBRA_RPC_COOKIE") {
+            if let Some(pair) = Self::parse_cookie_pair(&cookie_inline) {
+                return Some(pair);
+            }
+        }
+
+        for path in Self::candidate_cookie_paths() {
+            if let Ok(content) = fs::read_to_string(&path) {
+                if let Some(pair) = Self::parse_cookie_pair(&content) {
+                    return Some(pair);
+                }
+            }
+        }
+
+        None
+    }
+
     pub fn new(url: String) -> Self {
         Self::new_with_backend(url, BackendKind::Zebra)
     }
@@ -114,6 +184,7 @@ impl ZebraClient {
             backend,
             protocol,
             client: Arc::new(client),
+            rpc_auth: Self::resolve_rpc_auth(),
             privacy_proxy_url: None,
             block_remote_without_privacy: false,
             privacy_block_reason: None,
@@ -677,10 +748,12 @@ This blocks remote RPC only; localhost RPC remains allowed.",
     where
         T: serde::de::DeserializeOwned,
     {
-        let response = self
-            .client
-            .post(url)
-            .json(request)
+        let mut req = self.client.post(url).json(request);
+        if let Some((user, pass)) = &self.rpc_auth {
+            req = req.basic_auth(user, Some(pass));
+        }
+
+        let response = req
             .send()
             .await
             .map_err(|e| {

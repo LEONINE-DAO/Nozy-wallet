@@ -119,7 +119,7 @@ pub async fn unlock_wallet(
             code: Some("INVALID_PASSWORD".to_string()),
         })?;
     
-    let address = wallet.generate_orchard_address(0, 0)
+    let address = wallet.generate_orchard_address(0, 0, crate::network_from_config())
         .map_err(|e| TauriError::from(e.to_string()))?;
     
     Ok(WalletStatus {
@@ -149,7 +149,7 @@ pub async fn get_wallet_status() -> Result<WalletStatus, TauriError> {
     
     let address = if unlocked {
         if let Ok(wallet) = storage.load_wallet("").await {
-            wallet.generate_orchard_address(0, 0).ok()
+            wallet.generate_orchard_address(0, 0, crate::network_from_config()).ok()
         } else {
             None
         }

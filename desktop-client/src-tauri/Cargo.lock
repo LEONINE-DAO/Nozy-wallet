@@ -3259,6 +3259,7 @@ dependencies = [
  "futures",
  "groth16",
  "hex",
+ "indexmap 1.9.3",
  "indicatif",
  "orchard",
  "prost 0.13.5",
@@ -3293,9 +3294,11 @@ dependencies = [
  "nozy",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tauri",
  "tauri-build",
  "tokio",
+ "zcash_protocol",
 ]
 
 [[package]]

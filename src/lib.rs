@@ -99,8 +99,7 @@ pub use bridge::{
     StoredSwap, SwapStorage,
 };
 #[cfg(not(target_arch = "wasm32"))]
-pub use cli_helpers::estimate_transaction_fee;
-#[cfg(not(target_arch = "wasm32"))]
+pub use cli_helpers::{estimate_transaction_fee, scan_notes_for_sending};
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
 #[cfg(not(target_arch = "wasm32"))]
 pub use config::{BackendKind, Protocol};

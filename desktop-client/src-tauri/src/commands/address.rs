@@ -32,7 +32,7 @@ pub async fn generate_address(
     let account = request.account.unwrap_or(0);
     let index = request.index.unwrap_or(0);
     
-    let address = wallet.generate_orchard_address(account, index)
+    let address = wallet.generate_orchard_address(account, index, crate::network_from_config())
         .map_err(|e| TauriError::from(e.to_string()))?;
     
     Ok(AddressResponse { address })

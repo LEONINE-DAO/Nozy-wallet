@@ -1,5 +1,5 @@
 use crate::error::TauriError;
-use nozy::{HDWallet, WalletStorage, ZebraClient, ZcashTransactionBuilder, load_config, cli_helpers, transaction_history::{SentTransactionStorage, SentTransactionRecord}};
+use nozy::{HDWallet, WalletStorage, ZebraClient, ZcashTransactionBuilder, load_config, estimate_transaction_fee, scan_notes_for_sending, transaction_history::{SentTransactionStorage, SentTransactionRecord}};
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
@@ -52,14 +52,14 @@ pub async fn send_transaction(
             code: Some("WALLET_NOT_FOUND".to_string()),
         })?;
     
-    let spendable_notes = cli_helpers::scan_notes_for_sending(wallet, &zebra_url)
+    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
     
     let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::new(zebra_url.clone());
     
-    let fee_zatoshis = cli_helpers::estimate_transaction_fee(&zebra_client).await;
+    let fee_zatoshis = estimate_transaction_fee(&zebra_client).await;
     
     let memo_bytes = request.memo
         .as_ref()
@@ -126,7 +126,7 @@ pub async fn estimate_fee(
     let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
     let zebra_client = ZebraClient::new(zebra_url);
     
-    let fee_zatoshis = cli_helpers::estimate_transaction_fee(&zebra_client).await;
+    let fee_zatoshis = estimate_transaction_fee(&zebra_client).await;
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
     
     Ok(fee_zec)

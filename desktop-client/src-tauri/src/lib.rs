@@ -173,7 +173,7 @@ async fn wallet_exists_with_password_flag() -> WalletExistsResponse {
     }
 }
 
-fn network_from_config() -> zcash_protocol::consensus::NetworkType {
+pub(crate) fn network_from_config() -> zcash_protocol::consensus::NetworkType {
     let config = nozy::load_config();
     if config.network == "testnet" {
         zcash_protocol::consensus::NetworkType::Test
