@@ -154,6 +154,31 @@ export const extensionApi = {
       method: "wallet_scan_notes",
       params: { startHeight, endHeight }
     }),
+  walletStartScan: (window = 20_000) =>
+    sendMessage<{
+      started: boolean;
+      startHeight: number;
+      endHeight: number;
+      status: string;
+    }>({ method: "wallet_start_scan", params: { window } }),
+  walletScanProgress: () =>
+    sendMessage<{
+      status: string;
+      startHeight?: number;
+      endHeight?: number;
+      currentHeight?: number;
+      scannedBlocks?: number;
+      totalBlocks?: number;
+      percent?: number;
+      discoveredNotes?: number;
+      totalBalanceZats?: number;
+      startedAt?: number;
+      elapsed?: number;
+    }>({ method: "wallet_scan_progress" }),
+  walletStopScan: () =>
+    sendMessage<{ status: string }>({ method: "wallet_stop_scan" }),
+  rpcSendRawTx: (rawTxHex: string) =>
+    sendMessage<string>({ method: "rpc_send_raw_tx", params: { rawTxHex } }),
   walletProveTransaction: (tx: Record<string, unknown>) =>
     sendMessage<{
       txid: string;

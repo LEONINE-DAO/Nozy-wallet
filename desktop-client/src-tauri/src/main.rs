@@ -36,6 +36,9 @@ fn main() {
             check_proving_status,
             download_proving_parameters,
             get_notes,
+            lwd_get_info,
+            lwd_chain_tip,
+            lwd_sync_compact,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

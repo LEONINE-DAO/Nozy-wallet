@@ -6,6 +6,8 @@
 
 NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet **only supports shielded transactions** - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees.
 
+**Lightwalletd / compact sync** is implemented once in Rust as **`zeaking`** (`zeaking::lwd`). It is wired for **desktop** (Tauri + `api-server`), **Chrome/Edge** (MV3 calls the localhost companion — see `browser-extension/COMPANION.md`), and **mobile** (`zeaking-ffi` + UniFFI). See `zeaking/README.md`. On Windows, **`scripts/run-nozy-api.ps1`** starts `api-server` against WSL lightwalletd; see **`scripts/README.md`**.
+
 >  **Want to help build the future of private cryptocurrency?** Check out our **[Enhancement Roadmap](ENHANCEMENT_ROADMAP.md)** to see exciting features we're building, including **Desktop GUI**, **Mobile Apps**, **Hardware Wallet Support**, and more! We welcome contributors!
 
 ##  NU 6.1 Support - Ready for Network Upgrade 6.1!

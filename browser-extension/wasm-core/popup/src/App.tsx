@@ -10,24 +10,6 @@ import {
 import { TopNav } from "./components/TopNav";
 import { useUiStore } from "./store/uiStore";
 
-function debugLog(hypothesisId: string, location: string, message: string, data: Record<string, unknown> = {}) {
-  // #region agent log
-  fetch("http://127.0.0.1:7329/ingest/c5393905-43e3-4b8f-b8be-a6ad09348f60", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7680bd" },
-    body: JSON.stringify({
-      sessionId: "7680bd",
-      runId: "extension-runtime",
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now()
-    })
-  }).catch(() => undefined);
-  // #endregion
-}
-
 function WelcomeView({
   onCreated,
   onRestored
@@ -149,6 +131,35 @@ function DashboardView({
   txs: TxStateEntry[];
   onRetry: (id: string) => Promise<void>;
 }) {
+  const [balanceZats, setBalanceZats] = useState<number | null>(null);
+  const [scanLabel, setScanLabel] = useState("");
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+    async function poll() {
+      try {
+        const p = await extensionApi.walletScanProgress();
+        if (p.status === "done") {
+          setBalanceZats(p.totalBalanceZats ?? 0);
+          setScanLabel(`Scanned ${p.scannedBlocks} blocks`);
+        } else if (p.status === "scanning") {
+          setBalanceZats(p.totalBalanceZats ?? 0);
+          setScanLabel(`Scanning… ${p.percent}%`);
+        } else if (p.status === "stopped") {
+          setBalanceZats(p.totalBalanceZats ?? 0);
+          setScanLabel(`Scan stopped at ${p.percent}%`);
+        } else {
+          setScanLabel("No scan yet — go to Receive tab to start");
+        }
+      } catch (_) {}
+    }
+    poll();
+    timer = setInterval(poll, 2000);
+    return () => { if (timer) clearInterval(timer); };
+  }, []);
+
+  const zec = balanceZats !== null ? (balanceZats / 1e8).toFixed(8) : "—";
+
   return (
     <div className="space-y-3 p-4">
       <h1 className="text-lg font-semibold">Dashboard</h1>
@@ -158,7 +169,8 @@ function DashboardView({
       </div>
       <div className="rounded border border-white/10 bg-white/5 p-3 text-sm">
         <div className="text-white/70">Balance</div>
-        <div>Scanning pipeline is next phase.</div>
+        <div className="text-xl font-semibold">{zec} <span className="text-sm font-normal text-white/50">ZEC</span></div>
+        {scanLabel && <div className="text-xs text-white/40 mt-1">{scanLabel}</div>}
       </div>
       <div className="rounded border border-white/10 bg-white/5 p-3 text-sm">
         <div className="mb-1 text-white/70">Recent transactions</div>
@@ -203,165 +215,252 @@ function DashboardView({
 function SendView() {
   const [status, setStatus] = useState<string>("");
   const [recipient, setRecipient] = useState("");
-  const [amount, setAmount] = useState("1");
-  const [memo, setMemo] = useState("nozy-poc");
+  const [amount, setAmount] = useState("");
+  const [feeZats, setFeeZats] = useState("10000");
+  const [memo, setMemo] = useState("");
+  const [rawTxHex, setRawTxHex] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<{
     txid: string;
     requestedAmount: number;
     fee: number;
     selectedNotesCount: number;
     selectedNotesTotalValue: number;
-    selectedWitnessesCount: number;
     selectedNotes: Array<{ value: number; cmx: string; block_height: number }>;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  async function runPreflight() {
+    setBusy(true);
+    setPreflight(null);
+    setRawTxHex(null);
+    try {
+      const requestedAmount = Number(amount) || 0;
+      if (requestedAmount <= 0) throw new Error("Enter an amount in zats");
+      const fee = Math.max(0, Math.floor(Number(feeZats) || 0));
+      if (fee <= 0) throw new Error("Enter a positive fee in zats (e.g. 10000)");
+      const result = await extensionApi.walletProveTransaction({
+        to: recipient.trim() || undefined,
+        amount: requestedAmount,
+        fee,
+        memo: memo || undefined
+      });
+      setRawTxHex(result.rawTxHex || null);
+      setPreflight({
+        txid: result.txid,
+        requestedAmount,
+        fee: Number(result.fee ?? 0),
+        selectedNotesCount: Number(result.selected_notes_count ?? 0),
+        selectedNotesTotalValue: Number(result.selected_notes_total_value ?? 0),
+        selectedNotes: result.selected_notes ?? []
+      });
+      setStatus("Transaction built — review and confirm below.");
+    } catch (e) {
+      setStatus((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function broadcast() {
+    if (!rawTxHex) return;
+    setBusy(true);
+    try {
+      const txid = await extensionApi.rpcSendRawTx(rawTxHex);
+      setStatus(`Broadcast OK — txid: ${txid}`);
+      setPreflight(null);
+      setRawTxHex(null);
+    } catch (e) {
+      setStatus(`Broadcast failed: ${(e as Error).message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <div className="space-y-2 p-4 text-sm">
-      <h2 className="text-base font-semibold">Send</h2>
-      <div className="rounded border border-white/10 bg-white/5 p-3">
-        Transaction proving preflight now surfaces candidate note selection details.
-      </div>
-      <input
-        className="w-full rounded bg-white/10 p-2 text-sm outline-none"
-        placeholder="Recipient (optional: defaults to wallet address)"
-        value={recipient}
-        onChange={(e) => setRecipient(e.target.value)}
-      />
-      <div className="flex gap-2">
+    <div className="space-y-3 p-4 text-sm">
+      <h2 className="text-base font-semibold">Send ZEC</h2>
+
+      <div>
+        <label className="mb-1 block text-xs text-white/50">Recipient address (u1…)</label>
         <input
-          className="w-1/2 rounded bg-white/10 p-2 text-sm outline-none"
-          placeholder="Amount (zats)"
+          className="w-full rounded bg-white/10 p-2 text-sm outline-none placeholder:text-white/30"
+          placeholder="Leave blank to send to own address"
+          value={recipient}
+          onChange={(e) => setRecipient(e.target.value)}
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs text-white/50">Amount (zats)</label>
+        <input
+          className="w-full rounded bg-white/10 p-2 text-sm outline-none placeholder:text-white/30"
+          placeholder="e.g. 100000 (= 0.001 ZEC)"
           value={amount}
           onChange={(e) => setAmount(e.target.value)}
         />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs text-white/50">Fee (zats)</label>
         <input
-          className="w-1/2 rounded bg-white/10 p-2 text-sm outline-none"
-          placeholder="Memo"
+          className="w-full rounded bg-white/10 p-2 text-sm outline-none placeholder:text-white/30"
+          placeholder="10000"
+          value={feeZats}
+          onChange={(e) => setFeeZats(e.target.value)}
+        />
+        <p className="mt-1 text-[10px] text-white/40">
+          Zebrad has no estimatefee RPC; set fee manually (10000 zats is a common default).
+        </p>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-xs text-white/50">Memo (optional, max 512 bytes)</label>
+        <textarea
+          className="w-full rounded bg-white/10 p-2 text-sm outline-none placeholder:text-white/30 resize-none"
+          rows={2}
+          placeholder="Private message attached to the transaction"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
         />
       </div>
-      <button
-        className="rounded bg-amber-500 px-3 py-1 text-black disabled:opacity-50"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          setPreflight(null);
-          try {
-            const requestedAmount = Number(amount) || 1;
-            const result = await extensionApi.walletProveTransaction({
-              to: recipient.trim() || undefined,
-              amount: requestedAmount,
-              memo
-            });
-            setPreflight({
-              txid: result.txid,
-              requestedAmount,
-              fee: Number(result.fee ?? 0),
-              selectedNotesCount: Number(result.selected_notes_count ?? 0),
-              selectedNotesTotalValue: Number(result.selected_notes_total_value ?? 0),
-              selectedWitnessesCount: Number(result.selected_witnesses_count ?? 0),
-              selectedNotes: result.selected_notes ?? []
-            });
-            setStatus(`Preflight tx build: ${result.txid.slice(0, 16)}...`);
-          } catch (e) {
-            setStatus((e as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        Run Proving Preflight
-      </button>
-      {status && <div className="text-xs text-white/70">{status}</div>}
-      {preflight && (
-        <div className="rounded border border-white/10 bg-white/5 p-3 text-xs">
-          {(() => {
-            const totalRequired = preflight.requestedAmount + preflight.fee;
-            const isLargeChange = preflight.selectedNotesTotalValue > totalRequired * 2;
-            const suggestedAmount = Math.max(
-              1,
-              Math.floor(preflight.selectedNotesTotalValue / 2) - preflight.fee
-            );
-            return (
-              <>
-          <div className="mb-2 flex items-center gap-2">
-            <span className="text-white/70">Selection mode</span>
-            <span
-              className={`rounded px-2 py-0.5 text-[10px] font-semibold ${
-                preflight.selectedNotesCount <= 1
-                  ? "bg-green-500/20 text-green-200"
-                  : "bg-amber-500/20 text-amber-200"
-              }`}
-            >
-              {preflight.selectedNotesCount <= 1 ? "SINGLE" : "MULTI"}
-            </span>
-          </div>
-          <div>Requested amount: {preflight.requestedAmount} zats</div>
-          <div>Fee estimate used: {preflight.fee} zats</div>
-          <div>Selected notes: {preflight.selectedNotesCount}</div>
-          <div>Total selected value: {preflight.selectedNotesTotalValue} zats</div>
-          <div>Witnesses fetched: {preflight.selectedWitnessesCount}</div>
-          {isLargeChange && (
-            <div className="mt-2 rounded border border-amber-400/40 bg-amber-500/10 px-2 py-1 text-amber-200">
-              Large-change warning: selected input value is much higher than amount + fee.
-              <div className="mt-2 flex items-center gap-2">
-                <button
-                  className="rounded bg-amber-500 px-2 py-1 text-[10px] font-semibold text-black"
-                  onClick={() => setAmount(String(suggestedAmount))}
-                >
-                  Use suggested amount ({suggestedAmount} zats)
-                </button>
-                <span className="text-[10px] text-amber-100/80">Then run preflight again.</span>
-              </div>
+
+      {!preflight ? (
+        <button
+          className="w-full rounded bg-amber-500 py-2 font-medium text-black disabled:opacity-50"
+          disabled={busy || !amount || !feeZats}
+          onClick={runPreflight}
+        >
+          {busy ? "Building transaction…" : "Preview Transaction"}
+        </button>
+      ) : (
+        <div className="space-y-2">
+          <div className="rounded border border-white/10 bg-white/5 p-3 text-xs space-y-1">
+            <div className="flex justify-between">
+              <span className="text-white/50">Amount</span>
+              <span>{preflight.requestedAmount} zats ({(preflight.requestedAmount / 1e8).toFixed(8)} ZEC)</span>
             </div>
-          )}
-          <div className="mt-2 space-y-1">
-            {preflight.selectedNotes.map((n, i) => (
-              <div key={`${n.cmx}-${i}`} className="rounded bg-black/20 px-2 py-1">
-                #{i + 1}: {n.value} zats @ height {n.block_height} (cmx {n.cmx}...)
+            <div className="flex justify-between">
+              <span className="text-white/50">Fee</span>
+              <span>{preflight.fee} zats</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-white/50">Input notes</span>
+              <span>{preflight.selectedNotesCount} ({preflight.selectedNotesTotalValue} zats)</span>
+            </div>
+            {memo && (
+              <div className="flex justify-between">
+                <span className="text-white/50">Memo</span>
+                <span className="max-w-[180px] truncate">{memo}</span>
               </div>
-            ))}
+            )}
           </div>
-              </>
-            );
-          })()}
+          <div className="flex gap-2">
+            <button
+              className="flex-1 rounded bg-green-600 py-2 font-medium text-white disabled:opacity-50"
+              disabled={busy}
+              onClick={broadcast}
+            >
+              {busy ? "Broadcasting…" : "Confirm & Send"}
+            </button>
+            <button
+              className="rounded border border-white/20 px-3 py-2 text-white/60"
+              onClick={() => { setPreflight(null); setRawTxHex(null); setStatus(""); }}
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
+
+      {status && <div className="text-xs text-white/70 mt-1">{status}</div>}
     </div>
   );
 }
 
 function ReceiveView({ status }: { status: WalletStatus | null }) {
   const [scanInfo, setScanInfo] = useState<string>("");
-  const [busy, setBusy] = useState(false);
+  const [scanStatus, setScanStatus] = useState<string>("idle");
+  const [percent, setPercent] = useState(0);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setInterval> | null = null;
+
+    async function poll() {
+      try {
+        const p = await extensionApi.walletScanProgress();
+        setScanStatus(p.status ?? "idle");
+        setPercent(p.percent ?? 0);
+        if (p.status === "scanning") {
+          const elapsed = ((p.elapsed ?? 0) / 1000).toFixed(0);
+          setScanInfo(
+            `Scanning… ${p.percent}% (${p.scannedBlocks}/${p.totalBlocks} blocks, ${p.discoveredNotes} notes, ${elapsed}s)`
+          );
+        } else if (p.status === "done") {
+          const elapsed = ((p.elapsed ?? 0) / 1000).toFixed(1);
+          const zec = ((p.totalBalanceZats ?? 0) / 1e8).toFixed(8);
+          setScanInfo(
+            `Done in ${elapsed}s — ${p.scannedBlocks} blocks, ${p.discoveredNotes} notes, balance: ${zec} ZEC`
+          );
+        } else if (p.status === "stopped") {
+          setScanInfo(`Scan stopped at ${p.percent}% (${p.scannedBlocks}/${p.totalBlocks} blocks)`);
+        }
+      } catch (_) {}
+    }
+
+    poll();
+    timer = setInterval(poll, 1500);
+    return () => { if (timer) clearInterval(timer); };
+  }, []);
+
+  const scanning = scanStatus === "scanning";
+
   return (
     <div className="space-y-2 p-4 text-sm">
       <h2 className="text-base font-semibold">Receive</h2>
       <div className="rounded border border-white/10 bg-white/5 p-3 break-all">
         {status?.address || "No address yet"}
       </div>
-      <button
-        className="rounded bg-amber-500 px-3 py-1 text-black disabled:opacity-50"
-        disabled={busy}
-        onClick={async () => {
-          setBusy(true);
-          try {
-            const count = await extensionApi.rpcGetBlockCount();
-            const start = Math.max(0, count - 25);
-            const scanned = await extensionApi.walletScanNotes(start, count);
-            setScanInfo(
-              `Scanned ${scanned.scannedBlocks} blocks, notes found: ${scanned.discoveredNotes.length}`
-            );
-          } catch (e) {
-            setScanInfo((e as Error).message);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        Scan Recent Blocks
-      </button>
+
+      {scanning && (
+        <div className="h-1.5 w-full rounded bg-white/10 overflow-hidden">
+          <div
+            className="h-full bg-amber-500 transition-all duration-500"
+            style={{ width: `${percent}%` }}
+          />
+        </div>
+      )}
+
+      <div className="flex gap-2">
+        {!scanning ? (
+          <button
+            className="rounded bg-amber-500 px-3 py-1 text-black"
+            onClick={async () => {
+              try {
+                await extensionApi.walletStartScan(20_000);
+                setScanStatus("scanning");
+                setScanInfo("Starting scan…");
+              } catch (e) {
+                setScanInfo((e as Error).message);
+              }
+            }}
+          >
+            Scan Blocks (20k)
+          </button>
+        ) : (
+          <button
+            className="rounded bg-red-600 px-3 py-1 text-white"
+            onClick={async () => {
+              try {
+                await extensionApi.walletStopScan();
+                setScanStatus("stopped");
+              } catch (_) {}
+            }}
+          >
+            Stop Scan
+          </button>
+        )}
+      </div>
+
       {scanInfo && <div className="text-xs text-white/70">{scanInfo}</div>}
     </div>
   );
@@ -736,7 +835,6 @@ export function App() {
   const endpoint = useMemo(() => status?.rpcEndpoint || "http://127.0.0.1:8232", [status]);
 
   const refresh = async () => {
-    debugLog("H4", "App.tsx:refresh", "refresh start", { view });
     try {
       setBootDebug("startup: wallet_status");
       const nextStatus = await extensionApi.walletStatus();
@@ -754,11 +852,6 @@ export function App() {
       setTxs(Array.isArray(txState.txs) ? txState.txs : []);
       setBootDebug(null);
 
-      debugLog("H4", "App.tsx:refresh", "refresh success", {
-        exists: !!nextStatus.exists,
-        unlocked: !!nextStatus.unlocked,
-        approvalsCount: nextApprovals.length
-      });
       return;
     } catch (err) {
       const msg = String((err as Error)?.message || err || "unknown");
@@ -769,9 +862,6 @@ export function App() {
 
   useEffect(() => {
     refresh().catch((err) => {
-      debugLog("H4", "App.tsx:useEffect", "initial refresh failed", {
-        error: String((err as Error)?.message || err || "unknown")
-      });
       console.error(err);
     });
     const id = setInterval(() => {

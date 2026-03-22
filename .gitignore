@@ -82,5 +82,6 @@ push_url_update.ps1
 !book/
 !book/**/*.md
 !browser-extension/LOCAL_RPC.md
+!browser-extension/COMPANION.md
 
 book/book/

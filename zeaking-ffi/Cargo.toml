@@ -1,0 +1,17 @@
+[package]
+name = "zeaking-ffi"
+version = "0.1.0"
+edition = "2021"
+description = "UniFFI bindings for zeaking::lwd (iOS / Android store apps)"
+license = "MIT"
+repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
+
+[lib]
+crate-type = ["lib", "cdylib", "staticlib"]
+name = "zeaking_ffi"
+
+[dependencies]
+zeaking = { path = "../zeaking", features = ["lightwalletd"] }
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+thiserror = "1.0"
+uniffi = { version = "0.28", features = ["tokio"] }

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "NozyWallet",
-  "version": "0.1.1",
-  "description": "Privacy-first Zcash Orchard wallet (WASM core)",
+  "version": "0.1.2",
+  "description": "Privacy-first Zcash Orchard wallet — Chrome and Microsoft Edge (MV3). Companion: localhost Nozy API for zeaking/lightwalletd.",
   "action": {
     "default_popup": "wasm-core/popup/dist/index.html"
   },
@@ -22,9 +22,11 @@
     }
   ],
   "permissions": [
-    "storage"
+    "storage",
+    "alarms"
   ],
   "host_permissions": [
+    "http://127.0.0.1:3000/*",
     "http://*/*",
     "https://*/*"
   ],

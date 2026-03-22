@@ -56,13 +56,34 @@ desktop-client/
 │   │       ├── transaction.rs
 │   │       ├── config.rs
 │   │       ├── proving.rs
-│   │       └── notes.rs
+│   │       ├── notes.rs
+│   │       └── lwd.rs        # lightwalletd / zeaking::lwd compact sync
 │   ├── Cargo.toml      # Rust dependencies
 │   ├── build.rs        # Build script
 │   └── tauri.conf.json # Tauri configuration
 ├── src/                # React frontend (to be created)
 └── package.json        # Node dependencies (to be created)
 ```
+
+## lightwalletd + Zeaking (Chrome / Edge companion)
+
+When **Nozy desktop** or **`nozywallet-api`** is running, extensions can sync compact blocks without raw gRPC in the browser.
+
+**Tauri commands** (invoke from the webview frontend):
+
+| Command | Purpose |
+|---------|---------|
+| `lwd_get_info` | `{ lightwalletdUrl?: string }` → chain name, tip height |
+| `lwd_chain_tip` | optional URL → tip height |
+| `lwd_sync_compact` | `{ start, end?, lightwalletdUrl?, dbPath? }` → blocks written |
+
+Default lightwalletd URL: env `LIGHTWALLETD_GRPC` or `http://127.0.0.1:9067`.
+
+**HTTP API** (if you run `nozywallet-api`): see [`api-server`](../api-server) routes `/api/lwd/*`.
+
+**Browser extension (Chrome / Edge):** [`browser-extension/COMPANION.md`](../browser-extension/COMPANION.md) — `host_permissions` for `http://127.0.0.1:3000/*` and service-worker methods `companion_status`, `companion_lwd_*`.
+
+**Mobile:** [`zeaking-ffi`](../zeaking-ffi) — UniFFI bindings for the same `zeaking::lwd` calls.
 
 ## 🔧 Configuration
 

@@ -92,7 +92,7 @@ ark-bls12-381 = { version = "0.3", optional = true }
 ark-std = { version = "0.3", optional = true }
 
 # Zeaking indexing system
-zeaking = { path = "zeaking", version = "0.1.0", optional = true }
+zeaking = { path = "zeaking", version = "0.1.0", optional = true, features = ["lightwalletd"] }
 async-trait = { version = "0.1", optional = true }
 
 # Parallel processing
@@ -139,7 +139,7 @@ wasm = ["getrandom/js"]
 secret-network = ["dep:cosmrs", "dep:tendermint"]
 
 [workspace]
-members = ["zeaking", "api-server"]
+members = ["zeaking", "api-server", "zeaking-ffi"]
 exclude = ["desktop-client/src-tauri", "wasm-poc", "browser-extension/wasm-core"]
 resolver = "2"
 

@@ -64,7 +64,12 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
       }
       if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
       const body = await resp.json();
-      if (body?.error) throw new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
+      if (body?.error) {
+        const e = new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
+        if (typeof body.error.code === "number") e.jsonRpcCode = body.error.code;
+        e.jsonRpcMethod = method;
+        throw e;
+      }
       return body?.result ?? null;
     } catch (err) {
       const msg = String(err?.message ?? err ?? "");
@@ -91,8 +96,8 @@ async function rpcFallback(rpcEndpoint, attempts) {
 function normalizeAction(raw) {
   const nullifier = toByteArray(raw?.nullifier ?? raw?.nf ?? []);
   const cmx = toByteArray(raw?.cmx ?? raw?.note_commitment ?? []);
-  const ephemeral_key = toByteArray(raw?.ephemeral_key ?? raw?.epk ?? []);
-  const encrypted_note = toByteArray(raw?.encrypted_note ?? raw?.enc_ciphertext ?? []);
+  const ephemeral_key = toByteArray(raw?.ephemeralKey ?? raw?.ephemeral_key ?? raw?.epk ?? []);
+  const encrypted_note = toByteArray(raw?.encCiphertext ?? raw?.encrypted_note ?? raw?.enc_ciphertext ?? []);
   if (nullifier.length !== 32 || cmx.length !== 32 || ephemeral_key.length !== 32) return null;
   return { nullifier, cmx, ephemeral_key, encrypted_note };
 }
@@ -101,7 +106,8 @@ function extractActionsFromBlockJson(block) {
   const actions = [];
   const txs = block?.tx ?? block?.transactions ?? [];
   for (const tx of txs) {
-    const orchard = tx?.orchard || tx?.orchard_bundle || tx?.vShieldedOutput || {};
+    if (typeof tx === "string") continue;
+    const orchard = tx?.orchard || tx?.orchard_bundle || {};
     const candidates = orchard?.actions || orchard?.action || tx?.orchard_actions || [];
     if (Array.isArray(candidates)) {
       for (const c of candidates) {
@@ -113,16 +119,42 @@ function extractActionsFromBlockJson(block) {
   return actions;
 }
 
+function orchardAnchorHexFromRpc(tr) {
+  if (!tr || typeof tr !== "object") return "";
+  const o = tr.orchard;
+  const c = o?.commitments ?? o;
+  const fromZebra = c?.finalRoot ?? c?.final_root ?? o?.finalRoot ?? o?.final_root ?? "";
+  let hex = String(tr.anchor ?? tr.orchardTree?.anchor ?? fromZebra ?? "").trim();
+  if (hex.startsWith("0x") || hex.startsWith("0X")) hex = hex.slice(2);
+  return hex;
+}
+
 async function fetchOrchardAnchor(rpcEndpoint, targetHeight) {
+  const h = String(targetHeight);
   const orchardTree = await rpcFallback(rpcEndpoint, [
-    { method: "z_getorchardtree", params: [targetHeight] },
-    { method: "z_gettreestate", params: [targetHeight] }
+    { method: "z_getorchardtree", params: [h] },
+    { method: "z_gettreestate", params: [h] }
   ]);
-  const anchorHex = String(orchardTree?.anchor ?? orchardTree?.orchardTree?.anchor ?? "");
+  const anchorHex = orchardAnchorHexFromRpc(orchardTree);
   if (!anchorHex || anchorHex.length < 64) {
     throw new Error("RPC did not return a valid Orchard anchor.");
   }
   return anchorHex;
+}
+
+function rewriteMissingWitnessRpcError(err) {
+  const m = String(err?.message || err || "");
+  const code = typeof err?.jsonRpcCode === "number" ? err.jsonRpcCode : null;
+  const looksLikeMissingMethod =
+    code === -32601 ||
+    /method not found/i.test(m) ||
+    /\bmethod\b.*\bnot found\b/i.test(m) ||
+    /does not exist|is not available/i.test(m);
+  if (!looksLikeMissingMethod) return err instanceof Error ? err : new Error(String(err));
+  return new Error(
+    "Zebrad (Zebra) does not implement z_findnoteposition or z_getauthpath, which Nozy needs to build Orchard spends. " +
+      "Scanning and receiving work with Zebrad; for shielded sends, use a zcashd JSON-RPC (or another node that exposes those methods)."
+  );
 }
 
 async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetHeight) {
@@ -131,30 +163,34 @@ async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetH
     throw new Error(`Selected note cmx hex invalid (len=${cmxHex.length}).`);
   }
 
-  const posResp = await rpcFallback(rpcEndpoint, [
-    { method: "z_findnoteposition", params: [cmxHex] },
-    { method: "z_findnoteposition", params: [cmxHex, selectedNote.height] }
-  ]);
-  const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
-  if (!Number.isFinite(position) || position < 0) {
-    throw new Error("z_findnoteposition returned invalid position.");
-  }
+  try {
+    const posResp = await rpcFallback(rpcEndpoint, [
+      { method: "z_findnoteposition", params: [cmxHex] },
+      { method: "z_findnoteposition", params: [cmxHex, String(selectedNote.height)] }
+    ]);
+    const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
+    if (!Number.isFinite(position) || position < 0) {
+      throw new Error("z_findnoteposition returned invalid position.");
+    }
 
-  const authResp = await rpcFallback(rpcEndpoint, [
-    { method: "z_getauthpath", params: [position, anchorHex] },
-    { method: "z_getauthpath", params: [position] }
-  ]);
-  const authPathHexes = authResp?.auth_path ?? authResp?.authPath ?? authResp?.path ?? [];
-  if (!Array.isArray(authPathHexes) || authPathHexes.length !== 32) {
-    throw new Error(`z_getauthpath returned unexpected auth_path length: ${authPathHexes.length}`);
-  }
+    const authResp = await rpcFallback(rpcEndpoint, [
+      { method: "z_getauthpath", params: [position, anchorHex] },
+      { method: "z_getauthpath", params: [position] }
+    ]);
+    const authPathHexes = authResp?.auth_path ?? authResp?.authPath ?? authResp?.path ?? [];
+    if (!Array.isArray(authPathHexes) || authPathHexes.length !== 32) {
+      throw new Error(`z_getauthpath returned unexpected auth_path length: ${authPathHexes.length}`);
+    }
 
-  return {
-    anchor: anchorHex,
-    position: position >>> 0,
-    auth_path: authPathHexes,
-    target_height: targetHeight
-  };
+    return {
+      anchor: anchorHex,
+      position: position >>> 0,
+      auth_path: authPathHexes,
+      target_height: targetHeight
+    };
+  } catch (e) {
+    throw rewriteMissingWitnessRpcError(e);
+  }
 }
 
 self.onmessage = async (event) => {
@@ -188,7 +224,7 @@ self.onmessage = async (event) => {
               jsonrpc: "2.0",
               id: 1,
               method: "getblock",
-              params: [h]
+              params: [String(h), 2]
             })
           });
           if (!resp.ok) continue;
@@ -273,7 +309,7 @@ self.onmessage = async (event) => {
               jsonrpc: "2.0",
               id: 1,
               method: "getblock",
-              params: [h]
+              params: [String(h), 2]
             })
           });
           if (!resp.ok) continue;

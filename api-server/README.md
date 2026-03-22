@@ -2,6 +2,8 @@
 
 REST API server for NozyWallet. This server wraps the Rust wallet backend and exposes it via HTTP endpoints for frontend applications.
 
+**Prerequisites:** depends on **`zeaking`** with `lightwalletd`, which runs **`tonic-prost-build`** in `zeaking/build.rs`. Install **`protoc`** (e.g. Ubuntu/WSL: `sudo apt install protobuf-compiler`) or builds fail with *Could not find `protoc`*. See [`zeaking/README.md`](../zeaking/README.md).
+
 ## 🚀 Quick Start
 
 ### Build and Run
@@ -44,6 +46,13 @@ cargo watch -x run
 
 ### Sync Endpoints
 - `POST /api/sync` - Sync wallet with blockchain
+
+### lightwalletd (zeaking — canonical; Chrome/Edge companion)
+These routes call **`zeaking::lwd`** in-process (same as Tauri and [`zeaking-ffi`](../zeaking-ffi) on mobile). Chromium MV3 extensions should **not** run gRPC/SQLite in the service worker; use this server on `127.0.0.1` from the extension ([`browser-extension/COMPANION.md`](../browser-extension/COMPANION.md)).
+
+- `GET /api/lwd/info?lightwalletd_url=` — `GetLightdInfo` (optional query; env `LIGHTWALLETD_GRPC` or default `http://127.0.0.1:9067`)
+- `GET /api/lwd/chain-tip?lightwalletd_url=` — chain tip height
+- `POST /api/lwd/sync/compact` — body JSON `{ "start": u64, "end"?: u64, "lightwalletd_url"?: string, "db_path"?: string }` streams compact blocks to SQLite (default DB: wallet data dir `lwd_compact.sqlite`, or env `NOZY_LWD_DB`)
 
 ### Transaction Endpoints
 - `POST /api/transaction/send` - Send transaction

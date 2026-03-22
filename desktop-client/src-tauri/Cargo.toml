@@ -17,6 +17,7 @@ indexmap = { version = "1.9.3", features = ["std"] }
 
 # NozyWallet core - use path to parent directory
 nozy = { path = "../../" }
+zeaking = { path = "../../zeaking", features = ["lightwalletd"] }
 
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }

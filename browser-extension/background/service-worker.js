@@ -16,6 +16,13 @@ import {
   resolveTxidFromBroadcast
 } from "./tx-lifecycle.js";
 import { normalizeRpcEndpoint, rpcNetworkErrorMessage } from "./rpc-utils.js";
+import { selectNotesForSpend, rpcFallbackWithRequester } from "./tx-utils.js";
+import {
+  companionLwdChainTip,
+  companionLwdInfo,
+  companionLwdSyncCompact,
+  companionStatus
+} from "./companion-api.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
 const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
@@ -38,34 +45,6 @@ const providerRequestResolvers = new Map();
 let worker;
 let workerSeq = 0;
 const workerPending = new Map();
-
-function debugLog(hypothesisId, location, message, data = {}) {
-  // #region agent log
-  fetch("http://127.0.0.1:7329/ingest/c5393905-43e3-4b8f-b8be-a6ad09348f60", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "7680bd" },
-    body: JSON.stringify({
-      sessionId: "7680bd",
-      runId: "extension-runtime",
-      hypothesisId,
-      location,
-      message,
-      data,
-      timestamp: Date.now()
-    })
-  }).catch(() => {});
-  // #endregion
-}
-
-// #region agent log
-debugLog("H7", "service-worker.js:module", "Service worker module loaded", {
-  hasChromeRuntime: typeof chrome?.runtime?.id === "string"
-});
-try {
-  chrome.action.setBadgeBackgroundColor({ color: "#2563eb" });
-  chrome.action.setBadgeText({ text: "DBG" });
-} catch (_) {}
-// #endregion
 
 function nowMs() {
   return Date.now();
@@ -120,24 +99,267 @@ async function ensureWasm() {
   return wasm;
 }
 
+let useInlineWorker = false;
+
 function ensureWorker() {
-  if (!worker) {
-    worker = new Worker(chrome.runtime.getURL("background/wallet-worker.js"), {
-      type: "module"
-    });
-    worker.onmessage = (event) => {
-      const { id, result, error } = event.data || {};
-      const pending = workerPending.get(id);
-      if (!pending) return;
-      workerPending.delete(id);
-      if (error) pending.reject(new Error(error));
-      else pending.resolve(result);
-    };
+  if (worker) return;
+  if (typeof Worker !== "undefined") {
+    try {
+      worker = new Worker(chrome.runtime.getURL("background/wallet-worker.js"), {
+        type: "module"
+      });
+      worker.onmessage = (event) => {
+        const { id, result, error } = event.data || {};
+        const pending = workerPending.get(id);
+        if (!pending) return;
+        workerPending.delete(id);
+        if (error) pending.reject(new Error(error));
+        else pending.resolve(result);
+      };
+      worker.onerror = () => {};
+      return;
+    } catch (_) { /* fall through to inline */ }
   }
+  useInlineWorker = true;
+}
+
+function _toByteArray(value) {
+  if (Array.isArray(value)) return value.map((v) => Number(v) & 0xff);
+  if (typeof value === "string") {
+    const clean = value.startsWith("0x") ? value.slice(2) : value;
+    if (clean.length % 2 !== 0) return [];
+    const bytes = [];
+    for (let i = 0; i < clean.length; i += 2) bytes.push(parseInt(clean.slice(i, i + 2), 16));
+    return bytes;
+  }
+  return [];
+}
+
+function _extractActionsFromBlock(block) {
+  const actions = [];
+  const txs = block?.tx ?? block?.transactions ?? [];
+  for (const tx of txs) {
+    if (typeof tx === "string") continue;
+    const orchard = tx?.orchard || tx?.orchard_bundle || {};
+    const candidates = orchard?.actions || orchard?.action || tx?.orchard_actions || [];
+    if (Array.isArray(candidates)) {
+      for (const c of candidates) {
+        const nf = _toByteArray(c?.nullifier ?? c?.nf ?? []);
+        const cmx = _toByteArray(c?.cmx ?? c?.note_commitment ?? []);
+        const epk = _toByteArray(c?.ephemeralKey ?? c?.ephemeral_key ?? c?.epk ?? []);
+        const enc = _toByteArray(c?.encCiphertext ?? c?.encrypted_note ?? c?.enc_ciphertext ?? []);
+        if (nf.length === 32 && cmx.length === 32 && epk.length === 32)
+          actions.push({ nullifier: nf, cmx, ephemeral_key: epk, encrypted_note: enc });
+      }
+    }
+  }
+  return actions;
+}
+
+async function _inlineScanNotes(params) {
+  await ensureWasm();
+  const startHeight = Number(params?.startHeight ?? 0);
+  const endHeight = Number(params?.endHeight ?? startHeight);
+  const rpcEndpoint = normalizeRpcEndpoint(String(params?.rpcEndpoint ?? ""));
+  const mnemonic = String(params?.mnemonic ?? "");
+  const address = String(params?.address ?? "");
+  let scannedBlocks = 0, totalBalanceZats = 0;
+  const discoveredNotes = [];
+
+  for (let h = startHeight; h <= endHeight; h += 1) {
+    scannedBlocks += 1;
+    try {
+      const resp = await fetch(rpcEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getblock", params: [String(h), 2] })
+      });
+      if (!resp.ok) continue;
+      const body = await resp.json();
+      if (body?.error || !body?.result) continue;
+      const block = body.result;
+      const actions = _extractActionsFromBlock(block);
+      if (actions.length === 0) continue;
+      const txid = block?.hash || `h${h}`;
+      const scan = wasm.scan_orchard_actions(mnemonic, address, JSON.stringify(actions), h, txid);
+      if (scan?.notes?.length) {
+        discoveredNotes.push(...scan.notes);
+        totalBalanceZats += Number(scan.total_value_zats || 0);
+      }
+    } catch (_) { /* continue scanning */ }
+  }
+  return { scannedBlocks, discoveredNotes, totalBalanceZats };
+}
+
+function _bytesToHex(bytes) {
+  const arr = Array.isArray(bytes) || bytes instanceof Uint8Array ? bytes : [];
+  return Array.from(arr, (b) => (Number(b) & 0xff).toString(16).padStart(2, "0")).join("");
+}
+
+/** Zebra `z_gettreestate` uses orchard.commitments.finalRoot; zcashd-style may use anchor. */
+function _orchardAnchorHexFromRpc(tr) {
+  if (!tr || typeof tr !== "object") return "";
+  const o = tr.orchard;
+  const c = o?.commitments ?? o;
+  const fromZebra =
+    c?.finalRoot ?? c?.final_root ?? o?.finalRoot ?? o?.final_root ?? "";
+  let hex = String(tr.anchor ?? tr.orchardTree?.anchor ?? fromZebra ?? "").trim();
+  if (hex.startsWith("0x") || hex.startsWith("0X")) hex = hex.slice(2);
+  return hex;
+}
+
+/** Zebrad has no z_findnoteposition / z_getauthpath; replace cryptic JSON-RPC errors. */
+function rewriteMissingWitnessRpcError(err) {
+  const m = String(err?.message || err || "");
+  const code = typeof err?.jsonRpcCode === "number" ? err.jsonRpcCode : null;
+  // jsonrpsee (Zebra) often uses "The method does not exist / is not available." (-32601), not the string "method not found".
+  const looksLikeMissingMethod =
+    code === -32601 ||
+    /method not found/i.test(m) ||
+    /\bmethod\b.*\bnot found\b/i.test(m) ||
+    /does not exist|is not available/i.test(m);
+  if (!looksLikeMissingMethod) return err instanceof Error ? err : new Error(String(err));
+  return new Error(
+    "Zebrad (Zebra) does not implement z_findnoteposition or z_getauthpath, which Nozy needs to build Orchard spends. " +
+      "Scanning and receiving work with Zebrad; for shielded sends, use a zcashd JSON-RPC (or another node that exposes those methods)."
+  );
+}
+
+async function _inlineRpcRequest(endpoint, method, params = []) {
+  const resp = await fetch(endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+  });
+  if (!resp.ok) throw new Error(`RPC ${method} HTTP ${resp.status}`);
+  const body = await resp.json();
+  if (body?.error) {
+    const e = new Error(body.error.message || `RPC ${method} error`);
+    if (typeof body.error.code === "number") e.jsonRpcCode = body.error.code;
+    e.jsonRpcMethod = method;
+    throw e;
+  }
+  return body?.result ?? null;
+}
+
+async function _inlineProveTransaction(params) {
+  await ensureWasm();
+  const recipientAddress = String(params?.recipientAddress ?? params?.to ?? "");
+  const walletAddress = String(params?.walletAddress ?? "");
+  const mnemonic = String(params?.mnemonic ?? "");
+  const rpcEndpoint = String(params?.rpcEndpoint ?? "");
+  const requestedAmount = Number(params?.amount ?? 0);
+  const requestedFee = Number(params?.fee ?? 10000);
+  const memo = String(params?.memo ?? "");
+
+  if (!rpcEndpoint) throw new Error("Missing rpcEndpoint.");
+  if (!mnemonic) throw new Error("Wallet locked.");
+  if (!walletAddress) throw new Error("Missing wallet address.");
+  if (!recipientAddress) throw new Error("Missing recipient address.");
+
+  const endpoint = normalizeRpcEndpoint(rpcEndpoint);
+  const requiredValue = requestedAmount + requestedFee;
+  if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
+    throw new Error(`Invalid amount/fee (amount=${requestedAmount}, fee=${requestedFee}).`);
+  }
+
+  const scanState = await loadScanState();
+  let candidates = [];
+  if (scanState?.discoveredNotes?.length) {
+    candidates = scanState.discoveredNotes.filter(
+      (n) => Number.isFinite(n.value) && n.value > 0
+    );
+  }
+
+  if (candidates.length === 0) {
+    const status = scanState?.status ?? "idle";
+    if (status === "scanning") {
+      throw new Error("Scan in progress — no spendable notes found yet. Wait for the scan to find notes, then try again.");
+    }
+    throw new Error("No spendable notes found. Run a block scan from the Receive tab first.");
+  }
+
+  const scannedValue = candidates.reduce((acc, n) => acc + n.value, 0);
+  const selected = selectNotesForSpend(candidates, requiredValue);
+  if (selected.length === 0) {
+    throw new Error(`Insufficient funds (need ${requiredValue}, have ${scannedValue}).`);
+  }
+
+  const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
+  const targetHeight = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
+  const heightStr = String(targetHeight);
+
+  const rpcReq = (at) => _inlineRpcRequest(endpoint, at.method, at.params ?? []);
+  const orchardTree = await rpcFallbackWithRequester(rpcReq, [
+    { method: "z_getorchardtree", params: [heightStr] },
+    { method: "z_gettreestate", params: [heightStr] }
+  ]);
+  const anchorHex = _orchardAnchorHexFromRpc(orchardTree);
+  if (!anchorHex || anchorHex.length < 64) throw new Error("RPC did not return a valid Orchard anchor.");
+
+  const selectedWitnesses = [];
+  try {
+    for (const noteSel of selected) {
+      const cmxHex = _bytesToHex(noteSel?.note?.cmx ?? []);
+      const posResp = await rpcFallbackWithRequester(rpcReq, [
+        { method: "z_findnoteposition", params: [cmxHex] },
+        { method: "z_findnoteposition", params: [cmxHex, String(noteSel.height)] }
+      ]);
+      const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
+      const authResp = await rpcFallbackWithRequester(rpcReq, [
+        { method: "z_getauthpath", params: [position, anchorHex] },
+        { method: "z_getauthpath", params: [position] }
+      ]);
+      const authPath = authResp?.auth_path ?? authResp?.authPath ?? authResp?.path ?? [];
+      selectedWitnesses.push({
+        anchor: anchorHex,
+        position: position >>> 0,
+        auth_path: authPath,
+        target_height: targetHeight
+      });
+    }
+  } catch (e) {
+    throw rewriteMissingWitnessRpcError(e);
+  }
+
+  const provingResult = wasm.build_orchard_v5_tx_from_note(
+    mnemonic,
+    recipientAddress,
+    requestedAmount,
+    requestedFee,
+    memo,
+    JSON.stringify(selected.map((s) => s.note)),
+    JSON.stringify(selectedWitnesses)
+  );
+
+  return {
+    txid: provingResult?.txid ?? "",
+    chainId: wasm.get_zcash_chain_id(),
+    rawTxHex: provingResult?.rawTxHex ?? "",
+    proving: "inline_orchard_v5_tx_build_wasm",
+    bundle_actions: provingResult?.bundle_actions ?? 0,
+    proof_generated: provingResult?.proof_generated ?? true,
+    selected_notes_count: selected.length,
+    selected_notes_total_value: spendValue,
+    selected_notes: selected.map((s) => ({
+      value: Number(s?.note?.value ?? 0),
+      cmx: _bytesToHex(s?.note?.cmx ?? []).slice(0, 16),
+      block_height: s.height
+    })),
+    selected_witnesses_count: selectedWitnesses.length,
+    inputs_used: selected.length,
+    input_mode: selected.length <= 1 ? "single" : "multi",
+    fee: requestedFee
+  };
 }
 
 function callWorker(method, params) {
   ensureWorker();
+  if (useInlineWorker) {
+    if (method === "scan_notes") return _inlineScanNotes(params);
+    if (method === "prove_transaction") return _inlineProveTransaction(params);
+    return Promise.reject(new Error(`Inline fallback does not support method: ${method}`));
+  }
   return new Promise((resolve, reject) => {
     const id = `w_${++workerSeq}`;
     workerPending.set(id, { resolve, reject });
@@ -175,8 +397,6 @@ function parseNumberMaybeHex(v) {
 }
 
 function parseTxForOrchardV5(tx) {
-  // Minimal adapter: accept common EIP-1193 tx shapes.
-  // We only need recipient `to`, `value` (zats) and an optional `memo`.
   const to = tx?.to ?? tx?.recipient ?? tx?.receiver ?? tx?.destination ?? null;
   const value = tx?.value ?? tx?.amount ?? tx?.zatoshis ?? tx?.zats ?? null;
   const memo = tx?.memo ?? tx?.data ?? tx?.comment ?? "";
@@ -676,7 +896,9 @@ async function rpcCall(method, params = []) {
   }
   if (!resp.ok) throw new Error(`RPC HTTP ${resp.status}`);
   const body = await resp.json();
-  if (body.error) throw new Error(body.error.message || "RPC error");
+  if (body.error) {
+    throw new Error(body.error.message || "RPC error");
+  }
   return body.result;
 }
 
@@ -724,25 +946,128 @@ setInterval(() => {
   cleanupStaleMobileSyncState().catch(() => undefined);
 }, 30_000);
 
+// ── Background scan ────────────────────────────────────────────────
+const SCAN_STATE_KEY = "nozy_scan_state_v1";
+const SCAN_BATCH = 50;
+const SCAN_ALARM = "nozy_scan_tick";
+
+function loadScanState() {
+  return new Promise((r) =>
+    chrome.storage.local.get(SCAN_STATE_KEY, (v) => r(v[SCAN_STATE_KEY] || null))
+  );
+}
+function saveScanState(s) {
+  return new Promise((r) => chrome.storage.local.set({ [SCAN_STATE_KEY]: s }, r));
+}
+
+let scanRunning = false;
+
+async function scanTick() {
+  if (scanRunning) return;
+  const state = await loadScanState();
+  if (!state || state.status !== "scanning") return;
+  if (!session.unlocked || !session.mnemonic || !session.address) return;
+  scanRunning = true;
+
+  try {
+    await ensureWasm();
+    const endpoint = normalizeRpcEndpoint(session.rpcEndpoint);
+    const end = Math.min(state.currentHeight + SCAN_BATCH - 1, state.endHeight);
+
+    for (let h = state.currentHeight; h <= end; h++) {
+      try {
+        const resp = await fetch(endpoint, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getblock", params: [String(h), 2] })
+        });
+        if (!resp.ok) continue;
+        const body = await resp.json();
+        if (body?.error || !body?.result) continue;
+        const block = body.result;
+        const actions = _extractActionsFromBlock(block);
+        if (actions.length === 0) continue;
+        const txid = block?.hash || `h${h}`;
+        const scan = wasm.scan_orchard_actions(session.mnemonic, session.address, JSON.stringify(actions), h, txid);
+        if (scan?.notes?.length) {
+          for (const n of scan.notes) {
+            const v = Number(n?.value ?? 0);
+            state.discoveredNotes.push({ note: n, height: h, txid, value: v });
+          }
+          state.totalBalanceZats += Number(scan.total_value_zats || 0);
+        }
+      } catch (_) { /* skip block */ }
+    }
+
+    state.scannedBlocks += (end - state.currentHeight + 1);
+    state.currentHeight = end + 1;
+    state.updatedAt = nowMs();
+
+    if (state.currentHeight > state.endHeight) {
+      state.status = "done";
+      state.finishedAt = nowMs();
+    }
+    await saveScanState(state);
+  } finally {
+    scanRunning = false;
+  }
+
+  if (state.status === "scanning") {
+    chrome.alarms.create(SCAN_ALARM, { delayInMinutes: 0.02 });
+  }
+}
+
+function startBackgroundScan(startHeight, endHeight) {
+  const state = {
+    status: "scanning",
+    startHeight,
+    endHeight,
+    currentHeight: startHeight,
+    scannedBlocks: 0,
+    discoveredNotes: [],
+    totalBalanceZats: 0,
+    startedAt: nowMs(),
+    updatedAt: nowMs(),
+    finishedAt: null
+  };
+  return saveScanState(state).then(() => {
+    chrome.alarms.create(SCAN_ALARM, { delayInMinutes: 0.02 });
+    scanTick();
+    return state;
+  });
+}
+
+function stopBackgroundScan() {
+  chrome.alarms.clear(SCAN_ALARM);
+  return loadScanState().then((s) => {
+    if (s && s.status === "scanning") {
+      s.status = "stopped";
+      s.finishedAt = nowMs();
+      return saveScanState(s).then(() => s);
+    }
+    return s;
+  });
+}
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === SCAN_ALARM) scanTick();
+});
+
+// Resume scan on service worker restart
+loadScanState().then((s) => {
+  if (s && s.status === "scanning") {
+    chrome.alarms.create(SCAN_ALARM, { delayInMinutes: 0.05 });
+  }
+});
+
 chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   if (!msg || msg.type !== "NOZY_REQUEST") return;
-  debugLog("H1", "service-worker.js:onMessage", "Received NOZY_REQUEST", {
-    method: String(msg.method || ""),
-    hasParams: !!msg.params
-  });
-  try {
-    chrome.action.setBadgeText({ text: "MSG" });
-  } catch (_) {}
 
   (async () => {
     try {
       validateRequestEnvelope(msg);
       await ensureSessionInitialized();
       await ensureWasm();
-      debugLog("H2", "service-worker.js:onMessage", "Session and wasm initialized", {
-        unlocked: !!session.unlocked,
-        hasAddress: !!session.address
-      });
       const method = msg.method;
       const params = msg.params ?? {};
       touchSession();
@@ -762,15 +1087,32 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(ok(walletLock()));
           return;
         case "wallet_status":
-          {
-            const status = await getWalletStatus();
-            debugLog("H3", "service-worker.js:wallet_status", "wallet_status response prepared", {
-              exists: !!status.exists,
-              unlocked: !!status.unlocked,
-              hasAddress: !!status.address
-            });
-            sendResponse(ok(status));
-          }
+          sendResponse(ok(await getWalletStatus()));
+          return;
+        case "companion_status":
+          sendResponse(ok(await companionStatus(params.baseUrl)));
+          return;
+        case "companion_lwd_info":
+          sendResponse(
+            ok(await companionLwdInfo(params.baseUrl, params.lightwalletd_url))
+          );
+          return;
+        case "companion_lwd_chain_tip":
+          sendResponse(
+            ok(await companionLwdChainTip(params.baseUrl, params.lightwalletd_url))
+          );
+          return;
+        case "companion_lwd_sync_compact":
+          sendResponse(
+            ok(
+              await companionLwdSyncCompact(params.baseUrl, {
+                start: Number(params.start ?? 0),
+                end: params.end !== undefined && params.end !== null ? Number(params.end) : undefined,
+                lightwalletd_url: params.lightwalletd_url,
+                db_path: params.db_path
+              })
+            )
+          );
           return;
         case "wallet_set_session_policy": {
           const autoLockMs = Number(params.autoLockMs ?? DEFAULT_AUTO_LOCK_MS);
@@ -934,8 +1276,33 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(ok(await rpcCallWithRetry("getblockcount", [])));
           return;
         case "rpc_get_block":
-          sendResponse(ok(await rpcCallWithRetry("getblock", [params.height])));
+          sendResponse(
+            ok(await rpcCallWithRetry("getblock", [String(params.height ?? ""), 2]))
+          );
           return;
+        case "rpc_send_raw_tx": {
+          const raw =
+            typeof params?.rawTxHex === "string"
+              ? params.rawTxHex
+              : typeof params?.raw_tx_hex === "string"
+                ? params.raw_tx_hex
+                : "";
+          const hex = raw.trim().replace(/^0x/i, "");
+          if (!hex || !/^[0-9a-fA-F]+$/.test(hex)) {
+            throw new Error(
+              "Missing transaction hex. Close the popup and run Preview again, then broadcast without switching tabs."
+            );
+          }
+          const txResult = await rpcCallWithRetry("sendrawtransaction", [hex, false]);
+          const txid =
+            typeof txResult === "string"
+              ? txResult
+              : txResult && typeof txResult === "object" && "txid" in txResult
+                ? String(txResult.txid)
+                : String(txResult ?? "");
+          sendResponse(ok(txid));
+          return;
+        }
         case "wallet_scan_notes":
           if (!session.unlocked || !session.mnemonic || !session.address) {
             throw new Error("Unlock wallet first.");
@@ -952,6 +1319,48 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             )
           );
           return;
+        case "wallet_start_scan": {
+          if (!session.unlocked || !session.mnemonic || !session.address) {
+            throw new Error("Unlock wallet first.");
+          }
+          const blockCount = await rpcCallWithRetry("getblockcount", []);
+          const scanWindow = Number(params.window ?? 20_000);
+          const startH = Math.max(0, blockCount - scanWindow);
+          const s = await startBackgroundScan(startH, blockCount);
+          sendResponse(ok({ started: true, startHeight: startH, endHeight: blockCount, status: s.status }));
+          return;
+        }
+        case "wallet_scan_progress": {
+          const scanState = await loadScanState();
+          if (!scanState) {
+            sendResponse(ok({ status: "idle" }));
+          } else {
+            const total = scanState.endHeight - scanState.startHeight + 1;
+            const done = scanState.scannedBlocks;
+            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            sendResponse(ok({
+              status: scanState.status,
+              startHeight: scanState.startHeight,
+              endHeight: scanState.endHeight,
+              currentHeight: scanState.currentHeight,
+              scannedBlocks: done,
+              totalBlocks: total,
+              percent: pct,
+              discoveredNotes: scanState.discoveredNotes?.length ?? 0,
+              totalBalanceZats: scanState.totalBalanceZats ?? 0,
+              startedAt: scanState.startedAt,
+              elapsed: scanState.finishedAt
+                ? scanState.finishedAt - scanState.startedAt
+                : nowMs() - scanState.startedAt
+            }));
+          }
+          return;
+        }
+        case "wallet_stop_scan": {
+          const stopped = await stopBackgroundScan();
+          sendResponse(ok({ status: stopped?.status ?? "idle" }));
+          return;
+        }
         case "wallet_prove_transaction":
           if (!session.unlocked || !session.address) {
             throw new Error("Unlock wallet first.");
@@ -1052,10 +1461,6 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
       sendResponse(fail(`Unsupported method: ${method}`));
     } catch (e) {
-      debugLog("H2", "service-worker.js:onMessage:catch", "Request handling failed", {
-        method: String(msg?.method || ""),
-        error: String(e?.message || e || "unknown")
-      });
       sendResponse(fail(e?.message ?? String(e)));
     }
   })();

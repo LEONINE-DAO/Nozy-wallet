@@ -1,5 +1,7 @@
 # Local RPC (Zebra / zcashd) with the extension
 
+For **lightwalletd compact sync** via the running Nozy desktop API (instead of raw gRPC in the MV3 worker), see **[COMPANION.md](./COMPANION.md)** (`http://127.0.0.1:3000` + `companion_*` messages).
+
 ## “Failed to fetch” on Scan or RPC
 
 That message means the browser **could not open a TCP connection** to the URL (not a JSON-RPC error yet).
@@ -24,4 +26,4 @@ If this fails, fix the node / network / URL before retrying in Nozy.
 
 ## Extension permissions
 
-The manifest includes `host_permissions` for `http://*/*` and `https://*/*`, so `http://127.0.0.1:…` is allowed once the host is actually reachable.
+The manifest includes `host_permissions` for `http://127.0.0.1:3000/*` (companion API), `http://*/*`, and `https://*/*`, so `http://127.0.0.1:…` is allowed once the host is actually reachable.

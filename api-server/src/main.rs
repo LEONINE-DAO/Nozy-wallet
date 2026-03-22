@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 mod handlers;
+mod lwd_handlers;
 mod middleware;
 
 #[tokio::main]
@@ -113,6 +114,12 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/web/read-state", get(handlers::web_read_state))
         .route("/api/web/privacy-status", get(handlers::web_privacy_status))
         .route("/api/web/node-status", get(handlers::web_node_status))
+        .route("/api/lwd/info", get(lwd_handlers::lwd_info))
+        .route("/api/lwd/chain-tip", get(lwd_handlers::lwd_chain_tip))
+        .route(
+            "/api/lwd/sync/compact",
+            post(lwd_handlers::lwd_sync_compact),
+        )
         .route("/health", get(health_check))
         .layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {
