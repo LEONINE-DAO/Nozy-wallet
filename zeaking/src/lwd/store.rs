@@ -48,7 +48,10 @@ impl LwdCompactStore {
         block_hash: Option<&[u8]>,
         data: &[u8],
     ) -> ZeakingResult<()> {
-        let conn = self.conn.lock().map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         conn.execute(
             "INSERT INTO compact_blocks (height, block_hash, data) VALUES (?1, ?2, ?3)
              ON CONFLICT(height) DO UPDATE SET block_hash = excluded.block_hash, data = excluded.data",
@@ -59,7 +62,10 @@ impl LwdCompactStore {
     }
 
     pub fn max_compact_height(&self) -> ZeakingResult<Option<u64>> {
-        let conn = self.conn.lock().map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         let v: Option<i64> = conn
             .query_row("SELECT MAX(height) FROM compact_blocks", [], |r| r.get(0))
             .optional()
@@ -68,7 +74,10 @@ impl LwdCompactStore {
     }
 
     pub fn set_meta(&self, key: &str, value: &str) -> ZeakingResult<()> {
-        let conn = self.conn.lock().map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         conn.execute(
             "INSERT INTO sync_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
             params![key, value],

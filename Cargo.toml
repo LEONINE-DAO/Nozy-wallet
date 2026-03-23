@@ -62,10 +62,10 @@ tokio = { version = "1.0", features = ["full"], optional = true }
 # HTTP client (with SOCKS proxy support for Tor)
 reqwest = { version = "0.12", default-features = false, features = ["json", "blocking", "rustls-tls", "socks"], optional = true }
 
-# gRPC support
-tonic = { version = "0.11", features = ["tls", "tls-roots"], optional = true }
-prost = { version = "0.13", optional = true }
-prost-types = { version = "0.13", optional = true }
+# gRPC support (tonic 0.14+ pulls rustls-webpki >=0.103, fixing RUSTSEC-2026-0049)
+tonic = { version = "0.14", default-features = false, features = ["transport", "tls-ring", "tls-webpki-roots"], optional = true }
+prost = { version = "0.14", optional = true }
+prost-types = { version = "0.14", optional = true }
 
 # CLI
 clap = { version = "4.0", features = ["derive", "env"], optional = true }

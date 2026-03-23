@@ -1,10 +1,6 @@
 //! lightwalletd endpoints for Chrome/Edge extensions and web UI (`zeaking::lwd`).
 
-use axum::{
-    extract::Query,
-    http::StatusCode,
-    response::Json as ResponseJson,
-};
+use axum::{extract::Query, http::StatusCode, response::Json as ResponseJson};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;

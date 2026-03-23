@@ -94,9 +94,10 @@ pub fn lwd_sync_compact(
                 .await
                 .map_err(|e| ZeakingFfiError::Message(e.to_string()))?,
         };
-        let blocks_written = zeaking::lwd::sync_compact_range(&mut client, &store, start, range_end)
-            .await
-            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        let blocks_written =
+            zeaking::lwd::sync_compact_range(&mut client, &store, start, range_end)
+                .await
+                .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
         Ok(LwdSyncResultFfi {
             blocks_written,
             range_start: start,

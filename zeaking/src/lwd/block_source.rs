@@ -28,11 +28,7 @@ fn compact_tx_to_transaction_data(tx: CompactTx) -> TransactionData {
             let cmx = arr32(&a.cmx)?;
             let nullifier = arr32(&a.nullifier);
             let cv = arr32(&a.ephemeral_key).unwrap_or([0u8; 32]);
-            Some(OrchardActionData {
-                nullifier,
-                cmx,
-                cv,
-            })
+            Some(OrchardActionData { nullifier, cmx, cv })
         })
         .collect();
     TransactionData {
@@ -49,7 +45,11 @@ fn compact_block_to_block_data(cb: CompactBlock) -> ZeakingResult<BlockData> {
     let hash = hex::encode(&cb.hash);
     let time = i64::from(cb.time);
     let tx_count = cb.vtx.len() as u32;
-    let transactions: Vec<TransactionData> = cb.vtx.into_iter().map(compact_tx_to_transaction_data).collect();
+    let transactions: Vec<TransactionData> = cb
+        .vtx
+        .into_iter()
+        .map(compact_tx_to_transaction_data)
+        .collect();
     let size = tx_count.saturating_mul(2048).max(1);
     Ok(BlockData {
         height: height_u32,
