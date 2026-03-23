@@ -52,9 +52,8 @@ fn decode_hex_field(v: &Value, label: &str) -> NozyResult<Option<Vec<u8>>> {
     if s.is_empty() {
         return Ok(None);
     }
-    let decoded = hex::decode(s).map_err(|e| {
-        NozyError::InvalidOperation(format!("Invalid hex for {}: {}", label, e))
-    })?;
+    let decoded = hex::decode(s)
+        .map_err(|e| NozyError::InvalidOperation(format!("Invalid hex for {}: {}", label, e)))?;
     Ok(Some(decoded))
 }
 
@@ -71,11 +70,9 @@ pub fn parse_z_gettreestate_orchard(result: &Value) -> NozyResult<OrchardTreesta
         NozyError::InvalidOperation("z_gettreestate: missing orchard field".to_string())
     })?;
 
-    let commitments = orchard
-        .get("commitments")
-        .ok_or_else(|| NozyError::InvalidOperation(
-            "z_gettreestate: missing orchard.commitments".to_string(),
-        ))?;
+    let commitments = orchard.get("commitments").ok_or_else(|| {
+        NozyError::InvalidOperation("z_gettreestate: missing orchard.commitments".to_string())
+    })?;
 
     let final_state = decode_hex_field(
         commitments.get("finalState").unwrap_or(&Value::Null),

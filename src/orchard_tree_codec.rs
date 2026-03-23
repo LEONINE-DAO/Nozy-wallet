@@ -5,7 +5,9 @@ use core2::io::Cursor;
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
-use zcash_primitives::merkle_tree::{read_commitment_tree, read_incremental_witness, write_incremental_witness};
+use zcash_primitives::merkle_tree::{
+    read_commitment_tree, read_incremental_witness, write_incremental_witness,
+};
 
 pub type OrchardCommitmentTree = CommitmentTree<MerkleHashOrchard, 32>;
 pub type OrchardIncrementalWitness = IncrementalWitness<MerkleHashOrchard, 32>;
@@ -13,21 +15,31 @@ pub type OrchardIncrementalWitness = IncrementalWitness<MerkleHashOrchard, 32>;
 pub fn orchard_commitment_tree_from_final_state(bytes: &[u8]) -> NozyResult<OrchardCommitmentTree> {
     let mut cursor = Cursor::new(bytes);
     read_commitment_tree(&mut cursor).map_err(|e| {
-        NozyError::InvalidOperation(format!("Failed to parse Orchard finalState CommitmentTree: {}", e))
+        NozyError::InvalidOperation(format!(
+            "Failed to parse Orchard finalState CommitmentTree: {}",
+            e
+        ))
     })
 }
 
-pub fn orchard_incremental_witness_from_bytes(bytes: &[u8]) -> NozyResult<OrchardIncrementalWitness> {
+pub fn orchard_incremental_witness_from_bytes(
+    bytes: &[u8],
+) -> NozyResult<OrchardIncrementalWitness> {
     let mut cursor = Cursor::new(bytes);
     read_incremental_witness(&mut cursor).map_err(|e| {
         NozyError::InvalidOperation(format!("Failed to parse Orchard IncrementalWitness: {}", e))
     })
 }
 
-pub fn orchard_incremental_witness_to_bytes(witness: &OrchardIncrementalWitness) -> NozyResult<Vec<u8>> {
+pub fn orchard_incremental_witness_to_bytes(
+    witness: &OrchardIncrementalWitness,
+) -> NozyResult<Vec<u8>> {
     let mut buf = Vec::new();
     write_incremental_witness(witness, &mut buf).map_err(|e| {
-        NozyError::InvalidOperation(format!("Failed to serialize Orchard IncrementalWitness: {}", e))
+        NozyError::InvalidOperation(format!(
+            "Failed to serialize Orchard IncrementalWitness: {}",
+            e
+        ))
     })?;
     Ok(buf)
 }

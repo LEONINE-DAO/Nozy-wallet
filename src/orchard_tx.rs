@@ -1,6 +1,8 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::{NoteScanner, SpendableNote};
-use crate::orchard_tree_codec::{orchard_incremental_witness_from_bytes, OrchardIncrementalWitness};
+use crate::orchard_tree_codec::{
+    orchard_incremental_witness_from_bytes, OrchardIncrementalWitness,
+};
 use crate::orchard_witness::{
     advance_witness_with_cmxs, merkle_hash_from_cmx_bytes, merkle_path_from_witness,
     witness_root_matches_anchor,
@@ -9,14 +11,8 @@ use crate::proving::{OrchardProvingKey, OrchardProvingManager, ProvingStatus};
 use crate::zebra_integration::ZebraClient;
 use async_trait::async_trait;
 use orchard::{
-    builder::Builder as OrchardBuilder,
-    builder::BundleType,
-    bundle::Flags,
-    keys::FullViewingKey,
-    tree::Anchor,
-    tree::MerklePath,
-    value::NoteValue,
-    Address as OrchardAddress,
+    builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags, keys::FullViewingKey,
+    tree::Anchor, tree::MerklePath, value::NoteValue, Address as OrchardAddress,
 };
 use rand::rngs::OsRng;
 use zcash_address::unified::{Container, Encoding};
@@ -47,9 +43,8 @@ async fn advance_orchard_witness_from_zebra_blocks(
     for h in (from_height_exclusive + 1)..=to_height_inclusive {
         let hash = zebra.get_block_hash(h).await?;
         let block_data = zebra.get_block_by_hash(&hash, 2).await?;
-        let v = serde_json::to_value(&block_data).map_err(|e| {
-            NozyError::InvalidOperation(format!("block JSON: {}", e))
-        })?;
+        let v = serde_json::to_value(&block_data)
+            .map_err(|e| NozyError::InvalidOperation(format!("block JSON: {}", e)))?;
         let txs = NoteScanner::parse_block_data(&v, h)?;
         for tx in &txs {
             for action in &tx.orchard_actions {
@@ -82,14 +77,20 @@ impl OrchardWitnessProvider for ZebraJsonRpcOrchardWitnessProvider {
 
         let stored_tip = note.orchard_witness_tip_height.unwrap_or(0);
         if stored_tip < anchor_height {
-            advance_orchard_witness_from_zebra_blocks(&mut witness, zebra, stored_tip, anchor_height)
-                .await?;
+            advance_orchard_witness_from_zebra_blocks(
+                &mut witness,
+                zebra,
+                stored_tip,
+                anchor_height,
+            )
+            .await?;
         }
 
         let ts = zebra.get_orchard_tree_state(anchor_height).await?;
         if !witness_root_matches_anchor(&witness, &ts.anchor) {
             return Err(NozyError::InvalidOperation(
-                "Orchard witness does not match z_gettreestate (rescan or wait for sync).".to_string(),
+                "Orchard witness does not match z_gettreestate (rescan or wait for sync)."
+                    .to_string(),
             ));
         }
 

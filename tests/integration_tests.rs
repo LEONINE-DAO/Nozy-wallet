@@ -204,7 +204,10 @@ async fn test_end_to_end_flow_create_scan_send() {
         .await
         .expect("Failed to build transaction");
 
-    println!("✅ Transaction built: {} bytes (raw Orchard tx prefix)", transaction.len());
+    println!(
+        "✅ Transaction built: {} bytes (raw Orchard tx prefix)",
+        transaction.len()
+    );
 }
 
 #[tokio::test]

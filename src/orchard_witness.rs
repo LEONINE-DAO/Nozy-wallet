@@ -50,16 +50,20 @@ impl OrchardWitnessTracker {
 
     /// After [`Self::append_cmx`], register a newly discovered spendable note at the current leaf.
     pub fn register_discovered_note(&mut self, nullifier_bytes: [u8; 32]) -> NozyResult<()> {
-        let w = IncrementalWitness::<MerkleHashOrchard, 32>::from_tree(self.tree.clone()).ok_or_else(|| {
-            NozyError::InvalidOperation(
-                "Cannot create Orchard witness: tree empty after note discovery".to_string(),
-            )
-        })?;
+        let w = IncrementalWitness::<MerkleHashOrchard, 32>::from_tree(self.tree.clone())
+            .ok_or_else(|| {
+                NozyError::InvalidOperation(
+                    "Cannot create Orchard witness: tree empty after note discovery".to_string(),
+                )
+            })?;
         self.witnesses.insert(nullifier_bytes, w);
         Ok(())
     }
 
-    pub fn witness_for_nullifier(&self, nullifier_bytes: &[u8; 32]) -> Option<&OrchardIncrementalWitness> {
+    pub fn witness_for_nullifier(
+        &self,
+        nullifier_bytes: &[u8; 32],
+    ) -> Option<&OrchardIncrementalWitness> {
         self.witnesses.get(nullifier_bytes)
     }
 
@@ -107,7 +111,9 @@ pub fn witness_root_matches_anchor(witness: &OrchardIncrementalWitness, anchor: 
 }
 
 /// Build spend [`Anchor`] and [`MerklePath`] after the witness root matches the node anchor.
-pub fn merkle_path_from_witness(witness: &OrchardIncrementalWitness) -> NozyResult<(Anchor, MerklePath)> {
+pub fn merkle_path_from_witness(
+    witness: &OrchardIncrementalWitness,
+) -> NozyResult<(Anchor, MerklePath)> {
     let inc_path = witness.path().ok_or_else(|| {
         NozyError::InvalidOperation("Orchard witness has no Merkle path (empty tree)".to_string())
     })?;

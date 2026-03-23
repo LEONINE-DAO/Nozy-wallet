@@ -612,7 +612,10 @@ impl ZebraClient {
     }
 
     /// Full Orchard treestate from `z_gettreestate` (JSON-RPC only).
-    pub async fn get_orchard_treestate_parsed(&self, height: u32) -> NozyResult<OrchardTreestateParsed> {
+    pub async fn get_orchard_treestate_parsed(
+        &self,
+        height: u32,
+    ) -> NozyResult<OrchardTreestateParsed> {
         match self.protocol {
             Protocol::JsonRpc => {
                 let request = serde_json::json!({
@@ -703,7 +706,10 @@ impl ZebraClient {
         }
     }
 
-    async fn get_orchard_tree_state_grpc_placeholder(&self, height: u32) -> NozyResult<OrchardTreeState> {
+    async fn get_orchard_tree_state_grpc_placeholder(
+        &self,
+        height: u32,
+    ) -> NozyResult<OrchardTreeState> {
         let block_hash = self.get_block_hash(height).await?;
         let mut anchor = [0u8; 32];
         let block_hash_bytes = hex::decode(&block_hash)

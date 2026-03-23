@@ -765,7 +765,6 @@ impl NoteScanner {
 
         Ok(actions)
     }
-
 }
 
 #[derive(Debug, Clone)]

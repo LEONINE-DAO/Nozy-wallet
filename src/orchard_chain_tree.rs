@@ -35,21 +35,23 @@ pub async fn replay_orchard_tree_from_compact_store(
     let mut tree = orchard_commitment_tree_from_final_state(&state)?;
 
     for h in (checkpoint_height + 1)..=end_height {
-        let Some(blob) = store.get_compact_block(u64::from(h)).map_err(|e| {
-            NozyError::InvalidOperation(format!("compact store read: {}", e))
-        })? else {
+        let Some(blob) = store
+            .get_compact_block(u64::from(h))
+            .map_err(|e| NozyError::InvalidOperation(format!("compact store read: {}", e)))?
+        else {
             return Err(NozyError::InvalidOperation(format!(
                 "Missing compact block at height {} in local store (sync compact range first)",
                 h
             )));
         };
-        let cmxs = orchard_cmx_bytes_from_compact_block(&blob).map_err(|e| {
-            NozyError::InvalidOperation(format!("compact orchard decode: {}", e))
-        })?;
+        let cmxs = orchard_cmx_bytes_from_compact_block(&blob)
+            .map_err(|e| NozyError::InvalidOperation(format!("compact orchard decode: {}", e)))?;
         for cmx in cmxs {
             let node = merkle_hash_from_cmx_bytes(&cmx)?;
             tree.append(node).map_err(|_| {
-                NozyError::InvalidOperation("Orchard commitment tree full during replay".to_string())
+                NozyError::InvalidOperation(
+                    "Orchard commitment tree full during replay".to_string(),
+                )
             })?;
         }
     }
