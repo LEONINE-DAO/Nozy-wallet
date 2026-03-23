@@ -1,6 +1,6 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::SpendableNote;
-use crate::orchard_tx::OrchardTransactionBuilder;
+use crate::orchard_tx::{OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider};
 use crate::zebra_integration::ZebraClient;
 use sha2::{Digest, Sha256};
 
@@ -67,6 +67,7 @@ impl ZcashTransactionBuilder {
         let tx_data = orchard_builder
             .build_single_spend(
                 &zebra_client,
+                &ZebraJsonRpcOrchardWitnessProvider,
                 spendable_notes,
                 recipient_address,
                 amount_zatoshis,

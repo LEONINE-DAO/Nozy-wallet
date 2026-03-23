@@ -189,9 +189,12 @@ async fn test_end_to_end_flow_create_scan_send() {
         .await
         .expect("Failed to create transaction builder");
 
+    use nozy::orchard_tx::ZebraJsonRpcOrchardWitnessProvider;
+
     let transaction = builder
         .build_single_spend(
             &client,
+            &ZebraJsonRpcOrchardWitnessProvider,
             &spendable_notes,
             &recipient_address,
             amount_zatoshis,
@@ -201,11 +204,7 @@ async fn test_end_to_end_flow_create_scan_send() {
         .await
         .expect("Failed to build transaction");
 
-    println!(
-        "✅ Transaction built: {} bytes, TXID: {}",
-        transaction.raw_transaction.len(),
-        transaction.txid
-    );
+    println!("✅ Transaction built: {} bytes (raw Orchard tx prefix)", transaction.len());
 }
 
 #[tokio::test]
@@ -268,9 +267,12 @@ async fn test_transaction_building() {
         .expect("Failed to create transaction builder");
 
     let empty_notes = vec![];
+    use nozy::orchard_tx::ZebraJsonRpcOrchardWitnessProvider;
+
     let result = builder
         .build_single_spend(
             &client,
+            &ZebraJsonRpcOrchardWitnessProvider,
             &empty_notes,
             &recipient_address,
             10_000,
@@ -281,8 +283,8 @@ async fn test_transaction_building() {
 
     assert!(result.is_err());
     match result {
-        Err(NozyError::InsufficientFunds(_)) => {
-            println!("✅ Transaction building correctly handles insufficient funds");
+        Err(NozyError::InsufficientFunds(_)) | Err(NozyError::InvalidOperation(_)) => {
+            println!("✅ Transaction building correctly rejects empty / insufficient input");
         }
         Err(e) => {
             println!("⚠️  Unexpected error: {:?}", e);

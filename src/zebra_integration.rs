@@ -1,6 +1,10 @@
 use crate::config::{BackendKind, Protocol, WalletConfig};
 use crate::error::{NozyError, NozyResult};
 use crate::grpc_client::ZebraGrpcClient;
+use crate::zebra_tree_rpc::{
+    parse_z_get_subtrees_by_index, parse_z_gettreestate_orchard, OrchardTreestateParsed,
+    ZebraSubtreesByIndex,
+};
 use hex;
 use serde::Deserialize;
 use serde_json::Value;
@@ -168,6 +172,10 @@ impl ZebraClient {
 
     pub fn new_with_backend(url: String, backend: BackendKind) -> Self {
         Self::new_with_backend_and_protocol(url, backend, Protocol::JsonRpc)
+    }
+
+    pub fn protocol(&self) -> Protocol {
+        self.protocol.clone()
     }
 
     pub fn new_with_backend_and_protocol(
@@ -603,57 +611,110 @@ impl ZebraClient {
         self.get_block_count().await
     }
 
+    /// Full Orchard treestate from `z_gettreestate` (JSON-RPC only).
+    pub async fn get_orchard_treestate_parsed(&self, height: u32) -> NozyResult<OrchardTreestateParsed> {
+        match self.protocol {
+            Protocol::JsonRpc => {
+                let request = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "z_gettreestate",
+                    "params": [height.to_string()],
+                    "id": 1
+                });
+
+                let response: ZebraResponse<Value> = self.make_request(request).await?;
+
+                if let Some(error) = response.error {
+                    return Err(NozyError::InvalidOperation(format!(
+                        "Zebra RPC error: {} (code: {})",
+                        error.message, error.code
+                    )));
+                }
+
+                let result = response.result.ok_or_else(|| {
+                    NozyError::InvalidOperation("No z_gettreestate result".to_string())
+                })?;
+
+                parse_z_gettreestate_orchard(&result)
+            }
+            Protocol::Grpc => Err(NozyError::InvalidOperation(
+                "z_gettreestate requires JSON-RPC (Orchard treestate)".to_string(),
+            )),
+        }
+    }
+
+    /// `z_getsubtreesbyindex` (JSON-RPC only). Pool is `"orchard"` or `"sapling"`.
+    pub async fn z_get_subtrees_by_index(
+        &self,
+        pool: &str,
+        start_index: u32,
+        limit: Option<u32>,
+    ) -> NozyResult<ZebraSubtreesByIndex> {
+        match self.protocol {
+            Protocol::JsonRpc => {
+                let request = if let Some(lim) = limit {
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "z_getsubtreesbyindex",
+                        "params": [pool, start_index, lim],
+                        "id": 1
+                    })
+                } else {
+                    serde_json::json!({
+                        "jsonrpc": "2.0",
+                        "method": "z_getsubtreesbyindex",
+                        "params": [pool, start_index],
+                        "id": 1
+                    })
+                };
+
+                let response: ZebraResponse<Value> = self.make_request(request).await?;
+
+                if let Some(error) = response.error {
+                    return Err(NozyError::InvalidOperation(format!(
+                        "Zebra RPC error: {} (code: {})",
+                        error.message, error.code
+                    )));
+                }
+
+                let result = response.result.ok_or_else(|| {
+                    NozyError::InvalidOperation("No z_getsubtreesbyindex result".to_string())
+                })?;
+
+                parse_z_get_subtrees_by_index(&result)
+            }
+            Protocol::Grpc => Err(NozyError::InvalidOperation(
+                "z_getsubtreesbyindex requires JSON-RPC".to_string(),
+            )),
+        }
+    }
+
     pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
+        match self.protocol {
+            Protocol::JsonRpc => {
+                let parsed = self.get_orchard_treestate_parsed(height).await?;
+                Ok(OrchardTreeState {
+                    height: parsed.height,
+                    anchor: parsed.anchor,
+                    commitment_count: parsed.commitment_count,
+                })
+            }
+            Protocol::Grpc => self.get_orchard_tree_state_grpc_placeholder(height).await,
+        }
+    }
+
+    async fn get_orchard_tree_state_grpc_placeholder(&self, height: u32) -> NozyResult<OrchardTreeState> {
         let block_hash = self.get_block_hash(height).await?;
-
-        let _block_info = self.get_block(height).await?;
-
         let mut anchor = [0u8; 32];
         let block_hash_bytes = hex::decode(&block_hash)
             .map_err(|e| NozyError::InvalidOperation(format!("Invalid block hash hex: {}", e)))?;
-
         let hash_len = block_hash_bytes.len().min(32);
         anchor[..hash_len].copy_from_slice(&block_hash_bytes[..hash_len]);
-
-        let commitment_count = height as u64 * 100;
-
         Ok(OrchardTreeState {
             height,
             anchor,
-            commitment_count,
+            commitment_count: height as u64 * 100,
         })
-    }
-
-    pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
-        let mut position_bytes = [0u8; 4];
-        position_bytes.copy_from_slice(&commitment_bytes[0..4]);
-        let position = u32::from_le_bytes(position_bytes);
-
-        Ok(position)
-    }
-
-    pub async fn get_authentication_path(
-        &self,
-        position: u32,
-        anchor: &[u8; 32],
-    ) -> NozyResult<Vec<[u8; 32]>> {
-        let mut auth_path = Vec::new();
-
-        for level in 0u32..32 {
-            let mut hash_input = Vec::new();
-            hash_input.extend_from_slice(&position.to_le_bytes());
-            hash_input.extend_from_slice(anchor);
-            hash_input.extend_from_slice(&level.to_le_bytes());
-
-            let mut hash = [0u8; 32];
-            for (i, byte) in hash_input.iter().enumerate() {
-                hash[i % 32] ^= byte;
-            }
-
-            auth_path.push(hash);
-        }
-
-        Ok(auth_path)
     }
 
     async fn make_request<T>(&self, request: serde_json::Value) -> NozyResult<ZebraResponse<T>>

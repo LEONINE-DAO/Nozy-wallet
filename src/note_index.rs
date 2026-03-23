@@ -128,6 +128,26 @@ impl NoteIndex {
         false
     }
 
+    /// Refresh serialized Orchard incremental witnesses after sync (see [`crate::orchard_witness::OrchardWitnessTracker`]).
+    pub fn apply_orchard_witnesses_from_tracker(
+        &mut self,
+        tracker: &crate::orchard_witness::OrchardWitnessTracker,
+        tip_height: u32,
+    ) -> crate::error::NozyResult<()> {
+        for note in &mut self.notes {
+            if note.nullifier_bytes.len() != 32 {
+                continue;
+            }
+            let mut nf = [0u8; 32];
+            nf.copy_from_slice(&note.nullifier_bytes);
+            if let Some(bytes) = tracker.serialized_witness_for_nullifier(&nf)? {
+                note.orchard_incremental_witness_hex = Some(hex::encode(bytes));
+                note.orchard_witness_tip_height = Some(tip_height);
+            }
+        }
+        Ok(())
+    }
+
     /// Save the complete index structure to file.
     ///
     /// Saves both notes and all indexes for fast loading without rebuild.

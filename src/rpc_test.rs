@@ -41,7 +41,7 @@ impl RpcTester {
 
         match self.client.get_orchard_tree_state(height).await {
             Ok(tree_state) => {
-                println!("✅ get_orchard_tree_state:");
+                println!("✅ get_orchard_tree_state (z_gettreestate):");
                 println!("   Height: {}", tree_state.height);
                 println!("   Anchor: {}", hex::encode(tree_state.anchor));
                 println!("   Commitment count: {}", tree_state.commitment_count);
@@ -49,16 +49,19 @@ impl RpcTester {
             Err(e) => println!("❌ get_orchard_tree_state failed: {}", e),
         }
 
-        let test_commitment = [0u8; 32];
-        match self.client.get_note_position(&test_commitment).await {
-            Ok(position) => println!("✅ get_note_position: {}", position),
-            Err(e) => println!("❌ get_note_position failed: {}", e),
-        }
-
-        let test_anchor = [0u8; 32];
-        match self.client.get_authentication_path(0, &test_anchor).await {
-            Ok(auth_path) => println!("✅ get_authentication_path: {} hashes", auth_path.len()),
-            Err(e) => println!("❌ get_authentication_path failed: {}", e),
+        match self
+            .client
+            .z_get_subtrees_by_index("orchard", 0, Some(2))
+            .await
+        {
+            Ok(sub) => {
+                println!(
+                    "✅ z_getsubtreesbyindex(orchard): pool={} subtrees={}",
+                    sub.pool,
+                    sub.subtrees.len()
+                );
+            }
+            Err(e) => println!("❌ z_getsubtreesbyindex failed: {}", e),
         }
 
         Ok(())

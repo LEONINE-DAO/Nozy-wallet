@@ -47,7 +47,13 @@ pub mod notes;
 #[cfg(feature = "native")]
 pub mod nu6_1_check;
 #[cfg(feature = "native")]
+pub mod orchard_chain_tree;
+#[cfg(feature = "native")]
+pub mod orchard_tree_codec;
+#[cfg(feature = "native")]
 pub mod orchard_tx;
+#[cfg(feature = "native")]
+pub mod orchard_witness;
 #[cfg(feature = "native")]
 pub mod paths;
 #[cfg(feature = "native")]
@@ -78,6 +84,8 @@ pub mod transaction_tracker;
 pub mod zeaking_adapter;
 #[cfg(feature = "native")]
 pub mod zebra_integration;
+#[cfg(feature = "native")]
+pub mod zebra_tree_rpc;
 
 // ============================================================
 // WASM-safe re-exports
@@ -117,6 +125,10 @@ pub use note_index::NoteIndex;
 pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
 pub use notes::{NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote};
+#[cfg(feature = "native")]
+pub use orchard_tx::{
+    OrchardTransactionBuilder, OrchardWitnessProvider, ZebraJsonRpcOrchardWitnessProvider,
+};
 #[cfg(feature = "native")]
 pub use paths::{
     get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir, get_wallet_data_path,

@@ -1,3 +1,7 @@
+//! **Orphan / legacy:** This module is **not** wired into `nozy` (`lib.rs`). Use
+//! `zebra_integration::ZebraClient` for JSON-RPC (`z_gettreestate`, etc.) and the wallet’s Orchard
+//! witness path. Do not add new call sites here.
+
 use crate::error::{NozyError, NozyResult};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};

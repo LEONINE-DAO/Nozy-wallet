@@ -146,12 +146,11 @@ async fn test_response_formats(client: &ZebraClient) {
 }
 
 async fn test_orchard_functionality(client: &ZebraClient) {
-    println!("   🌳 Testing Orchard-specific methods...");
+    println!("   🌳 Testing Orchard treestate + subtrees (real Zebra RPCs)...");
 
-    // Test get_orchard_tree_state
     match client.get_orchard_tree_state(1000).await {
         Ok(tree_state) => {
-            println!("   ✅ get_orchard_tree_state: Working");
+            println!("   ✅ z_gettreestate (via get_orchard_tree_state): OK");
             println!("      Height: {}", tree_state.height);
             println!("      Anchor: {}", hex::encode(tree_state.anchor));
             println!("      Commitments: {}", tree_state.commitment_count);
@@ -161,28 +160,16 @@ async fn test_orchard_functionality(client: &ZebraClient) {
         }
     }
 
-    // Test get_note_position
-    let test_commitment = [0u8; 32];
-    match client.get_note_position(&test_commitment).await {
-        Ok(position) => {
-            println!("   ✅ get_note_position: Working (position: {})", position);
-        }
-        Err(e) => {
-            println!("   ❌ get_note_position: Error - {}", e);
-        }
-    }
-
-    // Test get_authentication_path
-    let test_anchor = [0u8; 32];
-    match client.get_authentication_path(0, &test_anchor).await {
-        Ok(auth_path) => {
+    match client.z_get_subtrees_by_index("orchard", 0, Some(2)).await {
+        Ok(sub) => {
             println!(
-                "   ✅ get_authentication_path: Working ({} hashes)",
-                auth_path.len()
+                "   ✅ z_getsubtreesbyindex: OK (pool={}, {} subtrees)",
+                sub.pool,
+                sub.subtrees.len()
             );
         }
         Err(e) => {
-            println!("   ❌ get_authentication_path: Error - {}", e);
+            println!("   ❌ z_getsubtreesbyindex: Error - {}", e);
         }
     }
 }

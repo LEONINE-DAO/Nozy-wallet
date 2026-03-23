@@ -445,7 +445,7 @@ $ cargo run --bin nozy history
 For programmatic usage, see the [API Documentation](API_DOCUMENTATION.md) for complete Rust examples:
 
 ```rust
-use nozy::{HDWallet, ZebraClient, OrchardTransactionBuilder, NoteScanner};
+use nozy::{HDWallet, ZebraClient, OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider, NoteScanner};
 use nozy::WalletStorage;
 use std::path::PathBuf;
 
@@ -476,6 +476,7 @@ async fn main() -> nozy::NozyResult<()> {
     let mut builder = OrchardTransactionBuilder::new_async(true).await?;
     let transaction = builder.build_single_spend(
         &zebra_client,
+        &ZebraJsonRpcOrchardWitnessProvider,
         &spendable_notes,
         "u1recipientaddress...",
         50_000_000, // 0.5 ZEC in zatoshis
@@ -768,7 +769,7 @@ let notes = client.scan_notes(1000000, 1000100).await?;
 
 ```rust
 use nozy::{
-    HDWallet, ZebraClient, OrchardTransactionBuilder, 
+    HDWallet, ZebraClient, OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider,
     NoteScanner, WalletStorage
 };
 
@@ -814,6 +815,7 @@ async fn main() -> nozy::NozyResult<()> {
     let mut builder = OrchardTransactionBuilder::new_async(true).await?;
     let transaction = builder.build_single_spend(
         &zebra_client,
+        &ZebraJsonRpcOrchardWitnessProvider,
         &spendable_notes,
         "u1recipientaddress...", // recipient
         amount_zatoshis,
@@ -821,8 +823,7 @@ async fn main() -> nozy::NozyResult<()> {
         Some(b"Payment memo"), // optional memo
     ).await?;
     
-    println!("Transaction built: {} bytes", transaction.raw_transaction.len());
-    println!("Transaction ID: {}", transaction.txid);
+    println!("Transaction built: {} bytes (raw prefix)", transaction.len());
     
     // 7. Broadcast transaction (if enabled)
     // Note: In production, this requires explicit confirmation

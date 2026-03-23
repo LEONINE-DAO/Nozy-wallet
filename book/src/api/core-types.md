@@ -47,7 +47,7 @@ let tree_state = client.get_orchard_tree_state(height).await?;
 Builder for creating Orchard transactions with proving support.
 
 ```rust
-use nozy::orchard_tx::OrchardTransactionBuilder;
+use nozy::orchard_tx::{OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider};
 
 // Create builder with proving parameters
 let mut builder = OrchardTransactionBuilder::new_async(true).await?;
@@ -55,9 +55,10 @@ let mut builder = OrchardTransactionBuilder::new_async(true).await?;
 // Check proving status
 let status = builder.get_proving_status();
 
-// Build transaction
+// Build transaction (local incremental witness + z_gettreestate verification)
 let tx_data = builder.build_single_spend(
     &zebra_client,
+    &ZebraJsonRpcOrchardWitnessProvider,
     &spendable_notes,
     "u1...",
     1000000, // amount in zatoshis

@@ -153,8 +153,17 @@ mod tests {
         let client = ZebraClient::new("http://127.0.0.1:8232".to_string());
         let spendable_notes = Vec::new();
 
+        use crate::orchard_tx::ZebraJsonRpcOrchardWitnessProvider;
         let result = builder
-            .build_single_spend(&client, &spendable_notes, "test_address", 1000, 100, None)
+            .build_single_spend(
+                &client,
+                &ZebraJsonRpcOrchardWitnessProvider,
+                &spendable_notes,
+                "test_address",
+                1000,
+                100,
+                None,
+            )
             .await;
         assert!(result.is_err() || result.is_ok());
     }
@@ -282,6 +291,7 @@ mod integration_tests {
 mod performance_tests {
     use super::*;
     use std::time::Instant;
+    use zcash_protocol::consensus::NetworkType;
 
     #[test]
     fn test_wallet_creation_performance() {

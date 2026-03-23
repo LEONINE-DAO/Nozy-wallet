@@ -73,6 +73,22 @@ impl LwdCompactStore {
         Ok(v.map(|h| h as u64))
     }
 
+    pub fn get_compact_block(&self, height: u64) -> ZeakingResult<Option<Vec<u8>>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let row: Option<Vec<u8>> = conn
+            .query_row(
+                "SELECT data FROM compact_blocks WHERE height = ?1",
+                params![height as i64],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        Ok(row)
+    }
+
     pub fn set_meta(&self, key: &str, value: &str) -> ZeakingResult<()> {
         let conn = self
             .conn

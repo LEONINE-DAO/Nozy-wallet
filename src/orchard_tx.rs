@@ -1,19 +1,101 @@
 use crate::error::{NozyError, NozyResult};
-use crate::notes::SpendableNote;
+use crate::notes::{NoteScanner, SpendableNote};
+use crate::orchard_tree_codec::{orchard_incremental_witness_from_bytes, OrchardIncrementalWitness};
+use crate::orchard_witness::{
+    advance_witness_with_cmxs, merkle_hash_from_cmx_bytes, merkle_path_from_witness,
+    witness_root_matches_anchor,
+};
 use crate::proving::{OrchardProvingKey, OrchardProvingManager, ProvingStatus};
 use crate::zebra_integration::ZebraClient;
+use async_trait::async_trait;
 use orchard::{
     builder::Builder as OrchardBuilder,
     builder::BundleType,
     bundle::Flags,
     keys::FullViewingKey,
     tree::Anchor,
-    tree::{MerkleHashOrchard, MerklePath},
+    tree::MerklePath,
     value::NoteValue,
     Address as OrchardAddress,
 };
 use rand::rngs::OsRng;
 use zcash_address::unified::{Container, Encoding};
+
+/// Supplies Orchard anchor + Merkle path for a spend (local witness + `z_gettreestate` verification).
+#[async_trait]
+pub trait OrchardWitnessProvider: Send + Sync {
+    async fn prepare_spend_anchor_and_path(
+        &self,
+        zebra: &ZebraClient,
+        note: &SpendableNote,
+        anchor_height: u32,
+    ) -> NozyResult<(Anchor, MerklePath)>;
+}
+
+/// Default: deserialize incremental witness from the note, catch up to `anchor_height` via Zebra blocks, verify root.
+pub struct ZebraJsonRpcOrchardWitnessProvider;
+
+async fn advance_orchard_witness_from_zebra_blocks(
+    witness: &mut OrchardIncrementalWitness,
+    zebra: &ZebraClient,
+    from_height_exclusive: u32,
+    to_height_inclusive: u32,
+) -> NozyResult<()> {
+    if from_height_exclusive >= to_height_inclusive {
+        return Ok(());
+    }
+    for h in (from_height_exclusive + 1)..=to_height_inclusive {
+        let hash = zebra.get_block_hash(h).await?;
+        let block_data = zebra.get_block_by_hash(&hash, 2).await?;
+        let v = serde_json::to_value(&block_data).map_err(|e| {
+            NozyError::InvalidOperation(format!("block JSON: {}", e))
+        })?;
+        let txs = NoteScanner::parse_block_data(&v, h)?;
+        for tx in &txs {
+            for action in &tx.orchard_actions {
+                let node = merkle_hash_from_cmx_bytes(&action.cmx)?;
+                advance_witness_with_cmxs(witness, std::iter::once(node))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+#[async_trait]
+impl OrchardWitnessProvider for ZebraJsonRpcOrchardWitnessProvider {
+    async fn prepare_spend_anchor_and_path(
+        &self,
+        zebra: &ZebraClient,
+        note: &SpendableNote,
+        anchor_height: u32,
+    ) -> NozyResult<(Anchor, MerklePath)> {
+        let witness_hex = note.orchard_incremental_witness_hex.as_ref().ok_or_else(|| {
+            NozyError::InvalidOperation(
+                "Missing Orchard incremental witness on note: scan with JSON-RPC Zebra (rescan if needed)."
+                    .to_string(),
+            )
+        })?;
+        let bytes = hex::decode(witness_hex).map_err(|e| {
+            NozyError::InvalidOperation(format!("orchard_incremental_witness_hex decode: {}", e))
+        })?;
+        let mut witness = orchard_incremental_witness_from_bytes(&bytes)?;
+
+        let stored_tip = note.orchard_witness_tip_height.unwrap_or(0);
+        if stored_tip < anchor_height {
+            advance_orchard_witness_from_zebra_blocks(&mut witness, zebra, stored_tip, anchor_height)
+                .await?;
+        }
+
+        let ts = zebra.get_orchard_tree_state(anchor_height).await?;
+        if !witness_root_matches_anchor(&witness, &ts.anchor) {
+            return Err(NozyError::InvalidOperation(
+                "Orchard witness does not match z_gettreestate (rescan or wait for sync).".to_string(),
+            ));
+        }
+
+        merkle_path_from_witness(&witness)
+    }
+}
 
 #[derive(Debug)]
 pub struct OrchardTransactionBuilder {
@@ -57,6 +139,7 @@ impl OrchardTransactionBuilder {
     pub async fn build_single_spend(
         &self,
         zebra_client: &ZebraClient,
+        witness_provider: &dyn OrchardWitnessProvider,
         spendable_notes: &[SpendableNote],
         recipient_address: &str,
         amount_zatoshis: u64,
@@ -90,12 +173,6 @@ impl OrchardTransactionBuilder {
             bundle_required: true,
         };
         let tip_height = zebra_client.get_best_block_height().await?;
-        let tree_state = zebra_client.get_orchard_tree_state(tip_height).await?;
-        let anchor = Anchor::from_bytes(tree_state.anchor)
-            .into_option()
-            .ok_or_else(|| NozyError::InvalidOperation("Invalid anchor bytes".to_string()))?;
-
-        let mut builder = OrchardBuilder::new(bundle_type, anchor);
 
         let spendable_note = &spendable_notes[0];
 
@@ -106,34 +183,12 @@ impl OrchardTransactionBuilder {
 
         let fvk = FullViewingKey::from(&spendable_note.spending_key);
 
-        let note_commitment = spendable_note.orchard_note.note.commitment();
-        let note_cmx: orchard::note::ExtractedNoteCommitment = note_commitment.into();
-
-        let note_commitment_bytes: [u8; 32] = note_cmx.to_bytes();
-
-        let position = zebra_client
-            .get_note_position(&note_commitment_bytes)
+        let (anchor, merkle_path) = witness_provider
+            .prepare_spend_anchor_and_path(zebra_client, spendable_note, tip_height)
             .await?;
-        let auth_path = zebra_client
-            .get_authentication_path(position, &tree_state.anchor)
-            .await?;
-        let mut merkle_hashes: [MerkleHashOrchard; 32] =
-            [MerkleHashOrchard::from_cmx(&note_cmx); 32];
 
-        for (i, hash_bytes) in auth_path.iter().enumerate() {
-            if i < 32 {
-                if let Some(hash) = MerkleHashOrchard::from_bytes(hash_bytes).into() {
-                    merkle_hashes[i] = hash;
-                } else {
-                    return Err(NozyError::MerklePath(format!(
-                        "Invalid merkle hash at position {}",
-                        i
-                    )));
-                }
-            }
-        }
+        let mut builder = OrchardBuilder::new(bundle_type, anchor);
 
-        let merkle_path = MerklePath::from_parts(position, merkle_hashes);
         builder
             .add_spend(fvk, spendable_note.orchard_note.note.clone(), merkle_path)
             .map_err(|e| {

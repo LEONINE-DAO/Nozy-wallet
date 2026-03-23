@@ -1,6 +1,14 @@
 # Zebrad (Zebra) and shielded sends — wallet + node roadblock
 
-This document explains **why NozyWallet can sync and receive against Zebrad + lightwalletd** but **shielded ZEC sends** still hit a **capability gap** between what our wallet expects and what Zebrad exposes over JSON-RPC. It records how we reached this roadblock so users and contributors share the same mental model.
+**Update:** The wallet now implements **client-side Orchard witnesses** using `z_gettreestate` checkpoints, **`incrementalmerkletree` `IncrementalWitness`**, and chain-ordered Orchard `cmx` values from **full blocks during scan** (and optional **compact-block replay** via `zeaking::lwd` for root checks). The prove path **no longer calls** `z_findnoteposition` / `z_getauthpath` on `ZebraClient`. You still need **JSON-RPC** to Zebra for `z_gettreestate` during scan/spend; **gRPC-only** Zebra transport does not populate real treestates yet.
+
+### Clarification: what actually broke sends
+
+The practical failure mode was **wrong witness and anchor data** in Nozy (placeholder `ZebraClient` logic feeding the prover), **not** “Zebra is missing two RPCs that appear in old zcashd-oriented docs.” Zebra exposes **`z_gettreestate`** / **`z_getsubtreesbyindex`** for tree state; the fix is to use those for checkpoints and roots and to **derive Merkle paths in the wallet** (same direction as light-wallet stacks and the newer [zcash/wallet](https://github.com/zcash/wallet) work on **Zallet**—not a 1:1 copy of every historical zcashd wallet RPC). Framing the issue only around `z_findnoteposition` / `z_getauthpath` was misleading for contributors comparing against repos that never centered on those methods.
+
+---
+
+This document originally explained **why** NozyWallet could sync against Zebrad + lightwalletd while shielded sends assumed **zcashd-only witness RPCs**. The historical analysis below is kept for context; the **blocked** table row is **obsolete** once you run a **JSON-RPC scan** that stores incremental witnesses on notes.
 
 ## What we shipped in NozyWallet
 
@@ -32,14 +40,12 @@ So in practice:
 |--------|---------------------------------------------|
 | Node sync, chain tip, `sendrawtransaction` | Works when RPC is configured correctly |
 | Compact sync, receiving shielded notes (light-client style) | **Improved** with zeaking + lightwalletd |
-| **Building and signing a shielded send** if the code path still calls **`z_getauthpath` / `z_findnoteposition`** | **Blocked** on Zebrad-only — those methods are missing |
-
-This is **not** “lightwalletd isn’t running” or “the extension can’t reach port 3000.” It is a **deliberate architectural difference** between Zebra and zcashd, plus **wallet code that still expects zcashd-style witness RPCs** for spends.
+| **Building and signing a shielded send** with notes scanned via **JSON-RPC** + stored witnesses | Uses **`ZebraJsonRpcOrchardWitnessProvider`** + **`z_gettreestate`** for anchor checks — **no** `z_getauthpath` / `z_findnoteposition` |
 
 ## Ways forward (project direction)
 
-1. **Near-term / operational:** Point the wallet at **zcashd** (or any node that exposes the needed witness RPCs) for the **prove / spend** step while continuing to use Zebrad + lightwalletd for **sync** if desired.
-2. **Proper fix in NozyWallet:** Evolve the Orchard spend path to **derive witnesses entirely in the client** from **compact blocks** and local wallet state (same direction as `zcash_client_backend` / `zcash_client_sqlite`), then use Zebrad only for **`sendrawtransaction`** (and whatever read RPCs we need). **zeaking** is a foundation for sync storage, not a substitute for that prove refactor until it is wired end-to-end.
+1. **Near-term / operational:** If witness or anchor checks fail, **rescan** with JSON-RPC Zebra from a height where `z_gettreestate` returns Orchard `finalState`, or replay from **`LwdCompactStore`** using `nozy::orchard_chain_tree` helpers when compact blocks cover the range.
+2. **Ongoing:** Optional **gRPC treestate** for Zebra (if exposed later), subtree verification polish, and faster witness catch-up when the wallet is far behind the chain tip.
 
 ## Related docs in this repo
 
