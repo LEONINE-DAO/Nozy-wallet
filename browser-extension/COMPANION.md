@@ -2,6 +2,8 @@
 
 The MV3 extension does **not** embed `zeaking`, gRPC, or SQLite. For **lightwalletd compact sync** and parity with the desktop wallet, use the **Nozy API server** (or Tauri app hosting the same Rust stack) on the same machine.
 
+**Sending shielded ZEC** with **Zebrad-only** is still limited by missing zcashd-style witness RPCs on Zebra; the companion fixes **sync**, not that prove path. See repo root **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
+
 ## Localhost HTTP (recommended)
 
 1. Run **`nozywallet-api`** from the Nozy-wallet repo (default bind: `http://127.0.0.1:3000`). Set `LIGHTWALLETD_GRPC` if lightwalletd is not on `http://127.0.0.1:9067`.

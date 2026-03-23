@@ -71,7 +71,9 @@ The **`build.rs`** step compiles vendored `.proto` files and needs Google’s **
 
 If `protoc` is missing, `cargo` panics with *Could not find `protoc`*.
 
-Enable the **`lightwalletd`** Cargo feature for gRPC to [lightwalletd](https://github.com/zcash/lightwalletd) (backed by Zebrad), SQLite storage of compact blocks, and a [`BlockSource`](src/traits.rs) implementation that does **not** need `z_findnoteposition` / `z_getauthpath`.
+Enable the **`lightwalletd`** Cargo feature for gRPC to [lightwalletd](https://github.com/zcash/lightwalletd) (backed by Zebrad), SQLite storage of compact blocks, and a [`BlockSource`](src/traits.rs) implementation that does **not** need `z_findnoteposition` / `z_getauthpath` **for sync**.
+
+**Shielded sends (Orchard)** in the full wallet are a separate step: if Nozy’s prove path still calls those JSON-RPC methods, **Zebrad cannot satisfy them**. Compact sync here does not by itself complete client-side witness derivation for spends. See repo root **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
 
 ```toml
 zeaking = { path = "../zeaking", features = ["lightwalletd"] }

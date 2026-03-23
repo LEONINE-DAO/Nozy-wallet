@@ -4,6 +4,8 @@ REST API server for NozyWallet. This server wraps the Rust wallet backend and ex
 
 **Prerequisites:** depends on **`zeaking`** with `lightwalletd`, which runs **`tonic-prost-build`** in `zeaking/build.rs`. Install **`protoc`** (e.g. Ubuntu/WSL: `sudo apt install protobuf-compiler`) or builds fail with *Could not find `protoc`*. See [`zeaking/README.md`](../zeaking/README.md).
 
+**Shielded sends vs Zebrad:** This API helps **sync** (LWD routes) and wallet HTTP; it does **not** remove the **Zebrad / zcashd witness RPC gap** for **Orchard spends**. Read [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](../ZEBRAD_SHIELDED_SEND_LIMIT.md).
+
 ## 🚀 Quick Start
 
 ### Build and Run

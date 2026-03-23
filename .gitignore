@@ -79,9 +79,11 @@ push_url_update.ps1
 !NOZY_ABOUT_AND_MANIFESTO_NOTE.md
 !NOZY_COIN_AND_DEX_NOTE.md
 !SYNC_PROTOCOL_V1.md
+!ZEBRAD_SHIELDED_SEND_LIMIT.md
 !book/
 !book/**/*.md
 !browser-extension/LOCAL_RPC.md
 !browser-extension/COMPANION.md
+!browser-extension/RELEASES.md
 
 book/book/
