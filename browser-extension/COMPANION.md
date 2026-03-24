@@ -1,8 +1,15 @@
 # Desktop companion (Chrome + Microsoft Edge)
 
+## Which product should users install?
+
+1. **Nozy Desktop (Tauri)** — **[recommended main entry](https://github.com/LEONINE-DAO/Nozy-wallet/releases)** for a full wallet UX, Zebra-first flows, and ongoing Orchard send work.
+2. **Browser extension (MV3)** — **lighter mode**: WASM wallet in the browser + this **companion HTTP API** for **lightwalletd / zeaking** compact sync **without** running Zebrad on the same machine. Use the popup **API** tab to hit `http://127.0.0.1:3000`.
+
+The static **`landing/`** site is marketing only, not the wallet.
+
 The MV3 extension does **not** embed `zeaking`, gRPC, or SQLite. For **lightwalletd compact sync** and parity with the desktop wallet, use the **Nozy API server** (or Tauri app hosting the same Rust stack) on the same machine.
 
-**Sending shielded ZEC** with **Zebrad-only** is still limited by missing zcashd-style witness RPCs on Zebra; the companion fixes **sync**, not that prove path. See repo root **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
+**Sending shielded ZEC** from the extension against **Zebrad-only** still depends on RPC capabilities (witness / anchor); Desktop + updated Nozy core target the supported Zebrad tree APIs. The companion fixes **compact sync**, not every prove path in the extension. See repo **`ZEBRAD_SHIELDED_SEND_LIMIT.md`** when relevant.
 
 ## Localhost HTTP (recommended)
 

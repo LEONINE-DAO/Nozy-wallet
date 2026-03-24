@@ -55,8 +55,9 @@ let mut builder = OrchardTransactionBuilder::new_async(true).await?;
 // Check proving status
 let status = builder.get_proving_status();
 
-// Build transaction (local incremental witness + z_gettreestate verification)
-let tx_data = builder.build_single_spend(
+// Build transaction (prove, sign, ZIP-225 v5 bytes + ZIP-244 txid)
+let built = builder
+    .build_single_spend(
     &zebra_client,
     &ZebraJsonRpcOrchardWitnessProvider,
     &spendable_notes,
@@ -64,7 +65,9 @@ let tx_data = builder.build_single_spend(
     1000000, // amount in zatoshis
     10000,   // fee in zatoshis
     Some(b"memo"),
-).await?;
+)
+    .await?;
+// `built.raw_transaction` for sendrawtransaction; `built.txid` matches ZIP-244
 ```
 
 ## OrchardProvingManager

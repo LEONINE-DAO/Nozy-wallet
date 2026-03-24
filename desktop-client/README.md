@@ -99,6 +99,23 @@ nozy = { path = "../../" }
 # nozy = { git = "https://github.com/LEONINE-DAO/Nozy-wallet.git", branch = "master" }
 ```
 
+## Shielded send (desktop UI)
+
+The Send screen uses the same path as the CLI: **scan spendable Orchard notes**, **build a ZIP-225 v5 transaction** (Halo2 proof + signatures), then **`sendrawtransaction`** on your **Zebra** JSON-RPC URL from config.
+
+**Before you send**
+
+1. **Zebra** reachable at the URL in Settings (default `http://127.0.0.1:8232`).
+2. **Sync** the wallet so balances and notes (including Orchard incremental witness data used at spend time) are up to date.
+3. Recipient must be a **unified address with an Orchard receiver** (`u1…`).
+
+**What to expect**
+
+- The first shielded send in a session can take **several minutes** while the Orchard proving key is built and the proof is generated; the UI shows a loading toast explaining this.
+- `walletApi.sendTransaction` throws if the backend returns `success: false` (e.g. insufficient funds, invalid address, or RPC error).
+
+Run the app: from `desktop-client`, `npm install` then `cargo tauri dev`.
+
 ## 📝 Available Tauri Commands
 
 All commands are exposed to the frontend via Tauri's invoke system.

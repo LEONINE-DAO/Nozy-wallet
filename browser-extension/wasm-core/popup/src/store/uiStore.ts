@@ -1,6 +1,13 @@
 import { create } from "zustand";
 
-export type PopupView = "welcome" | "unlock" | "dashboard" | "send" | "receive" | "settings";
+export type PopupView =
+  | "welcome"
+  | "unlock"
+  | "dashboard"
+  | "send"
+  | "receive"
+  | "companion"
+  | "settings";
 
 type UiState = {
   view: PopupView;

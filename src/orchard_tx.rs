@@ -7,15 +7,34 @@ use crate::orchard_witness::{
     advance_witness_with_cmxs, merkle_hash_from_cmx_bytes, merkle_path_from_witness,
     witness_root_matches_anchor,
 };
-use crate::proving::{OrchardProvingKey, OrchardProvingManager, ProvingStatus};
+use crate::proving::{OrchardProvingManager, ProvingStatus};
 use crate::zebra_integration::ZebraClient;
 use async_trait::async_trait;
 use orchard::{
-    builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags, keys::FullViewingKey,
-    tree::Anchor, tree::MerklePath, value::NoteValue, Address as OrchardAddress,
+    builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags,
+    circuit::ProvingKey, keys::FullViewingKey, keys::SpendAuthorizingKey, tree::Anchor,
+    tree::MerklePath, value::NoteValue, Address as OrchardAddress,
 };
 use rand::rngs::OsRng;
+use std::sync::{Arc, OnceLock};
 use zcash_address::unified::{Container, Encoding};
+use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
+use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkType, MAIN_NETWORK, TEST_NETWORK};
+use zcash_protocol::value::ZatBalance;
+
+static ORCHARD_PROVING_KEY: OnceLock<Arc<ProvingKey>> = OnceLock::new();
+
+fn orchard_proving_key() -> &'static Arc<ProvingKey> {
+    ORCHARD_PROVING_KEY.get_or_init(|| Arc::new(ProvingKey::build()))
+}
+
+/// Result of building a single Orchard spend: canonical v5 raw bytes and ZIP-244 txid hex.
+#[derive(Debug, Clone)]
+pub struct OrchardBuiltSpend {
+    pub raw_transaction: Vec<u8>,
+    pub txid: String,
+}
 
 /// Supplies Orchard anchor + Merkle path for a spend (local witness + `z_gettreestate` verification).
 #[async_trait]
@@ -101,7 +120,6 @@ impl OrchardWitnessProvider for ZebraJsonRpcOrchardWitnessProvider {
 #[derive(Debug)]
 pub struct OrchardTransactionBuilder {
     proving_manager: OrchardProvingManager,
-    proving_key: Option<OrchardProvingKey>,
 }
 
 impl OrchardTransactionBuilder {
@@ -109,10 +127,7 @@ impl OrchardTransactionBuilder {
         let params_dir = std::path::PathBuf::from("orchard_params");
         let proving_manager = OrchardProvingManager::new(params_dir);
 
-        Self {
-            proving_manager,
-            proving_key: None,
-        }
+        Self { proving_manager }
     }
 
     pub async fn new_async(download_params: bool) -> NozyResult<Self> {
@@ -125,18 +140,10 @@ impl OrchardTransactionBuilder {
             proving_manager.download_parameters().await?;
         }
 
-        let proving_key = if proving_manager.can_prove() {
-            OrchardProvingKey::from_manager(&proving_manager).ok()
-        } else {
-            None
-        };
-
-        Ok(Self {
-            proving_manager,
-            proving_key,
-        })
+        Ok(Self { proving_manager })
     }
 
+    /// Build, prove, and sign a single-note Orchard v5 transaction (ZIP-225 serialization, ZIP-244 txid).
     pub async fn build_single_spend(
         &self,
         zebra_client: &ZebraClient,
@@ -146,11 +153,11 @@ impl OrchardTransactionBuilder {
         amount_zatoshis: u64,
         fee_zatoshis: u64,
         memo: Option<&[u8]>,
-    ) -> NozyResult<Vec<u8>> {
+    ) -> NozyResult<OrchardBuiltSpend> {
         println!("Building Orchard transaction...");
 
-        let (_network, _recipient) = zcash_address::unified::Address::decode(recipient_address)
-            .map_err(|e| {
+        let (network_type, recipient_decoded) =
+            zcash_address::unified::Address::decode(recipient_address).map_err(|e| {
                 NozyError::InvalidOperation(format!("Invalid recipient address: {}", e))
             })?;
 
@@ -196,12 +203,9 @@ impl OrchardTransactionBuilder {
                 NozyError::InvalidOperation(format!("Failed to add spend action: {}", e))
             })?;
 
-        let (_, recipient) = zcash_address::unified::Address::decode(recipient_address)
-            .map_err(|e| NozyError::AddressParsing(format!("Invalid recipient address: {}", e)))?;
-
         let recipient_orchard_address = {
             let mut orchard_receiver = None;
-            for item in recipient.items() {
+            for item in recipient_decoded.items() {
                 if let zcash_address::unified::Receiver::Orchard(data) = item {
                     orchard_receiver = Some(data);
                     break;
@@ -259,7 +263,7 @@ impl OrchardTransactionBuilder {
         let mut rng = OsRng;
         let bundle_result = builder.build::<i64>(&mut rng);
 
-        let (bundle, _metadata) = match bundle_result {
+        let (unauthorized, _metadata) = match bundle_result {
             Ok(Some((bundle, metadata))) => (bundle, metadata),
             Ok(None) => {
                 return Err(NozyError::InvalidOperation(
@@ -285,30 +289,79 @@ impl OrchardTransactionBuilder {
 
         println!("🔧 Proving Status: {}", status.status_message());
 
-        println!("🔐 Bundle authorization completed (signatures included in bundle)");
+        let sighash: [u8; 32] = unauthorized.commitment().into();
+        let pk = orchard_proving_key();
+        let proven = unauthorized.create_proof(pk.as_ref(), &mut rng).map_err(|e| {
+            NozyError::InvalidOperation(format!("Orchard proof generation failed: {:?}", e))
+        })?;
 
-        let mut serialized_transaction = Vec::new();
+        let authorized_bundle = proven
+            .apply_signatures(
+                &mut rng,
+                sighash,
+                &[SpendAuthorizingKey::from(&spendable_note.spending_key)],
+            )
+            .map_err(|e| {
+                NozyError::InvalidOperation(format!("Orchard spend authorization failed: {}", e))
+            })?;
 
-        serialized_transaction.extend_from_slice(&5u32.to_le_bytes());
+        let bundle_zat = authorized_bundle.try_map_value_balance(|vb| {
+            ZatBalance::from_i64(vb).map_err(|e| {
+                NozyError::InvalidOperation(format!("Orchard value balance out of range: {:?}", e))
+            })
+        })?;
 
-        serialized_transaction.extend_from_slice(&0u32.to_le_bytes());
+        let bundle_actions_count = bundle_zat.actions().len();
 
-        let value_balance = total_input_value as i64 - (amount_zatoshis + change_amount) as i64;
-        serialized_transaction.extend_from_slice(&value_balance.to_le_bytes());
-        serialized_transaction.extend_from_slice(&fee_zatoshis.to_le_bytes());
+        let branch_id = match network_type {
+            NetworkType::Main => BranchId::for_height(
+                &MAIN_NETWORK,
+                BlockHeight::from_u32(tip_height),
+            ),
+            NetworkType::Test | NetworkType::Regtest => BranchId::for_height(
+                &TEST_NETWORK,
+                BlockHeight::from_u32(tip_height),
+            ),
+        };
 
-        let bundle_actions_count = bundle.actions().len() as u32;
-        serialized_transaction.extend_from_slice(&bundle_actions_count.to_le_bytes());
+        let expiry_height =
+            BlockHeight::from_u32(tip_height.saturating_add(DEFAULT_TX_EXPIRY_DELTA));
 
-        println!("✅ Transaction signed and authorized");
-        println!("   Bundle contains {} actions", bundle_actions_count);
-        println!("   Value balance: {} zatoshis", value_balance);
-        println!(
-            "   Transaction size: {} bytes",
-            serialized_transaction.len()
+        let tx_data = TransactionData::<Authorized>::from_parts(
+            TxVersion::V5,
+            branch_id,
+            0,
+            expiry_height,
+            None,
+            None,
+            None,
+            Some(bundle_zat),
         );
 
-        Ok(serialized_transaction)
+        let tx = tx_data
+            .freeze()
+            .map_err(|e| NozyError::InvalidOperation(format!("transaction freeze: {}", e)))?;
+
+        let txid = tx.txid().to_string();
+
+        let mut raw_transaction = Vec::new();
+        tx.write(&mut raw_transaction).map_err(|e| {
+            NozyError::InvalidOperation(format!("transaction serialization: {}", e))
+        })?;
+
+        println!("🔐 Bundle authorized (Orchard proof + binding + spend signatures)");
+        println!("✅ Transaction signed and serialized (ZIP-225 v5)");
+        println!("   Bundle contains {} actions", bundle_actions_count);
+        println!("   TXID: {}", txid);
+        println!(
+            "   Transaction size: {} bytes",
+            raw_transaction.len()
+        );
+
+        Ok(OrchardBuiltSpend {
+            raw_transaction,
+            txid,
+        })
     }
 
     pub fn get_proving_status(&self) -> ProvingStatus {
@@ -321,25 +374,18 @@ impl OrchardTransactionBuilder {
 
     pub async fn initialize_proving(&mut self) -> NozyResult<()> {
         self.proving_manager.initialize().await?;
-
-        if self.proving_manager.can_prove() {
-            self.proving_key = OrchardProvingKey::from_manager(&self.proving_manager).ok();
-        }
-
         Ok(())
     }
 
     pub async fn download_parameters(&mut self) -> NozyResult<()> {
         self.proving_manager.download_parameters().await?;
-
-        if self.proving_manager.can_prove() {
-            self.proving_key = OrchardProvingKey::from_manager(&self.proving_manager).ok();
-        }
-
         Ok(())
     }
 
     pub fn get_proving_key_info(&self) -> Option<String> {
-        self.proving_key.as_ref().map(|key| key.info())
+        self.proving_manager.can_prove().then_some(
+            "Orchard Halo2 ProvingKey: built in-process on first spend (cached globally)"
+                .to_string(),
+        )
     }
 }

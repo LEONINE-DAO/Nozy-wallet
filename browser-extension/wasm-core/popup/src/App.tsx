@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import {
   extensionApi,
+  getCompanionPrefs,
+  setCompanionPrefs,
   type MobileSyncState,
   type PendingApproval,
   type TxStateEntry,
@@ -466,6 +468,198 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
   );
 }
 
+function CompanionView() {
+  const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:3000");
+  const [lwdUrl, setLwdUrl] = useState("");
+  const [log, setLog] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [syncStart, setSyncStart] = useState("0");
+  const [syncEnd, setSyncEnd] = useState("");
+
+  useEffect(() => {
+    getCompanionPrefs()
+      .then((p) => {
+        setBaseUrl(p.baseUrl);
+        setLwdUrl(p.lightwalletdUrl);
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const run = async (fn: () => Promise<void>) => {
+    setBusy(true);
+    try {
+      await fn();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-3 p-4 text-sm">
+      <h2 className="text-base font-semibold">Local API (lightwalletd)</h2>
+      <p className="text-[11px] leading-relaxed text-white/55">
+        <span className="font-medium text-white/75">Easiest full wallet:</span> install{" "}
+        <a
+          className="text-amber-300 underline"
+          href="https://github.com/LEONINE-DAO/Nozy-wallet/releases"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Nozy Desktop
+        </a>{" "}
+        (Tauri). This tab is the <span className="text-white/70">lighter path</span>: WASM in the
+        extension + <span className="font-mono text-white/70">nozywallet-api</span> on your PC for
+        zeaking/lightwalletd compact sync—no Zebrad required on the same machine for that sync step.
+      </p>
+
+      <div className="rounded border border-white/10 bg-white/5 p-3 space-y-2">
+        <div>
+          <div className="mb-1 text-[11px] text-white/60">Nozy API base URL</div>
+          <input
+            className="w-full rounded bg-white/10 p-2 text-xs outline-none font-mono"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            placeholder="http://127.0.0.1:3000"
+          />
+        </div>
+        <div>
+          <div className="mb-1 text-[11px] text-white/60">lightwalletd gRPC (optional override)</div>
+          <input
+            className="w-full rounded bg-white/10 p-2 text-xs outline-none font-mono"
+            value={lwdUrl}
+            onChange={(e) => setLwdUrl(e.target.value)}
+            placeholder="http://127.0.0.1:9067"
+          />
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-white/15 px-3 py-1 text-xs"
+          onClick={() =>
+            run(async () => {
+              await setCompanionPrefs({ baseUrl, lightwalletdUrl: lwdUrl });
+              setLog("Saved companion URLs to extension storage.");
+            })
+          }
+        >
+          Save URLs
+        </button>
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-amber-500 px-3 py-1 text-xs font-medium text-black"
+          onClick={() =>
+            run(async () => {
+              const prefs = await getCompanionPrefs();
+              const s = await extensionApi.companionStatus(prefs.baseUrl);
+              setLog(
+                JSON.stringify(
+                  {
+                    companionReachable: s.companionReachable,
+                    healthStatus: s.healthStatus,
+                    lwdChainTip: s.lwdChainTip
+                  },
+                  null,
+                  2
+                )
+              );
+            })
+          }
+        >
+          Check API
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-white/15 px-3 py-1 text-xs"
+          onClick={() =>
+            run(async () => {
+              const prefs = await getCompanionPrefs();
+              const q = prefs.lightwalletdUrl.trim();
+              const info = await extensionApi.companionLwdInfo(
+                prefs.baseUrl,
+                q || undefined
+              );
+              setLog(JSON.stringify(info, null, 2));
+            })
+          }
+        >
+          GetLightdInfo
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-white/15 px-3 py-1 text-xs"
+          onClick={() =>
+            run(async () => {
+              const prefs = await getCompanionPrefs();
+              const q = prefs.lightwalletdUrl.trim();
+              const tip = await extensionApi.companionLwdChainTip(
+                prefs.baseUrl,
+                q || undefined
+              );
+              setLog(JSON.stringify(tip, null, 2));
+            })
+          }
+        >
+          Chain tip
+        </button>
+      </div>
+
+      <div className="rounded border border-white/10 bg-white/5 p-3 space-y-2">
+        <div className="text-[11px] text-white/60">POST compact sync (writes desktop SQLite via API)</div>
+        <div className="flex gap-2">
+          <input
+            className="w-24 rounded bg-white/10 p-1.5 text-xs outline-none"
+            value={syncStart}
+            onChange={(e) => setSyncStart(e.target.value)}
+            placeholder="start"
+          />
+          <input
+            className="w-24 rounded bg-white/10 p-1.5 text-xs outline-none"
+            value={syncEnd}
+            onChange={(e) => setSyncEnd(e.target.value)}
+            placeholder="end (opt)"
+          />
+        </div>
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-green-700 px-3 py-1 text-xs text-white"
+          onClick={() =>
+            run(async () => {
+              const prefs = await getCompanionPrefs();
+              const start = Math.max(0, Math.floor(Number(syncStart) || 0));
+              const endRaw = syncEnd.trim();
+              const end =
+                endRaw === "" ? undefined : Math.max(start, Math.floor(Number(endRaw) || 0));
+              const q = prefs.lightwalletdUrl.trim();
+              const res = await extensionApi.companionLwdSyncCompact({
+                baseUrl: prefs.baseUrl,
+                start,
+                end,
+                lightwalletd_url: q || undefined
+              });
+              setLog(JSON.stringify(res, null, 2));
+            })
+          }
+        >
+          Sync compact range
+        </button>
+      </div>
+
+      {log && (
+        <pre className="max-h-48 overflow-auto rounded bg-black/30 p-2 text-[10px] text-white/80 whitespace-pre-wrap">
+          {log}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 function SettingsView({
   endpoint,
   onEndpointChange,
@@ -917,6 +1111,7 @@ export function App() {
       )}
       {view === "send" && <SendView />}
       {view === "receive" && <ReceiveView status={status} />}
+      {view === "companion" && <CompanionView />}
       {view === "settings" && (
         <SettingsView
           endpoint={endpoint}

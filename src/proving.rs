@@ -20,6 +20,7 @@ impl OrchardProvingManager {
     pub async fn initialize(&mut self) -> NozyResult<()> {
         println!("🔧 Initializing Orchard proving system...");
         println!("✅ Orchard Halo 2 proving ready - no external parameters required");
+        println!("   ProvingKey is built in-process on first spend and cached (see orchard_tx).");
         println!("🚀 Ready for shielded transactions!");
 
         Ok(())

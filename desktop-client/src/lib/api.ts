@@ -86,6 +86,9 @@ export const walletApi = {
 
   sendTransaction: async (data: SendTransactionRequest): Promise<{ data: { success: boolean; txid?: string; message: string } }> => {
     const result = await invoke<{ success: boolean; txid?: string; message: string }>("send_transaction", { request: data });
+    if (!result.success) {
+      throw new Error(result.message || "Transaction failed");
+    }
     return { data: result };
   },
 

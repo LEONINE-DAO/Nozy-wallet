@@ -1,9 +1,11 @@
 {
   "manifest_version": 3,
   "name": "NozyWallet",
-  "version": "0.1.2",
-  "description": "Privacy-first Zcash Orchard wallet — Chrome and Microsoft Edge (MV3). Companion: localhost Nozy API for zeaking/lightwalletd.",
+  "version": "0.1.4",
+  "minimum_chrome_version": "114",
+  "description": "Zcash Orchard wallet (MV3): WASM in the extension + optional local Nozy API for lightwalletd compact sync. Use Nozy Desktop for the full Zebrad-first experience.",
   "action": {
+    "default_title": "NozyWallet",
     "default_popup": "wasm-core/popup/dist/index.html"
   },
   "background": {

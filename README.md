@@ -474,7 +474,8 @@ async fn main() -> nozy::NozyResult<()> {
     
     // 4. Build and send transaction
     let mut builder = OrchardTransactionBuilder::new_async(true).await?;
-    let transaction = builder.build_single_spend(
+    let built = builder
+        .build_single_spend(
         &zebra_client,
         &ZebraJsonRpcOrchardWitnessProvider,
         &spendable_notes,
@@ -482,11 +483,13 @@ async fn main() -> nozy::NozyResult<()> {
         50_000_000, // 0.5 ZEC in zatoshis
         10_000,     // fee in zatoshis
         Some(b"Payment from automated script"),
-    ).await?;
+    )
+        .await?;
     
-    // 5. Broadcast transaction
-    let txid = builder.broadcast_transaction(&zebra_client, &transaction).await?;
-    println!("Transaction sent! TXID: {}", txid);
+    // 5. Broadcast transaction (ZIP-225 v5 raw hex)
+    let tx_hex = hex::encode(&built.raw_transaction);
+    let network_txid = zebra_client.broadcast_transaction(&tx_hex).await?;
+    println!("Transaction sent! TXID: {} (ZIP-244: {})", network_txid, built.txid);
     
     Ok(())
 }
@@ -813,7 +816,8 @@ async fn main() -> nozy::NozyResult<()> {
     
     // 6. Build transaction
     let mut builder = OrchardTransactionBuilder::new_async(true).await?;
-    let transaction = builder.build_single_spend(
+    let built = builder
+        .build_single_spend(
         &zebra_client,
         &ZebraJsonRpcOrchardWitnessProvider,
         &spendable_notes,
@@ -821,9 +825,14 @@ async fn main() -> nozy::NozyResult<()> {
         amount_zatoshis,
         fee_zatoshis,
         Some(b"Payment memo"), // optional memo
-    ).await?;
+    )
+        .await?;
     
-    println!("Transaction built: {} bytes (raw prefix)", transaction.len());
+    println!(
+        "Transaction built: {} bytes (v5), txid {}",
+        built.raw_transaction.len(),
+        built.txid
+    );
     
     // 7. Broadcast transaction (if enabled)
     // Note: In production, this requires explicit confirmation

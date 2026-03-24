@@ -127,7 +127,8 @@ pub use note_sync::{NoteSyncManager, SyncResult};
 pub use notes::{NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote};
 #[cfg(feature = "native")]
 pub use orchard_tx::{
-    OrchardTransactionBuilder, OrchardWitnessProvider, ZebraJsonRpcOrchardWitnessProvider,
+    OrchardBuiltSpend, OrchardTransactionBuilder, OrchardWitnessProvider,
+    ZebraJsonRpcOrchardWitnessProvider,
 };
 #[cfg(feature = "native")]
 pub use paths::{

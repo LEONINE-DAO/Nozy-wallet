@@ -2,7 +2,6 @@ use crate::error::{NozyError, NozyResult};
 use crate::notes::SpendableNote;
 use crate::orchard_tx::{OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider};
 use crate::zebra_integration::ZebraClient;
-use sha2::{Digest, Sha256};
 
 #[derive(Debug, Clone)]
 pub struct SignedTransaction {
@@ -64,7 +63,7 @@ impl ZcashTransactionBuilder {
         }
 
         let orchard_builder = OrchardTransactionBuilder::new(true);
-        let tx_data = orchard_builder
+        let built = orchard_builder
             .build_single_spend(
                 &zebra_client,
                 &ZebraJsonRpcOrchardWitnessProvider,
@@ -75,26 +74,11 @@ impl ZcashTransactionBuilder {
                 memo,
             )
             .await?;
-        let txid = self.calculate_txid(&tx_data)?;
 
         Ok(SignedTransaction {
-            raw_transaction: tx_data,
-            txid,
+            raw_transaction: built.raw_transaction,
+            txid: built.txid,
         })
-    }
-
-    fn calculate_txid(&self, tx_data: &[u8]) -> NozyResult<String> {
-        let mut hasher = Sha256::new();
-        hasher.update(tx_data);
-        let hash1 = hasher.finalize();
-
-        let mut hasher2 = Sha256::new();
-        hasher2.update(hash1);
-        let hash2 = hasher2.finalize();
-
-        let mut txid_bytes = hash2.to_vec();
-        txid_bytes.reverse();
-        Ok(hex::encode(txid_bytes))
     }
 
     pub async fn broadcast_transaction(

@@ -240,6 +240,82 @@ export const extensionApi = {
     sendMessage<MobileSyncDevice>({
       method: "mobile_sync_revoke_device",
       params: { deviceId }
+    }),
+
+  companionStatus: (baseUrl?: string) =>
+    sendMessage<{
+      companionReachable: boolean;
+      healthStatus: number;
+      lwdChainTip: unknown;
+    }>({ method: "companion_status", params: { baseUrl } }),
+
+  companionLwdInfo: (baseUrl?: string, lightwalletd_url?: string) =>
+    sendMessage<Record<string, unknown>>({
+      method: "companion_lwd_info",
+      params: { baseUrl, lightwalletd_url }
+    }),
+
+  companionLwdChainTip: (baseUrl?: string, lightwalletd_url?: string) =>
+    sendMessage<Record<string, unknown>>({
+      method: "companion_lwd_chain_tip",
+      params: { baseUrl, lightwalletd_url }
+    }),
+
+  companionLwdSyncCompact: (params: {
+    baseUrl?: string;
+    start: number;
+    end?: number;
+    lightwalletd_url?: string;
+    db_path?: string;
+  }) =>
+    sendMessage<Record<string, unknown>>({
+      method: "companion_lwd_sync_compact",
+      params
     })
 };
+
+const STORAGE_COMPANION_BASE = "nozy_companion_base_url";
+const STORAGE_LWD_URL = "nozy_lightwalletd_url";
+
+/** Local Nozy API + optional lightwalletd URL (popup chrome.storage; not sent to sites). */
+export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalletdUrl: string }> {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.get(
+      { [STORAGE_COMPANION_BASE]: "http://127.0.0.1:3000", [STORAGE_LWD_URL]: "" },
+      (items) => {
+        if (chrome.runtime.lastError) {
+          reject(new Error(chrome.runtime.lastError.message));
+          return;
+        }
+        resolve({
+          baseUrl: String(items[STORAGE_COMPANION_BASE]),
+          lightwalletdUrl: String(items[STORAGE_LWD_URL] ?? "")
+        });
+      }
+    );
+  });
+}
+
+export async function setCompanionPrefs(prefs: {
+  baseUrl?: string;
+  lightwalletdUrl?: string;
+}): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const patch: Record<string, string> = {};
+    if (prefs.baseUrl !== undefined) {
+      const u = prefs.baseUrl.trim().replace(/\/+$/, "");
+      patch[STORAGE_COMPANION_BASE] = u || "http://127.0.0.1:3000";
+    }
+    if (prefs.lightwalletdUrl !== undefined) {
+      patch[STORAGE_LWD_URL] = prefs.lightwalletdUrl.trim();
+    }
+    chrome.storage.local.set(patch, () => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+        return;
+      }
+      resolve();
+    });
+  });
+}
 

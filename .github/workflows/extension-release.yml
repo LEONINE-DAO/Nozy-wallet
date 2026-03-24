@@ -1,57 +1,125 @@
 name: extension-release-bundles
 
+# Manual: creates/updates GitHub Release `extension-v{version}` with Chromium + Firefox zips.
+# Automatic: on every published repo release, attaches the same zips (version from manifest.json).
+
 on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Release version (example: 0.1.1)"
+        description: "Must match browser-extension/manifest.json version (e.g. 0.1.4)"
         required: true
         type: string
+  release:
+    types: [published]
+
+permissions:
+  contents: write
 
 jobs:
   build-and-package:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Read extension version from manifest
+        id: extver
+        run: |
+          MVER=$(jq -r .version browser-extension/manifest.json)
+          echo "manifest_version=$MVER" >> "$GITHUB_OUTPUT"
+          echo "Zipping as nozy-extension-*-${MVER}.zip"
+
+      - name: Verify workflow_dispatch version matches manifest
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          test "${{ github.event.inputs.version }}" = "${{ steps.extver.outputs.manifest_version }}"
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install wasm-pack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Build WASM package (browser-extension/wasm/pkg)
+        working-directory: browser-extension/wasm-core
+        run: wasm-pack build --target web --out-dir ../wasm/pkg --release
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: browser-extension/wasm-core/popup/package-lock.json
+
       - name: Build popup
         working-directory: browser-extension/wasm-core/popup
         run: |
           npm ci
           npm run build
-      - name: Compose extension directory
+
+      - name: Compose extension directory (paths must match manifest.json)
         run: |
-          mkdir -p dist/nozy-extension
+          mkdir -p dist/nozy-extension/wasm-core/popup
           cp browser-extension/manifest.json dist/nozy-extension/manifest.json
           cp -r browser-extension/background dist/nozy-extension/background
           rm -f dist/nozy-extension/background/*.test.mjs
           cp -r browser-extension/content dist/nozy-extension/content
           cp -r browser-extension/wasm dist/nozy-extension/wasm
-          mkdir -p dist/nozy-extension/popup
-          cp -r browser-extension/wasm-core/popup/dist dist/nozy-extension/popup/dist
-      - name: Validate release bundle and docs
+          cp -r browser-extension/wasm-core/popup/dist dist/nozy-extension/wasm-core/popup/dist
+          test -f dist/nozy-extension/wasm/pkg/nozy_wasm_bg.wasm
+          test -f dist/nozy-extension/wasm-core/popup/dist/index.html
+
+      - name: Validate docs
         run: |
-          test -f dist/nozy-extension/manifest.json
-          test -f dist/nozy-extension/popup/dist/index.html
           test -f browser-extension/CHANGELOG.md
-          test -f browser-extension/STORE_SUBMISSION_CHECKLIST.md
-      - name: Package Chrome/Edge bundle
+          test -f browser-extension/COMPANION.md
+
+      - name: Package Chromium bundle
         run: |
           cd dist
-          zip -r "nozy-extension-chromium-${{ github.event.inputs.version }}.zip" nozy-extension
-      - name: Package Firefox bundle
+          zip -r "nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip" nozy-extension
+
+      - name: Package Firefox-oriented bundle (copy of Chromium zip; validate in Firefox before store)
         run: |
-          cp dist/nozy-extension/manifest.json dist/nozy-extension/manifest.firefox.json
           cd dist
-          zip -r "nozy-extension-firefox-${{ github.event.inputs.version }}.zip" nozy-extension
+          cp "nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip" \
+            "nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip"
+
       - uses: actions/upload-artifact@v4
         with:
           name: nozy-extension-release-bundles
           path: |
-            dist/nozy-extension-chromium-${{ github.event.inputs.version }}.zip
-            dist/nozy-extension-firefox-${{ github.event.inputs.version }}.zip
+            dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
+            dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
 
+      - name: Create or update extension-v* GitHub Release (manual)
+        if: github.event_name == 'workflow_dispatch'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: extension-v${{ github.event.inputs.version }}
+          name: NozyWallet browser extension ${{ github.event.inputs.version }}
+          body: |
+            **Chromium** (`nozy-extension-chromium-*.zip`): Chrome, Edge, Brave (Manifest V3).
+
+            **Firefox** (`nozy-extension-firefox-*.zip`): same bundle; test before AMO submit.
+
+            ### Recommended setup
+            - **Easiest full wallet:** [Nozy Desktop (Tauri)](https://github.com/LEONINE-DAO/Nozy-wallet/releases) — Orchard send, Zebra, full UX.
+            - **Lighter path (this extension):** WASM wallet in the browser + **local `nozywallet-api`** on `http://127.0.0.1:3000` and **lightwalletd** for compact sync (no Zebrad required on the same machine for that piece).
+
+            See [`browser-extension/README.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/README.md) and [`browser-extension/COMPANION.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/COMPANION.md).
+          files: |
+            dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
+            dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
+          fail_on_unmatched_files: true
+          generate_release_notes: true
+
+      - name: Attach extension zips to published repository release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: |
+            dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
+            dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
+          fail_on_unmatched_files: true

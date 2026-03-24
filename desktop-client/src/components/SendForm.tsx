@@ -102,15 +102,18 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
   const handleSend = async () => {
     setIsSending(true);
-    const sendToast = toast.loading("Sending transaction...");
+    const sendToast = toast.loading(
+      "Building shielded transaction (first send may take several minutes while proving)…"
+    );
     try {
-      await walletApi.sendTransaction({
+      const { data: sent } = await walletApi.sendTransaction({
         recipient: address,
         amount: parseFloat(amount),
         memo: memo || undefined,
         password: password,
       });
-      toast.success("Transaction sent successfully!", { id: sendToast });
+      const txidMsg = sent.txid ? ` TXID: ${sent.txid}` : "";
+      toast.success(`Transaction sent successfully!${txidMsg}`, { id: sendToast });
       setSuccess(true);
 
       setTimeout(() => {

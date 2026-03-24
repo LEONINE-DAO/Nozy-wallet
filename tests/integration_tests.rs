@@ -205,8 +205,9 @@ async fn test_end_to_end_flow_create_scan_send() {
         .expect("Failed to build transaction");
 
     println!(
-        "✅ Transaction built: {} bytes (raw Orchard tx prefix)",
-        transaction.len()
+        "✅ Transaction built: {} bytes (ZIP-225 v5 raw), txid {}",
+        transaction.raw_transaction.len(),
+        transaction.txid
     );
 }
 

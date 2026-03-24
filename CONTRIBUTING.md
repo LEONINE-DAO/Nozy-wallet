@@ -119,7 +119,7 @@ pub struct OrchardTransactionBuilder { }
 pub enum NozyError { }
 
 // Functions and methods: snake_case
-pub fn build_single_spend() -> NozyResult<Vec<u8>> { }
+pub fn build_single_spend() -> NozyResult<OrchardBuiltSpend> { }
 pub async fn get_best_block_height(&self) -> NozyResult<u32> { }
 
 // Constants: SCREAMING_SNAKE_CASE
@@ -148,7 +148,7 @@ mod hd_wallet;
 ///
 /// # Returns
 ///
-/// A `NozyResult` containing the serialized transaction bytes
+/// A `NozyResult` containing v5 raw bytes and ZIP-244 txid (`OrchardBuiltSpend`)
 ///
 /// # Errors
 ///
@@ -161,8 +161,9 @@ mod hd_wallet;
 /// # Examples
 ///
 /// ```no_run
-/// let tx = builder.build_single_spend(
+/// let built = builder.build_single_spend(
 ///     &client,
+///     &witness_provider,
 ///     &notes,
 ///     "u1...",
 ///     100_000,
@@ -173,12 +174,13 @@ mod hd_wallet;
 pub async fn build_single_spend(
     &self,
     zebra_client: &ZebraClient,
+    witness_provider: &dyn OrchardWitnessProvider,
     spendable_notes: &[SpendableNote],
     recipient_address: &str,
     amount_zatoshis: u64,
     fee_zatoshis: u64,
     memo: Option<&[u8]>,
-) -> NozyResult<Vec<u8>> {
+) -> NozyResult<OrchardBuiltSpend> {
     // Implementation
 }
 ```
