@@ -64,7 +64,7 @@ Just like Monero, but faster and more efficient.
 - **Merkle Path Construction**: Convert authentication paths to MerkleHashOrchard arrays
 - **Bundle Authorization Framework**: Complete transaction authorization framework
 
-#### Desktop Application (NEW! 🎉)
+#### Desktop Application (NEW)
 - **✅ Desktop GUI**: Beautiful cross-platform desktop application (Windows, macOS, Linux)
 - **✅ Web3 Browser**: Built-in browser for Zcash dApps with full navigation
 - **✅ dApp Integration**: EIP-1193 compatible provider for seamless dApp connections
