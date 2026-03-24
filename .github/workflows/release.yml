@@ -24,24 +24,33 @@ jobs:
             binary: nozy
             extension: ""
             friendly_name: nozy-linux
+            build_mode: native
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: nozy.exe
             extension: ".exe"
             friendly_name: nozy-windows.exe
+            build_mode: native
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: nozy
             extension: ""
             friendly_name: nozy-macos-intel
+            build_mode: cross
           - os: macos-latest
             target: aarch64-apple-darwin
             binary: nozy
             extension: ""
             friendly_name: nozy-macos-arm
+            build_mode: native
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -63,15 +72,6 @@ jobs:
       - name: Run security audit
         run: cargo audit || (echo "❌ Security vulnerabilities found. Fix before release." && exit 1)
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          workspaces: |
-            .
-            zeaking
-            api-server
-
       - name: Configure Cargo network retry
         run: |
           mkdir -p $HOME/.cargo
@@ -85,14 +85,25 @@ jobs:
         env:
           CARGO_NET_TIMEOUT: 300
         run: |
-          cargo build --release --target ${{ matrix.target }} --bin nozy || \
-          (echo "Build failed, retrying..." && sleep 5 && \
-           cargo build --release --target ${{ matrix.target }} --bin nozy)
+          set -euo pipefail
+          build_cli() {
+            if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+              cargo build --release --target "${{ matrix.target }}" --bin nozy
+            else
+              cargo build --release --bin nozy
+            fi
+          }
+          build_cli || { echo "Build failed, retrying..."; sleep 5; build_cli; }
         timeout-minutes: 45
 
       - name: Rename binary to friendly name and generate hash
         run: |
-          cp target/${{ matrix.target }}/release/${{ matrix.binary }} ${{ matrix.friendly_name }}
+          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+            SRC="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          else
+            SRC="target/release/${{ matrix.binary }}"
+          fi
+          cp "$SRC" ${{ matrix.friendly_name }}
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             powershell -NoProfile -Command '$h=(Get-FileHash -Path "${{ matrix.friendly_name }}" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "${{ matrix.friendly_name }}.sha256" -Value ($h + "  ${{ matrix.friendly_name }}") -NoNewline'
           else
@@ -123,21 +134,30 @@ jobs:
             target: x86_64-unknown-linux-gnu
             binary: nozywallet-api
             extension: ""
+            build_mode: native
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: nozywallet-api.exe
             extension: ".exe"
+            build_mode: native
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: nozywallet-api
             extension: ""
+            build_mode: cross
           - os: macos-latest
             target: aarch64-apple-darwin
             binary: nozywallet-api
             extension: ""
+            build_mode: native
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -159,15 +179,6 @@ jobs:
       - name: Run security audit
         run: cargo audit || (echo "❌ Security vulnerabilities found. Fix before release." && exit 1)
 
-      - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-          workspaces: |
-            .
-            zeaking
-            api-server
-
       - name: Configure Cargo network retry
         run: |
           mkdir -p $HOME/.cargo
@@ -181,18 +192,29 @@ jobs:
         env:
           CARGO_NET_TIMEOUT: 300
         run: |
-          cargo build --release --target ${{ matrix.target }} --package nozywallet-api || \
-          (echo "Build failed, retrying..." && sleep 5 && \
-           cargo build --release --target ${{ matrix.target }} --package nozywallet-api)
+          set -euo pipefail
+          build_api() {
+            if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+              cargo build --release --target "${{ matrix.target }}" --package nozywallet-api
+            else
+              cargo build --release --package nozywallet-api
+            fi
+          }
+          build_api || { echo "Build failed, retrying..."; sleep 5; build_api; }
         timeout-minutes: 45
 
       - name: Generate SHA256 hash
         id: hash
         run: |
-          if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell -NoProfile -Command '$h=(Get-FileHash -Path "target/${{ matrix.target }}/release/${{ matrix.binary }}" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "hash.txt" -Value ($h + "  ${{ matrix.binary }}") -NoNewline'
+          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+            BIN="target/${{ matrix.target }}/release/${{ matrix.binary }}"
           else
-            shasum -a 256 target/${{ matrix.target }}/release/${{ matrix.binary }} > hash.txt
+            BIN="target/release/${{ matrix.binary }}"
+          fi
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            powershell -NoProfile -Command '$h=(Get-FileHash -Path "'"$BIN"'" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "hash.txt" -Value ($h + "  ${{ matrix.binary }}") -NoNewline'
+          else
+            shasum -a 256 "$BIN" > hash.txt
           fi
           HASH=$(cat hash.txt | awk '{print $1}')
           echo "hash=$HASH" >> $GITHUB_OUTPUT
@@ -204,7 +226,7 @@ jobs:
         with:
           name: nozywallet-api-${{ matrix.target }}${{ matrix.extension }}
           path: |
-            target/${{ matrix.target }}/release/${{ matrix.binary }}
+            ${{ matrix.build_mode == 'cross' && format('target/{0}/release/{1}', matrix.target, matrix.binary) || format('target/release/{0}', matrix.binary) }}
             hash.txt
           retention-days: 90
           if-no-files-found: error
