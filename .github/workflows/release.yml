@@ -68,6 +68,7 @@ jobs:
         with:
           cache-on-failure: true
           workspaces: |
+            .
             zeaking
             api-server
 
@@ -163,6 +164,7 @@ jobs:
         with:
           cache-on-failure: true
           workspaces: |
+            .
             zeaking
             api-server
 

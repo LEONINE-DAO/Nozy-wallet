@@ -11,9 +11,9 @@ use crate::proving::{OrchardProvingManager, ProvingStatus};
 use crate::zebra_integration::ZebraClient;
 use async_trait::async_trait;
 use orchard::{
-    builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags,
-    circuit::ProvingKey, keys::FullViewingKey, keys::SpendAuthorizingKey, tree::Anchor,
-    tree::MerklePath, value::NoteValue, Address as OrchardAddress,
+    builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags, circuit::ProvingKey,
+    keys::FullViewingKey, keys::SpendAuthorizingKey, tree::Anchor, tree::MerklePath,
+    value::NoteValue, Address as OrchardAddress,
 };
 use rand::rngs::OsRng;
 use std::sync::{Arc, OnceLock};
@@ -291,9 +291,11 @@ impl OrchardTransactionBuilder {
 
         let sighash: [u8; 32] = unauthorized.commitment().into();
         let pk = orchard_proving_key();
-        let proven = unauthorized.create_proof(pk.as_ref(), &mut rng).map_err(|e| {
-            NozyError::InvalidOperation(format!("Orchard proof generation failed: {:?}", e))
-        })?;
+        let proven = unauthorized
+            .create_proof(pk.as_ref(), &mut rng)
+            .map_err(|e| {
+                NozyError::InvalidOperation(format!("Orchard proof generation failed: {:?}", e))
+            })?;
 
         let authorized_bundle = proven
             .apply_signatures(
@@ -314,14 +316,12 @@ impl OrchardTransactionBuilder {
         let bundle_actions_count = bundle_zat.actions().len();
 
         let branch_id = match network_type {
-            NetworkType::Main => BranchId::for_height(
-                &MAIN_NETWORK,
-                BlockHeight::from_u32(tip_height),
-            ),
-            NetworkType::Test | NetworkType::Regtest => BranchId::for_height(
-                &TEST_NETWORK,
-                BlockHeight::from_u32(tip_height),
-            ),
+            NetworkType::Main => {
+                BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(tip_height))
+            }
+            NetworkType::Test | NetworkType::Regtest => {
+                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(tip_height))
+            }
         };
 
         let expiry_height =
@@ -353,10 +353,7 @@ impl OrchardTransactionBuilder {
         println!("✅ Transaction signed and serialized (ZIP-225 v5)");
         println!("   Bundle contains {} actions", bundle_actions_count);
         println!("   TXID: {}", txid);
-        println!(
-            "   Transaction size: {} bytes",
-            raw_transaction.len()
-        );
+        println!("   Transaction size: {} bytes", raw_transaction.len());
 
         Ok(OrchardBuiltSpend {
             raw_transaction,

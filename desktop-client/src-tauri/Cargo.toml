@@ -2,7 +2,7 @@
 
 [package]
 name = "nozywallet-desktop"
-version = "2.2.1"
+version = "2.2.2"
 edition = "2021"
 
 [dependencies]
