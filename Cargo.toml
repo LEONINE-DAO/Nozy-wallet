@@ -69,7 +69,7 @@ prost-types = { version = "0.14", optional = true }
 
 # CLI
 clap = { version = "4.0", features = ["derive", "env"], optional = true }
-dialoguer = { version = "0.11", optional = true }
+dialoguer = { version = "0.12", optional = true }
 indicatif = { version = "0.17", optional = true }
 
 # Tracing subscriber (native-only, has OS deps)
