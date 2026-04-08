@@ -10,6 +10,14 @@
     "preview": "vite preview",
     "tauri": "tauri"
   },
+  "overrides": {
+    "@emnapi/core": "1.9.2",
+    "@emnapi/runtime": "1.9.2"
+  },
+  "optionalDependencies": {
+    "@emnapi/core": "1.9.2",
+    "@emnapi/runtime": "1.9.2"
+  },
   "dependencies": {
     "@tauri-apps/api": "2.9.1",
     "react": "^18.2.0",

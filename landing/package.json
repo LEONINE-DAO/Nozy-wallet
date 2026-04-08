@@ -10,6 +10,10 @@
     "lint": "eslint .",
     "deploy": "node deploy.js"
   },
+  "optionalDependencies": {
+    "@emnapi/core": "1.9.2",
+    "@emnapi/runtime": "1.9.2"
+  },
   "dependencies": {
     "@solar-icons/react": "^1.0.1",
     "@tailwindcss/vite": "^4.1.17",
@@ -24,7 +28,9 @@
     "rollup": ">=4.59.0",
     "@isaacs/brace-expansion": ">=5.0.1",
     "ajv": ">=6.14.0",
-    "picomatch": ">=4.0.4"
+    "picomatch": ">=4.0.4",
+    "@emnapi/core": "1.9.2",
+    "@emnapi/runtime": "1.9.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
