@@ -383,6 +383,7 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
   const [scanInfo, setScanInfo] = useState<string>("");
   const [scanStatus, setScanStatus] = useState<string>("idle");
   const [percent, setPercent] = useState(0);
+  const [progressReady, setProgressReady] = useState(false);
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | null = null;
@@ -406,7 +407,11 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
         } else if (p.status === "stopped") {
           setScanInfo(`Scan stopped at ${p.percent}% (${p.scannedBlocks}/${p.totalBlocks} blocks)`);
         }
-      } catch (_) {}
+      } catch (_) {
+        /* ignore */
+      } finally {
+        setProgressReady(true);
+      }
     }
 
     poll();
@@ -432,8 +437,10 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
         </div>
       )}
 
-      <div className="flex gap-2">
-        {!scanning ? (
+      <div className="flex gap-2 items-center">
+        {!progressReady ? (
+          <span className="text-xs text-white/50 py-1">Checking scan status…</span>
+        ) : !scanning ? (
           <button
             className="rounded bg-amber-500 px-3 py-1 text-black"
             onClick={async () => {

@@ -12,6 +12,25 @@ NozyWallet is a privacy-first Orchard wallet that enforces complete transaction 
 
 **Extension releases (Chrome & Edge zip):** maintainers run the **extension-release-bundles** GitHub Action (see **`browser-extension/RELEASES.md`**); each run publishes a **GitHub Release** with Chromium and Firefox bundles so users can load unpacked or track versions.
 
+## Downloads (latest release)
+
+One-click links (GitHub redirects to the newest tag):
+
+| What | Direct link |
+|------|-------------|
+| **Windows desktop — setup (.exe)** *(use this first; normal PCs)* | [nozy-desktop-windows-x86_64-installer.exe](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.exe) |
+| **Windows desktop — MSI** *(optional; IT / deployment)* | [nozy-desktop-windows-x86_64-installer.msi](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.msi) |
+| **Browser extension (Chromium zip)** | [nozy-extension-chromium.zip](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip) |
+| **CLI — Windows** | [nozy-windows.exe](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe) |
+| **CLI — Linux** | [nozy-linux](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-linux) |
+| **CLI — macOS Apple Silicon** | [nozy-macos-arm](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-arm) |
+| **CLI — macOS Intel** | [nozy-macos-intel](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-intel) |
+| **All assets** | [Releases — latest](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest) |
+
+**iOS & Android:** not on App Store / Google Play yet — see **[Enhancement roadmap — mobile](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md)**. The [landing page](https://leonine-dao.github.io/Nozy-wallet/) download section shows “coming soon” for phone users.
+
+Extension: unzip, then Chrome/Edge **Load unpacked**. Desktop installers may appear a few minutes after a release if CI is still uploading.
+
 >  **Want to help build the future of private cryptocurrency?** Check out our **[Enhancement Roadmap](ENHANCEMENT_ROADMAP.md)** to see exciting features we're building, including **Desktop GUI**, **Mobile Apps**, **Hardware Wallet Support**, and more! We welcome contributors!
 
 ##  NU 6.1 Support - Ready for Network Upgrade 6.1!

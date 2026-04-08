@@ -80,14 +80,12 @@ const Header = () => {
           >
             Documentation
           </a>
-          <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
+          <Link
+            to={{ pathname: "/", hash: "download" }}
             className="bg-zinc-900 hover:bg-zinc-800 text-white px-5 py-2 rounded-full transition-all border border-transparent shadow-md hover:shadow-lg"
           >
             Download
-          </a>
+          </Link>
         </nav>
 
         <button
@@ -139,14 +137,13 @@ const Header = () => {
             </a>
           </div>
           <div className="mt-8">
-            <a
-              href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
-              target="_blank"
-              rel="noopener noreferrer"
+            <Link
+              to={{ pathname: "/", hash: "download" }}
+              onClick={() => setIsMenuOpen(false)}
               className="w-full bg-zinc-900 hover:bg-zinc-800 text-white px-6 py-3 rounded-full text-base font-medium transition-all shadow-lg active:scale-95 block text-center"
             >
               Download NozyWallet
-            </a>
+            </Link>
           </div>
         </nav>
       </div>

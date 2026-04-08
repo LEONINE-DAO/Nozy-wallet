@@ -6,12 +6,16 @@
 2. **Automatic attach** — When you **publish any GitHub Release** on this repo, workflow **`extension-release-bundles`** builds WASM + popup and **attaches**:
    - `nozy-extension-chromium-<manifestVersion>.zip`
    - `nozy-extension-firefox-<manifestVersion>.zip` (copy of Chromium zip; validate in Firefox before AMO).
+   - **`nozy-extension-chromium.zip`** and **`nozy-extension-firefox.zip`** — stable names so this link always tracks **latest**:  
+     [Download extension (Chromium zip)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip)
 3. **Manual extension-only release** — **Actions** → **extension-release-bundles** → **Run workflow** with input matching `manifest.json` (e.g. `0.1.4`). Creates/updates tag **`extension-v0.1.4`** and a dedicated release.
 4. **CRX** — CI ships **zip** only. Signed **`.crx`** / store uploads use Chrome Web Store or Edge Add-ons (see **`STORE_SUBMISSION_CHECKLIST.md`**).
 5. **Share** — Point users to **`browser-extension/README.md`** and **`COMPANION.md`**.
 
 ## For users — install from a release zip
 
+- **Latest Chromium zip (direct):**  
+  https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip  
 - **Chrome**: `chrome://extensions` → enable **Developer mode** → **Load unpacked** (folder extracted from the chromium zip).
 - **Edge**: `edge://extensions` → **Developer mode** → **Load unpacked**.
 

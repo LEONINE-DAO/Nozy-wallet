@@ -77,13 +77,16 @@ jobs:
       - name: Package Chromium bundle
         run: |
           cd dist
-          zip -r "nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip" nozy-extension
+          V="${{ steps.extver.outputs.manifest_version }}"
+          zip -r "nozy-extension-chromium-${V}.zip" nozy-extension
+          cp "nozy-extension-chromium-${V}.zip" "nozy-extension-chromium.zip"
 
       - name: Package Firefox-oriented bundle (copy of Chromium zip; validate in Firefox before store)
         run: |
           cd dist
-          cp "nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip" \
-            "nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip"
+          V="${{ steps.extver.outputs.manifest_version }}"
+          cp "nozy-extension-chromium-${V}.zip" "nozy-extension-firefox-${V}.zip"
+          cp "nozy-extension-firefox-${V}.zip" "nozy-extension-firefox.zip"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -91,6 +94,8 @@ jobs:
           path: |
             dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
             dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
+            dist/nozy-extension-chromium.zip
+            dist/nozy-extension-firefox.zip
 
       - name: Create or update extension-v* GitHub Release (manual)
         if: github.event_name == 'workflow_dispatch'
@@ -111,6 +116,8 @@ jobs:
           files: |
             dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
             dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
+            dist/nozy-extension-chromium.zip
+            dist/nozy-extension-firefox.zip
           fail_on_unmatched_files: true
           generate_release_notes: true
 
@@ -122,4 +129,6 @@ jobs:
           files: |
             dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
             dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
+            dist/nozy-extension-chromium.zip
+            dist/nozy-extension-firefox.zip
           fail_on_unmatched_files: true

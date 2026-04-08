@@ -33,9 +33,7 @@ const Hero = () => {
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
+            href="#download"
             className="w-full sm:w-auto px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-white rounded-xl font-bold transition-all shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 group"
           >
             <AltArrowDown

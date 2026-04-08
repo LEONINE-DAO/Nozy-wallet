@@ -825,6 +825,8 @@ async function walletUnlock(password) {
   session.rpcEndpoint = state.rpcEndpoint || session.rpcEndpoint;
   touchSession();
 
+  void resumeBackgroundScanAfterUnlock();
+
   return { address };
 }
 
@@ -962,11 +964,22 @@ function saveScanState(s) {
 
 let scanRunning = false;
 
+function scheduleScanAlarm(delayMinutes) {
+  chrome.alarms.create(SCAN_ALARM, { delayInMinutes: delayMinutes });
+}
+
 async function scanTick() {
-  if (scanRunning) return;
+  if (scanRunning) {
+    scheduleScanAlarm(0.05);
+    return;
+  }
   const state = await loadScanState();
   if (!state || state.status !== "scanning") return;
-  if (!session.unlocked || !session.mnemonic || !session.address) return;
+  if (!session.unlocked || !session.mnemonic || !session.address) {
+    // SW restarted or wallet locked: keep alarms alive until the user unlocks again.
+    scheduleScanAlarm(1);
+    return;
+  }
   scanRunning = true;
 
   try {
@@ -1013,11 +1026,17 @@ async function scanTick() {
   }
 
   if (state.status === "scanning") {
-    chrome.alarms.create(SCAN_ALARM, { delayInMinutes: 0.02 });
+    scheduleScanAlarm(0.02);
   }
 }
 
-function startBackgroundScan(startHeight, endHeight) {
+async function startBackgroundScan(startHeight, endHeight) {
+  const existing = await loadScanState();
+  if (existing && existing.status === "scanning") {
+    scheduleScanAlarm(0.02);
+    void scanTick();
+    return existing;
+  }
   const state = {
     status: "scanning",
     startHeight,
@@ -1030,11 +1049,17 @@ function startBackgroundScan(startHeight, endHeight) {
     updatedAt: nowMs(),
     finishedAt: null
   };
-  return saveScanState(state).then(() => {
-    chrome.alarms.create(SCAN_ALARM, { delayInMinutes: 0.02 });
-    scanTick();
-    return state;
-  });
+  await saveScanState(state);
+  scheduleScanAlarm(0.02);
+  void scanTick();
+  return state;
+}
+
+async function resumeBackgroundScanAfterUnlock() {
+  const s = await loadScanState();
+  if (!s || s.status !== "scanning") return;
+  scheduleScanAlarm(0.02);
+  void scanTick();
 }
 
 function stopBackgroundScan() {
@@ -1056,7 +1081,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 // Resume scan on service worker restart
 loadScanState().then((s) => {
   if (s && s.status === "scanning") {
-    chrome.alarms.create(SCAN_ALARM, { delayInMinutes: 0.05 });
+    scheduleScanAlarm(0.05);
   }
 });
 

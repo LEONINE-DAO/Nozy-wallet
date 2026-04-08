@@ -211,6 +211,10 @@ jobs:
           else
             BIN="target/release/${{ matrix.binary }}"
           fi
+          if [[ ! -f "$BIN" ]]; then
+            echo "Expected binary missing at $BIN"
+            exit 1
+          fi
           if [[ "${{ runner.os }}" == "Windows" ]]; then
             powershell -NoProfile -Command '$h=(Get-FileHash -Path "'"$BIN"'" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "hash.txt" -Value ($h + "  ${{ matrix.binary }}") -NoNewline'
           else
@@ -220,14 +224,26 @@ jobs:
           echo "hash=$HASH" >> $GITHUB_OUTPUT
           echo "Generated hash: $HASH"
 
+      # upload-artifact path: avoid inline format() — it has failed silently before (artifacts had only hash.txt).
+      - name: Stage API binary for artifact upload
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
+            BIN="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+          else
+            BIN="target/release/${{ matrix.binary }}"
+          fi
+          mkdir -p api-upload
+          cp "$BIN" "api-upload/${{ matrix.binary }}"
+          cp hash.txt api-upload/hash.txt
+          ls -la api-upload
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         continue-on-error: false
         with:
           name: nozywallet-api-${{ matrix.target }}${{ matrix.extension }}
-          path: |
-            ${{ matrix.build_mode == 'cross' && format('target/{0}/release/{1}', matrix.target, matrix.binary) || format('target/release/{0}', matrix.binary) }}
-            hash.txt
+          path: api-upload
           retention-days: 90
           if-no-files-found: error
 
@@ -251,17 +267,26 @@ jobs:
           # Copy CLI binaries (already have friendly names)
           find artifacts -type f -name "nozy-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
           find artifacts -type f -name "nozy-*.sha256" -exec cp {} release-files/ \;
-          # Copy and rename API server binaries using the artifact directory name as the friendly name
+          # Copy and rename API server binaries (artifact layout: api-upload/<binary> + hash.txt)
           for dir in artifacts/nozywallet-api-*/; do
+            [ -d "$dir" ] || continue
             target_name=$(basename "$dir")
-            for bin in "$dir"nozywallet-api*; do
+            copied=
+            for bin in "$dir"nozywallet-api* "$dir"/*.exe; do
               [ -f "$bin" ] || continue
               base=$(basename "$bin")
               if [ "$base" = "hash.txt" ]; then
                 continue
               fi
               cp "$bin" "release-files/${target_name}"
+              copied=1
+              break
             done
+            if [ -z "$copied" ]; then
+              echo "::error::No API binary under $dir (only hash?)"
+              ls -la "$dir" || true
+              exit 1
+            fi
             if [ -f "${dir}hash.txt" ]; then
               cp "${dir}hash.txt" "release-files/${target_name}.sha256"
             fi
@@ -291,6 +316,19 @@ jobs:
           generate_release_notes: true
           body: |
             ## 🎉 NozyWallet ${{ github.ref_name }} Release
+            
+            ### One-click links (`/releases/latest/download/…`)
+            
+            Release tag: **`${{ github.ref_name }}`**. These URLs always resolve to the **latest** published release:
+            
+            | Product | URL |
+            |--------|-----|
+            | Windows desktop **.exe** (NSIS) | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.exe` |
+            | Windows desktop **.msi** | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.msi` |
+            | **Extension** (Chromium zip) | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip` |
+            | CLI Windows | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe` |
+            
+            Desktop installers and extension zips may appear a few minutes after publish (separate workflows attach them to this tag).
             
             ### 📦 Downloads
             
