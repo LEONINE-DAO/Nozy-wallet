@@ -14,22 +14,25 @@ NozyWallet is a privacy-first Orchard wallet that enforces complete transaction 
 
 ## Downloads (latest release)
 
-One-click links (GitHub redirects to the newest tag):
+**Desktop (.exe / .msi)** and **browser extension (.zip)** are attached by **follow-up GitHub Actions** after a version tag is published. They are **not always** available at `…/releases/latest/download/<filename>` (that URL **404s** if the asset was never uploaded for the current “latest” release). Open **[Releases — latest](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)** and download from **Assets** — look for:
+
+- `nozy-desktop-windows-x86_64-installer.exe` (recommended on Windows)
+- `nozy-desktop-windows-x86_64-installer.msi` (optional, IT / silent install)
+- `nozy-extension-chromium.zip` / `nozy-extension-firefox.zip`
+
+**CLI** binaries are attached with every release; one-click links are safe:
 
 | What | Direct link |
 |------|-------------|
-| **Windows desktop — setup (.exe)** *(use this first; normal PCs)* | [nozy-desktop-windows-x86_64-installer.exe](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.exe) |
-| **Windows desktop — MSI** *(optional; IT / deployment)* | [nozy-desktop-windows-x86_64-installer.msi](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.msi) |
-| **Browser extension (Chromium zip)** | [nozy-extension-chromium.zip](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip) |
 | **CLI — Windows** | [nozy-windows.exe](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe) |
 | **CLI — Linux** | [nozy-linux](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-linux) |
 | **CLI — macOS Apple Silicon** | [nozy-macos-arm](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-arm) |
 | **CLI — macOS Intel** | [nozy-macos-intel](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-intel) |
-| **All assets** | [Releases — latest](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest) |
+| **All assets & checksums** | [Releases — latest](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest) |
 
 **iOS & Android:** not on App Store / Google Play yet — see **[Enhancement roadmap — mobile](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md)**. The [landing page](https://leonine-dao.github.io/Nozy-wallet/) download section shows “coming soon” for phone users.
 
-Extension: unzip, then Chrome/Edge **Load unpacked**. Desktop installers may appear a few minutes after a release if CI is still uploading.
+Extension: unzip, then Chrome/Edge **Load unpacked**. If Assets are empty for desktop/extension, run or wait for **Build Desktop Release** and **extension-release-bundles** on that tag (or use an older release that lists the files).
 
 >  **Want to help build the future of private cryptocurrency?** Check out our **[Enhancement Roadmap](ENHANCEMENT_ROADMAP.md)** to see exciting features we're building, including **Desktop GUI**, **Mobile Apps**, **Hardware Wallet Support**, and more! We welcome contributors!
 

@@ -28,8 +28,8 @@ Add images under [`docs/screenshots/`](docs/screenshots/) and refresh this secti
 
 ### 1. Get a release zip
 
-- **Direct download (latest):** [nozy-extension-chromium.zip](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip)
-- Or open **[GitHub Releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases)** and pick **`nozy-extension-chromium-<version>.zip`** (attached on each release; see **`RELEASES.md`**).
+- **Recommended:** open **[Latest release](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)** → **Assets** → download `nozy-extension-chromium.zip` (or the versioned `nozy-extension-chromium-*.zip`). The bare URL `…/releases/latest/download/nozy-extension-chromium.zip` **404s** if CI has not attached that file to the current latest release yet.
+- Or browse **[all releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases)** and pick a tag that lists the zip (see **`RELEASES.md`**).
 - Extract the zip to a folder (e.g. `nozy-extension`).
 
 ### 2. Load unpacked

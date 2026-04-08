@@ -1,12 +1,17 @@
-/** One-click URLs: `.../releases/latest/download/<filename>` (GitHub redirects to the newest tag). */
+/**
+ * Latest release page (always valid). Use for desktop/extension: those assets are
+ * attached by follow-up workflows and are often missing from `/releases/latest/download/...`
+ * until CI finishes — direct URLs would 404.
+ */
 export const REPO_RELEASES_LATEST =
   "https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest";
 
+/** Direct asset URL when you know the file exists on the current latest release. */
 export function releaseAsset(filename: string): string {
   return `${REPO_RELEASES_LATEST}/download/${encodeURIComponent(filename)}`;
 }
 
-/** Filenames must match CI-uploaded assets on the latest release. */
+/** Filenames must match CI-uploaded assets. CLI ships with every tag; desktop/extension may lag. */
 export const DOWNLOAD_URLS = {
   /** Tauri / NSIS setup (Windows). */
   desktopWindowsNsis: releaseAsset("nozy-desktop-windows-x86_64-installer.exe"),

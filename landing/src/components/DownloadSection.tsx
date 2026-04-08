@@ -14,9 +14,12 @@ const DownloadSection = () => {
           Download NozyWallet
         </h2>
         <p className="text-zinc-600 text-center max-w-2xl mx-auto mb-12">
-          Direct links use GitHub&apos;s <strong>latest release</strong>. If a file
-          returns 404, open the full release page — CI may still be attaching
-          desktop or extension assets after publish.
+          <strong>Desktop and extension</strong> are published on the same GitHub release as the CLI, but
+          installers and zips are uploaded by <strong>separate CI jobs</strong> — they are not always
+          present under one-click <code className="text-xs bg-zinc-100 px-1 rounded">/latest/download/…</code>{" "}
+          URLs. Use the buttons below to open the <strong>release page</strong> and pick the file from{" "}
+          <strong>Assets</strong>. <strong>CLI</strong> binaries use direct links and are attached with every
+          tag.
         </p>
 
         <div className="grid md:grid-cols-2 gap-6 mb-6">
@@ -36,18 +39,28 @@ const DownloadSection = () => {
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <a
-                href={DOWNLOAD_URLS.desktopWindowsNsis}
+                href={REPO_RELEASES_LATEST}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex flex-1 items-center justify-center rounded-xl bg-yellow-500 hover:bg-yellow-400 text-white font-semibold py-3 px-4 transition-colors text-center"
               >
-                Download .exe (recommended)
+                Get .exe on GitHub (Assets)
               </a>
               <a
-                href={DOWNLOAD_URLS.desktopWindowsMsi}
+                href={REPO_RELEASES_LATEST}
+                target="_blank"
+                rel="noopener noreferrer"
                 className="inline-flex flex-1 items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold py-3 px-4 transition-colors text-center"
               >
-                Download .msi (optional)
+                Get .msi on GitHub (Assets)
               </a>
             </div>
+            <p className="text-xs text-zinc-500 mt-3">
+              On the release page, download{" "}
+              <code className="bg-zinc-100 px-1 rounded">nozy-desktop-windows-x86_64-installer.exe</code>{" "}
+              (or <code className="bg-zinc-100 px-1 rounded">.msi</code>). If they are missing, wait for the{" "}
+              <strong>Build Desktop Release</strong> workflow or pick an older tag that lists them.
+            </p>
           </div>
 
           <div className={card}>
@@ -61,17 +74,27 @@ const DownloadSection = () => {
               (Developer mode on).
             </p>
             <a
-              href={DOWNLOAD_URLS.extensionChromiumZip}
+              href={REPO_RELEASES_LATEST}
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-flex w-full items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold py-3 transition-colors"
             >
-              Download extension (.zip)
+              Get extension .zip on GitHub (Assets)
             </a>
             <a
-              href={DOWNLOAD_URLS.extensionFirefoxZip}
+              href={REPO_RELEASES_LATEST}
+              target="_blank"
+              rel="noopener noreferrer"
               className="mt-2 inline-flex w-full items-center justify-center rounded-lg border border-zinc-200 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-100"
             >
-              Firefox bundle (same zip, test only)
+              Firefox bundle — same Assets list
             </a>
+            <p className="text-xs text-zinc-500 mt-3">
+              Look for{" "}
+              <code className="bg-zinc-100 px-1 rounded">nozy-extension-chromium.zip</code> or{" "}
+              <code className="bg-zinc-100 px-1 rounded">nozy-extension-firefox.zip</code>. If missing, wait for{" "}
+              <strong>extension-release-bundles</strong> after publish.
+            </p>
           </div>
         </div>
 
