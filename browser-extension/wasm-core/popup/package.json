@@ -10,6 +10,10 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
+  "overrides": {
+    "picomatch": ">=4.0.4",
+    "vite": "^8.0.7"
+  },
   "dependencies": {
     "@tanstack/react-query": "^5.91.0",
     "@types/qrcode": "^1.5.6",
@@ -27,7 +31,7 @@
     "postcss": "^8.5.8",
     "tailwindcss": "^4.2.2",
     "typescript": "^5.9.3",
-    "vite": "^8.0.1",
+    "vite": "^8.0.7",
     "vitest": "^3.2.4"
   }
 }
