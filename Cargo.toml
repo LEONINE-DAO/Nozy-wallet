@@ -43,7 +43,7 @@ bip39 = "2.1"
 # Zcash crypto stack -- default-features off to disable multicore on WASM
 # Native builds re-enable multicore via the "native" feature for parallel proving
 orchard = { version = "0.11.0", default-features = false, features = ["circuit", "std"] }
-zcash_primitives = { version = "0.24.1", default-features = false, features = ["std", "circuits"] }
+zcash_primitives = { version = "0.26.4", default-features = false, features = ["std", "circuits"] }
 zcash_protocol = "0.6.2"
 zcash_address = "0.9.0"
 zcash_note_encryption = "0.4.0"
