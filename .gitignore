@@ -66,6 +66,8 @@ push_url_update.ps1
 
 *.md
 !README.md
+!AGENTS.md
+!CONTRIBUTING.md
 !api-server/*.md
 !CROSSLINK*.md
 !*AUDIT*.md
