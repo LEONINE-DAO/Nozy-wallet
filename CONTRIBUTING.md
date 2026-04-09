@@ -2,6 +2,8 @@
 
 Thank you for your interest in contributing to NozyWallet! This document provides guidelines and standards for contributing to this Zcash Orchard wallet project.
 
+**AI-assisted development:** machine-readable policies for coding agents live in [`AGENTS.md`](AGENTS.md); read that file first so generated work matches repo expectations.
+
 ## 📋 Table of Contents
 
 - [Code of Conduct](#code-of-conduct)
