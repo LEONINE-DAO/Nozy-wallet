@@ -2724,7 +2724,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber 0.3.23",
- "zcash_address 0.9.0",
+ "zcash_address 0.10.1",
  "zcash_note_encryption",
  "zcash_primitives 0.24.1",
  "zcash_proofs",
@@ -5850,7 +5850,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "18b1a337bbc9a7d55ae35d31189f03507dbc7934e9a4bee5c1d5c47464860e48"
 dependencies = [
  "core2",
+ "document-features",
  "hex",
+ "memuse",
 ]
 
 [[package]]
