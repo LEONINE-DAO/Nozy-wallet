@@ -81,7 +81,10 @@ pub async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
 pub async fn scan_notes_for_sending(
     wallet: HDWallet,
     zebra_url: &str,
-) -> NozyResult<Vec<crate::SpendableNote>> {
+) -> NozyResult<(
+    Vec<crate::SpendableNote>,
+    Vec<crate::sapling_notes::SpendableSaplingNote>,
+)> {
     let mut config = load_config();
     config.zebra_url = zebra_url.to_string();
     let zebra_client = ZebraClient::from_config(&config);
@@ -96,14 +99,15 @@ pub async fn scan_notes_for_sending(
         .scan_notes(Some(start_height), Some(tip_height))
         .await
     {
-        Ok((_result, spendable)) => Ok(spendable),
-        Err(_e) => Ok(Vec::new()),
+        Ok((_result, spendable, sapling)) => Ok((spendable, sapling)),
+        Err(_e) => Ok((Vec::new(), Vec::new())),
     }
 }
 
 pub async fn build_and_broadcast_transaction(
     zebra_client: &ZebraClient,
     spendable_notes: &[crate::SpendableNote],
+    sapling_spendable_notes: &[crate::sapling_notes::SpendableSaplingNote],
     recipient: &str,
     amount_zatoshis: u64,
     fee_zatoshis: Option<u64>,
@@ -130,6 +134,7 @@ pub async fn build_and_broadcast_transaction(
         .build_send_transaction(
             zebra_client,
             spendable_notes,
+            sapling_spendable_notes,
             recipient,
             amount_zatoshis,
             fee_zatoshis,

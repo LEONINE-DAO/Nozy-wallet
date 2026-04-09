@@ -53,6 +53,8 @@ pub mod orchard_tree_codec;
 #[cfg(feature = "native")]
 pub mod orchard_tx;
 #[cfg(feature = "native")]
+pub mod sapling_tx;
+#[cfg(feature = "native")]
 pub mod orchard_witness;
 #[cfg(feature = "native")]
 pub mod paths;
@@ -66,6 +68,12 @@ pub mod progress;
 pub mod proving;
 #[cfg(feature = "native")]
 pub mod rpc_test;
+#[cfg(feature = "native")]
+pub mod sapling_notes;
+#[cfg(feature = "native")]
+pub mod sapling_tree_codec;
+#[cfg(feature = "native")]
+pub mod sapling_witness;
 #[cfg(feature = "secret-network")]
 pub mod secret;
 #[cfg(feature = "native")]
@@ -125,6 +133,13 @@ pub use note_index::NoteIndex;
 pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
 pub use notes::{NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote};
+#[cfg(feature = "native")]
+pub use sapling_notes::{SerializableSaplingNote, SpendableSaplingNote};
+#[cfg(feature = "native")]
+pub use sapling_tx::{
+    SaplingBuiltSpend, SaplingTransactionBuilder, SaplingWitnessProvider,
+    ZebraJsonRpcSaplingWitnessProvider,
+};
 #[cfg(feature = "native")]
 pub use orchard_tx::{
     OrchardBuiltSpend, OrchardTransactionBuilder, OrchardWitnessProvider,

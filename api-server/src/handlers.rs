@@ -441,7 +441,7 @@ pub async fn sync_wallet(
         .scan_notes(effective_start, payload.end_height)
         .await
     {
-        Ok((result, _spendable_notes)) => {
+        Ok((result, _spendable_notes, _sapling)) => {
             use nozy::paths::get_wallet_data_dir;
             use std::fs;
             let notes_dir = get_wallet_data_dir();
@@ -529,7 +529,7 @@ pub async fn send_transaction(
         }));
     }
 
-    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
+    let (spendable_notes, sapling_spendable) = scan_notes_for_sending(wallet, &zebra_url)
         .await
         .map_err(|e| {
             (
@@ -560,6 +560,7 @@ pub async fn send_transaction(
         .build_send_transaction(
             &zebra_client,
             &spendable_notes,
+            &sapling_spendable,
             &payload.request.recipient,
             amount_zatoshis,
             fee_zatoshis,

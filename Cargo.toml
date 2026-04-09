@@ -105,6 +105,12 @@ rayon = { version = "1.8", optional = true }
 # Futures utilities
 futures = { version = "0.3", optional = true }
 
+# Sapling pool (native wallet; optional for WASM-only nozy builds)
+sapling = { package = "sapling-crypto", version = "0.5.0", default-features = false, features = ["std", "circuit", "multicore"], optional = true }
+zip32 = { version = "0.2", optional = true }
+zcash_proofs = { version = "0.26.1", optional = true, default-features = false, features = ["bundled-prover"] }
+zcash_transparent = { version = "0.4", optional = true, default-features = false }
+
 [features]
 default = ["native"]
 
@@ -133,6 +139,10 @@ native = [
     "dep:core2",
     "dep:rayon",
     "dep:futures",
+    "dep:sapling",
+    "dep:zip32",
+    "dep:zcash_proofs",
+    "dep:zcash_transparent",
     # Re-enable multicore for native parallel proving performance
     "orchard/multicore",
     "zcash_primitives/multicore",

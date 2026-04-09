@@ -46,7 +46,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .scan_notes(Some(start_height), Some(tip_height))
         .await
     {
-        Ok((result, spendable)) => {
+        Ok((result, spendable, _sapling)) => {
             println!("✅ Note scanning completed");
             println!("📊 Total notes found: {}", result.notes.len());
             println!("💰 Total balance: {} ZAT", result.total_balance);

@@ -417,7 +417,7 @@ async fn sync_wallet(
     };
     let mut note_scanner = nozy::NoteScanner::new(wallet, zebra_client.clone());
 
-    let (result, _spendable_notes) = note_scanner
+    let (result, _spendable_notes, _sapling) = note_scanner
         .scan_notes(Some(scan_start), Some(scan_end))
         .await
         .map_err(|e| format!("Sync failed: {}", e))?;
@@ -433,11 +433,11 @@ async fn sync_wallet(
 
     let _ = nozy::update_last_scan_height(scan_end);
 
-    let balance_zec = result.total_balance as f64 / 100_000_000.0;
+    let balance_zec = (result.total_balance + result.sapling_total_balance) as f64 / 100_000_000.0;
     Ok(SyncResponse {
         success: true,
         balance_zec,
-        notes_found: result.notes.len(),
+        notes_found: result.notes.len() + result.sapling_notes.len(),
         message: format!(
             "Sync completed for blocks {}-{}. Balance: {:.8} ZEC",
             scan_start, scan_end, balance_zec
@@ -471,9 +471,10 @@ async fn send_transaction(
         .clone()
         .unwrap_or_else(|| config.zebra_url.clone());
     let wallet = load_wallet_for_request(&state, request.password.clone()).await?;
-    let spendable_notes = nozy::cli_helpers::scan_notes_for_sending(wallet, &zebra_url)
-        .await
-        .map_err(|e| format!("Failed to scan notes: {}", e))?;
+    let (spendable_notes, sapling_spendable) =
+        nozy::cli_helpers::scan_notes_for_sending(wallet, &zebra_url)
+            .await
+            .map_err(|e| format!("Failed to scan notes: {}", e))?;
 
     let memo_bytes_opt = request
         .memo
@@ -493,6 +494,7 @@ async fn send_transaction(
         .build_send_transaction(
             &zebra_client,
             &spendable_notes,
+            &sapling_spendable,
             &request.recipient,
             amount_zatoshis,
             fee_zatoshis,

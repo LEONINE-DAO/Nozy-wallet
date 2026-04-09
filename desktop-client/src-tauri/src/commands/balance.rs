@@ -26,13 +26,13 @@ pub async fn get_balance() -> TauriResult<BalanceResponse> {
     // Scan for notes (use last 10k blocks for quick scan)
     let start_height = tip_height.saturating_sub(10_000);
     
-    let (scan_result, _spendable) = note_scanner
+    let (scan_result, _spendable, _sapling) = note_scanner
         .scan_notes(Some(start_height), Some(tip_height))
         .await
         .map_err(|e| TauriError::Network(format!("Failed to scan notes: {}", e)))?;
     
-    // Get total balance from scan result
-    let total_balance_zatoshis = scan_result.total_balance;
+    // Get total balance from scan result (Orchard + Sapling)
+    let total_balance_zatoshis = scan_result.total_balance + scan_result.sapling_total_balance;
     let total_balance_zec = total_balance_zatoshis as f64 / 100_000_000.0;
     
     // For verified balance, we'd need to check confirmation status

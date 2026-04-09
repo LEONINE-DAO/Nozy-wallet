@@ -11,7 +11,7 @@ use nozy::{
     AddressBook, HDWallet, NoteScanner, NozyError, NozyResult, WalletStorage, ZebraBlockParser,
     ZebraBlockSource, ZebraClient,
 };
-use zcash_address::unified::{Container, Encoding};
+use zcash_address::unified::Encoding;
 use zcash_protocol::consensus::NetworkType;
 use zeaking::Zeaking;
 
@@ -587,7 +587,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 .scan_notes(Some(scan_start), Some(scan_end))
                 .await
             {
-                Ok((result, _spendable_notes)) => {
+                Ok((result, _spendable_notes, _sapling)) => {
                     if let Some(ref progress_bar) = pb {
                         progress_bar.finish_with_message("✅ Scan complete");
                     }
@@ -701,16 +701,19 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
             match zcash_address::unified::Address::decode(&actual_recipient) {
                 Ok((_, ua)) => {
+                    use zcash_address::unified::Container;
                     let mut has_orchard = false;
+                    let mut has_sapling = false;
                     for item in ua.items() {
-                        if let zcash_address::unified::Receiver::Orchard(_) = item {
-                            has_orchard = true;
-                            break;
+                        match item {
+                            zcash_address::unified::Receiver::Orchard(_) => has_orchard = true,
+                            zcash_address::unified::Receiver::Sapling(_) => has_sapling = true,
+                            _ => {}
                         }
                     }
-                    if !has_orchard {
+                    if !has_orchard && !has_sapling {
                         return Err(NozyError::AddressParsing(
-                            "Recipient must include an Orchard receiver".to_string(),
+                            "Recipient must include an Orchard or Sapling receiver".to_string(),
                         ));
                     }
                 }
@@ -770,25 +773,29 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             use nozy::progress::create_tx_progress_bar;
             let pb = create_tx_progress_bar();
             pb.set_message("Scanning blockchain for spendable notes...");
-            let spendable_notes = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+            let (spendable_notes, sapling_spendable) =
+                scan_notes_for_sending(wallet, &config.zebra_url).await?;
             pb.finish_with_message("✅ Scan complete");
 
-            if spendable_notes.is_empty() {
+            if spendable_notes.is_empty() && sapling_spendable.is_empty() {
                 return Err(NozyError::InvalidOperation(
                     "No spendable notes found. Run 'sync' to scan the blockchain first."
                         .to_string(),
                 ));
             }
 
-            let total_available: u64 = spendable_notes
+            let orchard_total: u64 = spendable_notes
                 .iter()
                 .map(|note| note.orchard_note.note.value().inner())
                 .sum();
+            let sapling_total: u64 = sapling_spendable.iter().map(|n| n.sapling_note.value).sum();
+            let total_available = orchard_total + sapling_total;
 
             println!(
-                "  Shielded ZEC: {:.8} ZEC (from {} notes)",
+                "  Shielded ZEC: {:.8} ZEC (Orchard: {} notes, Sapling: {} notes)",
                 total_available as f64 / 100_000_000.0,
-                spendable_notes.len()
+                spendable_notes.len(),
+                sapling_spendable.len()
             );
 
             if total_available < total_amount {
@@ -909,6 +916,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             match build_and_broadcast_transaction(
                 &zebra_client,
                 &spendable_notes,
+                &sapling_spendable,
                 &actual_recipient,
                 amount_zatoshis,
                 Some(fee_zatoshis),

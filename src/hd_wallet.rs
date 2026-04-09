@@ -52,6 +52,11 @@ pub struct OrchardDecryptionResult {
     pub nullifier: [u8; 32],
     pub block_height: u32,
     pub txid: String,
+    /// Hex-encoded `IncrementalWitness` (Orchard), for Zebrad-safe spends without zcashd witness RPCs.
+    #[serde(default)]
+    pub orchard_incremental_witness_hex: Option<String>,
+    #[serde(default)]
+    pub orchard_witness_tip_height: Option<u32>,
 }
 
 impl HDWallet {
@@ -173,17 +178,61 @@ impl HDWallet {
         orchard_address: OrchardAddress,
         network: NetworkType,
     ) -> NozyResult<String> {
+        #[cfg(feature = "native")]
+        {
+            self.create_unified_address_orchard_sapling(orchard_address, network)
+        }
+        #[cfg(not(feature = "native"))]
+        {
+            let orchard_raw = orchard_address.to_raw_address_bytes();
+            let orchard_receiver = Receiver::Orchard(orchard_raw);
+            let ua = UnifiedAddress::try_from_items(vec![orchard_receiver]).map_err(|e| {
+                NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
+            })?;
+            Ok(ua.encode(&network))
+        }
+    }
+
+    /// Orchard + Sapling receivers (ZIP-316), for interoperability with wallets that only expose Sapling.
+    #[cfg(feature = "native")]
+    fn create_unified_address_orchard_sapling(
+        &self,
+        orchard_address: OrchardAddress,
+        network: NetworkType,
+    ) -> NozyResult<String> {
+        use sapling::zip32::ExtendedSpendingKey;
+        use zip32::ChildIndex;
+
+        let seed_bytes = self.mnemonic.to_seed("").to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes);
+
+        let account_id = AccountId::try_from(0)
+            .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
+
+        let master = ExtendedSpendingKey::master(secure_seed.as_bytes());
+        let account_u32: u32 = account_id.into();
+        let extsk = ExtendedSpendingKey::from_path(
+            &master,
+            &[
+                ChildIndex::hardened(32),
+                ChildIndex::hardened(133),
+                ChildIndex::hardened(account_u32),
+            ],
+        );
+
+        let (_, sapling_payment_address) = extsk.default_address();
+
         let orchard_raw = orchard_address.to_raw_address_bytes();
-
         let orchard_receiver = Receiver::Orchard(orchard_raw);
+        let sapling_receiver = Receiver::Sapling(sapling_payment_address.to_bytes());
 
-        let ua = UnifiedAddress::try_from_items(vec![orchard_receiver]).map_err(|e| {
-            NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
-        })?;
+        let ua = UnifiedAddress::try_from_items(vec![orchard_receiver, sapling_receiver]).map_err(
+            |e| {
+                NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
+            },
+        )?;
 
-        let encoded = ua.encode(&network);
-
-        Ok(encoded)
+        Ok(ua.encode(&network))
     }
 
     pub fn get_master_key(&self, password: &str) -> NozyResult<XPrv> {
@@ -247,8 +296,6 @@ impl HDWallet {
         };
         use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
 
-        let ivk = self.derive_incoming_viewing_key_for_address(address)?;
-
         let nullifier = orchard::note::Nullifier::from_bytes(&action.nullifier)
             .into_option()
             .ok_or_else(|| NozyError::InvalidOperation("Invalid nullifier bytes".to_string()))?;
@@ -271,22 +318,29 @@ impl HDWallet {
         let compact_action =
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
         let domain = OrchardDomain::for_compact_action(&compact_action);
-        let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
 
-        match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
-            Some((note, note_address)) => Ok(Some(OrchardDecryptionResult {
-                value: note.value().inner(),
-                address: format!("{:?}", note_address),
-                cmx: action.cmx,
-                rho: note.rho().to_bytes(),
-                rseed: *note.rseed().as_bytes(),
-                orchard_address_raw: note_address.to_raw_address_bytes().to_vec(),
-                nullifier: action.nullifier,
-                block_height,
-                txid: txid.to_string(),
-            })),
-            None => Ok(None),
+        for scope in [orchard::keys::Scope::External, orchard::keys::Scope::Internal] {
+            let ivk = self.derive_incoming_viewing_key_for_address_scoped(address, scope)?;
+            let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
+            if let Some((note, note_address)) =
+                try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+            {
+                return Ok(Some(OrchardDecryptionResult {
+                    value: note.value().inner(),
+                    address: format!("{:?}", note_address),
+                    cmx: action.cmx,
+                    rho: note.rho().to_bytes(),
+                    rseed: *note.rseed().as_bytes(),
+                    orchard_address_raw: note_address.to_raw_address_bytes().to_vec(),
+                    nullifier: action.nullifier,
+                    block_height,
+                    txid: txid.to_string(),
+                    orchard_incremental_witness_hex: None,
+                    orchard_witness_tip_height: None,
+                }));
+            }
         }
+        Ok(None)
     }
 
     #[cfg(feature = "native")]
@@ -364,6 +418,14 @@ impl HDWallet {
         &self,
         address: &str,
     ) -> NozyResult<orchard::keys::IncomingViewingKey> {
+        self.derive_incoming_viewing_key_for_address_scoped(address, orchard::keys::Scope::External)
+    }
+
+    fn derive_incoming_viewing_key_for_address_scoped(
+        &self,
+        address: &str,
+        scope: orchard::keys::Scope,
+    ) -> NozyResult<orchard::keys::IncomingViewingKey> {
         use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding};
 
         let (_network, ua) = UnifiedAddress::decode(address)
@@ -402,9 +464,7 @@ impl HDWallet {
 
         let orchard_fvk = FullViewingKey::from(&orchard_sk);
 
-        let ivk = orchard_fvk.to_ivk(orchard::keys::Scope::External);
-
-        Ok(ivk)
+        Ok(orchard_fvk.to_ivk(scope))
     }
 
     pub fn set_password(&mut self, password: &str) -> NozyResult<()> {

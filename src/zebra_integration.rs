@@ -2,8 +2,8 @@ use crate::config::{BackendKind, Protocol, WalletConfig};
 use crate::error::{NozyError, NozyResult};
 use crate::grpc_client::ZebraGrpcClient;
 use crate::zebra_tree_rpc::{
-    parse_z_get_subtrees_by_index, parse_z_gettreestate_orchard, OrchardTreestateParsed,
-    ZebraSubtreesByIndex,
+    parse_z_get_subtrees_by_index, parse_z_gettreestate_orchard, parse_z_gettreestate_sapling,
+    OrchardTreestateParsed, SaplingTreestateParsed, ZebraSubtreesByIndex,
 };
 use hex;
 use serde::Deserialize;
@@ -646,6 +646,38 @@ impl ZebraClient {
         }
     }
 
+    /// Full Sapling treestate from `z_gettreestate` (JSON-RPC only).
+    pub async fn get_sapling_treestate_parsed(&self, height: u32) -> NozyResult<SaplingTreestateParsed> {
+        match self.protocol {
+            Protocol::JsonRpc => {
+                let request = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "z_gettreestate",
+                    "params": [height.to_string()],
+                    "id": 1
+                });
+
+                let response: ZebraResponse<Value> = self.make_request(request).await?;
+
+                if let Some(error) = response.error {
+                    return Err(NozyError::InvalidOperation(format!(
+                        "Zebra RPC error: {} (code: {})",
+                        error.message, error.code
+                    )));
+                }
+
+                let result = response.result.ok_or_else(|| {
+                    NozyError::InvalidOperation("No z_gettreestate result".to_string())
+                })?;
+
+                parse_z_gettreestate_sapling(&result)
+            }
+            Protocol::Grpc => Err(NozyError::InvalidOperation(
+                "z_gettreestate requires JSON-RPC (Sapling treestate)".to_string(),
+            )),
+        }
+    }
+
     /// `z_getsubtreesbyindex` (JSON-RPC only). Pool is `"orchard"` or `"sapling"`.
     pub async fn z_get_subtrees_by_index(
         &self,
@@ -703,6 +735,22 @@ impl ZebraClient {
                 })
             }
             Protocol::Grpc => self.get_orchard_tree_state_grpc_placeholder(height).await,
+        }
+    }
+
+    pub async fn get_sapling_tree_state(&self, height: u32) -> NozyResult<SaplingTreeState> {
+        match self.protocol {
+            Protocol::JsonRpc => {
+                let parsed = self.get_sapling_treestate_parsed(height).await?;
+                Ok(SaplingTreeState {
+                    height: parsed.height,
+                    anchor: parsed.anchor,
+                    commitment_count: parsed.commitment_count,
+                })
+            }
+            Protocol::Grpc => Err(NozyError::InvalidOperation(
+                "Sapling treestate requires JSON-RPC".to_string(),
+            )),
         }
     }
 
@@ -963,6 +1011,13 @@ pub struct TransactionInfo {
 
 #[derive(Debug, Clone)]
 pub struct OrchardTreeState {
+    pub height: u32,
+    pub anchor: [u8; 32],
+    pub commitment_count: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SaplingTreeState {
     pub height: u32,
     pub anchor: [u8; 32],
     pub commitment_count: u64,

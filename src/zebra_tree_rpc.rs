@@ -4,6 +4,15 @@ use crate::error::{NozyError, NozyResult};
 use serde::Deserialize;
 use serde_json::Value;
 
+/// Parsed Sapling pool data from `z_gettreestate`.
+#[derive(Debug, Clone)]
+pub struct SaplingTreestateParsed {
+    pub height: u32,
+    pub anchor: [u8; 32],
+    pub commitment_count: u64,
+    pub final_state: Option<Vec<u8>>,
+}
+
 /// Parsed Orchard pool data from `z_gettreestate`.
 #[derive(Debug, Clone)]
 pub struct OrchardTreestateParsed {
@@ -102,6 +111,58 @@ pub fn parse_z_gettreestate_orchard(result: &Value) -> NozyResult<OrchardTreesta
     };
 
     Ok(OrchardTreestateParsed {
+        height,
+        anchor,
+        commitment_count,
+        final_state,
+    })
+}
+
+/// Parse `z_gettreestate` JSON `result` into Sapling treestate fields.
+pub fn parse_z_gettreestate_sapling(result: &Value) -> NozyResult<SaplingTreestateParsed> {
+    let height = result
+        .get("height")
+        .and_then(|h| h.as_u64())
+        .ok_or_else(|| {
+            NozyError::InvalidOperation("z_gettreestate: missing or invalid height".to_string())
+        })? as u32;
+
+    let sapling = result.get("sapling").ok_or_else(|| {
+        NozyError::InvalidOperation("z_gettreestate: missing sapling field".to_string())
+    })?;
+
+    let commitments = sapling.get("commitments").ok_or_else(|| {
+        NozyError::InvalidOperation("z_gettreestate: missing sapling.commitments".to_string())
+    })?;
+
+    let final_state = decode_hex_field(
+        commitments.get("finalState").unwrap_or(&Value::Null),
+        "sapling.commitments.finalState",
+    )?;
+
+    let final_root_hex = commitments.get("finalRoot");
+    let anchor_from_root = final_root_hex
+        .and_then(|v| decode_hex_field(v, "sapling.commitments.finalRoot").transpose())
+        .transpose()?
+        .filter(|b| !b.is_empty())
+        .map(|b| hex32_to_anchor(&b))
+        .transpose()?;
+
+    let (anchor, commitment_count) = if let Some(ref state) = final_state {
+        let tree = crate::sapling_tree_codec::sapling_commitment_tree_from_final_state(state)?;
+        let root = tree.root();
+        let count = tree.size() as u64;
+        let anchor_bytes = root.to_bytes();
+        (anchor_bytes, count)
+    } else if let Some(a) = anchor_from_root {
+        (a, 0)
+    } else {
+        return Err(NozyError::InvalidOperation(
+            "z_gettreestate: Sapling pool has neither finalState nor finalRoot".to_string(),
+        ));
+    };
+
+    Ok(SaplingTreestateParsed {
         height,
         anchor,
         commitment_count,

@@ -48,6 +48,39 @@ fn compare_scan_results(result1: &NoteScanResult, result2: &NoteScanResult) -> b
         return false;
     }
 
+    if result1.sapling_total_balance != result2.sapling_total_balance {
+        eprintln!(
+            "❌ Sapling balance mismatch: {} vs {}",
+            result1.sapling_total_balance, result2.sapling_total_balance
+        );
+        return false;
+    }
+
+    if result1.sapling_notes.len() != result2.sapling_notes.len() {
+        eprintln!(
+            "❌ Sapling note count mismatch: {} vs {}",
+            result1.sapling_notes.len(),
+            result2.sapling_notes.len()
+        );
+        return false;
+    }
+
+    if result1.sapling_unspent_count != result2.sapling_unspent_count {
+        eprintln!(
+            "❌ Sapling unspent count mismatch: {} vs {}",
+            result1.sapling_unspent_count, result2.sapling_unspent_count
+        );
+        return false;
+    }
+
+    if result1.sapling_spendable_count != result2.sapling_spendable_count {
+        eprintln!(
+            "❌ Sapling spendable count mismatch: {} vs {}",
+            result1.sapling_spendable_count, result2.sapling_spendable_count
+        );
+        return false;
+    }
+
     // Compare notes by nullifier (order-independent)
     let notes1: HashSet<&Vec<u8>> = result1.notes.iter().map(|n| &n.nullifier_bytes).collect();
     let notes2: HashSet<&Vec<u8>> = result2.notes.iter().map(|n| &n.nullifier_bytes).collect();
@@ -139,7 +172,7 @@ mod tests {
         // First scan
         println!("\n🔍 First scan...");
         let mut scanner1 = NoteScanner::new(wallet.clone(), client.clone());
-        let (result1, spendable1) = scanner1
+        let (result1, spendable1, _s1) = scanner1
             .scan_notes(Some(start_height), Some(end_height))
             .await
             .expect("First scan failed");
@@ -156,7 +189,7 @@ mod tests {
         // Second scan (same wallet, same range)
         println!("\n🔍 Second scan...");
         let mut scanner2 = NoteScanner::new(wallet.clone(), client.clone());
-        let (result2, spendable2) = scanner2
+        let (result2, spendable2, _s2) = scanner2
             .scan_notes(Some(start_height), Some(end_height))
             .await
             .expect("Second scan failed");
@@ -221,7 +254,7 @@ mod tests {
         let wallet1 =
             HDWallet::from_mnemonic(TEST_MNEMONIC).expect("Failed to create original wallet");
         let mut scanner1 = NoteScanner::new(wallet1, client.clone());
-        let (result1, spendable1) = scanner1
+        let (result1, spendable1, _s1) = scanner1
             .scan_notes(Some(start_height), Some(end_height))
             .await
             .expect("Original wallet scan failed");
@@ -235,7 +268,7 @@ mod tests {
         let wallet2 =
             HDWallet::from_mnemonic(TEST_MNEMONIC).expect("Failed to restore wallet from mnemonic");
         let mut scanner2 = NoteScanner::new(wallet2, client.clone());
-        let (result2, spendable2) = scanner2
+        let (result2, spendable2, _s2) = scanner2
             .scan_notes(Some(start_height), Some(end_height))
             .await
             .expect("Restored wallet scan failed");
@@ -302,7 +335,7 @@ mod tests {
         // Full scan
         println!("\n🔍 Full scan...");
         let mut scanner_full = NoteScanner::new(wallet.clone(), client.clone());
-        let (result_full, _) = scanner_full
+        let (result_full, _, _) = scanner_full
             .scan_notes(Some(start_height), Some(end_height))
             .await
             .expect("Full scan failed");
@@ -317,7 +350,7 @@ mod tests {
             start_height, mid_height
         );
         let mut scanner1 = NoteScanner::new(wallet.clone(), client.clone());
-        let (result1, _) = scanner1
+        let (result1, _, _) = scanner1
             .scan_notes(Some(start_height), Some(mid_height))
             .await
             .expect("Incremental scan part 1 failed");
@@ -329,7 +362,7 @@ mod tests {
             end_height
         );
         let mut scanner2 = NoteScanner::new(wallet.clone(), client.clone());
-        let (result2, _) = scanner2
+        let (result2, _, _) = scanner2
             .scan_notes(Some(mid_height + 1), Some(end_height))
             .await
             .expect("Incremental scan part 2 failed");

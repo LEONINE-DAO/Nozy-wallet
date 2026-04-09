@@ -221,9 +221,16 @@ impl OrchardTransactionBuilder {
                         )
                     })?,
                 None => {
-                    return Err(NozyError::AddressParsing(
-                        "No Orchard receiver found in unified address".to_string(),
-                    ))
+                    let has_sapling = recipient_decoded
+                        .items()
+                        .iter()
+                        .any(|i| matches!(i, zcash_address::unified::Receiver::Sapling(_)));
+                    return Err(NozyError::AddressParsing(if has_sapling {
+                        "Unified address has Sapling but no Orchard receiver. Use a Sapling-capable send path or a UA that includes Orchard."
+                            .to_string()
+                    } else {
+                        "No Orchard receiver found in unified address".to_string()
+                    }));
                 }
             }
         };

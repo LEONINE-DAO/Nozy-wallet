@@ -157,40 +157,36 @@ function rewriteMissingWitnessRpcError(err) {
   );
 }
 
+/**
+ * Zebrad-safe Orchard witness: advance incremental witness from scan tip to chain tip, verify anchor.
+ * Does not use z_findnoteposition / z_getauthpath (zcashd-only).
+ */
 async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetHeight) {
-  const cmxHex = bytesToHex(selectedNote?.note?.cmx ?? []);
-  if (!cmxHex || cmxHex.length !== 64) {
-    throw new Error(`Selected note cmx hex invalid (len=${cmxHex.length}).`);
+  let witnessHex = selectedNote?.note?.orchard_incremental_witness_hex;
+  const tip = Number(selectedNote?.note?.orchard_witness_tip_height ?? selectedNote?.height ?? 0);
+  if (!witnessHex || typeof witnessHex !== "string") {
+    throw new Error(
+      "This note has no orchard_incremental_witness_hex. Rescan blocks using the updated extension (Orchard witness tracker), or sync with desktop NozyWallet."
+    );
   }
-
-  try {
-    const posResp = await rpcFallback(rpcEndpoint, [
-      { method: "z_findnoteposition", params: [cmxHex] },
-      { method: "z_findnoteposition", params: [cmxHex, String(selectedNote.height)] }
-    ]);
-    const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
-    if (!Number.isFinite(position) || position < 0) {
-      throw new Error("z_findnoteposition returned invalid position.");
-    }
-
-    const authResp = await rpcFallback(rpcEndpoint, [
-      { method: "z_getauthpath", params: [position, anchorHex] },
-      { method: "z_getauthpath", params: [position] }
-    ]);
-    const authPathHexes = authResp?.auth_path ?? authResp?.authPath ?? authResp?.path ?? [];
-    if (!Array.isArray(authPathHexes) || authPathHexes.length !== 32) {
-      throw new Error(`z_getauthpath returned unexpected auth_path length: ${authPathHexes.length}`);
-    }
-
-    return {
-      anchor: anchorHex,
-      position: position >>> 0,
-      auth_path: authPathHexes,
-      target_height: targetHeight
-    };
-  } catch (e) {
-    throw rewriteMissingWitnessRpcError(e);
+  if (!Number.isFinite(tip) || tip < 0) {
+    throw new Error("Invalid orchard_witness_tip_height on note.");
   }
+  for (let h = tip + 1; h <= targetHeight; h += 1) {
+    const block = await rpcRequest(rpcEndpoint, "getblock", [String(h), 2], {});
+    witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
+  }
+  const ok = wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex);
+  if (!ok) {
+    throw new Error(
+      "Orchard witness root does not match node anchor at tip (rescan or wait for sync)."
+    );
+  }
+  return {
+    incremental_witness_hex: witnessHex,
+    anchor_hex: anchorHex,
+    target_height: targetHeight
+  };
 }
 
 self.onmessage = async (event) => {
@@ -214,37 +210,34 @@ self.onmessage = async (event) => {
       let totalBalanceZats = 0;
       const discoveredNotes = [];
 
+      let trackerState;
+      if (startHeight > 0) {
+        const ts = await rpcFallback(endpoint, [{ method: "z_gettreestate", params: [String(startHeight - 1)] }]);
+        const finalState = ts?.orchard?.commitments?.finalState ?? ts?.orchard?.commitments?.final_state ?? "";
+        trackerState = wasm.orchard_scan_tracker_new(typeof finalState === "string" ? finalState : "");
+      } else {
+        trackerState = wasm.orchard_scan_tracker_new("");
+      }
+
       for (let h = startHeight; h <= endHeight; h += 1) {
         scannedBlocks += 1;
         try {
-          const resp = await fetch(endpoint, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 1,
-              method: "getblock",
-              params: [String(h), 2]
-            })
-          });
-          if (!resp.ok) continue;
-          const body = await resp.json();
-          if (body?.error || !body?.result) continue;
-          const block = body.result;
-          const actions = extractActionsFromBlockJson(block);
-          if (actions.length === 0) continue;
-
-          const txid = block?.hash || `h${h}`;
-          const scan = wasm.scan_orchard_actions(
+          const block = await rpcRequest(endpoint, "getblock", [String(h), 2], {});
+          if (!block) continue;
+          const blockJson = JSON.stringify(block);
+          const out = wasm.orchard_scan_tracker_apply_block(
+            trackerState,
             mnemonic,
             address,
-            JSON.stringify(actions),
             h,
-            txid
+            blockJson
           );
-          if (scan?.notes?.length) {
-            discoveredNotes.push(...scan.notes);
-            totalBalanceZats += Number(scan.total_value_zats || 0);
+          trackerState = out.tracker_state;
+          if (out.notes?.length) {
+            for (const n of out.notes) {
+              discoveredNotes.push(n);
+              totalBalanceZats += Number(n?.value ?? 0);
+            }
           }
         } catch (_) {
           // Continue scanning even if one block fails.
@@ -300,37 +293,31 @@ self.onmessage = async (event) => {
       const candidates = [];
       let scannedValue = 0;
 
+      let trackerState;
+      if (startHeight > 0) {
+        const ts = await rpcFallback(endpoint, [{ method: "z_gettreestate", params: [String(startHeight - 1)] }]);
+        const finalState = ts?.orchard?.commitments?.finalState ?? ts?.orchard?.commitments?.final_state ?? "";
+        trackerState = wasm.orchard_scan_tracker_new(typeof finalState === "string" ? finalState : "");
+      } else {
+        trackerState = wasm.orchard_scan_tracker_new("");
+      }
+
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
-          const resp = await fetch(endpoint, {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({
-              jsonrpc: "2.0",
-              id: 1,
-              method: "getblock",
-              params: [String(h), 2]
-            })
-          });
-          if (!resp.ok) continue;
-          const body = await resp.json();
-          if (body?.error || !body?.result) continue;
-          const block = body.result;
-
-          const actions = extractActionsFromBlockJson(block);
-          if (!actions.length) continue;
-
-          const txid = block?.hash || `h${h}`;
-          const scan = wasm.scan_orchard_actions(
+          const block = await rpcRequest(endpoint, "getblock", [String(h), 2], {});
+          if (!block) continue;
+          const blockJson = JSON.stringify(block);
+          const out = wasm.orchard_scan_tracker_apply_block(
+            trackerState,
             mnemonic,
             walletAddress,
-            JSON.stringify(actions),
             h,
-            txid
+            blockJson
           );
-
-          if (scan?.notes?.length) {
-            for (const n of scan.notes) {
+          trackerState = out.tracker_state;
+          if (out.notes?.length) {
+            const txid = block?.hash || `h${h}`;
+            for (const n of out.notes) {
               const v = Number(n?.value ?? 0);
               if (Number.isFinite(v) && v > 0) {
                 scannedValue += v;

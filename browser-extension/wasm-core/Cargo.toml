@@ -34,6 +34,7 @@ sapling = { package = "sapling-crypto", version = "0.5.0", default-features = fa
 transparent = { package = "zcash_transparent", version = "0.4.0", default-features = false, features = ["std"] }
 jubjub = "0.10"
 bls12_381 = "0.8"
+incrementalmerkletree = { version = "0.8.2", default-features = false, features = ["legacy-api"] }
 
 [profile.release]
 opt-level = "s"

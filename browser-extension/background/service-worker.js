@@ -166,25 +166,28 @@ async function _inlineScanNotes(params) {
   let scannedBlocks = 0, totalBalanceZats = 0;
   const discoveredNotes = [];
 
+  let trackerState;
+  if (startHeight > 0) {
+    const ts = await _inlineRpcRequest(rpcEndpoint, "z_gettreestate", [String(startHeight - 1)]);
+    const finalState = ts?.orchard?.commitments?.finalState ?? ts?.orchard?.commitments?.final_state ?? "";
+    trackerState = wasm.orchard_scan_tracker_new(typeof finalState === "string" ? finalState : "");
+  } else {
+    trackerState = wasm.orchard_scan_tracker_new("");
+  }
+
   for (let h = startHeight; h <= endHeight; h += 1) {
     scannedBlocks += 1;
     try {
-      const resp = await fetch(rpcEndpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getblock", params: [String(h), 2] })
-      });
-      if (!resp.ok) continue;
-      const body = await resp.json();
-      if (body?.error || !body?.result) continue;
-      const block = body.result;
-      const actions = _extractActionsFromBlock(block);
-      if (actions.length === 0) continue;
-      const txid = block?.hash || `h${h}`;
-      const scan = wasm.scan_orchard_actions(mnemonic, address, JSON.stringify(actions), h, txid);
-      if (scan?.notes?.length) {
-        discoveredNotes.push(...scan.notes);
-        totalBalanceZats += Number(scan.total_value_zats || 0);
+      const block = await _inlineRpcRequest(rpcEndpoint, "getblock", [String(h), 2]);
+      if (!block) continue;
+      const blockJson = JSON.stringify(block);
+      const out = wasm.orchard_scan_tracker_apply_block(trackerState, mnemonic, address, h, blockJson);
+      trackerState = out.tracker_state;
+      if (out.notes?.length) {
+        for (const n of out.notes) {
+          discoveredNotes.push(n);
+          totalBalanceZats += Number(n?.value ?? 0);
+        }
       }
     } catch (_) { /* continue scanning */ }
   }
@@ -298,28 +301,29 @@ async function _inlineProveTransaction(params) {
   if (!anchorHex || anchorHex.length < 64) throw new Error("RPC did not return a valid Orchard anchor.");
 
   const selectedWitnesses = [];
-  try {
-    for (const noteSel of selected) {
-      const cmxHex = _bytesToHex(noteSel?.note?.cmx ?? []);
-      const posResp = await rpcFallbackWithRequester(rpcReq, [
-        { method: "z_findnoteposition", params: [cmxHex] },
-        { method: "z_findnoteposition", params: [cmxHex, String(noteSel.height)] }
-      ]);
-      const position = Number(posResp?.position ?? posResp?.pos ?? posResp ?? 0);
-      const authResp = await rpcFallbackWithRequester(rpcReq, [
-        { method: "z_getauthpath", params: [position, anchorHex] },
-        { method: "z_getauthpath", params: [position] }
-      ]);
-      const authPath = authResp?.auth_path ?? authResp?.authPath ?? authResp?.path ?? [];
-      selectedWitnesses.push({
-        anchor: anchorHex,
-        position: position >>> 0,
-        auth_path: authPath,
-        target_height: targetHeight
-      });
+  for (const noteSel of selected) {
+    let witnessHex = noteSel?.note?.orchard_incremental_witness_hex;
+    const tip = Number(noteSel?.note?.orchard_witness_tip_height ?? noteSel?.height ?? 0);
+    if (!witnessHex || typeof witnessHex !== "string") {
+      throw new Error(
+        "Note missing orchard_incremental_witness_hex. Rescan with the updated extension that records Orchard witnesses (Zebrad-compatible)."
+      );
     }
-  } catch (e) {
-    throw rewriteMissingWitnessRpcError(e);
+    if (!Number.isFinite(tip) || tip < 0) {
+      throw new Error("Invalid orchard_witness_tip_height on note.");
+    }
+    for (let h = tip + 1; h <= targetHeight; h += 1) {
+      const block = await _inlineRpcRequest(endpoint, "getblock", [String(h), 2]);
+      witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
+    }
+    if (!wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex)) {
+      throw new Error("Orchard witness does not match anchor at tip (rescan or wait for sync).");
+    }
+    selectedWitnesses.push({
+      incremental_witness_hex: witnessHex,
+      anchor_hex: anchorHex,
+      target_height: targetHeight
+    });
   }
 
   const provingResult = wasm.build_orchard_v5_tx_from_note(

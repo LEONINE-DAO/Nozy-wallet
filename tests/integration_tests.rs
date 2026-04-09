@@ -155,7 +155,7 @@ async fn test_end_to_end_flow_create_scan_send() {
     let start_height = tip_height.saturating_sub(100);
     let mut scanner = NoteScanner::new(wallet, client.clone());
 
-    let (scan_result, spendable_notes) = scanner
+    let (scan_result, spendable_notes, _sapling) = scanner
         .scan_notes(Some(start_height), Some(tip_height))
         .await
         .expect("Failed to scan notes");
@@ -175,7 +175,8 @@ async fn test_end_to_end_flow_create_scan_send() {
     let amount_zatoshis = 10_000;
     let fee_zatoshis = 10_000;
 
-    if scan_result.total_balance < amount_zatoshis + fee_zatoshis {
+    let combined_balance = scan_result.total_balance + scan_result.sapling_total_balance;
+    if combined_balance < amount_zatoshis + fee_zatoshis {
         println!("⚠️  Insufficient funds for transaction test");
         return;
     }
@@ -232,7 +233,7 @@ async fn test_note_scanning() {
     let start_height = tip_height.saturating_sub(10);
     let mut scanner = NoteScanner::new(wallet, client);
 
-    let (result, spendable) = scanner
+    let (result, spendable, _sapling) = scanner
         .scan_notes(Some(start_height), Some(tip_height))
         .await
         .expect("Failed to scan notes");

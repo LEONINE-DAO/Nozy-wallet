@@ -75,7 +75,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .scan_notes(Some(start_height), Some(tip_height))
         .await
     {
-        Ok((_result, spendable)) => spendable,
+        Ok((_result, spendable, _sapling)) => spendable,
         Err(e) => {
             println!(
                 "⚠️  Note scan failed: {}. Proceeding with empty note set.",
@@ -105,6 +105,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .build_send_transaction(
             &zebra_client,
             &spendable_notes,
+            &[],
             &recipient,
             amount_zatoshis,
             fee_zatoshis,

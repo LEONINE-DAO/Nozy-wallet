@@ -207,17 +207,22 @@ mod integration_tests {
         let tip_height = client.get_block_count().await.unwrap_or(3_066_071);
         let start_height = tip_height.saturating_sub(100);
 
-        let (scan_result, spendable_notes) = scanner
+        let (scan_result, spendable_notes, _sapling) = scanner
             .scan_notes(Some(start_height), Some(tip_height))
             .await
             .unwrap_or_else(|_| {
                 (
                     crate::notes::NoteScanResult {
                         notes: vec![],
+                        sapling_notes: vec![],
                         total_balance: 0,
+                        sapling_total_balance: 0,
                         unspent_count: 0,
                         spendable_count: 0,
+                        sapling_unspent_count: 0,
+                        sapling_spendable_count: 0,
                     },
+                    vec![],
                     vec![],
                 )
             });
