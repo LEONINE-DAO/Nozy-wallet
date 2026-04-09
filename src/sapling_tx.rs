@@ -13,14 +13,14 @@ use async_trait::async_trait;
 use core::convert::Infallible;
 use rand::rngs::OsRng;
 use sapling::zip32::ExtendedSpendingKey;
-use sapling::{PaymentAddress, Anchor as SaplingAnchor};
+use sapling::{Anchor as SaplingAnchor, PaymentAddress};
 use zcash_address::unified::{Container, Encoding};
 use zcash_primitives::transaction::builder::{BuildConfig, Builder};
 use zcash_primitives::transaction::fees::zip317::FeeRule as Zip317FeeRule;
+use zcash_proofs::prover::LocalTxProver;
 use zcash_protocol::consensus::{BlockHeight, NetworkType, Parameters, MAIN_NETWORK, TEST_NETWORK};
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
-use zcash_proofs::prover::LocalTxProver;
 use zcash_transparent::builder::TransparentSigningSet;
 use zip32::Scope;
 
@@ -76,12 +76,15 @@ impl SaplingWitnessProvider for ZebraJsonRpcSaplingWitnessProvider {
         note: &SpendableSaplingNote,
         anchor_height: u32,
     ) -> NozyResult<(SaplingAnchor, sapling::MerklePath)> {
-        let witness_hex = note.sapling_incremental_witness_hex.as_ref().ok_or_else(|| {
-            NozyError::InvalidOperation(
-                "Missing Sapling incremental witness on note: rescan with JSON-RPC Zebra."
-                    .to_string(),
-            )
-        })?;
+        let witness_hex = note
+            .sapling_incremental_witness_hex
+            .as_ref()
+            .ok_or_else(|| {
+                NozyError::InvalidOperation(
+                    "Missing Sapling incremental witness on note: rescan with JSON-RPC Zebra."
+                        .to_string(),
+                )
+            })?;
         let bytes = hex::decode(witness_hex).map_err(|e| {
             NozyError::InvalidOperation(format!("sapling_incremental_witness_hex decode: {}", e))
         })?;
@@ -139,10 +142,7 @@ impl SaplingTransactionBuilder {
                 NozyError::InvalidOperation(format!("Invalid recipient address: {}", e))
             })?;
 
-        let total_input: u64 = spendable_notes
-            .iter()
-            .map(|n| n.sapling_note.value)
-            .sum();
+        let total_input: u64 = spendable_notes.iter().map(|n| n.sapling_note.value).sum();
         let change_amount = total_input.saturating_sub(amount_zatoshis + fee_zatoshis);
         if total_input < amount_zatoshis + fee_zatoshis {
             return Err(NozyError::InvalidOperation(format!(
@@ -175,9 +175,7 @@ impl SaplingTransactionBuilder {
             }
         }
         let to = recipient_pa.ok_or_else(|| {
-            NozyError::AddressParsing(
-                "No Sapling receiver in unified address.".to_string(),
-            )
+            NozyError::AddressParsing("No Sapling receiver in unified address.".to_string())
         })?;
 
         let build_config = BuildConfig::Standard {
@@ -196,38 +194,34 @@ impl SaplingTransactionBuilder {
         };
 
         match network_type {
-            NetworkType::Main => {
-                self.build_spend_inner(
-                    MAIN_NETWORK,
-                    target_height,
-                    build_config,
-                    sn,
-                    fvk,
-                    dfvk,
-                    merkle_path,
-                    to,
-                    ovk,
-                    amount_zatoshis,
-                    change_amount,
-                    memo_field,
-                )
-            }
-            NetworkType::Test | NetworkType::Regtest => {
-                self.build_spend_inner(
-                    TEST_NETWORK,
-                    target_height,
-                    build_config,
-                    sn,
-                    fvk,
-                    dfvk,
-                    merkle_path,
-                    to,
-                    ovk,
-                    amount_zatoshis,
-                    change_amount,
-                    memo_field,
-                )
-            }
+            NetworkType::Main => self.build_spend_inner(
+                MAIN_NETWORK,
+                target_height,
+                build_config,
+                sn,
+                fvk,
+                dfvk,
+                merkle_path,
+                to,
+                ovk,
+                amount_zatoshis,
+                change_amount,
+                memo_field,
+            ),
+            NetworkType::Test | NetworkType::Regtest => self.build_spend_inner(
+                TEST_NETWORK,
+                target_height,
+                build_config,
+                sn,
+                fvk,
+                dfvk,
+                merkle_path,
+                to,
+                ovk,
+                amount_zatoshis,
+                change_amount,
+                memo_field,
+            ),
         }
     }
 

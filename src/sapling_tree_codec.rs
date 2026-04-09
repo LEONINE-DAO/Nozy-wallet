@@ -22,7 +22,9 @@ pub fn sapling_commitment_tree_from_final_state(bytes: &[u8]) -> NozyResult<Sapl
     })
 }
 
-pub fn sapling_incremental_witness_from_bytes(bytes: &[u8]) -> NozyResult<SaplingIncrementalWitness> {
+pub fn sapling_incremental_witness_from_bytes(
+    bytes: &[u8],
+) -> NozyResult<SaplingIncrementalWitness> {
     let mut cursor = Cursor::new(bytes);
     read_incremental_witness(&mut cursor).map_err(|e| {
         NozyError::InvalidOperation(format!("Failed to parse Sapling IncrementalWitness: {}", e))

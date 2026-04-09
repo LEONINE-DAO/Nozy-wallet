@@ -227,9 +227,7 @@ impl HDWallet {
         let sapling_receiver = Receiver::Sapling(sapling_payment_address.to_bytes());
 
         let ua = UnifiedAddress::try_from_items(vec![orchard_receiver, sapling_receiver]).map_err(
-            |e| {
-                NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
-            },
+            |e| NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e)),
         )?;
 
         Ok(ua.encode(&network))
@@ -319,7 +317,10 @@ impl HDWallet {
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
         let domain = OrchardDomain::for_compact_action(&compact_action);
 
-        for scope in [orchard::keys::Scope::External, orchard::keys::Scope::Internal] {
+        for scope in [
+            orchard::keys::Scope::External,
+            orchard::keys::Scope::Internal,
+        ] {
             let ivk = self.derive_incoming_viewing_key_for_address_scoped(address, scope)?;
             let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
             if let Some((note, note_address)) =

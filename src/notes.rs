@@ -24,7 +24,7 @@ use orchard::{
 };
 use zcash_primitives::zip32::AccountId;
 
-use zcash_note_encryption::{EphemeralKeyBytes, try_compact_note_decryption};
+use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
 
 use sapling::note::ExtractedNoteCommitment;
 use sapling::note_encryption::{

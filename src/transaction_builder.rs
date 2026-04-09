@@ -49,9 +49,10 @@ impl ZcashTransactionBuilder {
         use crate::privacy::validate_shielded_address;
         validate_shielded_address(recipient_address)?;
 
-        let (_, decoded) = zcash_address::unified::Address::decode(recipient_address).map_err(|e| {
-            NozyError::InvalidOperation(format!("Invalid recipient address: {}", e))
-        })?;
+        let (_, decoded) =
+            zcash_address::unified::Address::decode(recipient_address).map_err(|e| {
+                NozyError::InvalidOperation(format!("Invalid recipient address: {}", e))
+            })?;
 
         let has_orchard = decoded
             .items()

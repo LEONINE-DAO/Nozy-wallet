@@ -647,7 +647,10 @@ impl ZebraClient {
     }
 
     /// Full Sapling treestate from `z_gettreestate` (JSON-RPC only).
-    pub async fn get_sapling_treestate_parsed(&self, height: u32) -> NozyResult<SaplingTreestateParsed> {
+    pub async fn get_sapling_treestate_parsed(
+        &self,
+        height: u32,
+    ) -> NozyResult<SaplingTreestateParsed> {
         match self.protocol {
             Protocol::JsonRpc => {
                 let request = serde_json::json!({

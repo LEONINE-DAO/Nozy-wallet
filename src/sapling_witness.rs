@@ -2,12 +2,12 @@
 
 use std::collections::HashMap;
 
-use sapling::note::ExtractedNoteCommitment;
-use sapling::{Anchor, MerklePath, Node, Nullifier};
 use crate::error::{NozyError, NozyResult};
 use crate::sapling_tree_codec::{
     sapling_incremental_witness_to_bytes, SaplingCommitmentTree, SaplingIncrementalWitness,
 };
+use sapling::note::ExtractedNoteCommitment;
+use sapling::{Anchor, MerklePath, Node, Nullifier};
 
 pub use crate::sapling_tree_codec::sapling_commitment_tree_from_final_state;
 
@@ -95,7 +95,10 @@ pub fn advance_sapling_witness_with_nodes(
 }
 
 /// Compare witness root to Sapling anchor bytes from `z_gettreestate` / `z_getsaplingtree`.
-pub fn sapling_witness_root_matches_anchor(witness: &SaplingIncrementalWitness, anchor: &[u8; 32]) -> bool {
+pub fn sapling_witness_root_matches_anchor(
+    witness: &SaplingIncrementalWitness,
+    anchor: &[u8; 32],
+) -> bool {
     let Some(expected) = Node::from_bytes(*anchor).into_option() else {
         return false;
     };
