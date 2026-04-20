@@ -3196,7 +3196,7 @@ dependencies = [
  "ark-ff",
  "ark-groth16",
  "ark-serialize 0.4.2",
- "ark-std 0.3.0",
+ "ark-std 0.4.0",
  "async-trait",
  "bech32 0.9.1",
  "bip32 0.5.3",
