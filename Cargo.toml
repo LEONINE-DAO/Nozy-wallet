@@ -27,7 +27,7 @@ zeroize = { version = "1.6", features = ["zeroize_derive"] }
 # Time handling
 chrono = { version = "0.4", features = ["serde"] }
 # Error handling
-thiserror = "1.0"
+thiserror = "2.0"
 
 # Logging (core only; subscriber is native-only)
 tracing = "0.1"
