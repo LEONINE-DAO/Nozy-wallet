@@ -15,10 +15,16 @@ pub fn validate_zcash_address(address: &str) -> NozyResult<()> {
         ));
     }
 
-    if address.len() < 78 || address.len() > 140 {
+    // Unified addresses (`u1…`) vary in length; 140 was too small for many real UAs.
+    // See Zcash unified address encoding (ZIP 316); keep a generous upper bound.
+    const UA_MIN_LEN: usize = 78;
+    const UA_MAX_LEN: usize = 256;
+    if address.len() < UA_MIN_LEN || address.len() > UA_MAX_LEN {
         return Err(NozyError::InvalidInput(format!(
-            "Invalid address length: {} (expected 78-140 characters)",
-            address.len()
+            "Invalid address length: {} (expected {}-{} characters for a unified u1 address)",
+            address.len(),
+            UA_MIN_LEN,
+            UA_MAX_LEN
         )));
     }
 

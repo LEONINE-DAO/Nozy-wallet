@@ -10,6 +10,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
+use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -47,8 +48,47 @@ struct ZebraError {
 }
 
 impl ZebraClient {
+    fn is_local_host(host: &str) -> bool {
+        let host_lc = host.trim().trim_matches(['[', ']']).to_ascii_lowercase();
+        if host_lc == "localhost" {
+            return true;
+        }
+
+        if let Ok(ip) = host_lc.parse::<IpAddr>() {
+            match ip {
+                IpAddr::V4(v4) => {
+                    let octets = v4.octets();
+                    v4.is_loopback() || v4.is_private() || (octets[0] == 169 && octets[1] == 254)
+                    // link-local
+                }
+                IpAddr::V6(v6) => {
+                    v6.is_loopback() || v6.is_unique_local() || v6.is_unicast_link_local()
+                }
+            }
+        } else {
+            false
+        }
+    }
+
     fn is_local_url(url: &str) -> bool {
-        url.contains("127.0.0.1") || url.contains("localhost")
+        if let Ok(parsed) = reqwest::Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                return Self::is_local_host(host);
+            }
+        }
+
+        // Fallback for raw host[:port] values.
+        let host = url
+            .split("://")
+            .nth(1)
+            .unwrap_or(url)
+            .split('/')
+            .next()
+            .unwrap_or(url)
+            .split(':')
+            .next()
+            .unwrap_or(url);
+        Self::is_local_host(host)
     }
 
     fn build_http_client(
@@ -58,8 +98,10 @@ impl ZebraClient {
         let mut builder = reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(timeout_secs))
             .tcp_keepalive(std::time::Duration::from_secs(60))
-            .pool_max_idle_per_host(2)
-            .pool_idle_timeout(std::time::Duration::from_secs(10))
+            // Sync opens many concurrent JSON-RPC calls; a tiny idle pool caused extra
+            // connect/teardown under load (localhost included).
+            .pool_max_idle_per_host(32)
+            .pool_idle_timeout(std::time::Duration::from_secs(90))
             .danger_accept_invalid_certs(false);
 
         if let Some(url) = proxy_url {
@@ -234,7 +276,13 @@ impl ZebraClient {
         let remote_rpc_possible = primary_is_remote || any_fallback_remote;
 
         let require_privacy = config.privacy_network.require_privacy_network;
-        let selected_proxy = Self::selected_proxy_from_config(config);
+        // Local RPC should never be forced through Tor/I2P proxies.
+        // Keep privacy proxy policy for remote endpoints only.
+        let selected_proxy = if remote_rpc_possible {
+            Self::selected_proxy_from_config(config)
+        } else {
+            None
+        };
         client.privacy_proxy_url = selected_proxy.clone();
 
         let timeout_secs = if Self::is_local_url(&client.url) {
@@ -313,7 +361,7 @@ impl ZebraClient {
             }
         }
 
-        if url.contains("127.0.0.1") || url.contains("localhost") {
+        if Self::is_local_url(&url) {
             format!("http://{}", url)
         } else {
             format!("https://{}", url)
@@ -818,10 +866,16 @@ This blocks remote RPC only; localhost RPC remains allowed.",
                                 }
                             };
 
-                            if error_msg.contains("failed to connect")
-                                || error_msg.contains("Connection refused")
-                                || error_msg.contains("timeout")
-                                || error_msg.contains("Connection reset")
+                            let m = error_msg.to_lowercase();
+                            // Match reqwest / OS phrasing; `try_request` uses "Connection failed to …"
+                            // and generic "error sending request for url", which previously skipped retries.
+                            if m.contains("failed to connect")
+                                || m.contains("connection refused")
+                                || m.contains("connection failed")
+                                || m.contains("connection reset")
+                                || m.contains("broken pipe")
+                                || m.contains("timeout")
+                                || m.contains("error sending request")
                             {
                                 let delay_ms = 100 * (1 << attempt);
                                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
@@ -839,7 +893,7 @@ This blocks remote RPC only; localhost RPC remains allowed.",
         }
 
         let tried = urls_to_try.join(", ");
-        let is_local = self.url.contains("127.0.0.1") || self.url.contains("localhost");
+        let is_local = Self::is_local_url(&self.url);
         let error_msg = if is_local && urls_to_try.len() <= 1 {
             format!(
                 "Failed to connect to local Zebra node at {} after {} attempts. \

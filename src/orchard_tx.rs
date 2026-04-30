@@ -19,7 +19,9 @@ use rand::rngs::OsRng;
 use std::sync::{Arc, OnceLock};
 use zcash_address::unified::{Container, Encoding};
 use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
-use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion};
+use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
+use zcash_primitives::transaction::txid::TxIdDigester;
+use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion, Unauthorized};
 use zcash_protocol::consensus::{BlockHeight, BranchId, NetworkType, MAIN_NETWORK, TEST_NETWORK};
 use zcash_protocol::value::ZatBalance;
 
@@ -181,6 +183,8 @@ impl OrchardTransactionBuilder {
             bundle_required: true,
         };
         let tip_height = zebra_client.get_best_block_height().await?;
+        // Mempool consensus checks use the next block context, not the current tip block.
+        let tx_build_height = tip_height.saturating_add(1);
 
         let spendable_note = &spendable_notes[0];
 
@@ -296,7 +300,40 @@ impl OrchardTransactionBuilder {
 
         println!("🔧 Proving Status: {}", status.status_message());
 
-        let sighash: [u8; 32] = unauthorized.commitment().into();
+        let branch_id = match network_type {
+            NetworkType::Main => {
+                BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(tx_build_height))
+            }
+            NetworkType::Test | NetworkType::Regtest => {
+                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(tx_build_height))
+            }
+        };
+        let expiry_height =
+            BlockHeight::from_u32(tx_build_height.saturating_add(DEFAULT_TX_EXPIRY_DELTA));
+        let unauthorized_zat = unauthorized.clone().try_map_value_balance(|vb| {
+            ZatBalance::from_i64(vb).map_err(|e| {
+                NozyError::InvalidOperation(format!(
+                    "Orchard unauthorized value balance out of range: {:?}",
+                    e
+                ))
+            })
+        })?;
+        let unauthed_tx_data = TransactionData::<Unauthorized>::from_parts(
+            TxVersion::V5,
+            branch_id,
+            0,
+            expiry_height,
+            None,
+            None,
+            None,
+            Some(unauthorized_zat),
+        );
+        let txid_parts = unauthed_tx_data.digest(TxIdDigester);
+        let zip244_shielded_sighash =
+            signature_hash(&unauthed_tx_data, &SignableInput::Shielded, &txid_parts);
+        let zip244_sighash_arr = *zip244_shielded_sighash.as_ref();
+
+        let sighash: [u8; 32] = zip244_sighash_arr;
         let pk = orchard_proving_key();
         let proven = unauthorized
             .create_proof(pk.as_ref(), &mut rng)
@@ -321,18 +358,6 @@ impl OrchardTransactionBuilder {
         })?;
 
         let bundle_actions_count = bundle_zat.actions().len();
-
-        let branch_id = match network_type {
-            NetworkType::Main => {
-                BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(tip_height))
-            }
-            NetworkType::Test | NetworkType::Regtest => {
-                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(tip_height))
-            }
-        };
-
-        let expiry_height =
-            BlockHeight::from_u32(tip_height.saturating_add(DEFAULT_TX_EXPIRY_DELTA));
 
         let tx_data = TransactionData::<Authorized>::from_parts(
             TxVersion::V5,

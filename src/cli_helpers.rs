@@ -88,20 +88,28 @@ pub async fn scan_notes_for_sending(
     let mut config = load_config();
     config.zebra_url = zebra_url.to_string();
     let zebra_client = ZebraClient::from_config(&config);
-    let tip_height = match zebra_client.get_block_count().await {
-        Ok(h) => h,
-        Err(_e) => 3_066_071,
-    };
-    let start_height = tip_height.saturating_sub(10_000);
-    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
+    let tip_height = zebra_client.get_block_count().await?;
 
-    match note_scanner
-        .scan_notes(Some(start_height), Some(tip_height))
-        .await
-    {
-        Ok((_result, spendable, sapling)) => Ok((spendable, sapling)),
-        Err(_e) => Ok((Vec::new(), Vec::new())),
+    // Sending should bias for reliability over speed:
+    // - If we have a last scan height, rewind enough to recover from stale/incomplete local state.
+    // - Otherwise use a wide fallback that still avoids scanning from genesis.
+    const SEND_SCAN_REWIND_BLOCKS: u32 = 50_000;
+    const SEND_SCAN_WIDE_FALLBACK_BLOCKS: u32 = 500_000;
+    const SEND_SCAN_MAINNET_FLOOR: u32 = 3_276_000;
+    let start_height = if let Some(last) = config.last_scan_height {
+        last.saturating_sub(SEND_SCAN_REWIND_BLOCKS)
+    } else {
+        tip_height
+            .saturating_sub(SEND_SCAN_WIDE_FALLBACK_BLOCKS)
+            .min(SEND_SCAN_MAINNET_FLOOR)
     }
+    .min(tip_height);
+
+    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
+    let (_result, spendable, sapling) = note_scanner
+        .scan_notes(Some(start_height), Some(tip_height))
+        .await?;
+    Ok((spendable, sapling))
 }
 
 pub async fn build_and_broadcast_transaction(

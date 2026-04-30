@@ -42,11 +42,12 @@ bip39 = "2.1"
 
 # Zcash crypto stack -- default-features off to disable multicore on WASM
 # Native builds re-enable multicore via the "native" feature for parallel proving
-orchard = { version = "0.11.0", default-features = false, features = ["circuit", "std"] }
-zcash_primitives = { version = "0.24.1", default-features = false, features = ["std", "circuits"] }
-zcash_protocol = "0.6.2"
-zcash_address = "0.9.0"
-zcash_note_encryption = "0.4.0"
+# Align with Zebra 4.3.x workspace so proofs/serialization match consensus verification.
+orchard = { version = "0.11", default-features = false, features = ["circuit", "std"] }
+zcash_primitives = { version = "0.26", default-features = false, features = ["std", "circuits"] }
+zcash_protocol = "0.7"
+zcash_address = "0.10"
+zcash_note_encryption = "0.4.1"
 
 # Serialization for Zcash types
 ark-serialize = "0.4"
@@ -109,7 +110,7 @@ futures = { version = "0.3", optional = true }
 sapling = { package = "sapling-crypto", version = "0.5.0", default-features = false, features = ["std", "circuit", "multicore"], optional = true }
 zip32 = { version = "0.2", optional = true }
 zcash_proofs = { version = "0.26.1", optional = true, default-features = false, features = ["bundled-prover"] }
-zcash_transparent = { version = "0.4", optional = true, default-features = false }
+zcash_transparent = { version = "0.6.4", optional = true, default-features = false }
 
 [features]
 default = ["native"]

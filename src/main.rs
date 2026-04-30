@@ -15,6 +15,22 @@ use zcash_address::unified::Encoding;
 use zcash_protocol::consensus::NetworkType;
 use zeaking::Zeaking;
 
+fn use_plain_terminal_output() -> bool {
+    use std::io::IsTerminal;
+
+    if std::env::var("NOZY_PLAIN_OUTPUT").is_ok() {
+        return true;
+    }
+
+    if !std::io::stdout().is_terminal() {
+        return true;
+    }
+
+    std::env::var("TERM_PROGRAM")
+        .map(|v| v.to_ascii_lowercase().contains("cursor"))
+        .unwrap_or(false)
+}
+
 fn network_type_from_config(network: &str) -> NetworkType {
     if network == "testnet" {
         NetworkType::Test
@@ -25,7 +41,7 @@ fn network_type_from_config(network: &str) -> NetworkType {
 
 #[derive(Parser)]
 #[command(name = "nozy")]
-#[command(version = "2.1.0")]
+#[command(version)]
 #[command(about = "NozyWallet - A privacy-focused Zcash Orchard wallet")]
 #[command(
     long_about = "NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet only supports shielded transactions - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees."
@@ -95,7 +111,8 @@ pub enum Commands {
             help = "Override Zebra RPC URL (overrides config and global --zebra-url)"
         )]
         zebra_url: Option<String>,
-        #[arg(long, short = 'm', help = "Optional memo message (max 512 characters)")]
+        // No short flag: global `--mainnet` already uses `-m`.
+        #[arg(long, help = "Optional memo message (max 512 characters)")]
         memo: Option<String>,
     },
 
@@ -546,14 +563,13 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 None
             };
             let scan_start = effective_start.unwrap_or(3_050_000);
-            let scan_end = if let Some(end) = end_height {
+            let chain_tip = zebra_client.get_block_count().await?;
+            let requested_end = if let Some(end) = end_height {
                 end.max(scan_start)
             } else {
-                match zebra_client.get_block_count().await {
-                    Ok(tip) => tip.min(scan_start.saturating_add(1_000)),
-                    Err(_) => scan_start.saturating_add(100),
-                }
+                scan_start.saturating_add(1_000)
             };
+            let scan_end = requested_end.min(chain_tip);
 
             if let Some(start) = effective_start {
                 if let Some(last) = config.last_scan_height {
@@ -770,12 +786,17 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!("  Proving:   ✅ Ready (Halo 2)");
 
             println!("\n🔍 Scanning for spendable notes...");
-            use nozy::progress::create_tx_progress_bar;
-            let pb = create_tx_progress_bar();
-            pb.set_message("Scanning blockchain for spendable notes...");
-            let (spendable_notes, sapling_spendable) =
-                scan_notes_for_sending(wallet, &config.zebra_url).await?;
-            pb.finish_with_message("✅ Scan complete");
+            let (spendable_notes, sapling_spendable) = if use_plain_terminal_output() {
+                println!("   Plain terminal mode enabled (no spinner/progress UI).");
+                scan_notes_for_sending(wallet, &config.zebra_url).await?
+            } else {
+                use nozy::progress::create_tx_progress_bar;
+                let pb = create_tx_progress_bar();
+                pb.set_message("Scanning blockchain for spendable notes...");
+                let res = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+                pb.finish_with_message("✅ Scan complete");
+                res
+            };
 
             if spendable_notes.is_empty() && sapling_spendable.is_empty() {
                 return Err(NozyError::InvalidOperation(
