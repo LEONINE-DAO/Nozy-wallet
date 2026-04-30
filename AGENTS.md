@@ -5,7 +5,7 @@ This file is **machine-readable project policy**. Tools (Cursor, Copilot, Claude
 ## Scope
 
 - **This repository is a wallet and related services**, not a Zcash consensus node. Do **not** treat it as Zebra; do not propose consensus-rule changes here.
-- **Default privacy product stance:** shielded-first; respect existing docs on Zebrad vs zcashd capabilities.
+- **Default privacy product stance:** shielded-first on a Zebrad + lightwalletd stack with local witness derivation.
 
 ---
 
@@ -40,8 +40,8 @@ Root **`[workspace]`** members: `zeaking`, `api-server`, `zeaking-ffi`. Crates u
 ## Zebrad (Zebra) and shielded sends
 
 - **Source of truth:** [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md).
-- Wallet flows must **not** rely on zcashd-only witness RPCs (`z_findnoteposition`, `z_getauthpath`) for Orchard/Sapling proves; use the **documented** treestate + client-side witness approach and JSON-RPC where required.
-- If suggesting new node RPCs or “just use zcashd,” **stop** and re-read that doc and current `ZebraClient` / witness providers.
+- Wallet flows must use local witness derivation for Orchard/Sapling proves; use the documented treestate + client-side witness approach and JSON-RPC where required.
+- If suggesting node-side witness lookups, stop and re-read that doc and current `ZebraClient` / witness providers.
 
 ---
 
