@@ -7,7 +7,7 @@ use crate::lwd::proto::CompactBlock;
 
 pub fn sapling_cmu_bytes_from_compact_block(data: &[u8]) -> ZeakingResult<Vec<[u8; 32]>> {
     let block: CompactBlock = CompactBlock::decode(data).map_err(|e| {
-        crate::ZeakingError::InvalidOperation(format!("compact block decode failed: {}", e))
+        crate::ZeakingError::InvalidOperation(format!("compact block decode failed: {e}"))
     })?;
 
     let mut out = Vec::new();
@@ -30,8 +30,10 @@ mod tests {
 
     #[test]
     fn sapling_cmu_order_single_output() {
-        let mut out = CompactSaplingOutput::default();
-        out.cmu = vec![9u8; 32];
+        let out = CompactSaplingOutput {
+            cmu: vec![9u8; 32],
+            ..Default::default()
+        };
         let mut tx = CompactTx::default();
         tx.outputs.push(out);
         let mut cb = CompactBlock::default();

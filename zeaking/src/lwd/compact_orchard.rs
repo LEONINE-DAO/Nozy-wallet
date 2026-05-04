@@ -7,9 +7,8 @@ use crate::lwd::proto::CompactBlock;
 
 /// Orchard `cmx` values in consensus order (block vtx order, actions within each tx).
 pub fn orchard_cmx_bytes_from_compact_block(data: &[u8]) -> ZeakingResult<Vec<[u8; 32]>> {
-    let block: CompactBlock = CompactBlock::decode(data).map_err(|e| {
-        ZeakingError::InvalidOperation(format!("compact block decode failed: {}", e))
-    })?;
+    let block: CompactBlock = CompactBlock::decode(data)
+        .map_err(|e| ZeakingError::InvalidOperation(format!("compact block decode failed: {e}")))?;
 
     let mut out = Vec::new();
     for tx in block.vtx {
@@ -49,10 +48,11 @@ mod tests {
             ciphertext: vec![],
         });
 
-        let mut block = CompactBlock::default();
-        block.height = 7;
-        block.vtx.push(tx1);
-        block.vtx.push(tx2);
+        let block = CompactBlock {
+            height: 7,
+            vtx: vec![tx1, tx2],
+            ..Default::default()
+        };
 
         let mut buf = Vec::new();
         block.encode(&mut buf).unwrap();

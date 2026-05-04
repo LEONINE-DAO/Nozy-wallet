@@ -105,29 +105,27 @@ where
 
         if !index_dir.exists() {
             fs::create_dir_all(&index_dir).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to create index directory: {}", e))
+                ZeakingError::Storage(format!("Failed to create index directory: {e}"))
             })?;
             return Ok(());
         }
 
         let blocks_path = index_dir.join("blocks.json");
         if blocks_path.exists() {
-            let content = fs::read_to_string(&blocks_path).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to read blocks index: {}", e))
-            })?;
-            let block_idx: BlockIndex = serde_json::from_str(&content).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to parse blocks index: {}", e))
-            })?;
+            let content = fs::read_to_string(&blocks_path)
+                .map_err(|e| ZeakingError::Storage(format!("Failed to read blocks index: {e}")))?;
+            let block_idx: BlockIndex = serde_json::from_str(&content)
+                .map_err(|e| ZeakingError::Storage(format!("Failed to parse blocks index: {e}")))?;
             *self.block_index.lock().unwrap() = block_idx;
         }
 
         let txs_path = index_dir.join("transactions.json");
         if txs_path.exists() {
             let content = fs::read_to_string(&txs_path).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to read transactions index: {}", e))
+                ZeakingError::Storage(format!("Failed to read transactions index: {e}"))
             })?;
             let tx_idx: TransactionIndex = serde_json::from_str(&content).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to parse transactions index: {}", e))
+                ZeakingError::Storage(format!("Failed to parse transactions index: {e}"))
             })?;
             *self.transaction_index.lock().unwrap() = tx_idx;
         }
@@ -135,9 +133,9 @@ where
         let metadata_path = index_dir.join("metadata.json");
         if metadata_path.exists() {
             let content = fs::read_to_string(&metadata_path)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to read metadata: {}", e)))?;
+                .map_err(|e| ZeakingError::Storage(format!("Failed to read metadata: {e}")))?;
             let mut meta: IndexMetadata = serde_json::from_str(&content)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to parse metadata: {}", e)))?;
+                .map_err(|e| ZeakingError::Storage(format!("Failed to parse metadata: {e}")))?;
 
             if meta.last_saved_height == 0 && meta.last_indexed_height > 0 {
                 meta.last_saved_height = meta.last_indexed_height;
@@ -155,9 +153,8 @@ where
 
     fn save_index_incremental(&self, incremental: bool) -> ZeakingResult<()> {
         let index_dir = self.get_index_dir();
-        fs::create_dir_all(&index_dir).map_err(|e| {
-            ZeakingError::Storage(format!("Failed to create index directory: {}", e))
-        })?;
+        fs::create_dir_all(&index_dir)
+            .map_err(|e| ZeakingError::Storage(format!("Failed to create index directory: {e}")))?;
 
         let meta = self.metadata.lock().unwrap();
         let last_saved = if incremental {
@@ -175,9 +172,9 @@ where
         let atomic_write = |path: &PathBuf, content: String| -> ZeakingResult<()> {
             let temp_path = path.with_extension("tmp");
             fs::write(&temp_path, content)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to write temp file: {}", e)))?;
+                .map_err(|e| ZeakingError::Storage(format!("Failed to write temp file: {e}")))?;
             fs::rename(&temp_path, path)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to rename temp file: {}", e)))?;
+                .map_err(|e| ZeakingError::Storage(format!("Failed to rename temp file: {e}")))?;
             Ok(())
         };
 
@@ -208,7 +205,7 @@ where
             drop(block_idx);
 
             let content = serde_json::to_string_pretty(&existing_blocks)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to serialize blocks: {}", e)))?;
+                .map_err(|e| ZeakingError::Storage(format!("Failed to serialize blocks: {e}")))?;
             atomic_write(&blocks_path, content)?;
 
             let txs_path = index_dir.join("transactions.json");
@@ -246,21 +243,21 @@ where
             drop(tx_idx);
 
             let content = serde_json::to_string_pretty(&existing_txs).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to serialize transactions: {}", e))
+                ZeakingError::Storage(format!("Failed to serialize transactions: {e}"))
             })?;
             atomic_write(&txs_path, content)?;
         } else {
             let blocks_path = index_dir.join("blocks.json");
             let block_idx = self.block_index.lock().unwrap();
             let content = serde_json::to_string_pretty(&*block_idx)
-                .map_err(|e| ZeakingError::Storage(format!("Failed to serialize blocks: {}", e)))?;
+                .map_err(|e| ZeakingError::Storage(format!("Failed to serialize blocks: {e}")))?;
             drop(block_idx);
             atomic_write(&blocks_path, content)?;
 
             let txs_path = index_dir.join("transactions.json");
             let tx_idx = self.transaction_index.lock().unwrap();
             let content = serde_json::to_string_pretty(&*tx_idx).map_err(|e| {
-                ZeakingError::Storage(format!("Failed to serialize transactions: {}", e))
+                ZeakingError::Storage(format!("Failed to serialize transactions: {e}"))
             })?;
             drop(tx_idx);
             atomic_write(&txs_path, content)?;
@@ -271,7 +268,7 @@ where
         meta.last_saved_height = current_height;
         meta.last_saved_time = Utc::now();
         let content = serde_json::to_string_pretty(&*meta)
-            .map_err(|e| ZeakingError::Storage(format!("Failed to serialize metadata: {}", e)))?;
+            .map_err(|e| ZeakingError::Storage(format!("Failed to serialize metadata: {e}")))?;
         drop(meta);
         atomic_write(&metadata_path, content)?;
 
@@ -350,9 +347,9 @@ where
             let has_nullifier = action.nullifier.is_some();
             orchard_actions.push(OrchardActionIndex {
                 action_type: if has_nullifier { "spend" } else { "output" }.to_string(),
-                nullifier: action.nullifier.map(|n| hex::encode(&n)),
-                commitment: Some(hex::encode(&action.cmx)),
-                cv: Some(hex::encode(&action.cv)),
+                nullifier: action.nullifier.map(hex::encode),
+                commitment: Some(hex::encode(action.cmx)),
+                cv: Some(hex::encode(action.cv)),
             });
         }
 
@@ -378,7 +375,7 @@ where
             tx_idx
                 .block_to_txs
                 .entry(block_height)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(tx.txid.clone());
 
             for action in &indexed_tx.orchard_actions {
@@ -426,7 +423,7 @@ where
                     if let Some(interval) = auto_save_interval {
                         if height - last_save_height >= interval {
                             if let Err(e) = self.save_index_incremental_only() {
-                                eprintln!("Warning: Incremental save failed, will retry with full save: {}", e);
+                                eprintln!("Warning: Incremental save failed, will retry with full save: {e}");
                             } else {
                                 last_save_height = height;
                             }
@@ -434,16 +431,14 @@ where
                     }
                 }
                 Err(e) => {
-                    eprintln!("Failed to index block {}: {}", height, e);
+                    eprintln!("Failed to index block {height}: {e}");
                     errors += 1;
                 }
             }
         }
 
-        if last_save_height < end_height {
-            if let Err(_) = self.save_index_incremental_only() {
-                self.save_index()?;
-            }
+        if last_save_height < end_height && self.save_index_incremental_only().is_err() {
+            self.save_index()?;
         }
 
         let tx_count = {

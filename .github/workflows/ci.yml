@@ -44,9 +44,13 @@ jobs:
             zeaking
             api-server
 
-      - name: Run clippy
-        run: cargo clippy --all-targets --all-features -- -W clippy::all || true
-        continue-on-error: true
+      # Strict on workspace members that are clippy-clean. `nozy` is excluded from `-D warnings`
+      # until a dedicated cleanup lands (see PRODUCTION_CHECKLIST.md).
+      - name: Clippy (zeaking, strict)
+        run: cargo clippy -p zeaking --all-targets --all-features -- -D warnings
+
+      - name: Clippy (nozywallet-api, strict, no-deps)
+        run: cargo clippy -p nozywallet-api --all-targets --all-features --no-deps -- -D warnings
 
   test:
     name: Unit Tests
@@ -67,10 +71,9 @@ jobs:
             api-server
 
       - name: Run unit tests
-        run: cargo test --lib --bins || echo "Some tests failed - check logs"
-        continue-on-error: true
+        run: cargo test --lib --bins
 
-      - name: Run unit tests (verbose)
+      - name: Run unit tests (verbose, on failure)
         if: failure()
         run: cargo test --lib --bins -- --nocapture
 
@@ -122,12 +125,13 @@ jobs:
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
 
+      # Soft-fail: open RUSTSEC on transitive rustls-webpki / ecosystem until lockfile upgrades land.
       - name: Run security audit
         run: cargo audit || echo "Security audit found issues - see Dependabot alerts"
         continue-on-error: true
 
   cargo-chec:
-    name: Cargo Chec (Parallel Checks)
+    name: Cargo chec (parallel checks)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -172,10 +176,8 @@ jobs:
             api-server
 
       - name: Build CLI
-        run: cargo build --release --bin nozy || echo "CLI build failed - check logs"
-        continue-on-error: true
+        run: cargo build --release --bin nozy
 
       - name: Build API Server
-        run: cargo build --release --package nozywallet-api || echo "API build failed - check logs"
-        continue-on-error: true
+        run: cargo build --release --package nozywallet-api
 
