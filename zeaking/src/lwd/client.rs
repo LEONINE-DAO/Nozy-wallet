@@ -11,7 +11,7 @@ pub async fn connect_lightwalletd(grpc_base: &str) -> ZeakingResult<LwdClient> {
     let uri = if uri.starts_with("http://") || uri.starts_with("https://") {
         uri.to_string()
     } else {
-        format!("http://{}", uri)
+        format!("http://{uri}")
     };
     CompactTxStreamerClient::connect(uri)
         .await

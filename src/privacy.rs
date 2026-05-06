@@ -9,15 +9,22 @@ pub fn validate_shielded_address(address: &str) -> NozyResult<()> {
     if address.starts_with("t1") {
         return Err(NozyError::InvalidOperation(
             "Transparent addresses (t1) are not supported. \
-             NozyWallet enforces privacy by default - only shielded addresses are allowed. \
-             Please use a unified address (u1...) or Sapling address (zs1...) for privacy protection.".to_string()
+             NozyWallet is Orchard-only: use a unified address (u1... / utest1...) that includes an Orchard receiver."
+                .to_string()
         ));
     }
 
-    if !address.starts_with("u1") && !address.starts_with("zs1") && !address.starts_with("utest1") {
+    if address.starts_with("zs1") || address.starts_with("ztestsapling") {
         return Err(NozyError::InvalidOperation(
-            "Invalid address format! Must be a shielded address for privacy protection. \
-             Supported formats: u1 (unified with Orchard), zs1 (Sapling), or utest1 (testnet unified).".to_string()
+            "Sapling addresses are not supported. NozyWallet is Orchard-only; use a unified address (u1... / utest1...)."
+                .to_string(),
+        ));
+    }
+
+    if !address.starts_with("u1") && !address.starts_with("utest1") {
+        return Err(NozyError::InvalidOperation(
+            "Invalid address format. Supported: unified addresses u1 (mainnet) or utest1 (testnet) with an Orchard receiver."
+                .to_string(),
         ));
     }
 

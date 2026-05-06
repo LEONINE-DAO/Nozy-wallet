@@ -61,7 +61,7 @@ pub async fn sync_wallet(request: SyncRequest) -> Result<SyncResponse, TauriErro
         .scan_notes(Some(scan_start), Some(scan_end))
         .await
     {
-        Ok((result, _spendable_notes, _sapling)) => {
+        Ok((result, _spendable_notes)) => {
             let notes_dir = get_wallet_data_dir();
             if !notes_dir.exists() {
                 let _ = fs::create_dir_all(&notes_dir);
@@ -73,8 +73,7 @@ pub async fn sync_wallet(request: SyncRequest) -> Result<SyncResponse, TauriErro
 
             let _ = update_last_scan_height(scan_end);
 
-            let balance_zec =
-                (result.total_balance + result.sapling_total_balance) as f64 / 100_000_000.0;
+            let balance_zec = result.total_balance as f64 / 100_000_000.0;
 
             Ok(SyncResponse {
                 success: true,

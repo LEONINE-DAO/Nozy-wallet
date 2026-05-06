@@ -230,7 +230,7 @@ impl OrchardTransactionBuilder {
                         .iter()
                         .any(|i| matches!(i, zcash_address::unified::Receiver::Sapling(_)));
                     return Err(NozyError::AddressParsing(if has_sapling {
-                        "Unified address has Sapling but no Orchard receiver. Use a Sapling-capable send path or a UA that includes Orchard."
+                        "Unified address has no Orchard receiver (Sapling-only UAs are not supported). Use a unified address that includes Orchard."
                             .to_string()
                     } else {
                         "No Orchard receiver found in unified address".to_string()

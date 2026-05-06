@@ -1,6 +1,5 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::SerializableOrchardNote;
-use crate::sapling_notes::SerializableSaplingNote;
 use hex;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
@@ -20,10 +19,6 @@ pub struct NoteIndex {
     nullifier_index: HashMap<Vec<u8>, usize>,
     height_index: BTreeMap<u32, Vec<usize>>,
     address_index: HashMap<Vec<u8>, Vec<usize>>,
-    #[serde(default)]
-    sapling_notes: Vec<SerializableSaplingNote>,
-    #[serde(default)]
-    sapling_nullifier_index: HashMap<Vec<u8>, usize>,
 }
 
 fn default_index_version() -> u32 {
@@ -38,8 +33,6 @@ impl NoteIndex {
             nullifier_index: HashMap::new(),
             height_index: BTreeMap::new(),
             address_index: HashMap::new(),
-            sapling_notes: Vec::new(),
-            sapling_nullifier_index: HashMap::new(),
         }
     }
 
@@ -125,32 +118,6 @@ impl NoteIndex {
         &self.notes
     }
 
-    pub fn add_sapling_note(&mut self, note: SerializableSaplingNote) {
-        let nf = note.nullifier_bytes.to_vec();
-        if self.sapling_nullifier_index.contains_key(&nf) {
-            return;
-        }
-        let idx = self.sapling_notes.len();
-        self.sapling_notes.push(note.clone());
-        self.sapling_nullifier_index.insert(nf, idx);
-    }
-
-    pub fn get_all_sapling_notes(&self) -> &[SerializableSaplingNote] {
-        &self.sapling_notes
-    }
-
-    pub fn sapling_total_balance(&self) -> u64 {
-        self.sapling_notes
-            .iter()
-            .filter(|note| !note.spent)
-            .map(|note| note.value)
-            .sum()
-    }
-
-    pub fn sapling_unspent_count(&self) -> usize {
-        self.sapling_notes.iter().filter(|note| !note.spent).count()
-    }
-
     pub fn mark_note_spent(&mut self, nullifier: &[u8]) -> bool {
         if let Some(&idx) = self.nullifier_index.get(nullifier) {
             if let Some(note) = self.notes.get_mut(idx) {
@@ -176,21 +143,6 @@ impl NoteIndex {
             if let Some(bytes) = tracker.serialized_witness_for_nullifier(&nf)? {
                 note.orchard_incremental_witness_hex = Some(hex::encode(bytes));
                 note.orchard_witness_tip_height = Some(tip_height);
-            }
-        }
-        Ok(())
-    }
-
-    pub fn apply_sapling_witnesses_from_tracker(
-        &mut self,
-        tracker: &crate::sapling_witness::SaplingWitnessTracker,
-        tip_height: u32,
-    ) -> crate::error::NozyResult<()> {
-        for note in &mut self.sapling_notes {
-            let nf = note.nullifier_bytes;
-            if let Some(bytes) = tracker.serialized_witness_for_nullifier(&nf)? {
-                note.sapling_incremental_witness_hex = Some(hex::encode(bytes));
-                note.sapling_witness_tip_height = Some(tip_height);
             }
         }
         Ok(())

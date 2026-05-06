@@ -8,9 +8,6 @@ use crate::note_index::NoteIndex;
 use crate::orchard_tree_codec::orchard_commitment_tree_from_final_state;
 use crate::orchard_tree_codec::OrchardCommitmentTree;
 use crate::orchard_witness::{merkle_hash_from_cmx_bytes, OrchardWitnessTracker};
-use crate::sapling_notes::{SaplingNote, SerializableSaplingNote, SpendableSaplingNote};
-use crate::sapling_tree_codec::SaplingCommitmentTree;
-use crate::sapling_witness::{node_from_cmu_bytes, SaplingWitnessTracker};
 use crate::zebra_integration::ZebraClient;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -24,15 +21,7 @@ use orchard::{
 };
 use zcash_primitives::zip32::AccountId;
 
-use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
-
-use sapling::note::ExtractedNoteCommitment;
-use sapling::note_encryption::{
-    try_sapling_compact_note_decryption, CompactOutputDescription, PreparedIncomingViewingKey,
-    Zip212Enforcement,
-};
-use sapling::zip32::ExtendedSpendingKey;
-use zip32::ChildIndex;
+use zcash_note_encryption::try_compact_note_decryption;
 
 #[derive(Debug, Clone)]
 pub struct OrchardNote {
@@ -102,14 +91,9 @@ impl From<&OrchardNote> for SerializableOrchardNote {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NoteScanResult {
     pub notes: Vec<SerializableOrchardNote>,
-    #[serde(default)]
-    pub sapling_notes: Vec<SerializableSaplingNote>,
     pub total_balance: u64,
-    pub sapling_total_balance: u64,
     pub unspent_count: usize,
     pub spendable_count: usize,
-    pub sapling_unspent_count: usize,
-    pub sapling_spendable_count: usize,
 }
 
 pub struct NoteScanner {
@@ -190,28 +174,21 @@ impl NoteScanner {
         &mut self,
         start_height: Option<u32>,
         end_height: Option<u32>,
-    ) -> NozyResult<(
-        NoteScanResult,
-        Vec<SpendableNote>,
-        Vec<SpendableSaplingNote>,
-    )> {
+    ) -> NozyResult<(NoteScanResult, Vec<SpendableNote>)> {
         let start_height = if let Some(start) = start_height {
             start
         } else {
             3050000
         };
 
-        let end_height = if let Some(end) = end_height {
+        let chain_tip = self.zebra_client.get_block_count().await?;
+        let requested_end = if let Some(end) = end_height {
             end
         } else {
-            match self.zebra_client.get_block_count().await {
-                Ok(tip) => {
-                    let max_scan = start_height + 1000;
-                    tip.min(max_scan)
-                }
-                Err(_) => start_height + 100,
-            }
+            let max_scan = start_height + 1000;
+            max_scan
         };
+        let end_height = requested_end.min(chain_tip);
 
         let start_height = start_height.min(end_height);
 
@@ -246,31 +223,15 @@ impl NoteScanner {
         let orchard_ivk_external = orchard_fvk.to_ivk(orchard::keys::Scope::External);
         let orchard_ivk_internal = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
 
-        let account_u32: u32 = account_id.into();
-        let sapling_master = ExtendedSpendingKey::master(secure_seed.as_bytes());
-        let sapling_extsk = ExtendedSpendingKey::from_path(
-            &sapling_master,
-            &[
-                ChildIndex::hardened(32),
-                ChildIndex::hardened(133),
-                ChildIndex::hardened(account_u32),
-            ],
-        );
-        let sapling_dfvk = sapling_extsk.to_diversifiable_full_viewing_key();
-        let sapling_ivk_ext =
-            PreparedIncomingViewingKey::new(&sapling_dfvk.to_ivk(zip32::Scope::External));
-        let sapling_ivk_int =
-            PreparedIncomingViewingKey::new(&sapling_dfvk.to_ivk(zip32::Scope::Internal));
-
         zeroize_bytes(&mut seed_bytes);
 
-        pb.println("🔑 Generated scanning keys from wallet mnemonic (checking both External and Internal scopes)");
+        pb.println(
+            "🔑 Generated scanning keys from wallet mnemonic (Orchard only; External and Internal scopes)",
+        );
 
         let mut note_index = self.note_index.take().unwrap_or_else(NoteIndex::new);
         let mut all_notes = Vec::new();
         let mut spendable_notes = Vec::new();
-        let mut all_sapling_notes = Vec::new();
-        let mut spendable_sapling_notes = Vec::new();
 
         let block_cache = self
             .block_cache
@@ -295,24 +256,6 @@ impl NoteScanner {
                     }
                 };
                 Some(OrchardWitnessTracker::new(initial_tree))
-            } else {
-                None
-            };
-
-        let mut sapling_witness_tracker: Option<SaplingWitnessTracker> =
-            if matches!(zebra_client.protocol(), Protocol::JsonRpc) {
-                let initial_tree: SaplingCommitmentTree = if start_height == 0 {
-                    SaplingCommitmentTree::empty()
-                } else {
-                    let cp = start_height.saturating_sub(1);
-                    let parsed = zebra_client.get_sapling_treestate_parsed(cp).await?;
-                    if let Some(fs) = parsed.final_state {
-                        crate::sapling_tree_codec::sapling_commitment_tree_from_final_state(&fs)?
-                    } else {
-                        SaplingCommitmentTree::empty()
-                    }
-                };
-                Some(SaplingWitnessTracker::new(initial_tree))
             } else {
                 None
             };
@@ -396,38 +339,17 @@ impl NoteScanner {
                             &mut spendable_notes,
                             &pb,
                         ) {
-                            if !transactions.is_empty() {
-                                pb.println(format!(
-                                    "⚠️  Warning: Orchard processing failed for block {}: {}",
-                                    height, e
-                                ));
-                            }
-                        }
-                        if let Err(e) = self.process_block_sapling_outputs(
-                            &transactions,
-                            height,
-                            &sapling_ivk_ext,
-                            &sapling_ivk_int,
-                            &sapling_extsk,
-                            sapling_witness_tracker.as_mut(),
-                            &mut note_index,
-                            &mut all_sapling_notes,
-                            &mut spendable_sapling_notes,
-                            &pb,
-                        ) {
-                            if !transactions.is_empty() {
-                                pb.println(format!(
-                                    "⚠️  Warning: Sapling processing failed for block {}: {}",
-                                    height, e
-                                ));
-                            }
+                            return Err(NozyError::InvalidOperation(format!(
+                                "Orchard scan failed at block {}: {}",
+                                height, e
+                            )));
                         }
                     }
                     Err(e) => {
-                        pb.println(format!(
-                            "⚠️  Warning: Failed to get block {}: {}",
+                        return Err(NozyError::NetworkError(format!(
+                            "Failed to fetch block {} while scanning notes: {}",
                             height, e
-                        ));
+                        )));
                     }
                 }
 
@@ -448,54 +370,31 @@ impl NoteScanner {
             }
         }
 
-        if let Some(ref tr) = sapling_witness_tracker {
-            note_index.apply_sapling_witnesses_from_tracker(tr, end_height)?;
-            for sn in &mut spendable_sapling_notes {
-                let nf = sn.sapling_note.nullifier.0;
-                if let Some(w) = tr.serialized_witness_for_nullifier(&nf)? {
-                    sn.sapling_incremental_witness_hex = Some(hex::encode(w));
-                    sn.sapling_witness_tip_height = Some(end_height);
-                }
-            }
-        }
-
         pb.finish_with_message("Scanning complete!");
 
         let total_balance = note_index.total_balance();
-        let sapling_total_balance = note_index.sapling_total_balance();
         let unspent_count = note_index.unspent_count();
-        let sapling_unspent_count = note_index.sapling_unspent_count();
         let spendable_count = spendable_notes.len();
-        let sapling_spendable_count = spendable_sapling_notes.len();
 
         let serializable_notes: Vec<SerializableOrchardNote> = note_index.get_all_notes().to_vec();
-        let serializable_sapling: Vec<SerializableSaplingNote> =
-            note_index.get_all_sapling_notes().to_vec();
 
         self.note_index = Some(note_index);
 
         let result = NoteScanResult {
             notes: serializable_notes,
-            sapling_notes: serializable_sapling,
             total_balance,
-            sapling_total_balance,
             unspent_count,
             spendable_count,
-            sapling_unspent_count,
-            sapling_spendable_count,
         };
 
         println!(
-            "Scan complete: Orchard {} notes ({} spendable, {} ZAT); Sapling {} notes ({} spendable, {} ZAT)",
+            "Scan complete: Orchard {} notes ({} spendable, {} ZAT)",
             result.notes.len(),
             spendable_count,
-            total_balance,
-            result.sapling_notes.len(),
-            sapling_spendable_count,
-            sapling_total_balance
+            total_balance
         );
 
-        Ok((result, spendable_notes, spendable_sapling_notes))
+        Ok((result, spendable_notes))
     }
 
     fn process_block_orchard_actions(
@@ -574,113 +473,6 @@ impl NoteScanner {
                         derivation_path: format!("m/32'/133'/0'/0/{}", action_idx),
                         orchard_incremental_witness_hex: witness_hex,
                         orchard_witness_tip_height: Some(block_height),
-                    });
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn process_block_sapling_outputs(
-        &self,
-        transactions: &[ParsedTransaction],
-        block_height: u32,
-        sapling_ivk_ext: &PreparedIncomingViewingKey,
-        sapling_ivk_int: &PreparedIncomingViewingKey,
-        sapling_extsk: &ExtendedSpendingKey,
-        mut witness_tracker: Option<&mut SaplingWitnessTracker>,
-        note_index: &mut NoteIndex,
-        all_sapling_notes: &mut Vec<SaplingNote>,
-        spendable_sapling_notes: &mut Vec<SpendableSaplingNote>,
-        pb: &ProgressBar,
-    ) -> NozyResult<()> {
-        let dfvk = sapling_extsk.to_diversifiable_full_viewing_key();
-
-        for tx in transactions {
-            for (out_idx, out) in tx.sapling_outputs.iter().enumerate() {
-                let node = node_from_cmu_bytes(&out.cmu)?;
-                if let Some(tr) = witness_tracker.as_mut() {
-                    tr.append_cmu_node(node)?;
-                }
-                let position = witness_tracker
-                    .as_ref()
-                    .map(|t| t.tree().size() as u64 - 1)
-                    .unwrap_or(0);
-
-                let cmu = ExtractedNoteCommitment::from_bytes(&out.cmu)
-                    .into_option()
-                    .ok_or_else(|| {
-                        NozyError::InvalidOperation("Invalid Sapling cmu bytes".to_string())
-                    })?;
-
-                let compact = CompactOutputDescription {
-                    ephemeral_key: EphemeralKeyBytes::from(out.ephemeral_key),
-                    cmu,
-                    enc_ciphertext: out.enc_compact,
-                };
-
-                let chosen = try_sapling_compact_note_decryption(
-                    sapling_ivk_ext,
-                    &compact,
-                    Zip212Enforcement::GracePeriod,
-                )
-                .map(|(n, a)| (n, a, zip32::Scope::External))
-                .or_else(|| {
-                    try_sapling_compact_note_decryption(
-                        sapling_ivk_int,
-                        &compact,
-                        Zip212Enforcement::GracePeriod,
-                    )
-                    .map(|(n, a)| (n, a, zip32::Scope::Internal))
-                });
-
-                if let Some((note, payment_address, scope)) = chosen {
-                    let nk = dfvk.to_nk(scope);
-                    let nf = note.nf(&nk, position);
-
-                    if let Some(tr) = witness_tracker.as_mut() {
-                        tr.register_discovered_note(nf.0)?;
-                    }
-
-                    pb.println(format!(
-                        "🎉 Found Sapling note in block {} ({})",
-                        block_height, tx.txid
-                    ));
-
-                    let witness_hex = if let Some(t) = witness_tracker.as_ref() {
-                        match t.serialized_witness_for_nullifier(&nf.0) {
-                            Ok(Some(b)) => Some(hex::encode(b)),
-                            Ok(None) => None,
-                            Err(e) => return Err(e),
-                        }
-                    } else {
-                        None
-                    };
-
-                    let sn = SaplingNote {
-                        note: note.clone(),
-                        value: note.value().inner(),
-                        payment_address,
-                        nullifier: nf,
-                        block_height,
-                        txid: tx.txid.clone(),
-                        spent: false,
-                        memo: Vec::new(),
-                    };
-
-                    let mut serializable: SerializableSaplingNote = (&sn).into();
-                    serializable.sapling_incremental_witness_hex = witness_hex.clone();
-                    serializable.sapling_witness_tip_height = Some(block_height);
-                    note_index.add_sapling_note(serializable);
-
-                    all_sapling_notes.push(sn.clone());
-
-                    spendable_sapling_notes.push(SpendableSaplingNote {
-                        sapling_note: sn,
-                        extsk: sapling_extsk.clone(),
-                        derivation_path: format!("m/32'/133'/0'/0/{}", out_idx),
-                        sapling_incremental_witness_hex: witness_hex,
-                        sapling_witness_tip_height: Some(block_height),
                     });
                 }
             }
@@ -820,37 +612,16 @@ impl NoteScanner {
                         .map(|a| !a.is_empty())
                         .unwrap_or(false);
 
-                    let has_sapling = tx
-                        .get("sapling")
-                        .and_then(|s| s.get("outputs"))
-                        .and_then(|a| a.as_array())
-                        .map(|a| !a.is_empty())
-                        .unwrap_or(false);
-
-                    if has_orchard || has_sapling {
+                    if has_orchard {
                         let raw_hex = tx.get("hex").and_then(|v| v.as_str()).unwrap_or("");
 
-                        let orchard_actions = if has_orchard {
-                            let orchard_json = tx.get("orchard").ok_or_else(|| {
-                                NozyError::InvalidOperation(
-                                    "No orchard data in transaction".to_string(),
-                                )
-                            })?;
-                            Self::parse_orchard_actions_from_json_static(orchard_json)?
-                        } else {
-                            Vec::new()
-                        };
-
-                        let sapling_outputs = if has_sapling {
-                            let sapling_json = tx.get("sapling").ok_or_else(|| {
-                                NozyError::InvalidOperation(
-                                    "No sapling data in transaction".to_string(),
-                                )
-                            })?;
-                            Self::parse_sapling_outputs_from_json_static(sapling_json)?
-                        } else {
-                            Vec::new()
-                        };
+                        let orchard_json = tx.get("orchard").ok_or_else(|| {
+                            NozyError::InvalidOperation(
+                                "No orchard data in transaction".to_string(),
+                            )
+                        })?;
+                        let orchard_actions =
+                            Self::parse_orchard_actions_from_json_static(orchard_json)?;
 
                         let parsed_tx = ParsedTransaction {
                             txid: txid.to_string(),
@@ -858,7 +629,6 @@ impl NoteScanner {
                             index: i as u32,
                             raw_data: hex::decode(raw_hex).unwrap_or_default(),
                             orchard_actions,
-                            sapling_outputs,
                         };
 
                         transactions.push(parsed_tx);
@@ -992,57 +762,6 @@ impl NoteScanner {
 
         Ok(actions)
     }
-
-    fn parse_sapling_outputs_from_json_static(
-        sapling_json: &serde_json::Value,
-    ) -> NozyResult<Vec<SaplingOutputData>> {
-        let mut out = Vec::new();
-        let Some(outputs_array) = sapling_json.get("outputs").and_then(|a| a.as_array()) else {
-            return Ok(out);
-        };
-        for o in outputs_array {
-            let cmu_hex = o["cmu"].as_str().unwrap_or("");
-            let ephemeral_key_hex = o["ephemeralKey"].as_str().unwrap_or("");
-            let enc_ciphertext_hex = o["encCiphertext"].as_str().unwrap_or("");
-            let cmu = hex::decode(cmu_hex).map_err(|e| {
-                NozyError::InvalidOperation(format!("Failed to decode Sapling cmu hex: {}", e))
-            })?;
-            let ephemeral_key = hex::decode(ephemeral_key_hex).map_err(|e| {
-                NozyError::InvalidOperation(format!(
-                    "Failed to decode Sapling ephemeralKey hex: {}",
-                    e
-                ))
-            })?;
-            let enc_ciphertext = hex::decode(enc_ciphertext_hex).map_err(|e| {
-                NozyError::InvalidOperation(format!(
-                    "Failed to decode Sapling encCiphertext hex: {}",
-                    e
-                ))
-            })?;
-            if cmu.len() != 32 || ephemeral_key.len() != 32 || enc_ciphertext.len() < 52 {
-                continue;
-            }
-            let mut cmu_a = [0u8; 32];
-            let mut epk = [0u8; 32];
-            let mut enc_compact = [0u8; 52];
-            cmu_a.copy_from_slice(&cmu);
-            epk.copy_from_slice(&ephemeral_key);
-            enc_compact.copy_from_slice(&enc_ciphertext[..52]);
-            out.push(SaplingOutputData {
-                cmu: cmu_a,
-                ephemeral_key: epk,
-                enc_compact,
-            });
-        }
-        Ok(out)
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SaplingOutputData {
-    pub cmu: [u8; 32],
-    pub ephemeral_key: [u8; 32],
-    pub enc_compact: [u8; 52],
 }
 
 #[derive(Debug, Clone)]
@@ -1068,7 +787,7 @@ pub async fn scan_real_notes(
     );
 
     let mut scanner = NoteScanner::new(wallet.clone(), zebra_client.clone());
-    let (_, spendable_notes, _) = scanner
+    let (_, spendable_notes) = scanner
         .scan_notes(Some(start_height), Some(end_height))
         .await?;
 

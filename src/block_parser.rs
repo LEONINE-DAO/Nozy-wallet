@@ -16,7 +16,6 @@ pub struct ParsedTransaction {
     pub index: u32,
     pub raw_data: Vec<u8>,
     pub orchard_actions: Vec<crate::notes::OrchardActionData>,
-    pub sapling_outputs: Vec<crate::notes::SaplingOutputData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -37,26 +36,6 @@ pub struct OrchardAction {
 pub enum ActionType {
     Spend,
     Output,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SaplingSpend {
-    pub cv: String,
-    pub anchor: String,
-    pub nullifier: String,
-    pub rk: String,
-    pub zkproof: String,
-    pub spend_auth_sig: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SaplingOutput {
-    pub cv: String,
-    pub cmu: String,
-    pub ephemeral_key: String,
-    pub enc_ciphertext: String,
-    pub out_ciphertext: String,
-    pub zkproof: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -132,7 +111,6 @@ impl BlockParser {
             index: 0,
             raw_data,
             orchard_actions: Vec::new(),
-            sapling_outputs: Vec::new(),
         })
     }
 
@@ -176,68 +154,6 @@ impl BlockParser {
             out_ciphertext: action_data["out_ciphertext"]
                 .as_str()
                 .map(|s| s.to_string()),
-        })
-    }
-
-    pub fn parse_sapling_spends(&self, tx_data: &Value) -> Vec<SaplingSpend> {
-        let mut spends = Vec::new();
-
-        if let Some(spends_data) = tx_data["sapling_spends"].as_array() {
-            for spend_data in spends_data {
-                if let Ok(spend) = self.parse_sapling_spend(spend_data) {
-                    spends.push(spend);
-                }
-            }
-        }
-
-        spends
-    }
-
-    pub fn parse_sapling_spend(&self, spend_data: &Value) -> NozyResult<SaplingSpend> {
-        Ok(SaplingSpend {
-            cv: spend_data["cv"].as_str().unwrap_or("").to_string(),
-            anchor: spend_data["anchor"].as_str().unwrap_or("").to_string(),
-            nullifier: spend_data["nullifier"].as_str().unwrap_or("").to_string(),
-            rk: spend_data["rk"].as_str().unwrap_or("").to_string(),
-            zkproof: spend_data["zkproof"].as_str().unwrap_or("").to_string(),
-            spend_auth_sig: spend_data["spend_auth_sig"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-        })
-    }
-
-    pub fn parse_sapling_outputs(&self, tx_data: &Value) -> Vec<SaplingOutput> {
-        let mut outputs = Vec::new();
-
-        if let Some(outputs_data) = tx_data["sapling_outputs"].as_array() {
-            for output_data in outputs_data {
-                if let Ok(output) = self.parse_sapling_output(output_data) {
-                    outputs.push(output);
-                }
-            }
-        }
-
-        outputs
-    }
-
-    pub fn parse_sapling_output(&self, output_data: &Value) -> NozyResult<SaplingOutput> {
-        Ok(SaplingOutput {
-            cv: output_data["cv"].as_str().unwrap_or("").to_string(),
-            cmu: output_data["cmu"].as_str().unwrap_or("").to_string(),
-            ephemeral_key: output_data["ephemeral_key"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            enc_ciphertext: output_data["enc_ciphertext"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            out_ciphertext: output_data["out_ciphertext"]
-                .as_str()
-                .unwrap_or("")
-                .to_string(),
-            zkproof: output_data["zkproof"].as_str().unwrap_or("").to_string(),
         })
     }
 

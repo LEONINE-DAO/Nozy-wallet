@@ -213,7 +213,7 @@ async fn main() -> anyhow::Result<()> {
 
         let config = RustlsConfig::from_pem_file(cert_path, key_path)
             .await
-            .map_err(|e| anyhow::anyhow!("Failed to load TLS configuration: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Failed to load TLS configuration: {e}"))?;
 
         let addr = SocketAddr::from(([0, 0, 0, 0], https_port));
         info!("API server listening on https://0.0.0.0:{}", https_port);
@@ -234,17 +234,15 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(|e| {
                 tracing::error!("Server error: {}", e);
-                anyhow::anyhow!("Server error: {}", e)
+                anyhow::anyhow!("Server error: {e}")
             })?;
     } else {
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{}", http_port))
+        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{http_port}"))
             .await
             .map_err(|e| {
                 tracing::error!("Failed to bind to 0.0.0.0:{}: {}", http_port, e);
                 anyhow::anyhow!(
-                    "Failed to bind to port {}: {}. Is the port already in use?",
-                    http_port,
-                    e
+                    "Failed to bind to port {http_port}: {e}. Is the port already in use?"
                 )
             })?;
         info!("API server listening on http://0.0.0.0:{}", http_port);
@@ -255,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(|e| {
                 tracing::error!("Server error: {}", e);
-                anyhow::anyhow!("Server error: {}", e)
+                anyhow::anyhow!("Server error: {e}")
             })?;
     }
 

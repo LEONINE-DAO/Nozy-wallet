@@ -18,7 +18,7 @@ All of this is enforced by zero-knowledge proofs: the network checks that the tr
 #### How Nozy keeps it that way
 
 - **Shielded-only** — No transparent addresses. You can’t accidentally send or receive in the clear.
-- **Orchard-only** — Only the current shielded pool; no legacy transparent or Sapling-only flows in this wallet.
+- **Orchard-only** — Only the current shielded pool; no legacy transparent-only flows in this wallet.
 - **Your keys, your device** — Decryption and scanning happen on your machine; the server only sees encrypted or public data and signed transactions you choose to broadcast.
 - **No built-in leakage** — No optional “show on explorer” or “share address” that would tie your balance to an identity.
 

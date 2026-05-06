@@ -25,7 +25,7 @@ Agents should **warn the user** if they are about to open a drive-by PR with no 
 
 | Area | Path | Notes |
 |------|------|--------|
-| Core library + CLI | Repo root (`src/`, `Cargo.toml` package `nozy`) | Orchard/Sapling wallet logic, `ZebraClient`, transaction building |
+| Core library + CLI | Repo root (`src/`, `Cargo.toml` package `nozy`) | Orchard-first wallet logic, `ZebraClient`, transaction building |
 | Compact sync / LWD | `zeaking/` | Workspace member; `zeaking::lwd` shared by desktop, api-server, FFI |
 | HTTP API | `api-server/` | Workspace member; localhost companion for extension |
 | Mobile bindings | `zeaking-ffi/` | Workspace member (UniFFI) |
@@ -40,7 +40,7 @@ Root **`[workspace]`** members: `zeaking`, `api-server`, `zeaking-ffi`. Crates u
 ## Zebrad (Zebra) and shielded sends
 
 - **Source of truth:** [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md).
-- Wallet flows must use local witness derivation for Orchard/Sapling proves; use the documented treestate + client-side witness approach and JSON-RPC where required.
+- Wallet flows must use local witness derivation for Orchard proves; use the documented treestate + client-side witness approach and JSON-RPC where required.
 - If suggesting node-side witness lookups, stop and re-read that doc and current `ZebraClient` / witness providers.
 
 ---
@@ -65,7 +65,7 @@ Subprojects (desktop Tauri, `browser-extension/wasm-core`) have their own manife
 
 - **Minimal diffs:** Do not refactor unrelated modules, rename public APIs, or “clean up” files outside the task.
 - **Errors:** Use existing `NozyResult` / `NozyError` patterns; avoid panics in library paths for recoverable failures.
-- **Crypto:** Use **librustzcash / orchard / sapling-crypto** and existing crate patterns; **no** custom ciphers or hand-rolled proofs.
+- **Crypto:** Use **librustzcash / orchard** and existing Zcash crate patterns; **no** custom ciphers or hand-rolled proofs.
 - **Secrets:** Prefer existing patterns (`zeroize`, secure storage); do not log seeds, keys, or raw mnemonics.
 - **Imports and style:** Follow `rustfmt` and existing module layout; see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 

@@ -1,8 +1,6 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::SpendableNote;
 use crate::orchard_tx::{OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider};
-use crate::sapling_notes::SpendableSaplingNote;
-use crate::sapling_tx::{SaplingTransactionBuilder, ZebraJsonRpcSaplingWitnessProvider};
 use crate::zebra_integration::ZebraClient;
 use zcash_address::unified::{Container, Encoding};
 
@@ -35,12 +33,11 @@ impl ZcashTransactionBuilder {
         self
     }
 
-    /// Build a shielded send. Pass Sapling notes when spending Sapling or when the recipient may be Sapling-only.
+    /// Build an Orchard shielded send (Orchard-only wallet).
     pub async fn build_send_transaction(
         &self,
         zebra_client: &ZebraClient,
         spendable_notes: &[SpendableNote],
-        sapling_spendable_notes: &[SpendableSaplingNote],
         recipient_address: &str,
         amount_zatoshis: u64,
         fee_zatoshis: u64,
@@ -58,86 +55,48 @@ impl ZcashTransactionBuilder {
             .items()
             .iter()
             .any(|i| matches!(i, zcash_address::unified::Receiver::Orchard(_)));
-        let has_sapling = decoded
-            .items()
+
+        if !has_orchard {
+            return Err(NozyError::InvalidOperation(
+                "Recipient must include an Orchard receiver (ZIP-316). Sapling-only addresses are not supported."
+                    .to_string(),
+            ));
+        }
+
+        let total_available: u64 = spendable_notes
             .iter()
-            .any(|i| matches!(i, zcash_address::unified::Receiver::Sapling(_)));
+            .filter(|note| !note.orchard_note.spent)
+            .map(|note| note.orchard_note.value)
+            .sum();
 
-        if has_orchard {
-            let total_available: u64 = spendable_notes
-                .iter()
-                .filter(|note| !note.orchard_note.spent)
-                .map(|note| note.orchard_note.value)
-                .sum();
+        let total_needed = amount_zatoshis + fee_zatoshis;
 
-            let total_needed = amount_zatoshis + fee_zatoshis;
-
-            if total_available < total_needed {
-                let amount_zec = amount_zatoshis as f64 / 100_000_000.0;
-                let available_zec = total_available as f64 / 100_000_000.0;
-                return Err(NozyError::InvalidOperation(format!(
-                    "Insufficient Orchard funds: need {:.8} ZEC, have {:.8} ZEC",
-                    amount_zec, available_zec
-                )));
-            }
-
-            let orchard_builder = OrchardTransactionBuilder::new(true);
-            let built = orchard_builder
-                .build_single_spend(
-                    zebra_client,
-                    &ZebraJsonRpcOrchardWitnessProvider,
-                    spendable_notes,
-                    recipient_address,
-                    amount_zatoshis,
-                    fee_zatoshis,
-                    memo,
-                )
-                .await?;
-
-            return Ok(SignedTransaction {
-                raw_transaction: built.raw_transaction,
-                txid: built.txid,
-            });
+        if total_available < total_needed {
+            let amount_zec = amount_zatoshis as f64 / 100_000_000.0;
+            let available_zec = total_available as f64 / 100_000_000.0;
+            return Err(NozyError::InvalidOperation(format!(
+                "Insufficient Orchard funds: need {:.8} ZEC, have {:.8} ZEC",
+                amount_zec, available_zec
+            )));
         }
 
-        if has_sapling {
-            let total_available: u64 = sapling_spendable_notes
-                .iter()
-                .filter(|n| !n.sapling_note.spent)
-                .map(|n| n.sapling_note.value)
-                .sum();
+        let orchard_builder = OrchardTransactionBuilder::new(true);
+        let built = orchard_builder
+            .build_single_spend(
+                zebra_client,
+                &ZebraJsonRpcOrchardWitnessProvider,
+                spendable_notes,
+                recipient_address,
+                amount_zatoshis,
+                fee_zatoshis,
+                memo,
+            )
+            .await?;
 
-            let total_needed = amount_zatoshis + fee_zatoshis;
-
-            if total_available < total_needed {
-                return Err(NozyError::InvalidOperation(format!(
-                    "Insufficient Sapling funds: need {} zatoshis, have {}",
-                    total_needed, total_available
-                )));
-            }
-
-            let sapling_builder = SaplingTransactionBuilder::new();
-            let built = sapling_builder
-                .build_single_spend(
-                    zebra_client,
-                    &ZebraJsonRpcSaplingWitnessProvider,
-                    sapling_spendable_notes,
-                    recipient_address,
-                    amount_zatoshis,
-                    fee_zatoshis,
-                    memo,
-                )
-                .await?;
-
-            return Ok(SignedTransaction {
-                raw_transaction: built.raw_transaction,
-                txid: built.txid,
-            });
-        }
-
-        Err(NozyError::InvalidOperation(
-            "Recipient must include an Orchard or Sapling receiver (ZIP-316).".to_string(),
-        ))
+        Ok(SignedTransaction {
+            raw_transaction: built.raw_transaction,
+            txid: built.txid,
+        })
     }
 
     pub async fn broadcast_transaction(

@@ -24,7 +24,7 @@ Nozy is not for:
 
 - Transparent (t-address) sends or receives
 - Exchanges or services that only support t-addresses
-- Users who need legacy Sapling-only tooling without Orchard
+- Users who need transparent-first or pre-Orchard shielded-only tooling
 
 For those cases, use a wallet that supports transparent or legacy flows. (e.g.; Zashi, Zkool, Zingo)
 

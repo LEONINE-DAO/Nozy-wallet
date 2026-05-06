@@ -95,7 +95,7 @@ To maintain maximum privacy:
 
 NozyWallet uses Zcash's **Orchard** shielded pool, which provides:
 
-- **Better performance** - Faster proofs than Sapling
+- **Better performance** - Faster proofs than earlier shielded pools
 - **Better scalability** - More efficient than previous pools
 - **Future-proof** - Active development and improvements
 - **NU 6.1 support** - Latest protocol features

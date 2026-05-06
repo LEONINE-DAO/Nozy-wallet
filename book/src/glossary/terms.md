@@ -90,7 +90,7 @@ The latest Zcash network upgrade, activated at block 3,146,400 (November 23, 202
 ## O
 
 ### Orchard
-Zcash's newest and most efficient shielded pool. Orchard provides better performance and scalability than previous pools (Sapling, Sprout). NozyWallet uses exclusively Orchard addresses.
+Zcash's newest and most efficient shielded pool. Orchard provides better performance and scalability than earlier shielded designs. NozyWallet uses exclusively Orchard addresses.
 
 ## P
 
@@ -168,7 +168,7 @@ Zcash can be used as a standard unit for pricing and valuing goods, services, an
 ## Privacy-Specific Terms
 
 ### Shielded Pool
-A collection of notes that use the same privacy protocol (Orchard, Sapling, or Sprout). NozyWallet uses the Orchard pool exclusively.
+A collection of notes that use the same privacy protocol within a given shielded pool. NozyWallet uses the Orchard pool exclusively.
 
 ### Note Commitment Tree
 A Merkle tree structure that commits to all notes in a shielded pool. Allows verification without revealing specific notes.

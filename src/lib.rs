@@ -66,14 +66,6 @@ pub mod progress;
 pub mod proving;
 #[cfg(feature = "native")]
 pub mod rpc_test;
-#[cfg(feature = "native")]
-pub mod sapling_notes;
-#[cfg(feature = "native")]
-pub mod sapling_tree_codec;
-#[cfg(feature = "native")]
-pub mod sapling_tx;
-#[cfg(feature = "native")]
-pub mod sapling_witness;
 #[cfg(feature = "secret-network")]
 pub mod secret;
 #[cfg(feature = "native")]
@@ -144,13 +136,6 @@ pub use paths::{
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;
-#[cfg(feature = "native")]
-pub use sapling_notes::{SerializableSaplingNote, SpendableSaplingNote};
-#[cfg(feature = "native")]
-pub use sapling_tx::{
-    SaplingBuiltSpend, SaplingTransactionBuilder, SaplingWitnessProvider,
-    ZebraJsonRpcSaplingWitnessProvider,
-};
 #[cfg(feature = "secret-network")]
 pub use secret::{
     SecretRpcClient, SecretTransactionRecord, SecretTransactionStatus, SecretTransactionStorage,

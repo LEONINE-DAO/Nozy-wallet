@@ -1,4 +1,4 @@
-//! Deserialize Orchard `CommitmentTree` / `IncrementalWitness` from Zebra/zcashd RPC encodings.
+//! Deserialize Orchard `CommitmentTree` / `IncrementalWitness` from Zebra RPC encodings.
 
 use crate::error::{NozyError, NozyResult};
 use core2::io::Cursor;

@@ -13,6 +13,8 @@ export type WalletStatus = {
   unlocked: boolean;
   address: string | null;
   rpcEndpoint: string;
+  /** First block height to scan for Orchard notes for this install (create/restore tip, or user-set). */
+  orchardBirthdayHeight: number | null;
 };
 
 export type TxStateEntry = {
@@ -38,6 +40,24 @@ export type PendingApproval = {
   kind: "sign" | "transaction";
   payload: Record<string, unknown>;
   createdAt: number;
+};
+
+export type WalletScanProgressResult = {
+  status: string;
+  startHeight?: number;
+  endHeight?: number;
+  currentHeight?: number;
+  scannedBlocks?: number;
+  totalBlocks?: number;
+  percent?: number;
+  discoveredNotes?: number;
+  totalBalanceZats?: number;
+  scanError?: string | null;
+  /** Last block-level RPC/WASM error while scanning (for diagnostics). */
+  lastRpcError?: string | null;
+  consecutiveFailures?: number;
+  startedAt?: number;
+  elapsed?: number;
 };
 
 export type MobileSyncDevice = {
@@ -98,10 +118,15 @@ export const extensionApi = {
   walletStatus: () => sendMessage<WalletStatus>({ method: "wallet_status" }),
   walletCreate: (password: string) =>
     sendMessage<{ address: string }>({ method: "wallet_create", params: { password } }),
-  walletRestore: (mnemonic: string, password: string) =>
+  walletRestore: (mnemonic: string, password: string, opts?: { birthdayHeight?: number }) =>
     sendMessage<{ address: string }>({
       method: "wallet_restore",
-      params: { mnemonic, password }
+      params: { mnemonic, password, birthdayHeight: opts?.birthdayHeight }
+    }),
+  walletSetBirthdayHeight: (height: number) =>
+    sendMessage<{ orchardBirthdayHeight: number }>({
+      method: "wallet_set_birthday_height",
+      params: { height }
     }),
   walletUnlock: (password: string) =>
     sendMessage<{ address: string }>({ method: "wallet_unlock", params: { password } }),
@@ -154,27 +179,39 @@ export const extensionApi = {
       method: "wallet_scan_notes",
       params: { startHeight, endHeight }
     }),
-  walletStartScan: (window = 20_000) =>
-    sendMessage<{
+  /**
+   * Start background Orchard scan. Pass a number for backward compat (last N blocks).
+   * Or pass `{ startHeight, endHeight }` for an explicit inclusive range (from RPC tip),
+   * optionally with `endHeight` omitted (defaults to current tip).
+   */
+  walletStartScan: (
+    opts:
+      | number
+      | {
+          window?: number;
+          startHeight?: number;
+          endHeight?: number;
+          useBirthdayRange?: boolean;
+        } = 20_000
+  ) => {
+    const params: Record<string, unknown> =
+      typeof opts === "number"
+        ? { window: opts }
+        : {
+            window: opts.window,
+            startHeight: opts.startHeight,
+            endHeight: opts.endHeight,
+            ...(opts.useBirthdayRange ? { useBirthdayRange: true } : {})
+          };
+    return sendMessage<{
       started: boolean;
       startHeight: number;
       endHeight: number;
       status: string;
-    }>({ method: "wallet_start_scan", params: { window } }),
+    }>({ method: "wallet_start_scan", params });
+  },
   walletScanProgress: () =>
-    sendMessage<{
-      status: string;
-      startHeight?: number;
-      endHeight?: number;
-      currentHeight?: number;
-      scannedBlocks?: number;
-      totalBlocks?: number;
-      percent?: number;
-      discoveredNotes?: number;
-      totalBalanceZats?: number;
-      startedAt?: number;
-      elapsed?: number;
-    }>({ method: "wallet_scan_progress" }),
+    sendMessage<WalletScanProgressResult>({ method: "wallet_scan_progress" }),
   walletStopScan: () =>
     sendMessage<{ status: string }>({ method: "wallet_stop_scan" }),
   rpcSendRawTx: (rawTxHex: string) =>
@@ -276,12 +313,16 @@ export const extensionApi = {
 
 const STORAGE_COMPANION_BASE = "nozy_companion_base_url";
 const STORAGE_LWD_URL = "nozy_lightwalletd_url";
+const DEFAULT_TESTNET_LWD_URL = "https://testnet.zec.rocks:443/";
 
 /** Local Nozy API + optional lightwalletd URL (popup chrome.storage; not sent to sites). */
 export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalletdUrl: string }> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(
-      { [STORAGE_COMPANION_BASE]: "http://127.0.0.1:3000", [STORAGE_LWD_URL]: "" },
+      {
+        [STORAGE_COMPANION_BASE]: "http://127.0.0.1:3000",
+        [STORAGE_LWD_URL]: DEFAULT_TESTNET_LWD_URL
+      },
       (items) => {
         if (chrome.runtime.lastError) {
           reject(new Error(chrome.runtime.lastError.message));

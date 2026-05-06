@@ -2713,7 +2713,6 @@ dependencies = [
  "rayon",
  "reqwest",
  "ripemd 0.1.3",
- "sapling-crypto",
  "secp256k1 0.28.2",
  "serde",
  "serde_json",
@@ -2732,7 +2731,6 @@ dependencies = [
  "zcash_transparent",
  "zeaking",
  "zeroize",
- "zip32",
 ]
 
 [[package]]

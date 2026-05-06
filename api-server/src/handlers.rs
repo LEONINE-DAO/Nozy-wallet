@@ -188,11 +188,11 @@ async fn load_wallet_with_password(
         return Err("No wallet found. Please create or restore a wallet first.".to_string());
     }
 
-    let pwd = password.unwrap_or_else(|| "".to_string());
+    let pwd = password.unwrap_or_default();
     let wallet = storage
         .load_wallet(&pwd)
         .await
-        .map_err(|e| format!("Failed to load wallet: {}. Please check your password.", e))?;
+        .map_err(|e| format!("Failed to load wallet: {e}. Please check your password."))?;
 
     Ok((wallet, storage))
 }
@@ -231,7 +231,7 @@ pub async fn create_wallet(
     let mut wallet = nozy::HDWallet::new().map_err(|e| {
         error_response_with_code(
             StatusCode::INTERNAL_SERVER_ERROR,
-            format!("Failed to create wallet: {}", e),
+            format!("Failed to create wallet: {e}"),
             "WALLET_CREATE_FAILED",
         )
     })?;
@@ -242,7 +242,7 @@ pub async fn create_wallet(
         wallet.set_password(pwd).map_err(|e| {
             error_response_with_code(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to set password: {}", e),
+                format!("Failed to set password: {e}"),
                 "PASSWORD_SET_FAILED",
             )
         })?;
@@ -255,7 +255,7 @@ pub async fn create_wallet(
         .map_err(|e| {
             error_response_with_code(
                 StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to save wallet: {}", e),
+                format!("Failed to save wallet: {e}"),
                 "WALLET_SAVE_FAILED",
             )
         })?;
@@ -441,7 +441,7 @@ pub async fn sync_wallet(
         .scan_notes(effective_start, payload.end_height)
         .await
     {
-        Ok((result, _spendable_notes, _sapling)) => {
+        Ok((result, _spendable_notes)) => {
             use nozy::paths::get_wallet_data_dir;
             use std::fs;
             let notes_dir = get_wallet_data_dir();
@@ -455,10 +455,8 @@ pub async fn sync_wallet(
 
             if let Some(end) = payload.end_height {
                 let _ = update_last_scan_height(end);
-            } else {
-                if let Ok(block_count) = zebra_client.get_block_count().await {
-                    let _ = update_last_scan_height(block_count);
-                }
+            } else if let Ok(block_count) = zebra_client.get_block_count().await {
+                let _ = update_last_scan_height(block_count);
             }
 
             let balance_zec = result.total_balance as f64 / 100_000_000.0;
@@ -467,7 +465,7 @@ pub async fn sync_wallet(
                 success: true,
                 balance_zec,
                 notes_found: result.notes.len(),
-                message: format!("Sync completed. Balance: {:.8} ZEC", balance_zec),
+                message: format!("Sync completed. Balance: {balance_zec:.8} ZEC"),
             }))
         }
         Err(e) => Err((
@@ -529,7 +527,7 @@ pub async fn send_transaction(
         }));
     }
 
-    let (spendable_notes, sapling_spendable) = scan_notes_for_sending(wallet, &zebra_url)
+    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
         .await
         .map_err(|e| {
             (
@@ -560,7 +558,6 @@ pub async fn send_transaction(
         .build_send_transaction(
             &zebra_client,
             &spendable_notes,
-            &sapling_spendable,
             &payload.request.recipient,
             amount_zatoshis,
             fee_zatoshis,
@@ -603,13 +600,13 @@ pub async fn send_transaction(
             Ok(ResponseJson(SendTransactionResponse {
                 success: true,
                 txid: Some(network_txid.clone()),
-                message: format!("Transaction sent successfully! TXID: {}", network_txid),
+                message: format!("Transaction sent successfully! TXID: {network_txid}"),
             }))
         }
         Err(e) => Ok(ResponseJson(SendTransactionResponse {
             success: false,
             txid: Some(transaction.txid.clone()),
-            message: format!("Failed to broadcast transaction: {}", e),
+            message: format!("Failed to broadcast transaction: {e}"),
         })),
     }
 }
@@ -719,8 +716,7 @@ pub async fn test_zebra_connection(
     let client = ZebraClient::new(url.clone());
     match client.get_block_count().await {
         Ok(block_count) => Ok(ResponseJson(format!(
-            "✅ Connected to Zebra node at {}\nBlock height: {}",
-            url, block_count
+            "✅ Connected to Zebra node at {url}\nBlock height: {block_count}"
         ))),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,

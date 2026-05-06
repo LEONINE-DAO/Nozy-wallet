@@ -1,16 +1,28 @@
 import { useEffect, useMemo, useState } from "react";
-import QRCode from "qrcode";
 import {
   extensionApi,
   getCompanionPrefs,
   setCompanionPrefs,
-  type MobileSyncState,
   type PendingApproval,
   type TxStateEntry,
+  type WalletScanProgressResult,
   type WalletStatus
 } from "./lib/extensionApi";
 import { TopNav } from "./components/TopNav";
 import { useUiStore } from "./store/uiStore";
+
+const NETWORK_RPC_PRESETS = {
+  mainnet: "https://zec.rocks:443",
+  testnet: "https://testnet.zec.rocks:443",
+  local18232: "http://127.0.0.1:18232",
+  local8232: "http://127.0.0.1:8232"
+} as const;
+
+const NETWORK_LWD_PRESETS = {
+  mainnet: "https://zec.rocks:443/",
+  testnet: "https://testnet.zec.rocks:443/",
+  local: "http://127.0.0.1:9067"
+} as const;
 
 function WelcomeView({
   onCreated,
@@ -21,6 +33,7 @@ function WelcomeView({
 }) {
   const [password, setPassword] = useState("");
   const [mnemonic, setMnemonic] = useState("");
+  const [restoreBirthday, setRestoreBirthday] = useState("");
   const [mode, setMode] = useState<"create" | "restore">("create");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -33,7 +46,18 @@ function WelcomeView({
         await extensionApi.walletCreate(password);
         onCreated();
       } else {
-        await extensionApi.walletRestore(mnemonic.trim(), password);
+        let restoreOpts: { birthdayHeight: number } | undefined;
+        const rb = restoreBirthday.trim().replace(/,/g, "");
+        if (rb) {
+          const n = Number(rb);
+          if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+            setError("Optional birthday must be a non-negative integer (block height).");
+            setBusy(false);
+            return;
+          }
+          restoreOpts = { birthdayHeight: n };
+        }
+        await extensionApi.walletRestore(mnemonic.trim(), password, restoreOpts);
         onRestored();
       }
     } catch (e) {
@@ -61,12 +85,20 @@ function WelcomeView({
         </button>
       </div>
       {mode === "restore" && (
-        <textarea
-          className="h-24 w-full rounded bg-white/10 p-2 text-sm outline-none"
-          placeholder="Enter 24-word mnemonic"
-          value={mnemonic}
-          onChange={(e) => setMnemonic(e.target.value)}
-        />
+        <div className="space-y-2">
+          <textarea
+            className="h-24 w-full rounded bg-white/10 p-2 text-sm outline-none"
+            placeholder="Enter 24-word mnemonic"
+            value={mnemonic}
+            onChange={(e) => setMnemonic(e.target.value)}
+          />
+          <input
+            className="w-full rounded bg-white/10 p-2 text-[11px] outline-none font-mono"
+            placeholder="Optional: Orchard birthday block (default = current RPC tip if reachable)"
+            value={restoreBirthday}
+            onChange={(e) => setRestoreBirthday(e.target.value)}
+          />
+        </div>
       )}
       <input
         className="w-full rounded bg-white/10 p-2 text-sm outline-none"
@@ -127,38 +159,32 @@ function UnlockView({ onUnlocked }: { onUnlocked: () => void }) {
 function DashboardView({
   status,
   txs,
-  onRetry
+  onRetry,
+  scan
 }: {
   status: WalletStatus | null;
   txs: TxStateEntry[];
   onRetry: (id: string) => Promise<void>;
+  scan: WalletScanProgressResult | null;
 }) {
   const [balanceZats, setBalanceZats] = useState<number | null>(null);
-  const [scanLabel, setScanLabel] = useState("");
+
+  const scanLabel = useMemo(() => {
+    const p = scan;
+    if (!p || p.status === "idle") return "No scan yet — go to Receive tab to start";
+    if (p.status === "scanning") return `Scanning… ${p.percent ?? 0}%`;
+    if (p.status === "done") return `Scanned ${p.scannedBlocks ?? 0} blocks (complete)`;
+    if (p.status === "stopped") return `Scan stopped at ${p.percent ?? 0}%`;
+    if (p.status === "failed") return p.scanError ? `Scan failed — ${p.scanError}` : "Scan failed";
+    return "";
+  }, [scan]);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-    async function poll() {
-      try {
-        const p = await extensionApi.walletScanProgress();
-        if (p.status === "done") {
-          setBalanceZats(p.totalBalanceZats ?? 0);
-          setScanLabel(`Scanned ${p.scannedBlocks} blocks`);
-        } else if (p.status === "scanning") {
-          setBalanceZats(p.totalBalanceZats ?? 0);
-          setScanLabel(`Scanning… ${p.percent}%`);
-        } else if (p.status === "stopped") {
-          setBalanceZats(p.totalBalanceZats ?? 0);
-          setScanLabel(`Scan stopped at ${p.percent}%`);
-        } else {
-          setScanLabel("No scan yet — go to Receive tab to start");
-        }
-      } catch (_) {}
+    if (!scan) return;
+    if (scan.status === "scanning" || scan.status === "done" || scan.status === "stopped") {
+      setBalanceZats(scan.totalBalanceZats ?? 0);
     }
-    poll();
-    timer = setInterval(poll, 2000);
-    return () => { if (timer) clearInterval(timer); };
-  }, []);
+  }, [scan]);
 
   const zec = balanceZats !== null ? (balanceZats / 1e8).toFixed(8) : "—";
 
@@ -379,47 +405,173 @@ function SendView() {
   );
 }
 
-function ReceiveView({ status }: { status: WalletStatus | null }) {
-  const [scanInfo, setScanInfo] = useState<string>("");
-  const [scanStatus, setScanStatus] = useState<string>("idle");
-  const [percent, setPercent] = useState(0);
-  const [progressReady, setProgressReady] = useState(false);
+/** Orchard (NU5) activation — use as scan start when you need “all Orchard” on that network. */
+const NU5_ORCHARD_START_MAINNET = 1_687_104;
+const NU5_ORCHARD_START_TESTNET = 1_842_420;
+
+function ReceiveView({
+  status,
+  scan,
+  onWalletMetaChanged
+}: {
+  status: WalletStatus | null;
+  scan: WalletScanProgressResult | null;
+  onWalletMetaChanged?: () => void;
+}) {
+  const [actionMsg, setActionMsg] = useState<string>("");
+  const [chainTip, setChainTip] = useState<number | null>(null);
+  const [scanStartStr, setScanStartStr] = useState("");
+  const [scanEndStr, setScanEndStr] = useState("");
+  const [birthdayEditStr, setBirthdayEditStr] = useState("");
+
+  const scanning = scan?.status === "scanning";
+  const percent = Math.min(100, Math.max(0, scan?.percent ?? 0));
+
+  const scanInfo = useMemo(() => {
+    if (!scan) return "";
+    const range =
+      typeof scan.startHeight === "number" && typeof scan.endHeight === "number"
+        ? ` (${scan.startHeight.toLocaleString()}–${scan.endHeight.toLocaleString()})`
+        : "";
+    if (scan.status === "scanning") {
+      const elapsed = ((scan.elapsed ?? 0) / 1000).toFixed(0);
+      const warn =
+        typeof scan.lastRpcError === "string" && scan.lastRpcError.trim()
+          ? ` — RPC: ${scan.lastRpcError.slice(0, 120)}${scan.lastRpcError.length > 120 ? "…" : ""}`
+          : "";
+      return `Scanning… ${scan.percent ?? 0}% (${scan.scannedBlocks ?? 0}/${scan.totalBlocks ?? 0} blocks, ${scan.discoveredNotes ?? 0} notes, ${elapsed}s)${range}${warn}`;
+    }
+    if (scan.status === "done") {
+      const elapsed = ((scan.elapsed ?? 0) / 1000).toFixed(1);
+      const zec = ((scan.totalBalanceZats ?? 0) / 1e8).toFixed(8);
+      return `Done in ${elapsed}s — ${scan.scannedBlocks ?? 0} blocks, ${scan.discoveredNotes ?? 0} notes, balance: ${zec} ZEC${range}`;
+    }
+    if (scan.status === "stopped") {
+      return `Scan stopped at ${scan.percent ?? 0}% (${scan.scannedBlocks ?? 0}/${scan.totalBlocks ?? 0} blocks)${range}`;
+    }
+    if (scan.status === "failed") {
+      return scan.scanError ? `Scan failed: ${scan.scanError}` : "Scan failed.";
+    }
+    return "";
+  }, [scan]);
 
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    async function poll() {
-      try {
-        const p = await extensionApi.walletScanProgress();
-        setScanStatus(p.status ?? "idle");
-        setPercent(p.percent ?? 0);
-        if (p.status === "scanning") {
-          const elapsed = ((p.elapsed ?? 0) / 1000).toFixed(0);
-          setScanInfo(
-            `Scanning… ${p.percent}% (${p.scannedBlocks}/${p.totalBlocks} blocks, ${p.discoveredNotes} notes, ${elapsed}s)`
-          );
-        } else if (p.status === "done") {
-          const elapsed = ((p.elapsed ?? 0) / 1000).toFixed(1);
-          const zec = ((p.totalBalanceZats ?? 0) / 1e8).toFixed(8);
-          setScanInfo(
-            `Done in ${elapsed}s — ${p.scannedBlocks} blocks, ${p.discoveredNotes} notes, balance: ${zec} ZEC`
-          );
-        } else if (p.status === "stopped") {
-          setScanInfo(`Scan stopped at ${p.percent}% (${p.scannedBlocks}/${p.totalBlocks} blocks)`);
-        }
-      } catch (_) {
-        /* ignore */
-      } finally {
-        setProgressReady(true);
-      }
+    if (typeof status?.orchardBirthdayHeight === "number" && Number.isFinite(status.orchardBirthdayHeight)) {
+      setBirthdayEditStr(String(status.orchardBirthdayHeight));
+    } else {
+      setBirthdayEditStr("");
     }
+  }, [status?.orchardBirthdayHeight]);
 
-    poll();
-    timer = setInterval(poll, 1500);
-    return () => { if (timer) clearInterval(timer); };
-  }, []);
+  useEffect(() => {
+    if (!status?.unlocked) {
+      setChainTip(null);
+      return;
+    }
+    let cancelled = false;
+    extensionApi
+      .rpcGetBlockCount()
+      .then((n) => {
+        if (cancelled || typeof n !== "number" || !Number.isFinite(n)) return;
+        setChainTip(n);
+        setScanEndStr(String(n));
+        const b = status.orchardBirthdayHeight;
+        if (typeof b === "number" && Number.isFinite(b)) {
+          setScanStartStr(String(Math.min(b, n)));
+        } else {
+          setScanStartStr(String(Math.max(0, n - 20_000)));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.unlocked, status?.orchardBirthdayHeight]);
 
-  const scanning = scanStatus === "scanning";
+  const refreshChainTip = async () => {
+    setActionMsg("");
+    try {
+      const n = await extensionApi.rpcGetBlockCount();
+      if (typeof n !== "number" || !Number.isFinite(n)) throw new Error("Invalid chain tip from RPC");
+      setChainTip(n);
+      setScanEndStr(String(n));
+    } catch (e) {
+      setActionMsg((e as Error).message);
+    }
+  };
+
+  const parseHeight = (s: string, label: string): number => {
+    const t = s.trim().replace(/,/g, "");
+    const n = Number(t);
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      throw new Error(`${label} must be a non-negative integer`);
+    }
+    return n;
+  };
+
+  const formatScanStartedMsg = (
+    startHeight: number,
+    endHeight: number,
+    label: string
+  ): string => {
+    const n = Math.max(1, endHeight - startHeight + 1);
+    return `${label}: heights ${startHeight.toLocaleString()}–${endHeight.toLocaleString()} (${n.toLocaleString()} blocks). Only this inclusive range is scanned.`;
+  };
+
+  const startScanWindow = async (windowBlocks: number) => {
+    setActionMsg("");
+    try {
+      const r = await extensionApi.walletStartScan(windowBlocks);
+      setActionMsg(
+        formatScanStartedMsg(r.startHeight, r.endHeight, `Last ${windowBlocks.toLocaleString()}`)
+      );
+    } catch (e) {
+      setActionMsg((e as Error).message);
+    }
+  };
+
+  const startScanRange = async (startHeight: number, endHeight: number) => {
+    setActionMsg("");
+    try {
+      const r = await extensionApi.walletStartScan({ startHeight, endHeight });
+      setActionMsg(formatScanStartedMsg(r.startHeight, r.endHeight, "Preset range"));
+    } catch (e) {
+      setActionMsg((e as Error).message);
+    }
+  };
+
+  const startScanBirthdayToTip = async () => {
+    setActionMsg("");
+    try {
+      const r = await extensionApi.walletStartScan({ useBirthdayRange: true });
+      setActionMsg(
+        formatScanStartedMsg(r.startHeight, r.endHeight, "Birthday → tip") +
+          " (start from saved creation/birthday height, not from a window preset)."
+      );
+    } catch (e) {
+      setActionMsg((e as Error).message);
+    }
+  };
+
+  const startScanCustomFields = async () => {
+    setActionMsg("");
+    try {
+      let endH: number;
+      if (scanEndStr.trim() === "") {
+        if (chainTip === null) {
+          throw new Error('Set end height or tap "Refresh tip" first.');
+        }
+        endH = chainTip;
+      } else {
+        endH = parseHeight(scanEndStr, "End height");
+      }
+      const startH = parseHeight(scanStartStr, "Start height");
+      const r = await extensionApi.walletStartScan({ startHeight: startH, endHeight: endH });
+      setActionMsg(formatScanStartedMsg(r.startHeight, r.endHeight, "Custom range"));
+    } catch (e) {
+      setActionMsg((e as Error).message);
+    }
+  };
 
   return (
     <div className="space-y-2 p-4 text-sm">
@@ -437,31 +589,177 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
         </div>
       )}
 
-      <div className="flex gap-2 items-center">
-        {!progressReady ? (
+      <p className="text-[10px] leading-snug text-white/45">
+        <span className="text-white/60">Orchard-only</span> scan. Default scan uses your saved{" "}
+        <span className="text-white/60">creation height</span> (chain tip at create/restore, unless you change it) through
+        tip — no blocks before the wallet existed. Restored seed with older funds: lower birthday or use{" "}
+        <span className="text-white/60">NU5 → tip</span> / <span className="text-white/60">Full chain</span>.
+      </p>
+
+      <div className="rounded border border-white/10 bg-white/5 p-2 space-y-2 text-[11px]">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-white/55">
+            Chain tip:{" "}
+            <span className="font-mono text-white/85">{chainTip !== null ? chainTip.toLocaleString() : "—"}</span>
+          </span>
+          <button
+            type="button"
+            className="rounded bg-white/10 px-2 py-0.5 text-[10px] text-white/80"
+            onClick={() => refreshChainTip()}
+          >
+            Refresh tip
+          </button>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-0.5">
+            <span className="text-white/45">Start height</span>
+            <input
+              className="w-full rounded bg-black/30 px-2 py-1 font-mono text-[11px] outline-none"
+              value={scanStartStr}
+              onChange={(e) => setScanStartStr(e.target.value)}
+              inputMode="numeric"
+              disabled={scanning}
+            />
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-white/45">End height</span>
+            <input
+              className="w-full rounded bg-black/30 px-2 py-1 font-mono text-[11px] outline-none"
+              value={scanEndStr}
+              onChange={(e) => setScanEndStr(e.target.value)}
+              inputMode="numeric"
+              disabled={scanning}
+            />
+          </label>
+        </div>
+        <button
+          type="button"
+          disabled={scanning}
+          className="w-full rounded bg-amber-500 py-1.5 text-[12px] font-medium text-black disabled:opacity-40"
+          onClick={() => void startScanBirthdayToTip()}
+        >
+          Start scan (saved birthday → tip)
+        </button>
+        <div className="border-t border-white/10 pt-2 space-y-1">
+          <div className="text-[10px] text-white/45">
+            Saved Orchard birthday (default scan start):{" "}
+            <span className="font-mono text-white/80">
+              {typeof status?.orchardBirthdayHeight === "number"
+                ? status.orchardBirthdayHeight.toLocaleString()
+                : "not set"}
+            </span>
+          </div>
+          <div className="flex gap-1">
+            <input
+              className="min-w-0 flex-1 rounded bg-black/30 px-2 py-1 font-mono text-[11px] outline-none"
+              value={birthdayEditStr}
+              onChange={(e) => setBirthdayEditStr(e.target.value)}
+              placeholder="Block height"
+              disabled={scanning}
+            />
+            <button
+              type="button"
+              className="shrink-0 rounded bg-white/15 px-2 py-1 text-[10px] text-white/85 disabled:opacity-40"
+              disabled={scanning}
+              onClick={async () => {
+                setActionMsg("");
+                try {
+                  const h = parseHeight(birthdayEditStr, "Birthday");
+                  await extensionApi.walletSetBirthdayHeight(h);
+                  onWalletMetaChanged?.();
+                } catch (e) {
+                  setActionMsg((e as Error).message);
+                }
+              }}
+            >
+              Save birthday
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="text-[10px] text-white/40 space-y-0.5">
+        <div>Quick presets (end = current chain tip)</div>
+        <div className="text-white/35 leading-snug">
+          <span className="text-white/50">Last N:</span> scans only block heights{" "}
+          <span className="font-mono text-white/55">tip − N</span> through <span className="font-mono text-white/55">tip</span>{" "}
+          (both inclusive; that is <span className="font-mono text-white/55">N + 1</span> heights when the chain is long
+          enough). Your saved birthday is <span className="text-white/50">not</span> used for these buttons. Nothing
+          outside that interval is scanned.
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 items-center">
+        {!scan ? (
           <span className="text-xs text-white/50 py-1">Checking scan status…</span>
         ) : !scanning ? (
-          <button
-            className="rounded bg-amber-500 px-3 py-1 text-black"
-            onClick={async () => {
-              try {
-                await extensionApi.walletStartScan(20_000);
-                setScanStatus("scanning");
-                setScanInfo("Starting scan…");
-              } catch (e) {
-                setScanInfo((e as Error).message);
-              }
-            }}
-          >
-            Scan Blocks (20k)
-          </button>
+          <>
+            <button
+              type="button"
+              className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white"
+              onClick={() => void startScanBirthdayToTip()}
+            >
+              Birthday → tip
+            </button>
+            <button
+              type="button"
+              className="rounded bg-amber-500 px-2 py-1 text-[11px] text-black"
+              onClick={() => void startScanWindow(20_000)}
+            >
+              Last 20k
+            </button>
+            <button
+              type="button"
+              className="rounded bg-amber-600/90 px-2 py-1 text-[11px] text-black"
+              onClick={() => void startScanWindow(100_000)}
+            >
+              Last 100k
+            </button>
+            <button
+              type="button"
+              className="rounded bg-amber-700/80 px-2 py-1 text-[11px] text-white"
+              onClick={() => void startScanWindow(500_000)}
+            >
+              Last 500k
+            </button>
+            {chainTip !== null && (
+              <>
+                <button
+                  type="button"
+                  className="rounded bg-violet-600/90 px-2 py-1 text-[10px] text-white"
+                  title="Mainnet NU5 / Orchard activation height"
+                  onClick={() =>
+                    void startScanRange(Math.min(NU5_ORCHARD_START_MAINNET, chainTip), chainTip)
+                  }
+                >
+                  NU5 → tip (mainnet)
+                </button>
+                <button
+                  type="button"
+                  className="rounded bg-violet-700/70 px-2 py-1 text-[10px] text-white"
+                  title="Testnet NU5 / Orchard activation height"
+                  onClick={() =>
+                    void startScanRange(Math.min(NU5_ORCHARD_START_TESTNET, chainTip), chainTip)
+                  }
+                >
+                  NU5 → tip (testnet)
+                </button>
+                <button
+                  type="button"
+                  className="rounded border border-amber-500/40 px-2 py-1 text-[10px] text-amber-100"
+                  onClick={() => void startScanRange(0, chainTip)}
+                >
+                  Full chain 0 → tip
+                </button>
+              </>
+            )}
+          </>
         ) : (
           <button
             className="rounded bg-red-600 px-3 py-1 text-white"
             onClick={async () => {
+              setActionMsg("");
               try {
                 await extensionApi.walletStopScan();
-                setScanStatus("stopped");
               } catch (_) {}
             }}
           >
@@ -470,6 +768,7 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
         )}
       </div>
 
+      {actionMsg && <div className="text-xs text-red-300">{actionMsg}</div>}
       {scanInfo && <div className="text-xs text-white/70">{scanInfo}</div>}
     </div>
   );
@@ -477,7 +776,7 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
 
 function CompanionView() {
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:3000");
-  const [lwdUrl, setLwdUrl] = useState("");
+  const [lwdUrl, setLwdUrl] = useState("https://testnet.zec.rocks:443/");
   const [log, setLog] = useState("");
   const [busy, setBusy] = useState(false);
   const [syncStart, setSyncStart] = useState("0");
@@ -531,12 +830,61 @@ function CompanionView() {
         </div>
         <div>
           <div className="mb-1 text-[11px] text-white/60">lightwalletd gRPC (optional override)</div>
+          <div className="mb-2">
+            <div className="mb-1 text-[11px] text-white/60">Network preset</div>
+            <select
+              className="w-full rounded bg-white/10 p-2 text-xs outline-none"
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "mainnet") setLwdUrl(NETWORK_LWD_PRESETS.mainnet);
+                else if (v === "testnet") setLwdUrl(NETWORK_LWD_PRESETS.testnet);
+                else if (v === "local") setLwdUrl(NETWORK_LWD_PRESETS.local);
+              }}
+              value={
+                lwdUrl === NETWORK_LWD_PRESETS.mainnet
+                  ? "mainnet"
+                  : lwdUrl === NETWORK_LWD_PRESETS.testnet
+                    ? "testnet"
+                    : lwdUrl === NETWORK_LWD_PRESETS.local
+                      ? "local"
+                      : "custom"
+              }
+            >
+              <option value="testnet">Testnet</option>
+              <option value="mainnet">Mainnet</option>
+              <option value="local">Local</option>
+              <option value="custom">Custom</option>
+            </select>
+          </div>
           <input
             className="w-full rounded bg-white/10 p-2 text-xs outline-none font-mono"
             value={lwdUrl}
             onChange={(e) => setLwdUrl(e.target.value)}
-            placeholder="http://127.0.0.1:9067"
+            placeholder="https://testnet.zec.rocks:443/"
           />
+          <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+            <button
+              type="button"
+              className="rounded bg-white/10 px-2 py-1"
+              onClick={() => setLwdUrl("https://testnet.zec.rocks:443/")}
+            >
+              Testnet zec.rocks
+            </button>
+            <button
+              type="button"
+              className="rounded bg-white/10 px-2 py-1"
+              onClick={() => setLwdUrl("https://zec.rocks:443/")}
+            >
+              Mainnet zec.rocks
+            </button>
+            <button
+              type="button"
+              className="rounded bg-white/10 px-2 py-1"
+              onClick={() => setLwdUrl("http://127.0.0.1:9067")}
+            >
+              Local 9067
+            </button>
+          </div>
         </div>
         <button
           type="button"
@@ -680,45 +1028,68 @@ function SettingsView({
 }) {
   const [value, setValue] = useState(endpoint);
   const [msg, setMsg] = useState<string | null>(null);
-  const [syncState, setSyncState] = useState<MobileSyncState | null>(null);
-  const [syncMsg, setSyncMsg] = useState<string | null>(null);
-  const [schemaMsg, setSchemaMsg] = useState<string | null>(null);
   const [autoLockMin, setAutoLockMin] = useState("15");
-  const [pairingSignature, setPairingSignature] = useState("");
-  const [pairingQrDataUrl, setPairingQrDataUrl] = useState<string | null>(null);
-  const [mobileResponsePayload, setMobileResponsePayload] = useState("");
-  const [deviceDraftNames, setDeviceDraftNames] = useState<Record<string, string>>({});
-
-  const refreshSyncState = async () => {
-    const state = await extensionApi.mobileSyncGetState();
-    setSyncState(state);
-  };
-
-  useEffect(() => {
-    refreshSyncState().catch(() => undefined);
-  }, []);
-
-  useEffect(() => {
-    const payload = syncState?.pairingPayload || "";
-    if (!payload) {
-      setPairingQrDataUrl(null);
-      return;
-    }
-    QRCode.toDataURL(payload, { margin: 1, width: 180 })
-      .then((dataUrl) => setPairingQrDataUrl(dataUrl))
-      .catch(() => setPairingQrDataUrl(null));
-  }, [syncState?.pairingPayload]);
 
   return (
     <div className="space-y-3 p-4 text-sm">
       <h2 className="text-base font-semibold">Settings</h2>
       <div>
         <div className="mb-1 text-white/70">RPC endpoint</div>
+        <div className="mb-2">
+          <div className="mb-1 text-[11px] text-white/60">Network preset</div>
+          <select
+            className="w-full rounded bg-white/10 p-2 text-xs outline-none"
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === "mainnet") setValue(NETWORK_RPC_PRESETS.mainnet);
+              else if (v === "testnet") setValue(NETWORK_RPC_PRESETS.testnet);
+              else if (v === "local18232") setValue(NETWORK_RPC_PRESETS.local18232);
+              else if (v === "local8232") setValue(NETWORK_RPC_PRESETS.local8232);
+            }}
+            value={
+              value === NETWORK_RPC_PRESETS.mainnet
+                ? "mainnet"
+                : value === NETWORK_RPC_PRESETS.testnet
+                  ? "testnet"
+                  : value === NETWORK_RPC_PRESETS.local18232
+                    ? "local18232"
+                    : value === NETWORK_RPC_PRESETS.local8232
+                      ? "local8232"
+                      : "custom"
+            }
+          >
+            <option value="mainnet">Mainnet</option>
+            <option value="testnet">Testnet</option>
+            <option value="local18232">Local 18232</option>
+            <option value="local8232">Local 8232</option>
+            <option value="custom">Custom</option>
+          </select>
+        </div>
         <input
           className="w-full rounded bg-white/10 p-2 outline-none"
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
+        <div className="mt-2 flex flex-wrap gap-2 text-xs">
+          <button
+            className="rounded bg-white/10 px-2 py-1"
+            onClick={() => setValue("http://127.0.0.1:18232")}
+          >
+            Local 18232
+          </button>
+          <button
+            className="rounded bg-white/10 px-2 py-1"
+            onClick={() => setValue("http://127.0.0.1:8232")}
+          >
+            Local 8232
+          </button>
+          <button
+            className="rounded bg-white/10 px-2 py-1"
+            onClick={() => setValue("https://zec.rocks:443")}
+          >
+            zec.rocks:443
+          </button>
+        </div>
         <button
           className="mt-2 rounded bg-amber-500 px-3 py-1 text-black"
           onClick={async () => {
@@ -729,6 +1100,9 @@ function SettingsView({
           Save
         </button>
         {msg && <div className="mt-1 text-xs text-green-300">{msg}</div>}
+        <div className="mt-1 text-[11px] text-white/60">
+          Tip: `zec.rocks443` is accepted and auto-normalized to `https://zec.rocks:443`.
+        </div>
       </div>
       <button className="rounded bg-white/10 px-3 py-1" onClick={onLock}>
         Lock wallet
@@ -752,215 +1126,6 @@ function SettingsView({
             Save
           </button>
         </div>
-      </div>
-
-      <div className="rounded border border-white/10 bg-white/5 p-3">
-        <div className="mb-2 text-white/70">Mobile Sync (Protocol v1 seed-on-device)</div>
-        <div className="flex flex-wrap gap-2">
-          <button
-            className="rounded bg-amber-500 px-3 py-1 text-black"
-            onClick={async () => {
-              try {
-                const pairing = await extensionApi.mobileSyncInitPairing();
-                setSyncMsg(
-                  `Pairing session ${pairing.sessionId.slice(0, 10)}... code ${pairing.verifyCode}`
-                );
-                await refreshSyncState();
-              } catch (e) {
-                setSyncMsg((e as Error).message);
-              }
-            }}
-          >
-            Start Pairing
-          </button>
-          <button
-            className="rounded bg-white/10 px-3 py-1"
-            onClick={async () => {
-              try {
-                const state = await extensionApi.mobileSyncGetState();
-                if (!state.activePairing) {
-                  setSyncMsg("No active pairing session.");
-                  return;
-                }
-                await extensionApi.mobileSyncConfirmPairing(
-                  state.activePairing.sessionId,
-                  "Nozy Mobile",
-                  "ios-android",
-                  pairingSignature.trim()
-                );
-                setSyncMsg("Pairing confirmed (signature verified).");
-                setPairingSignature("");
-                await refreshSyncState();
-              } catch (e) {
-                setSyncMsg((e as Error).message);
-              }
-            }}
-          >
-            Confirm Pairing (Signed)
-          </button>
-          <button
-            className="rounded bg-white/10 px-3 py-1"
-            onClick={async () => {
-              try {
-                const schema = await extensionApi.mobileSyncGetPairingSchema();
-                setSchemaMsg(JSON.stringify(schema, null, 2));
-              } catch (e) {
-                setSchemaMsg((e as Error).message);
-              }
-            }}
-          >
-            Show Pairing Schema
-          </button>
-        </div>
-
-        {syncState?.activePairing && (
-          <div className="mt-2 break-all text-xs text-white/80">
-            Active session: {syncState.activePairing.sessionId} (code{" "}
-            {syncState.activePairing.verifyCode})
-          </div>
-        )}
-        <div className="mt-2">
-          <div className="mb-1 text-xs text-white/70">Challenge signature (from mobile)</div>
-          <input
-            className="w-full rounded bg-white/10 p-2 text-xs outline-none"
-            value={pairingSignature}
-            onChange={(e) => setPairingSignature(e.target.value)}
-            placeholder="Paste mobile signature for active challenge"
-          />
-        </div>
-
-        {syncState?.pairingPayload && (
-          <div className="mt-2">
-            <div className="mb-1 text-xs text-white/70">Scan-ready pairing payload</div>
-            <textarea
-              readOnly
-              className="h-20 w-full rounded bg-black/20 p-2 text-xs outline-none"
-              value={syncState.pairingPayload}
-            />
-            <button
-              className="mt-1 rounded bg-white/10 px-2 py-1 text-xs"
-              onClick={async () => {
-                await navigator.clipboard.writeText(syncState.pairingPayload || "");
-                setSyncMsg("Pairing payload copied.");
-              }}
-            >
-              Copy Payload
-            </button>
-            {pairingQrDataUrl && (
-              <div className="mt-2">
-                <div className="mb-1 text-xs text-white/70">QR code (mobile scans this)</div>
-                <img
-                  src={pairingQrDataUrl}
-                  alt="Pairing QR"
-                  className="h-44 w-44 rounded border border-white/10 bg-white p-1"
-                />
-              </div>
-            )}
-          </div>
-        )}
-
-        <div className="mt-2">
-          <div className="mb-1 text-xs text-white/70">Mobile response payload (QR scan result)</div>
-          <textarea
-            className="h-16 w-full rounded bg-black/20 p-2 text-xs outline-none"
-            value={mobileResponsePayload}
-            onChange={(e) => setMobileResponsePayload(e.target.value)}
-            placeholder='{"sessionId":"...","challengeSignature":"...","deviceName":"Nozy Mobile","platform":"ios"}'
-          />
-          <button
-            className="mt-1 rounded bg-amber-500 px-2 py-1 text-xs text-black"
-            onClick={async () => {
-              try {
-                const parsed = JSON.parse(mobileResponsePayload || "{}") as Record<string, unknown>;
-                const sessionId = String(parsed.sessionId ?? "");
-                const challengeSignature = String(parsed.challengeSignature ?? "");
-                const deviceName = String(parsed.deviceName ?? "Nozy Mobile");
-                const platform = String(parsed.platform ?? "unknown");
-                await extensionApi.mobileSyncConfirmPairing(
-                  sessionId,
-                  deviceName,
-                  platform,
-                  challengeSignature
-                );
-                setSyncMsg("Pairing confirmed from mobile response payload.");
-                setMobileResponsePayload("");
-                setPairingSignature("");
-                await refreshSyncState();
-              } catch (e) {
-                setSyncMsg((e as Error).message);
-              }
-            }}
-          >
-            Confirm From Response Payload
-          </button>
-        </div>
-
-        <div className="mt-2 space-y-1">
-          {(syncState?.pairedDevices || []).map((d) => (
-            <div key={d.id} className="rounded bg-black/20 px-2 py-2">
-              <div className="mb-2 flex items-center justify-between">
-                <div className="text-xs">
-                  {d.name} ({d.platform})
-                  <span
-                    className={`ml-2 rounded px-1.5 py-0.5 text-[10px] ${
-                      d.status === "revoked"
-                        ? "bg-red-500/20 text-red-200"
-                        : "bg-green-500/20 text-green-200"
-                    }`}
-                  >
-                    {d.status}
-                  </span>
-                </div>
-                <div className="text-[10px] text-white/50">
-                  trust: {d.trustLevel || "signed-challenge-v1"}
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <input
-                  className="flex-1 rounded bg-white/10 p-1.5 text-xs outline-none"
-                  value={deviceDraftNames[d.id] ?? d.name}
-                  onChange={(e) =>
-                    setDeviceDraftNames((prev) => ({ ...prev, [d.id]: e.target.value }))
-                  }
-                  placeholder="Device name"
-                />
-                <button
-                  className="rounded bg-white/10 px-2 py-1 text-xs"
-                  onClick={async () => {
-                    const name = (deviceDraftNames[d.id] ?? d.name).trim();
-                    await extensionApi.mobileSyncRenameDevice(d.id, name);
-                    setSyncMsg("Device name updated.");
-                    await refreshSyncState();
-                  }}
-                >
-                  Rename
-                </button>
-                <button
-                  className="rounded bg-red-500/20 px-2 py-1 text-xs text-red-200"
-                  onClick={async () => {
-                    await extensionApi.mobileSyncRevokeDevice(d.id);
-                    setSyncMsg("Device revoked.");
-                    await refreshSyncState();
-                  }}
-                >
-                  Revoke
-                </button>
-              </div>
-              <div className="mt-1 text-[10px] text-white/50">
-                paired {new Date(d.pairedAt).toLocaleString()}
-                {d.renamedAt ? ` | renamed ${new Date(d.renamedAt).toLocaleString()}` : ""}
-                {d.revokedAt ? ` | revoked ${new Date(d.revokedAt).toLocaleString()}` : ""}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {syncMsg && <div className="mt-2 text-xs text-white/70">{syncMsg}</div>}
-        {schemaMsg && (
-          <pre className="mt-2 max-h-40 overflow-auto rounded bg-black/20 p-2 text-[10px] text-white/70">
-            {schemaMsg}
-          </pre>
-        )}
       </div>
     </div>
   );
@@ -1033,6 +1198,8 @@ export function App() {
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   const [txs, setTxs] = useState<TxStateEntry[]>([]);
   const [bootDebug, setBootDebug] = useState<string | null>(null);
+  /** Orchard block scan progress; polled app-wide so it keeps updating when you leave Receive. */
+  const [scanProgress, setScanProgress] = useState<WalletScanProgressResult | null>(null);
   const endpoint = useMemo(() => status?.rpcEndpoint || "http://127.0.0.1:8232", [status]);
 
   const refresh = async () => {
@@ -1071,6 +1238,28 @@ export function App() {
     return () => clearInterval(id);
   }, []);
 
+  useEffect(() => {
+    if (!status?.unlocked) {
+      setScanProgress(null);
+      return;
+    }
+    let cancelled = false;
+    async function tick() {
+      try {
+        const p = await extensionApi.walletScanProgress();
+        if (!cancelled) setScanProgress(p);
+      } catch {
+        if (!cancelled) setScanProgress({ status: "idle" });
+      }
+    }
+    tick();
+    const id = setInterval(tick, 2000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [status?.unlocked]);
+
   return (
     <div className="h-full overflow-auto">
       {bootDebug && (
@@ -1099,6 +1288,23 @@ export function App() {
         />
       )}
 
+      {status?.unlocked && scanProgress?.status === "scanning" && (
+        <div className="mx-3 mt-2 rounded border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          <span className="font-medium">Orchard scan</span>{" "}
+          {Math.min(100, Math.max(0, Number(scanProgress.percent ?? 0))).toFixed(2)}% ·{" "}
+          {(scanProgress.scannedBlocks ?? 0).toLocaleString()}/{(scanProgress.totalBlocks ?? 0).toLocaleString()} blocks ·{" "}
+          {scanProgress.discoveredNotes ?? 0} notes
+          <span className="mt-1 block text-[10px] leading-snug text-white/45">
+            Runs in the background while the wallet stays unlocked — switch tabs freely.
+          </span>
+        </div>
+      )}
+      {status?.unlocked && scanProgress?.status === "failed" && scanProgress.scanError && (
+        <div className="mx-3 mt-2 rounded border border-red-400/40 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">
+          Scan failed: {scanProgress.scanError}
+        </div>
+      )}
+
       {view === "welcome" && (
         <WelcomeView
           onCreated={() => refresh().catch(console.error)}
@@ -1110,6 +1316,7 @@ export function App() {
         <DashboardView
           status={status}
           txs={txs}
+          scan={scanProgress}
           onRetry={async (id) => {
             await extensionApi.walletRetryBroadcast(id);
             await refresh();
@@ -1117,7 +1324,9 @@ export function App() {
         />
       )}
       {view === "send" && <SendView />}
-      {view === "receive" && <ReceiveView status={status} />}
+      {view === "receive" && (
+        <ReceiveView status={status} scan={scanProgress} onWalletMetaChanged={() => void refresh()} />
+      )}
       {view === "companion" && <CompanionView />}
       {view === "settings" && (
         <SettingsView

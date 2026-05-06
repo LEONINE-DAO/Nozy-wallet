@@ -86,7 +86,7 @@ pub enum Commands {
         start_height: Option<u32>,
         #[arg(
             long,
-            help = "Ending block height for scanning (default: current block height)"
+            help = "Ending block height for scanning (default: if --start-height is set, chain tip; otherwise min(tip, start + 1000) for incremental sync)"
         )]
         end_height: Option<u32>,
         #[arg(
@@ -566,10 +566,21 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             let chain_tip = zebra_client.get_block_count().await?;
             let requested_end = if let Some(end) = end_height {
                 end.max(scan_start)
+            } else if start_height.is_some() {
+                // Explicit start without end: scan through tip (expected for "rescan this range").
+                chain_tip
             } else {
+                // Incremental default: bounded chunk when only last_scan / default start drives the window.
                 scan_start.saturating_add(1_000)
             };
             let scan_end = requested_end.min(chain_tip);
+
+            if scan_start > scan_end {
+                return Err(NozyError::InvalidOperation(format!(
+                    "start height ({}) is above the effective end height ({}, chain tip {}).",
+                    scan_start, scan_end, chain_tip
+                )));
+            }
 
             if let Some(start) = effective_start {
                 if let Some(last) = config.last_scan_height {
@@ -603,7 +614,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 .scan_notes(Some(scan_start), Some(scan_end))
                 .await
             {
-                Ok((result, _spendable_notes, _sapling)) => {
+                Ok((result, _spendable_notes)) => {
                     if let Some(ref progress_bar) = pb {
                         progress_bar.finish_with_message("✅ Scan complete");
                     }
@@ -719,17 +730,15 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 Ok((_, ua)) => {
                     use zcash_address::unified::Container;
                     let mut has_orchard = false;
-                    let mut has_sapling = false;
                     for item in ua.items() {
-                        match item {
-                            zcash_address::unified::Receiver::Orchard(_) => has_orchard = true,
-                            zcash_address::unified::Receiver::Sapling(_) => has_sapling = true,
-                            _ => {}
+                        if matches!(item, zcash_address::unified::Receiver::Orchard(_)) {
+                            has_orchard = true;
                         }
                     }
-                    if !has_orchard && !has_sapling {
+                    if !has_orchard {
                         return Err(NozyError::AddressParsing(
-                            "Recipient must include an Orchard or Sapling receiver".to_string(),
+                            "Recipient must include an Orchard receiver (Orchard-only wallet)."
+                                .to_string(),
                         ));
                     }
                 }
@@ -786,7 +795,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!("  Proving:   ✅ Ready (Halo 2)");
 
             println!("\n🔍 Scanning for spendable notes...");
-            let (spendable_notes, sapling_spendable) = if use_plain_terminal_output() {
+            let spendable_notes = if use_plain_terminal_output() {
                 println!("   Plain terminal mode enabled (no spinner/progress UI).");
                 scan_notes_for_sending(wallet, &config.zebra_url).await?
             } else {
@@ -798,7 +807,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 res
             };
 
-            if spendable_notes.is_empty() && sapling_spendable.is_empty() {
+            if spendable_notes.is_empty() {
                 return Err(NozyError::InvalidOperation(
                     "No spendable notes found. Run 'sync' to scan the blockchain first."
                         .to_string(),
@@ -809,14 +818,12 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 .iter()
                 .map(|note| note.orchard_note.note.value().inner())
                 .sum();
-            let sapling_total: u64 = sapling_spendable.iter().map(|n| n.sapling_note.value).sum();
-            let total_available = orchard_total + sapling_total;
+            let total_available = orchard_total;
 
             println!(
-                "  Shielded ZEC: {:.8} ZEC (Orchard: {} notes, Sapling: {} notes)",
+                "  Shielded ZEC: {:.8} ZEC (Orchard: {} notes)",
                 total_available as f64 / 100_000_000.0,
                 spendable_notes.len(),
-                sapling_spendable.len()
             );
 
             if total_available < total_amount {
@@ -937,7 +944,6 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             match build_and_broadcast_transaction(
                 &zebra_client,
                 &spendable_notes,
-                &sapling_spendable,
                 &actual_recipient,
                 amount_zatoshis,
                 Some(fee_zatoshis),

@@ -52,7 +52,7 @@ pub struct OrchardDecryptionResult {
     pub nullifier: [u8; 32],
     pub block_height: u32,
     pub txid: String,
-    /// Hex-encoded `IncrementalWitness` (Orchard), for Zebrad-safe spends without zcashd witness RPCs.
+    /// Hex-encoded `IncrementalWitness` (Orchard), for local-witness spends.
     #[serde(default)]
     pub orchard_incremental_witness_hex: Option<String>,
     #[serde(default)]
@@ -178,58 +178,12 @@ impl HDWallet {
         orchard_address: OrchardAddress,
         network: NetworkType,
     ) -> NozyResult<String> {
-        #[cfg(feature = "native")]
-        {
-            self.create_unified_address_orchard_sapling(orchard_address, network)
-        }
-        #[cfg(not(feature = "native"))]
-        {
-            let orchard_raw = orchard_address.to_raw_address_bytes();
-            let orchard_receiver = Receiver::Orchard(orchard_raw);
-            let ua = UnifiedAddress::try_from_items(vec![orchard_receiver]).map_err(|e| {
-                NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
-            })?;
-            Ok(ua.encode(&network))
-        }
-    }
-
-    /// Orchard + Sapling receivers (ZIP-316), for interoperability with wallets that only expose Sapling.
-    #[cfg(feature = "native")]
-    fn create_unified_address_orchard_sapling(
-        &self,
-        orchard_address: OrchardAddress,
-        network: NetworkType,
-    ) -> NozyResult<String> {
-        use sapling::zip32::ExtendedSpendingKey;
-        use zip32::ChildIndex;
-
-        let seed_bytes = self.mnemonic.to_seed("").to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes);
-
-        let account_id = AccountId::try_from(0)
-            .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
-
-        let master = ExtendedSpendingKey::master(secure_seed.as_bytes());
-        let account_u32: u32 = account_id.into();
-        let extsk = ExtendedSpendingKey::from_path(
-            &master,
-            &[
-                ChildIndex::hardened(32),
-                ChildIndex::hardened(133),
-                ChildIndex::hardened(account_u32),
-            ],
-        );
-
-        let (_, sapling_payment_address) = extsk.default_address();
-
+        // Orchard-only unified addresses (ZIP-316 single receiver).
         let orchard_raw = orchard_address.to_raw_address_bytes();
         let orchard_receiver = Receiver::Orchard(orchard_raw);
-        let sapling_receiver = Receiver::Sapling(sapling_payment_address.to_bytes());
-
-        let ua = UnifiedAddress::try_from_items(vec![orchard_receiver, sapling_receiver]).map_err(
-            |e| NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e)),
-        )?;
-
+        let ua = UnifiedAddress::try_from_items(vec![orchard_receiver]).map_err(|e| {
+            NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
+        })?;
         Ok(ua.encode(&network))
     }
 

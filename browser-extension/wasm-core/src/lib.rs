@@ -50,7 +50,7 @@ struct OrchardWitnessAuthPath {
     auth_path: Vec<String>,
 }
 
-/// Zebrad-safe incremental witness, or zcashd-style auth path witness.
+/// Parse witness inputs used by the extension spend flow.
 fn parse_orchard_witness_for_spend(
     witness_json: &str,
 ) -> Result<(orchard::tree::Anchor, orchard::tree::MerklePath), JsError> {

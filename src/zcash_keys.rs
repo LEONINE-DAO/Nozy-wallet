@@ -14,7 +14,6 @@ pub struct ZcashKeyDerivation {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ZcashAddressType {
     Orchard,
-    Sapling,
     Transparent,
     Unified,
 }
@@ -59,7 +58,6 @@ impl ZcashKeyDerivation {
     pub fn path_to_string(&self, path: &ZcashDerivationPath) -> String {
         match path.address_type {
             ZcashAddressType::Orchard => format!("m/32/133'/{}/{}", path.account, path.diversifier_index),
-            ZcashAddressType::Sapling => format!("m/32/133'/{}/{}", path.account, path.diversifier_index),
             ZcashAddressType::Transparent => format!("m/44/133'/{}/0/{}", path.account, path.diversifier_index),
             ZcashAddressType::Unified => format!("m/32/133'/{}/{}", path.account, path.diversifier_index),
         }
@@ -77,10 +75,6 @@ impl ZcashKeyDerivation {
         match path.address_type {
             ZcashAddressType::Orchard => {
                 derivation_path.push(bip32::ChildNumber::new(0, true)?);
-                derivation_path.push(bip32::ChildNumber::new(path.diversifier_index, false)?);
-            },
-            ZcashAddressType::Sapling => {
-                derivation_path.push(bip32::ChildNumber::new(1, true)?);
                 derivation_path.push(bip32::ChildNumber::new(path.diversifier_index, false)?);
             },
             ZcashAddressType::Transparent => {
@@ -116,7 +110,6 @@ impl ZcashKeyDerivation {
     pub fn generate_address_from_key(&self, key: &XPrv, address_type: ZcashAddressType) -> NozyResult<String> {
         match address_type {
             ZcashAddressType::Orchard => self.generate_orchard_address(key),
-            ZcashAddressType::Sapling => self.generate_sapling_address(key),
             ZcashAddressType::Transparent => self.generate_transparent_address(key),
             ZcashAddressType::Unified => self.generate_unified_address(key),
         }
@@ -126,12 +119,6 @@ impl ZcashKeyDerivation {
         let public_key = key.public_key();
         let address_bytes = Sha256::digest(public_key.to_bytes());
         Ok(format!("u1{}", bs58::encode(&address_bytes[..20]).into_string()))
-    }
-
-    pub fn generate_sapling_address(&self, key: &XPrv) -> NozyResult<String> {
-        let public_key = key.public_key();
-        let address_bytes = Sha256::digest(public_key.to_bytes());
-        Ok(format!("zs{}", bs58::encode(&address_bytes[..20]).into_string()))
     }
 
     pub fn generate_transparent_address(&self, key: &XPrv) -> NozyResult<String> {

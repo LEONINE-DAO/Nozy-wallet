@@ -8,7 +8,7 @@ NozyWallet is a privacy-first Orchard wallet that enforces complete transaction 
 
 **Lightwalletd / compact sync** is implemented once in Rust as **`zeaking`** (`zeaking::lwd`). It is wired for **desktop** (Tauri + `api-server`), **Chrome/Edge** (MV3 calls the localhost companion — see `browser-extension/COMPANION.md`), and **mobile** (`zeaking-ffi` + UniFFI). See `zeaking/README.md`. On Windows, **`scripts/run-nozy-api.ps1`** starts `api-server` against WSL lightwalletd; see **`scripts/README.md`**.
 
-**Zebrad (Zebra) + shielded sends:** Sync/receive via lightwalletd + zeaking is aligned with Zebrad; **shielded ZEC sends** can still fail on **Zebrad-only** because Zebra does **not** implement zcashd witness RPCs (`z_findnoteposition`, `z_getauthpath`). That **wallet + node capability gap** and how we hit this roadblock are documented in **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
+**Zebrad (Zebra) + shielded sends:** Nozy targets a Zebrad-first stack. Sync/receive use lightwalletd + zeaking, and shielded sends use **local witness tracking** with `z_gettreestate` anchor checks. Architecture notes are documented in **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
 
 **Extension releases (Chrome & Edge zip):** maintainers run the **extension-release-bundles** GitHub Action (see **`browser-extension/RELEASES.md`**); each run publishes a **GitHub Release** with Chromium and Firefox bundles so users can load unpacked or track versions.
 
@@ -156,7 +156,7 @@ Check out our [Contributing Guide](#-contributing) and the **[Enhancement Roadma
 - 📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md) - For developers
 - 📖 [Changelog](desktop-client/CHANGELOG.md) - Version history
 
-**Note:** Balance, sync, and **broadcast** depend on a reachable node (Zebrad/zcashd) and correct RPC; **shielded sending** against **Zebrad alone** may be blocked until Nozy derives Orchard witnesses without zcashd-only RPCs — see **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**. Many UI features work without a node (wallet creation, addresses, browser shell).
+**Note:** Balance, sync, and **broadcast** depend on a reachable node and correct RPC. Nozy is designed to run with **Zebrad + lightwalletd** and local witness derivation. See **`ZEBRAD_SHIELDED_SEND_LIMIT.md`** for architecture and troubleshooting.
 
 ### CLI Installation (For Advanced Users)
 
@@ -177,7 +177,7 @@ cargo build --release
 
 ### Project
 - **[NozyWallet Whitepaper](docs/NOZYWALLET_WHITEPAPER.md)** — Privacy by default, architecture, threat model, and roadmap (PDF-style document).
-- **[Zebrad & shielded sends (known limit)](ZEBRAD_SHIELDED_SEND_LIMIT.md)** — Why Zebrad + lightwalletd + zeaking still hits a **send** roadblock; `z_getauthpath` / `z_findnoteposition`; paths forward.
+- **[Zebrad shielded-send migration notes](ZEBRAD_SHIELDED_SEND_LIMIT.md)** — Historical context, local witness approach, and troubleshooting for Zebrad + lightwalletd + zeaking.
 
 ### Desktop Client
 - **[User Guide](desktop-client/USER_GUIDE.md)** - Complete guide for desktop users
@@ -624,7 +624,7 @@ cargo run --bin nozy test-zebra
 
 **Note:** The `proving --download` command is kept for API compatibility but performs no downloads (Halo 2 doesn't need them). It will display an informational message explaining that no downloads are needed.
 
-**Historical Note:** Older Zcash protocols (Sapling, Sprout) required external proving parameters, but Orchard with Halo 2 has these built-in and requires no external files.
+**Historical Note:** Earlier Zcash shielded designs relied on external proving-parameter downloads; Orchard with Halo 2 has proving built in and requires no external files.
 
 ### Configuration File
 

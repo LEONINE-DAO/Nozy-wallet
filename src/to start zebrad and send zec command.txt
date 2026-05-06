@@ -1,0 +1,27 @@
+Nozy mainnet send checklist (known-good)
+
+1) Start zebrad
+pkill -f zebrad || true
+zebrad -c ~/.config/zebrad.toml start
+
+2) In a second terminal, verify RPC is alive on 18232
+curl -i --max-time 8 \
+  --data-binary '{"jsonrpc":"2.0","id":"1","method":"getblockchaininfo","params":[]}' \
+  -H 'content-type: application/json' \
+  http://127.0.0.1:18232/
+
+3) Point nozy to the same RPC endpoint
+./target/release/nozy config --set-zebra-url "http://127.0.0.1:18232"
+./target/release/nozy config
+
+4) (Optional) check balance before send
+./target/release/nozy balance
+
+5) Send ZEC (example amount)
+NOZY_PLAIN_OUTPUT=1 ./target/release/nozy send \
+  --zebra-url "http://127.0.0.1:18232" \
+  --recipient "u1jkwesv45j56gfvpwyv6vryntce5nrps7vgmwgqx4aeyl5nhg35yy5p87mr7cdv3f5fg3pynwz43hznrcygs8dp3fdskf7kcrqxgrap22m9eyn6uun69ppln8rtjnxwksqpa5zamckgjk48uxzvf0a9e93ek7uuhl8g8aguflmzl2duvk3uenvgankk8kj7f7kcg6jvvstjet5zpq8gl" \
+  --amount 0.001
+
+6) After send
+./target/release/nozy history

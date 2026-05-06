@@ -49,7 +49,7 @@ impl NoteSyncManager {
             .scan_notes(Some(start_height), Some(end_height))
             .await
         {
-            Ok((result, _spendable_notes, _sapling)) => {
+            Ok((result, _spendable_notes)) => {
                 let notes_dir = get_wallet_data_dir();
                 let notes_path = notes_dir.join("notes.json");
 

@@ -71,7 +71,7 @@ The **`build.rs`** step compiles vendored `.proto` files and needs Google’s **
 
 If `protoc` is missing, `cargo` panics with *Could not find `protoc`*.
 
-Enable the **`lightwalletd`** Cargo feature for gRPC to [lightwalletd](https://github.com/zcash/lightwalletd) (backed by Zebrad), SQLite storage of compact blocks, and a [`BlockSource`](src/traits.rs) implementation that does **not** need `z_findnoteposition` / `z_getauthpath` **for sync**.
+Enable the **`lightwalletd`** Cargo feature for gRPC to [lightwalletd](https://github.com/zcash/lightwalletd) (backed by Zebrad), SQLite storage of compact blocks, and a [`BlockSource`](src/traits.rs) implementation designed for compact-block sync and local witness derivation.
 
 **Shielded sends (Orchard):** Nozy derives **Merkle witnesses** locally (`incrementalmerkletree`) using `z_gettreestate` checkpoints and Orchard commitments in **chain order**. Use **`orchard_cmx_bytes_from_compact_block`** on cached compact blobs to replay the note commitment tree and cross-check roots against RPC (`nozy::orchard_chain_tree`). Historical limits are documented in **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
 

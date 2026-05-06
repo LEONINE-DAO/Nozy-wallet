@@ -237,30 +237,25 @@ impl ZebraClient {
         })
     }
 
-    pub async fn get_note_position(&self, commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
-        let commitment_hex = hex::encode(commitment_bytes);
-        let response = self.make_rpc_call("z_findnoteposition", json!([commitment_hex])).await?;
-        
-        Ok(response["position"].as_u64().unwrap_or(0) as u32)
+    /// Legacy placeholder kept only to fail clearly if old callers still exist.
+    /// Nozy now uses local witnesses and does not call node-side witness RPCs.
+    pub async fn get_note_position(&self, _commitment_bytes: &[u8; 32]) -> NozyResult<u32> {
+        Err(NozyError::InvalidOperation(
+            "z_findnoteposition is unsupported. Use local witness tracking from scanned blocks."
+                .to_string(),
+        ))
     }
 
-    pub async fn get_authentication_path(&self, position: u32, anchor: &[u8; 32]) -> NozyResult<Vec<[u8; 32]>> {
-        let anchor_hex = hex::encode(anchor);
-        let response = self.make_rpc_call("z_getauthpath", json!([position, anchor_hex])).await?;
-        
-        let mut auth_path = Vec::new();
-        if let Some(path_array) = response["auth_path"].as_array() {
-            for hash_hex in path_array {
-                if let Some(hash_str) = hash_hex.as_str() {
-                    let hash_bytes = hex::decode(hash_str)
-                        .map_err(|e| NozyError::Network(format!("Invalid hash hex: {}", e)))?;
-                    let mut hash = [0u8; 32];
-                    hash.copy_from_slice(&hash_bytes);
-                    auth_path.push(hash);
-                }
-            }
-        }
-        
-        Ok(auth_path)
+    /// Legacy placeholder kept only to fail clearly if old callers still exist.
+    /// Nozy now uses local witnesses and does not call node-side witness RPCs.
+    pub async fn get_authentication_path(
+        &self,
+        _position: u32,
+        _anchor: &[u8; 32],
+    ) -> NozyResult<Vec<[u8; 32]>> {
+        Err(NozyError::InvalidOperation(
+            "z_getauthpath is unsupported. Use local witness tracking from scanned blocks."
+                .to_string(),
+        ))
     }
 }

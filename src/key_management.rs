@@ -80,7 +80,7 @@ mod tests {
 
     #[test]
     fn test_secure_seed_zeroization() {
-        let mut seed = SecureSeed::new(vec![1, 2, 3, 4, 5]);
+        let seed = SecureSeed::new(vec![1, 2, 3, 4, 5]);
         assert_eq!(seed.as_bytes(), &[1, 2, 3, 4, 5]);
 
         drop(seed);

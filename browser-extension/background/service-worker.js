@@ -15,7 +15,12 @@ import {
   nextLifecycleStateFromConfirmation,
   resolveTxidFromBroadcast
 } from "./tx-lifecycle.js";
-import { normalizeRpcEndpoint, rpcNetworkErrorMessage } from "./rpc-utils.js";
+import {
+  findReachableRpcEndpoint,
+  normalizeRpcEndpoint,
+  rpcGetBlockVerboseByHeight,
+  rpcNetworkErrorMessage
+} from "./rpc-utils.js";
 import { selectNotesForSpend, rpcFallbackWithRequester } from "./tx-utils.js";
 import {
   companionLwdChainTip,
@@ -178,7 +183,7 @@ async function _inlineScanNotes(params) {
   for (let h = startHeight; h <= endHeight; h += 1) {
     scannedBlocks += 1;
     try {
-      const block = await _inlineRpcRequest(rpcEndpoint, "getblock", [String(h), 2]);
+      const block = await rpcGetBlockVerboseByHeight(rpcEndpoint, h);
       if (!block) continue;
       const blockJson = JSON.stringify(block);
       const out = wasm.orchard_scan_tracker_apply_block(trackerState, mnemonic, address, h, blockJson);
@@ -199,7 +204,7 @@ function _bytesToHex(bytes) {
   return Array.from(arr, (b) => (Number(b) & 0xff).toString(16).padStart(2, "0")).join("");
 }
 
-/** Zebra `z_gettreestate` uses orchard.commitments.finalRoot; zcashd-style may use anchor. */
+/** Zebra `z_gettreestate` uses orchard.commitments.finalRoot; legacy nodes may use anchor. */
 function _orchardAnchorHexFromRpc(tr) {
   if (!tr || typeof tr !== "object") return "";
   const o = tr.orchard;
@@ -211,21 +216,41 @@ function _orchardAnchorHexFromRpc(tr) {
   return hex;
 }
 
-/** Zebrad has no z_findnoteposition / z_getauthpath; replace cryptic JSON-RPC errors. */
-function rewriteMissingWitnessRpcError(err) {
-  const m = String(err?.message || err || "");
-  const code = typeof err?.jsonRpcCode === "number" ? err.jsonRpcCode : null;
-  // jsonrpsee (Zebra) often uses "The method does not exist / is not available." (-32601), not the string "method not found".
-  const looksLikeMissingMethod =
-    code === -32601 ||
-    /method not found/i.test(m) ||
-    /\bmethod\b.*\bnot found\b/i.test(m) ||
-    /does not exist|is not available/i.test(m);
-  if (!looksLikeMissingMethod) return err instanceof Error ? err : new Error(String(err));
-  return new Error(
-    "Zebrad (Zebra) does not implement z_findnoteposition or z_getauthpath, which Nozy needs to build Orchard spends. " +
-      "Scanning and receiving work with Zebrad; for shielded sends, use a zcashd JSON-RPC (or another node that exposes those methods)."
+/**
+ * Normalize a stored scan row to `{ note, height, txid, value }` for spend selection.
+ * Supports wrapped rows and flat Orchard decryption payloads.
+ */
+function normalizeDiscoveredScanEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  if (raw.note != null && typeof raw.note === "object") {
+    const v = Number(raw.value ?? raw.note?.value ?? 0);
+    if (!Number.isFinite(v) || v <= 0) return null;
+    const height = Number(raw.height ?? raw.note?.block_height ?? 0);
+    const txid = String(raw.txid ?? raw.note?.txid ?? "");
+    return { note: raw.note, height, txid, value: v };
+  }
+  const v = Number(raw.value ?? 0);
+  if (!Number.isFinite(v) || v <= 0) return null;
+  const height = Number(raw.block_height ?? 0);
+  const txid = String(raw.txid ?? "");
+  return { note: raw, height, txid, value: v };
+}
+
+/** Read witness fields (snake_case or camelCase from serde_wasm_bindgen). */
+function orchardWitnessFieldsFromNote(noteObj) {
+  if (!noteObj || typeof noteObj !== "object") {
+    return { witnessHex: "", tipHeight: NaN };
+  }
+  const witnessHex =
+    (typeof noteObj.orchard_incremental_witness_hex === "string" &&
+      noteObj.orchard_incremental_witness_hex) ||
+    (typeof noteObj.orchardIncrementalWitnessHex === "string" &&
+      noteObj.orchardIncrementalWitnessHex) ||
+    "";
+  const tipHeight = Number(
+    noteObj.orchard_witness_tip_height ?? noteObj.orchardWitnessTipHeight ?? NaN
   );
+  return { witnessHex, tipHeight };
 }
 
 async function _inlineRpcRequest(endpoint, method, params = []) {
@@ -267,12 +292,8 @@ async function _inlineProveTransaction(params) {
   }
 
   const scanState = await loadScanState();
-  let candidates = [];
-  if (scanState?.discoveredNotes?.length) {
-    candidates = scanState.discoveredNotes.filter(
-      (n) => Number.isFinite(n.value) && n.value > 0
-    );
-  }
+  const rawList = Array.isArray(scanState?.discoveredNotes) ? scanState.discoveredNotes : [];
+  const candidates = rawList.map(normalizeDiscoveredScanEntry).filter(Boolean);
 
   if (candidates.length === 0) {
     const status = scanState?.status ?? "idle";
@@ -302,8 +323,11 @@ async function _inlineProveTransaction(params) {
 
   const selectedWitnesses = [];
   for (const noteSel of selected) {
-    let witnessHex = noteSel?.note?.orchard_incremental_witness_hex;
-    const tip = Number(noteSel?.note?.orchard_witness_tip_height ?? noteSel?.height ?? 0);
+    const { witnessHex: w0, tipHeight: tipFromNote } = orchardWitnessFieldsFromNote(noteSel?.note);
+    let witnessHex = w0;
+    let tip = Number.isFinite(tipFromNote)
+      ? tipFromNote
+      : Number(noteSel?.height ?? 0);
     if (!witnessHex || typeof witnessHex !== "string") {
       throw new Error(
         "Note missing orchard_incremental_witness_hex. Rescan with the updated extension that records Orchard witnesses (Zebrad-compatible)."
@@ -313,7 +337,7 @@ async function _inlineProveTransaction(params) {
       throw new Error("Invalid orchard_witness_tip_height on note.");
     }
     for (let h = tip + 1; h <= targetHeight; h += 1) {
-      const block = await _inlineRpcRequest(endpoint, "getblock", [String(h), 2]);
+      const block = await rpcGetBlockVerboseByHeight(endpoint, h);
       witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
     }
     if (!wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex)) {
@@ -771,11 +795,13 @@ async function walletCreate(password) {
     wasm.encrypt_for_storage(utf8Encode(mnemonic), password)
   );
 
+  const orchardBirthdayHeight = await tryGetChainTipForBirthday();
   await saveWalletState({
     encryptedMnemonic,
     address,
     createdAt: Date.now(),
-    rpcEndpoint: session.rpcEndpoint
+    rpcEndpoint: session.rpcEndpoint,
+    orchardBirthdayHeight
   });
 
   session.unlocked = true;
@@ -786,7 +812,7 @@ async function walletCreate(password) {
   return { address };
 }
 
-async function walletRestore(mnemonic, password) {
+async function walletRestore(mnemonic, password, opts = {}) {
   await ensureWasm();
   const restored = wasm.restore_wallet(mnemonic, password);
   const address = restored.address;
@@ -794,11 +820,22 @@ async function walletRestore(mnemonic, password) {
     wasm.encrypt_for_storage(utf8Encode(mnemonic), password)
   );
 
+  let orchardBirthdayHeight = null;
+  const rawBh = opts?.birthdayHeight;
+  if (rawBh !== undefined && rawBh !== null && rawBh !== "") {
+    const bh = Number(rawBh);
+    if (Number.isFinite(bh) && bh >= 0) orchardBirthdayHeight = Math.floor(bh);
+  }
+  if (orchardBirthdayHeight === null) {
+    orchardBirthdayHeight = await tryGetChainTipForBirthday();
+  }
+
   await saveWalletState({
     encryptedMnemonic,
     address,
     createdAt: Date.now(),
-    rpcEndpoint: session.rpcEndpoint
+    rpcEndpoint: session.rpcEndpoint,
+    orchardBirthdayHeight
   });
 
   session.unlocked = true;
@@ -831,6 +868,11 @@ async function walletUnlock(password) {
 
   void resumeBackgroundScanAfterUnlock();
 
+  const scanSt = await loadScanState();
+  if (scanSt?.status === "scanning") {
+    await persistScanResumeForBackground(mnemonic, address);
+  }
+
   return { address };
 }
 
@@ -838,16 +880,21 @@ function walletLock() {
   session.unlocked = false;
   session.mnemonic = null;
   session.address = null;
+  clearScanResumeForBackground();
   return true;
 }
 
 async function getWalletStatus() {
   const state = await loadWalletState();
+  const bh = state?.orchardBirthdayHeight;
+  const orchardBirthdayHeight =
+    typeof bh === "number" && Number.isFinite(bh) && bh >= 0 ? Math.floor(bh) : null;
   return {
     exists: !!state,
     unlocked: session.unlocked,
     address: session.address || state?.address || null,
-    rpcEndpoint: session.rpcEndpoint
+    rpcEndpoint: session.rpcEndpoint,
+    orchardBirthdayHeight
   };
 }
 
@@ -892,7 +939,25 @@ async function rpcCall(method, params = []) {
       })
     });
   } catch (err) {
-    throw new Error(rpcNetworkErrorMessage(endpoint, err));
+    // Auto-recover from common local RPC port mismatch (8232 vs 18232).
+    const fallbackEndpoint = await findReachableRpcEndpoint(endpoint);
+    if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
+      session.rpcEndpoint = fallbackEndpoint;
+      const existing = (await loadWalletState()) || {};
+      await saveWalletState({ ...existing, rpcEndpoint: session.rpcEndpoint });
+      resp = await fetch(fallbackEndpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method,
+          params
+        })
+      });
+    } else {
+      throw new Error(rpcNetworkErrorMessage(endpoint, err));
+    }
   }
   if (resp.status === 401 || resp.status === 403) {
     throw new Error(
@@ -925,6 +990,35 @@ async function rpcCallWithRetry(method, params = [], opts = {}) {
   throw lastErr || new Error(`RPC ${method} failed`);
 }
 
+/** Best-effort chain tip for persisting Orchard scan birthday (null if RPC unset/offline). */
+async function tryGetChainTipForBirthday() {
+  try {
+    const n = Number(await rpcCallWithRetry("getblockcount", []));
+    if (Number.isFinite(n) && n >= 0) return Math.floor(n);
+  } catch (_) {
+    /* ignore */
+  }
+  return null;
+}
+
+/**
+ * Orchard activation (NU5) fallback scan floor.
+ * Mainnet: 1,687,104
+ * Testnet: 1,842,420
+ */
+async function getOrchardActivationHeight() {
+  const MAINNET_NU5 = 1_687_104;
+  const TESTNET_NU5 = 1_842_420;
+  try {
+    const info = await rpcCallWithRetry("getblockchaininfo", [], { retries: 1, baseDelayMs: 150 });
+    const chain = String(info?.chain ?? "").toLowerCase();
+    if (chain.includes("test")) return TESTNET_NU5;
+    return MAINNET_NU5;
+  } catch (_) {
+    return MAINNET_NU5;
+  }
+}
+
 async function estimateFeeZats() {
   try {
     const feeResult = await rpcCallWithRetry("estimatefee", [1], { retries: 1, baseDelayMs: 200 });
@@ -955,7 +1049,61 @@ setInterval(() => {
 // ── Background scan ────────────────────────────────────────────────
 const SCAN_STATE_KEY = "nozy_scan_state_v1";
 const SCAN_BATCH = 50;
+/** First wake processes fewer blocks so the first `saveScanState` (and UI poll) happens sooner. */
+const SCAN_FIRST_BATCH = 12;
+/** Persist notes / tracker during a long batch so balance and storage do not stall until 50 blocks finish. */
+const SCAN_SAVE_EVERY_BLOCKS = 10;
 const SCAN_ALARM = "nozy_scan_tick";
+/** Session-only copy of mnemonic+UA so `scanTick` can run after MV3 service worker restarts (cleared on lock / scan end). */
+const SCAN_RESUME_SESSION_KEY = "nozy_scan_resume_wallet_v1";
+
+function scanResumeSessionApi() {
+  return typeof chrome !== "undefined" && chrome.storage && chrome.storage.session
+    ? chrome.storage.session
+    : null;
+}
+
+async function persistScanResumeForBackground(mnemonic, address) {
+  const api = scanResumeSessionApi();
+  if (!api || !mnemonic || !address) return;
+  await new Promise((resolve, reject) => {
+    api.set(
+      { [SCAN_RESUME_SESSION_KEY]: { mnemonic, address } },
+      () => {
+        if (chrome.runtime.lastError) reject(chrome.runtime.lastError);
+        else resolve();
+      }
+    );
+  }).catch(() => {});
+}
+
+async function readScanResumeForBackground() {
+  const api = scanResumeSessionApi();
+  if (!api) return null;
+  return new Promise((resolve) => {
+    api.get([SCAN_RESUME_SESSION_KEY], (v) => {
+      const row = v?.[SCAN_RESUME_SESSION_KEY];
+      if (
+        row &&
+        typeof row === "object" &&
+        typeof row.mnemonic === "string" &&
+        typeof row.address === "string"
+      ) {
+        resolve(row);
+      } else resolve(null);
+    });
+  });
+}
+
+function clearScanResumeForBackground() {
+  const api = scanResumeSessionApi();
+  if (!api) return;
+  try {
+    api.remove([SCAN_RESUME_SESSION_KEY], () => {});
+  } catch (_) {
+    /* ignore */
+  }
+}
 
 function loadScanState() {
   return new Promise((r) =>
@@ -979,50 +1127,136 @@ async function scanTick() {
   }
   const state = await loadScanState();
   if (!state || state.status !== "scanning") return;
-  if (!session.unlocked || !session.mnemonic || !session.address) {
-    // SW restarted or wallet locked: keep alarms alive until the user unlocks again.
-    scheduleScanAlarm(1);
-    return;
-  }
+
   scanRunning = true;
-
   try {
-    await ensureWasm();
-    const endpoint = normalizeRpcEndpoint(session.rpcEndpoint);
-    const end = Math.min(state.currentHeight + SCAN_BATCH - 1, state.endHeight);
-
-    for (let h = state.currentHeight; h <= end; h++) {
-      try {
-        const resp = await fetch(endpoint, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "getblock", params: [String(h), 2] })
-        });
-        if (!resp.ok) continue;
-        const body = await resp.json();
-        if (body?.error || !body?.result) continue;
-        const block = body.result;
-        const actions = _extractActionsFromBlock(block);
-        if (actions.length === 0) continue;
-        const txid = block?.hash || `h${h}`;
-        const scan = wasm.scan_orchard_actions(session.mnemonic, session.address, JSON.stringify(actions), h, txid);
-        if (scan?.notes?.length) {
-          for (const n of scan.notes) {
-            const v = Number(n?.value ?? 0);
-            state.discoveredNotes.push({ note: n, height: h, txid, value: v });
-          }
-          state.totalBalanceZats += Number(scan.total_value_zats || 0);
-        }
-      } catch (_) { /* skip block */ }
+    await ensureSessionInitialized();
+    const resume = await readScanResumeForBackground();
+    const mnemonicForScan = session.mnemonic || resume?.mnemonic || null;
+    const addressForScan = session.address || resume?.address || null;
+    if (!mnemonicForScan || !addressForScan) {
+      scheduleScanAlarm(1);
+      return;
     }
 
-    state.scannedBlocks += (end - state.currentHeight + 1);
+    await ensureWasm();
+    if (
+      typeof wasm.orchard_scan_tracker_new !== "function" ||
+      typeof wasm.orchard_scan_tracker_apply_block !== "function"
+    ) {
+      state.status = "failed";
+      state.scanError =
+        "WASM bundle is missing orchard_scan_tracker_* exports. Rebuild browser-extension wasm-core (wasm-pack) and reload the extension.";
+      state.finishedAt = nowMs();
+      clearScanResumeForBackground();
+      await saveScanState(state);
+      return;
+    }
+    const batchSize =
+      state.currentHeight === state.startHeight && SCAN_FIRST_BATCH < SCAN_BATCH
+        ? SCAN_FIRST_BATCH
+        : SCAN_BATCH;
+    const end = Math.min(state.currentHeight + batchSize - 1, state.endHeight);
+
+    // Legacy scans used scan_orchard_actions (no incremental witness). Reset and rescan from start.
+    if (!state.trackerState) {
+      state.discoveredNotes = [];
+      state.totalBalanceZats = 0;
+      state.currentHeight = state.startHeight;
+      state.scannedBlocks = 0;
+      state.heightProgress = state.startHeight - 1;
+      state.consecutiveFailures = 0;
+      state.lastRpcError = null;
+    }
+
+    let trackerState = typeof state.trackerState === "string" ? state.trackerState : "";
+    if (!trackerState) {
+      let finalState = "";
+      if (state.startHeight > 0) {
+        const ts = await rpcCall("z_gettreestate", [String(state.startHeight - 1)]);
+        const c = ts?.orchard?.commitments ?? ts?.orchard;
+        finalState =
+          (typeof c?.finalState === "string" && c.finalState) ||
+          (typeof c?.final_state === "string" && c.final_state) ||
+          "";
+      }
+      trackerState = wasm.orchard_scan_tracker_new(finalState);
+      state.trackerState = trackerState;
+      state.updatedAt = nowMs();
+      await saveScanState(state);
+    }
+
+    let blocksSinceProgressSave = 0;
+    const loopStart = state.currentHeight;
+    const failLimit = 30;
+    for (let h = loopStart; h <= end; h++) {
+      try {
+        const block = await rpcGetBlockVerboseByHeight(session.rpcEndpoint, h);
+        if (block) {
+          const blockJson = JSON.stringify(block);
+          const out = wasm.orchard_scan_tracker_apply_block(
+            trackerState,
+            mnemonicForScan,
+            addressForScan,
+            h,
+            blockJson
+          );
+          const nextTracker = out?.tracker_state ?? out?.trackerState;
+          trackerState = typeof nextTracker === "string" && nextTracker ? nextTracker : trackerState;
+          state.trackerState = trackerState;
+          state.consecutiveFailures = 0;
+          if (out.notes?.length) {
+            for (const n of out.notes) {
+              const v = Number(n?.value ?? 0);
+              if (!Number.isFinite(v) || v <= 0) continue;
+              const txid = String(n?.txid ?? block?.hash ?? `h${h}`);
+              state.discoveredNotes.push({ note: n, height: h, txid, value: v });
+              state.totalBalanceZats += v;
+            }
+          }
+        } else {
+          state.consecutiveFailures = (state.consecutiveFailures || 0) + 1;
+          state.lastRpcError = "getblock returned empty";
+          if (state.consecutiveFailures >= failLimit) {
+            state.status = "failed";
+            state.scanError = `Scan stopped: ${failLimit} consecutive block fetch failures. Check RPC URL and Zebrad (see Settings). Last: ${state.lastRpcError}`;
+            state.finishedAt = nowMs();
+            clearScanResumeForBackground();
+            await saveScanState(state);
+            return;
+          }
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        state.consecutiveFailures = (state.consecutiveFailures || 0) + 1;
+        state.lastRpcError = msg.slice(0, 400);
+        if (state.consecutiveFailures >= failLimit) {
+          state.status = "failed";
+          state.scanError = `Scan stopped: ${failLimit} consecutive errors. Check RPC URL / cookie auth / network. Last: ${msg.slice(0, 220)}`;
+          state.finishedAt = nowMs();
+          clearScanResumeForBackground();
+          await saveScanState(state);
+          return;
+        }
+      } finally {
+        state.heightProgress = h;
+        state.scannedBlocks = h - state.startHeight + 1;
+        state.updatedAt = nowMs();
+        blocksSinceProgressSave += 1;
+        if (blocksSinceProgressSave >= SCAN_SAVE_EVERY_BLOCKS) {
+          blocksSinceProgressSave = 0;
+          await saveScanState(state);
+        }
+      }
+    }
+
     state.currentHeight = end + 1;
     state.updatedAt = nowMs();
 
     if (state.currentHeight > state.endHeight) {
       state.status = "done";
       state.finishedAt = nowMs();
+      clearScanResumeForBackground();
     }
     await saveScanState(state);
   } finally {
@@ -1047,11 +1281,19 @@ async function startBackgroundScan(startHeight, endHeight) {
     endHeight,
     currentHeight: startHeight,
     scannedBlocks: 0,
+    /** Highest block height fully processed this scan (for UI percent). */
+    heightProgress: startHeight - 1,
     discoveredNotes: [],
     totalBalanceZats: 0,
+    /** Serialized OrchardWitnessTracker JSON; required for Zebrad-style spends. */
+    trackerState: "",
     startedAt: nowMs(),
     updatedAt: nowMs(),
-    finishedAt: null
+    finishedAt: null,
+    /** Incremented on RPC/WASM errors per block; reset after a successful block. */
+    consecutiveFailures: 0,
+    /** Latest error string for UI while scanning (truncated). */
+    lastRpcError: null
   };
   await saveScanState(state);
   scheduleScanAlarm(0.02);
@@ -1072,7 +1314,10 @@ function stopBackgroundScan() {
     if (s && s.status === "scanning") {
       s.status = "stopped";
       s.finishedAt = nowMs();
-      return saveScanState(s).then(() => s);
+      return saveScanState(s).then(() => {
+        clearScanResumeForBackground();
+        return s;
+      });
     }
     return s;
   });
@@ -1080,6 +1325,24 @@ function stopBackgroundScan() {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SCAN_ALARM) scanTick();
+});
+
+// On extension update, clear stale "scanning" UI state so popup doesn't look stuck.
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details?.reason !== "update") return;
+  chrome.alarms.clear(SCAN_ALARM);
+  clearScanResumeForBackground();
+  loadScanState()
+    .then((s) => {
+      if (!s || s.status !== "scanning") return;
+      s.status = "stopped";
+      s.finishedAt = nowMs();
+      s.scanError = null;
+      s.lastRpcError = null;
+      s.updatedAt = nowMs();
+      return saveScanState(s);
+    })
+    .catch(() => undefined);
 });
 
 // Resume scan on service worker restart
@@ -1107,7 +1370,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(ok(await walletCreate(params.password)));
           return;
         case "wallet_restore":
-          sendResponse(ok(await walletRestore(params.mnemonic, params.password)));
+          sendResponse(
+            ok(await walletRestore(params.mnemonic, params.password, { birthdayHeight: params.birthdayHeight }))
+          );
           return;
         case "wallet_unlock":
           sendResponse(ok(await walletUnlock(params.password)));
@@ -1304,11 +1569,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "rpc_get_block_count":
           sendResponse(ok(await rpcCallWithRetry("getblockcount", [])));
           return;
-        case "rpc_get_block":
-          sendResponse(
-            ok(await rpcCallWithRetry("getblock", [String(params.height ?? ""), 2]))
-          );
+        case "rpc_get_block": {
+          const bh = Number(params?.height ?? 0);
+          sendResponse(ok(await rpcGetBlockVerboseByHeight(session.rpcEndpoint, bh)));
           return;
+        }
         case "rpc_send_raw_tx": {
           const raw =
             typeof params?.rawTxHex === "string"
@@ -1352,11 +1617,73 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!session.unlocked || !session.mnemonic || !session.address) {
             throw new Error("Unlock wallet first.");
           }
+          await persistScanResumeForBackground(session.mnemonic, session.address);
           const blockCount = await rpcCallWithRetry("getblockcount", []);
-          const scanWindow = Number(params.window ?? 20_000);
-          const startH = Math.max(0, blockCount - scanWindow);
-          const s = await startBackgroundScan(startH, blockCount);
-          sendResponse(ok({ started: true, startHeight: startH, endHeight: blockCount, status: s.status }));
+
+          const rawEnd = params?.endHeight;
+          let endH = blockCount;
+          if (rawEnd !== undefined && rawEnd !== null && rawEnd !== "") {
+            const n = Number(rawEnd);
+            if (Number.isFinite(n)) {
+              endH = Math.max(0, Math.min(Math.floor(n), blockCount));
+            }
+          }
+
+          let startH;
+          if (params.useBirthdayRange === true) {
+            const ws = await loadWalletState();
+            const bh = ws?.orchardBirthdayHeight;
+            const orchardActivation = await getOrchardActivationHeight();
+            // With a saved birthday (set at create/restore): scan **creation height → tip** only — no blocks before
+            // the wallet existed (fast path for new Nozy users). Restored old seeds: set birthday lower or use NU5 / full chain presets.
+            if (bh === undefined || bh === null || bh === "") {
+              startH = Math.max(0, Math.min(orchardActivation, endH));
+            } else {
+              const nb = Number(bh);
+              if (!Number.isFinite(nb) || nb < 0) {
+                startH = Math.max(0, Math.min(orchardActivation, endH));
+              } else {
+                startH = Math.max(0, Math.min(Math.floor(nb), endH));
+              }
+            }
+          } else {
+            const rawStart = params?.startHeight;
+            if (rawStart !== undefined && rawStart !== null && rawStart !== "") {
+              const n = Number(rawStart);
+              if (!Number.isFinite(n)) {
+                throw new Error("Invalid startHeight");
+              }
+              startH = Math.max(0, Math.floor(n));
+            } else {
+              const scanWindow = Number(params?.window ?? 20_000);
+              const w = Math.max(1, scanWindow);
+              startH = Math.max(0, blockCount - w);
+            }
+          }
+
+          if (startH > endH) {
+            throw new Error(
+              `startHeight (${startH}) must be ≤ endHeight (${endH}). Refresh chain tip or adjust the range.`
+            );
+          }
+
+          const s = await startBackgroundScan(startH, endH);
+          sendResponse(
+            ok({ started: true, startHeight: startH, endHeight: endH, status: s.status })
+          );
+          return;
+        }
+        case "wallet_set_birthday_height": {
+          if (!session.unlocked) throw new Error("Unlock wallet first.");
+          const existing = (await loadWalletState()) || {};
+          if (!existing.encryptedMnemonic) throw new Error("No wallet found.");
+          const n = Number(params?.height);
+          if (!Number.isFinite(n) || n < 0) {
+            throw new Error("height must be a non-negative integer (Orchard scan birthday).");
+          }
+          const orchardBirthdayHeight = Math.floor(n);
+          await saveWalletState({ ...existing, orchardBirthdayHeight });
+          sendResponse(ok({ orchardBirthdayHeight }));
           return;
         }
         case "wallet_scan_progress": {
@@ -1364,9 +1691,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           if (!scanState) {
             sendResponse(ok({ status: "idle" }));
           } else {
-            const total = scanState.endHeight - scanState.startHeight + 1;
-            const done = scanState.scannedBlocks;
-            const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+            const total = Math.max(1, scanState.endHeight - scanState.startHeight + 1);
+            let done;
+            if (typeof scanState.heightProgress === "number") {
+              done = Math.min(
+                total,
+                Math.max(0, scanState.heightProgress - scanState.startHeight + 1)
+              );
+            } else {
+              done = Math.min(total, scanState.scannedBlocks ?? 0);
+            }
+            // Keep decimal precision so very large scans don't look "stuck" at one integer percent.
+            const pct = Number(((done / total) * 100).toFixed(2));
             sendResponse(ok({
               status: scanState.status,
               startHeight: scanState.startHeight,
@@ -1377,6 +1713,9 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               percent: pct,
               discoveredNotes: scanState.discoveredNotes?.length ?? 0,
               totalBalanceZats: scanState.totalBalanceZats ?? 0,
+              scanError: scanState.scanError ?? null,
+              lastRpcError: scanState.lastRpcError ?? null,
+              consecutiveFailures: scanState.consecutiveFailures ?? 0,
               startedAt: scanState.startedAt,
               elapsed: scanState.finishedAt
                 ? scanState.finishedAt - scanState.startedAt

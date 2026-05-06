@@ -138,7 +138,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scan_end = start_height + scan_test_blocks - 1;
 
     match scanner.scan_notes(Some(start_height), Some(scan_end)).await {
-        Ok((result, _, _)) => {
+        Ok((result, _)) => {
             let scan_time = scan_start.elapsed();
             let scan_blocks_per_sec = scan_test_blocks as f64 / scan_time.as_secs_f64();
 

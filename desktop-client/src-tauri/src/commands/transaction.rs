@@ -61,7 +61,7 @@ pub async fn send_transaction(
             code: Some("WALLET_NOT_FOUND".to_string()),
         })?;
 
-    let (spendable_notes, sapling_spendable) = scan_notes_for_sending(wallet, &zebra_url)
+    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
 
@@ -84,7 +84,6 @@ pub async fn send_transaction(
         .build_send_transaction(
             &zebra_client,
             &spendable_notes,
-            &sapling_spendable,
             &request.recipient,
             amount_zatoshis,
             fee_zatoshis,

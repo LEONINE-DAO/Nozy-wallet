@@ -1,6 +1,11 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 import { rpcFallbackWithRequester, selectNotesForSpend } from "./tx-utils.js";
-import { normalizeRpcEndpoint, rpcNetworkErrorMessage } from "./rpc-utils.js";
+import {
+  findReachableRpcEndpoint,
+  normalizeRpcEndpoint,
+  rpcGetBlockVerboseByHeight,
+  rpcNetworkErrorMessage
+} from "./rpc-utils.js";
 
 let ready;
 async function ensureReady() {
@@ -74,6 +79,12 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
     } catch (err) {
       const msg = String(err?.message ?? err ?? "");
       if (msg === "Failed to fetch" || /NetworkError|network failed|Load failed/i.test(msg)) {
+        const fallbackEndpoint = await findReachableRpcEndpoint(endpoint);
+        if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
+          endpoint = fallbackEndpoint;
+          // Retry immediately on the discovered reachable endpoint.
+          continue;
+        }
         lastErr = new Error(rpcNetworkErrorMessage(endpoint, err));
       } else {
         lastErr = err instanceof Error ? err : new Error(String(err));
@@ -142,24 +153,9 @@ async function fetchOrchardAnchor(rpcEndpoint, targetHeight) {
   return anchorHex;
 }
 
-function rewriteMissingWitnessRpcError(err) {
-  const m = String(err?.message || err || "");
-  const code = typeof err?.jsonRpcCode === "number" ? err.jsonRpcCode : null;
-  const looksLikeMissingMethod =
-    code === -32601 ||
-    /method not found/i.test(m) ||
-    /\bmethod\b.*\bnot found\b/i.test(m) ||
-    /does not exist|is not available/i.test(m);
-  if (!looksLikeMissingMethod) return err instanceof Error ? err : new Error(String(err));
-  return new Error(
-    "Zebrad (Zebra) does not implement z_findnoteposition or z_getauthpath, which Nozy needs to build Orchard spends. " +
-      "Scanning and receiving work with Zebrad; for shielded sends, use a zcashd JSON-RPC (or another node that exposes those methods)."
-  );
-}
-
 /**
  * Zebrad-safe Orchard witness: advance incremental witness from scan tip to chain tip, verify anchor.
- * Does not use z_findnoteposition / z_getauthpath (zcashd-only).
+ * Uses only local witness tracking plus treestate/anchor checks.
  */
 async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetHeight) {
   let witnessHex = selectedNote?.note?.orchard_incremental_witness_hex;
@@ -173,7 +169,7 @@ async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetH
     throw new Error("Invalid orchard_witness_tip_height on note.");
   }
   for (let h = tip + 1; h <= targetHeight; h += 1) {
-    const block = await rpcRequest(rpcEndpoint, "getblock", [String(h), 2], {});
+    const block = await rpcGetBlockVerboseByHeight(rpcEndpoint, h);
     witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
   }
   const ok = wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex);
@@ -222,7 +218,7 @@ self.onmessage = async (event) => {
       for (let h = startHeight; h <= endHeight; h += 1) {
         scannedBlocks += 1;
         try {
-          const block = await rpcRequest(endpoint, "getblock", [String(h), 2], {});
+          const block = await rpcGetBlockVerboseByHeight(endpoint, h);
           if (!block) continue;
           const blockJson = JSON.stringify(block);
           const out = wasm.orchard_scan_tracker_apply_block(
@@ -304,7 +300,7 @@ self.onmessage = async (event) => {
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
-          const block = await rpcRequest(endpoint, "getblock", [String(h), 2], {});
+          const block = await rpcGetBlockVerboseByHeight(endpoint, h);
           if (!block) continue;
           const blockJson = JSON.stringify(block);
           const out = wasm.orchard_scan_tracker_apply_block(

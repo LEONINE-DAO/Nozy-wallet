@@ -1,9 +1,6 @@
 // test files for integration tests
 
-use nozy::{
-    HDWallet, NoteScanner, NozyError, NozyResult, OrchardTransactionBuilder, WalletStorage,
-    ZebraClient,
-};
+use nozy::{HDWallet, NoteScanner, NozyError, OrchardTransactionBuilder, WalletStorage, ZebraClient};
 use std::path::PathBuf;
 use std::sync::Once;
 use zcash_protocol::consensus::NetworkType;
@@ -155,7 +152,7 @@ async fn test_end_to_end_flow_create_scan_send() {
     let start_height = tip_height.saturating_sub(100);
     let mut scanner = NoteScanner::new(wallet, client.clone());
 
-    let (scan_result, spendable_notes, _sapling) = scanner
+    let (scan_result, spendable_notes) = scanner
         .scan_notes(Some(start_height), Some(tip_height))
         .await
         .expect("Failed to scan notes");
@@ -175,8 +172,8 @@ async fn test_end_to_end_flow_create_scan_send() {
     let amount_zatoshis = 10_000;
     let fee_zatoshis = 10_000;
 
-    let combined_balance = scan_result.total_balance + scan_result.sapling_total_balance;
-    if combined_balance < amount_zatoshis + fee_zatoshis {
+    let orchard_balance = scan_result.total_balance;
+    if orchard_balance < amount_zatoshis + fee_zatoshis {
         println!("⚠️  Insufficient funds for transaction test");
         return;
     }
@@ -186,7 +183,7 @@ async fn test_end_to_end_flow_create_scan_send() {
         .generate_orchard_address(0, 0, NetworkType::Test)
         .expect("Failed to generate recipient address");
 
-    let mut builder = OrchardTransactionBuilder::new_async(true)
+    let builder = OrchardTransactionBuilder::new_async(true)
         .await
         .expect("Failed to create transaction builder");
 
@@ -233,7 +230,7 @@ async fn test_note_scanning() {
     let start_height = tip_height.saturating_sub(10);
     let mut scanner = NoteScanner::new(wallet, client);
 
-    let (result, spendable, _sapling) = scanner
+    let (result, spendable) = scanner
         .scan_notes(Some(start_height), Some(tip_height))
         .await
         .expect("Failed to scan notes");
@@ -254,7 +251,6 @@ async fn test_note_scanning() {
 async fn test_transaction_building() {
     setup_test_env();
 
-    let wallet = HDWallet::new().expect("Failed to create wallet");
     let client = ZebraClient::new(get_test_zebra_url());
 
     if !check_zebra_available(&client).await {
@@ -267,7 +263,7 @@ async fn test_transaction_building() {
         .generate_orchard_address(0, 0, NetworkType::Test)
         .expect("Failed to generate recipient address");
 
-    let mut builder = OrchardTransactionBuilder::new_async(true)
+    let builder = OrchardTransactionBuilder::new_async(true)
         .await
         .expect("Failed to create transaction builder");
 

@@ -3,6 +3,8 @@ import react from "@vitejs/plugin-react";
 import path from "path";
 
 export default defineConfig({
+  // Required for Tauri bundles: serve assets as relative paths.
+  base: "./",
   plugins: [
     react({
       // Disable React Refresh to fix Tauri compatibility issues

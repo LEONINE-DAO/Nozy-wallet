@@ -241,7 +241,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </label>
           <div className="text-xs text-gray-400 font-medium">
             Available:{" "}
-            <Tooltip content="Total shielded balance after sync (Orchard and Sapling notes combined). Use max after fee.">
+            <Tooltip content="Total Orchard shielded balance after sync. Use max after fee.">
               <span
                 className="text-gray-700 cursor-pointer hover:text-primary transition-colors uppercase"
                 onClick={handleMax}

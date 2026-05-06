@@ -305,11 +305,9 @@ cargo run --bin diagnose_zebra -- http://localhost:18232
 
 To complete the transaction proving and broadcasting:
 
-### **1. Download Orchard Proving Keys**
-```bash
-curl -O https://download.z.cash/downloads/sapling-spend.params
-curl -O https://download.z.cash/downloads/sapling-output.params
-```
+### **1. Orchard proving (Halo 2)**
+
+NozyWallet uses Orchard with Halo 2; there are no separate proving-parameter downloads for sends in this path.
 
 ### **2. Implement Proof Generation**
 Modify `src/orchard_tx.rs` to load proving keys and generate proofs.
