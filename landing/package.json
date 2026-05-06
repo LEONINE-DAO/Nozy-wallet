@@ -10,10 +10,6 @@
     "lint": "eslint .",
     "deploy": "node deploy.js"
   },
-  "optionalDependencies": {
-    "@emnapi/core": "1.9.2",
-    "@emnapi/runtime": "1.9.2"
-  },
   "dependencies": {
     "@solar-icons/react": "^1.0.1",
     "@tailwindcss/vite": "^4.1.17",
