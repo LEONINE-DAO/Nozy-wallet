@@ -1,6 +1,8 @@
 // test files for integration tests
 
-use nozy::{HDWallet, NoteScanner, NozyError, OrchardTransactionBuilder, WalletStorage, ZebraClient};
+use nozy::{
+    HDWallet, NoteScanner, NozyError, OrchardTransactionBuilder, WalletStorage, ZebraClient,
+};
 use std::path::PathBuf;
 use std::sync::Once;
 use zcash_protocol::consensus::NetworkType;
