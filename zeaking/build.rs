@@ -12,6 +12,9 @@ fn main() {
     tonic_prost_build::configure()
         .build_client(true)
         .build_server(false)
-        .compile_protos(&[proto_dir.join("service.proto")], &[proto_dir.clone()])
+        .compile_protos(
+            &[proto_dir.join("service.proto")],
+            std::slice::from_ref(&proto_dir),
+        )
         .expect("compile lightwalletd protos");
 }
