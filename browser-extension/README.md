@@ -74,6 +74,16 @@ Load **`browser-extension/`** as unpacked in Chrome (paths in `manifest.json` mu
 
 Or use [`scripts/package-extension.sh`](scripts/package-extension.sh) to produce a clean tree under `dist/`.
 
+### Smoke checks
+
+From repo root on Windows:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\extension-smoke.ps1
+```
+
+If the WASM target compile check fails with `secp256k1-sys` / `cc-rs` complaining about `clang`, install `clang` and ensure it is available on `PATH`. The smoke script intentionally exits non-zero on this prerequisite failure.
+
 ---
 
 ## GitHub Actions

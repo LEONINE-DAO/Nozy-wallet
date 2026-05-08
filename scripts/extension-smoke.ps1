@@ -4,6 +4,17 @@ $ErrorActionPreference = "Stop"
 
 Write-Host "== Nozy Extension Smoke ==" -ForegroundColor Cyan
 
+function Invoke-Strict {
+    param(
+        [Parameter(Mandatory = $true)][string]$Command,
+        [Parameter(ValueFromRemainingArguments = $true)][object[]]$Arguments
+    )
+    & $Command @Arguments
+    if ($LASTEXITCODE -ne 0) {
+        throw "Command failed ($LASTEXITCODE): $Command $($Arguments -join ' ')"
+    }
+}
+
 function Invoke-Step {
     param(
         [Parameter(Mandatory = $true)][string]$Name,
@@ -18,14 +29,14 @@ function Invoke-Step {
 Push-Location $PSScriptRoot\..
 try {
     Invoke-Step "Worker utility tests" {
-        node --test "browser-extension/background/tx-utils.test.mjs" "browser-extension/background/mobile-sync.test.mjs" "browser-extension/background/tx-lifecycle.test.mjs"
+        Invoke-Strict node --test "browser-extension/background/tx-utils.test.mjs" "browser-extension/background/mobile-sync.test.mjs" "browser-extension/background/tx-lifecycle.test.mjs"
     }
 
     Invoke-Step "Popup typecheck + build" {
         Push-Location "browser-extension/wasm-core/popup"
         try {
-            npm run typecheck
-            npm run build
+            Invoke-Strict npm run typecheck
+            Invoke-Strict npm run build
         } finally {
             Pop-Location
         }
@@ -34,7 +45,7 @@ try {
     Invoke-Step "WASM core host compile check" {
         Push-Location "browser-extension/wasm-core"
         try {
-            cargo check
+            Invoke-Strict cargo check
         } finally {
             Pop-Location
         }
@@ -43,7 +54,7 @@ try {
     Invoke-Step "WASM core unit tests" {
         Push-Location "browser-extension/wasm-core"
         try {
-            cargo test --lib
+            Invoke-Strict cargo test --lib
         } finally {
             Pop-Location
         }
@@ -52,13 +63,19 @@ try {
     Invoke-Step "WASM target compile check" {
         Push-Location "browser-extension/wasm-core"
         try {
-            $installedTargets = rustup target list --installed
+            $installedTargets = (& rustup target list --installed)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Command failed ($LASTEXITCODE): rustup target list --installed"
+            }
             $hasWasmTarget = @($installedTargets | Select-String -Pattern "^wasm32-unknown-unknown$").Count -gt 0
             if (-not $hasWasmTarget) {
-                rustup target add wasm32-unknown-unknown
+                Invoke-Strict rustup target add wasm32-unknown-unknown
             }
-            $env:CARGO_BUILD_RUSTC = (rustup which --toolchain stable rustc)
-            rustup run stable cargo check --target wasm32-unknown-unknown
+            $env:CARGO_BUILD_RUSTC = (& rustup which --toolchain stable rustc)
+            if ($LASTEXITCODE -ne 0) {
+                throw "Command failed ($LASTEXITCODE): rustup which --toolchain stable rustc"
+            }
+            Invoke-Strict rustup run stable cargo check --target wasm32-unknown-unknown
         } finally {
             Remove-Item Env:\CARGO_BUILD_RUSTC -ErrorAction SilentlyContinue
             Pop-Location

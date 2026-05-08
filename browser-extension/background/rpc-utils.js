@@ -41,7 +41,8 @@ export function normalizeRpcEndpoint(raw) {
     throw new Error("RPC URL must include a hostname (e.g. 127.0.0.1 or your WSL IP).");
   }
   const out = u.toString();
-  return out.endsWith("/") ? out.slice(0, -1) : out;
+  const normalized = out.endsWith("/") ? out.slice(0, -1) : out;
+  return normalized;
 }
 
 /**
