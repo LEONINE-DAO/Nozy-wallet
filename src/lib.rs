@@ -12,6 +12,7 @@ pub mod safe_display;
 pub mod secret_keys;
 pub mod traits;
 pub mod transactions;
+pub mod version_info;
 
 // ============================================================
 // Native-only modules (filesystem, networking, CLI, threading)
@@ -93,6 +94,7 @@ pub mod zebra_tree_rpc;
 pub use error::{NozyError, NozyResult};
 pub use hd_wallet::HDWallet;
 pub use transactions::{SignedTransaction, TransactionBuilder, TransactionDetails};
+pub use version_info::{RELEASE_CODENAME, VERSION_DISPLAY};
 
 // ============================================================
 // Native-only re-exports

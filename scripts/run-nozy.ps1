@@ -1,3 +1,9 @@
+# Requires: WSL distro with zebrad on PATH (~/.cargo/bin or package install).
+#
+# Project policy — Windows: Zebrad runs ONLY inside WSL, never as a native Windows
+# zebrad.exe. That avoids split-brain RPC (wrong process on 127.0.0.1:8232) and matches
+# scripts/run-nozy-api.ps1 + browser-extension COMPANION docs (WSL IP for some clients).
+
 param(
     [string]$Distro = "Ubuntu",
     [string]$DesktopPath = "~/projects/Nozy-wallet/desktop-client",

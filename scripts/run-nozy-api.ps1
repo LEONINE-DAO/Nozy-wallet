@@ -4,6 +4,9 @@
 #   - Zebrad RPC reachable from Windows: listen on 0.0.0.0:8232 (see run-nozy.ps1 / zebrad.toml).
 #   - lightwalletd running; gRPC must listen on 0.0.0.0:9067 (not only 127.0.0.1) so this host can connect.
 #
+# This script sets **ZEBRA_RPC_URL** to `http://<WSL-IP>:8232` (same IP as gRPC unless you pass **-ZebraRpcUrl**).
+# **load_config()** in the `nozy` crate honors **ZEBRA_RPC_URL** so api-server and CLI match without editing config.json.
+#
 # HTTP port: default 0 = pick first free port in 3000-3100 (avoids Windows error 10048).
 # Use -HttpPort 3000 to require that port (script errors early if busy). Extension: set companion baseUrl to match.
 # Zebra RPC in the extension: http://<WSL-IP>:8232 (see browser-extension/COMPANION.md).
@@ -15,6 +18,8 @@ param(
     [string]$NozyRoot = "",
     [int]$LwdGrpcPort = 9067,
     [string]$LwdGrpcUrl = "",
+    # Override Zebrad JSON-RPC URL; default = http://<WSL-IP>:8232 (Zebrad in WSL).
+    [string]$ZebraRpcUrl = "",
     # 0 = auto (first free 3000-3100). Set e.g. 3000 to pin a port.
     [int]$HttpPort = 0,
     [switch]$DebugBuild,
@@ -75,9 +80,16 @@ function Get-WslIPv4 {
     return $ip
 }
 
+$wslIp = Get-WslIPv4 -D $Distro
+
 $grpc = if ($LwdGrpcUrl) { $LwdGrpcUrl } else {
-    $wslIp = Get-WslIPv4 -D $Distro
     "http://${wslIp}:${LwdGrpcPort}"
+}
+
+if ($ZebraRpcUrl) {
+    $env:ZEBRA_RPC_URL = $ZebraRpcUrl
+} else {
+    $env:ZEBRA_RPC_URL = "http://${wslIp}:8232"
 }
 
 $apiDir = Join-Path $NozyRoot "api-server"
@@ -105,6 +117,7 @@ if (-not $SharedTarget) {
 Write-Host "== Nozy api-server (zeaking) ==" -ForegroundColor Cyan
 Write-Host "NozyRoot = $NozyRoot"
 Write-Host "LIGHTWALLETD_GRPC = $env:LIGHTWALLETD_GRPC"
+Write-Host "ZEBRA_RPC_URL = $env:ZEBRA_RPC_URL (nozy load_config + api-server)"
 Write-Host "NOZY_HTTP_PORT = $env:NOZY_HTTP_PORT (api-server reads this env)"
 if ($isoTarget) {
     $hint = if ($PinnedApiTarget) { "-PinnedApiTarget (shared under LocalAppData)" } else { "per-shell PID (use -PinnedApiTarget to reuse one cache)" }

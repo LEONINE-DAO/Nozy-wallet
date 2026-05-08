@@ -1,6 +1,7 @@
 use crate::error::{NozyError, NozyResult};
 use crate::paths::get_wallet_config_path;
 use serde::{Deserialize, Serialize};
+use std::env;
 use std::fs;
 
 /// Nozy talking to Zebra & Crosslink
@@ -205,7 +206,7 @@ impl Default for SwapConfig {
 pub fn load_config() -> WalletConfig {
     let config_path = get_wallet_config_path();
 
-    if config_path.exists() {
+    let mut config = if config_path.exists() {
         match fs::read_to_string(&config_path) {
             Ok(content) => match serde_json::from_str::<WalletConfig>(&content) {
                 Ok(config) => config,
@@ -227,7 +228,16 @@ pub fn load_config() -> WalletConfig {
         }
     } else {
         WalletConfig::default()
+    };
+
+    if let Ok(url) = env::var("ZEBRA_RPC_URL") {
+        let trimmed = url.trim();
+        if !trimmed.is_empty() {
+            config.zebra_url = trimmed.to_string();
+        }
     }
+
+    config
 }
 
 pub fn save_config(config: &WalletConfig) -> NozyResult<()> {

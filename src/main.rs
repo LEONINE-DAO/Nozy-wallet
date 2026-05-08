@@ -41,7 +41,7 @@ fn network_type_from_config(network: &str) -> NetworkType {
 
 #[derive(Parser)]
 #[command(name = "nozy")]
-#[command(version)]
+#[command(version = nozy::version_info::VERSION_DISPLAY)]
 #[command(about = "NozyWallet - A privacy-focused Zcash Orchard wallet")]
 #[command(
     long_about = "NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet only supports shielded transactions - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees."

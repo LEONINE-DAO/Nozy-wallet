@@ -1,4 +1,5 @@
 use crate::error::{NozyError, NozyResult};
+use crate::version_info::VERSION_DISPLAY;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
@@ -48,7 +49,7 @@ impl LocalAnalytics {
             features_used: HashMap::new(),
             platform: Self::get_platform_info(),
             rust_version: Self::get_rust_version(),
-            wallet_version: env!("CARGO_PKG_VERSION").to_string(),
+            wallet_version: VERSION_DISPLAY.to_string(),
         }
     }
 

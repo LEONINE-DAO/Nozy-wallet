@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Zebrad runs here (WSL/Linux only). On Windows hosts, use scripts/run-nozy.ps1 — do not run
+# native Windows zebrad.exe for Nozy dev; keep a single Zebrad in WSL.
 set -euo pipefail
 
 # Usage (from Nozy-wallet repo):
