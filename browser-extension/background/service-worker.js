@@ -808,6 +808,7 @@ async function walletCreate(password) {
   session.mnemonic = mnemonic;
   session.address = address;
   touchSession();
+  await startAutoBackgroundScan();
 
   return { address };
 }
@@ -842,6 +843,7 @@ async function walletRestore(mnemonic, password, opts = {}) {
   session.mnemonic = mnemonic;
   session.address = address;
   touchSession();
+  await startAutoBackgroundScan();
 
   return { address };
 }
@@ -1054,6 +1056,8 @@ const SCAN_FIRST_BATCH = 12;
 /** Persist notes / tracker during a long batch so balance and storage do not stall until 50 blocks finish. */
 const SCAN_SAVE_EVERY_BLOCKS = 10;
 const SCAN_ALARM = "nozy_scan_tick";
+const SCAN_MODE_MANUAL = "manual";
+const SCAN_MODE_AUTO = "auto";
 /** Session-only copy of mnemonic+UA so `scanTick` can run after MV3 service worker restarts (cleared on lock / scan end). */
 const SCAN_RESUME_SESSION_KEY = "nozy_scan_resume_wallet_v1";
 
@@ -1151,6 +1155,18 @@ async function scanTick() {
       clearScanResumeForBackground();
       await saveScanState(state);
       return;
+    }
+    if (state.scanMode === SCAN_MODE_AUTO) {
+      try {
+        const latestTip = Number(
+          await rpcCallWithRetry("getblockcount", [], { retries: 1, baseDelayMs: 150 })
+        );
+        if (Number.isFinite(latestTip)) {
+          state.endHeight = Math.max(state.endHeight ?? 0, Math.floor(latestTip));
+        }
+      } catch (_) {
+        // Ignore transient tip lookup errors; block fetch path records actual RPC errors.
+      }
     }
     const batchSize =
       state.currentHeight === state.startHeight && SCAN_FIRST_BATCH < SCAN_BATCH
@@ -1254,9 +1270,14 @@ async function scanTick() {
     state.updatedAt = nowMs();
 
     if (state.currentHeight > state.endHeight) {
-      state.status = "done";
-      state.finishedAt = nowMs();
-      clearScanResumeForBackground();
+      if (state.scanMode === SCAN_MODE_AUTO) {
+        // Stay active at chain tip so newly arrived notes are discovered automatically.
+        state.currentHeight = state.endHeight + 1;
+      } else {
+        state.status = "done";
+        state.finishedAt = nowMs();
+        clearScanResumeForBackground();
+      }
     }
     await saveScanState(state);
   } finally {
@@ -1277,6 +1298,7 @@ async function startBackgroundScan(startHeight, endHeight) {
   }
   const state = {
     status: "scanning",
+    scanMode: SCAN_MODE_MANUAL,
     startHeight,
     endHeight,
     currentHeight: startHeight,
@@ -1301,9 +1323,79 @@ async function startBackgroundScan(startHeight, endHeight) {
   return state;
 }
 
+async function startAutoBackgroundScan() {
+  if (!session.unlocked || !session.mnemonic || !session.address) return null;
+  await persistScanResumeForBackground(session.mnemonic, session.address);
+
+  const tip = Number(await rpcCallWithRetry("getblockcount", [], { retries: 1, baseDelayMs: 200 }));
+  const chainTip = Number.isFinite(tip) ? Math.max(0, Math.floor(tip)) : 0;
+  const existing = await loadScanState();
+  const now = nowMs();
+
+  if (existing && existing.status === "scanning") {
+    existing.scanMode = SCAN_MODE_AUTO;
+    existing.endHeight = Math.max(existing.endHeight ?? 0, chainTip);
+    existing.updatedAt = now;
+    await saveScanState(existing);
+    scheduleScanAlarm(0.02);
+    void scanTick();
+    return existing;
+  }
+
+  let startHeight = chainTip;
+  const priorDone =
+    existing &&
+    (existing.status === "done" || existing.status === "stopped" || existing.status === "failed");
+
+  if (priorDone && typeof existing.heightProgress === "number" && existing.heightProgress >= 0) {
+    startHeight = Math.min(chainTip, Math.max(0, Math.floor(existing.heightProgress) + 1));
+  } else if (priorDone && typeof existing.currentHeight === "number" && existing.currentHeight >= 0) {
+    startHeight = Math.min(chainTip, Math.max(0, Math.floor(existing.currentHeight)));
+  } else {
+    const ws = await loadWalletState();
+    const bh = Number(ws?.orchardBirthdayHeight);
+    if (Number.isFinite(bh) && bh >= 0) {
+      startHeight = Math.min(chainTip, Math.floor(bh));
+    } else {
+      const orchardActivation = await getOrchardActivationHeight();
+      startHeight = Math.max(0, Math.min(chainTip, orchardActivation));
+    }
+  }
+
+  const keepHistory = priorDone && Array.isArray(existing?.discoveredNotes);
+  const state = {
+    status: "scanning",
+    scanMode: SCAN_MODE_AUTO,
+    startHeight,
+    endHeight: chainTip,
+    currentHeight: startHeight,
+    scannedBlocks: 0,
+    heightProgress: startHeight - 1,
+    discoveredNotes: keepHistory ? existing.discoveredNotes : [],
+    totalBalanceZats: keepHistory ? Number(existing.totalBalanceZats ?? 0) : 0,
+    trackerState: keepHistory && typeof existing.trackerState === "string" ? existing.trackerState : "",
+    startedAt: now,
+    updatedAt: now,
+    finishedAt: null,
+    consecutiveFailures: 0,
+    lastRpcError: null,
+    scanError: null
+  };
+  await saveScanState(state);
+  scheduleScanAlarm(0.02);
+  void scanTick();
+  return state;
+}
+
 async function resumeBackgroundScanAfterUnlock() {
   const s = await loadScanState();
-  if (!s || s.status !== "scanning") return;
+  if (!s || s.status !== "scanning") {
+    await startAutoBackgroundScan();
+    return;
+  }
+  s.scanMode = s.scanMode || SCAN_MODE_AUTO;
+  s.updatedAt = nowMs();
+  await saveScanState(s);
   scheduleScanAlarm(0.02);
   void scanTick();
 }

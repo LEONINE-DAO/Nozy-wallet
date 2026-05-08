@@ -1260,6 +1260,15 @@ export function App() {
     };
   }, [status?.unlocked]);
 
+  const autoSyncHeights = (() => {
+    if (!status?.unlocked || !scanProgress) return null;
+    const tip = Number(scanProgress.endHeight ?? 0);
+    if (!Number.isFinite(tip) || tip < 0) return null;
+    const cursor = Number(scanProgress.currentHeight ?? 0);
+    const synced = Number.isFinite(cursor) ? Math.max(0, Math.min(tip, Math.floor(cursor) - 1)) : 0;
+    return { synced, tip: Math.floor(tip) };
+  })();
+
   return (
     <div className="h-full overflow-auto">
       {bootDebug && (
@@ -1290,7 +1299,12 @@ export function App() {
 
       {status?.unlocked && scanProgress?.status === "scanning" && (
         <div className="mx-3 mt-2 rounded border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
-          <span className="font-medium">Orchard scan</span>{" "}
+          <span className="font-medium">
+            Auto-sync: ON
+            {autoSyncHeights
+              ? ` (${autoSyncHeights.synced.toLocaleString()}/${autoSyncHeights.tip.toLocaleString()})`
+              : ""}
+          </span>{" "}
           {Math.min(100, Math.max(0, Number(scanProgress.percent ?? 0))).toFixed(2)}% ·{" "}
           {(scanProgress.scannedBlocks ?? 0).toLocaleString()}/{(scanProgress.totalBlocks ?? 0).toLocaleString()} blocks ·{" "}
           {scanProgress.discoveredNotes ?? 0} notes
