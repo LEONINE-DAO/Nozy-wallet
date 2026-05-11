@@ -177,7 +177,6 @@ pub async fn chain_tip_height(client: &mut LwdClient) -> ZeakingResult<u64> {
 #[cfg(all(test, feature = "lightwalletd"))]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn map_grpc_status_message_contains_op_and_status() {
@@ -191,7 +190,7 @@ mod tests {
 
     #[test]
     fn compact_sync_progress_height_reads_meta() {
-        let path = PathBuf::from(std::env::temp_dir()).join(format!(
+        let path = std::env::temp_dir().join(format!(
             "zeaking_compact_progress_test_{}.sqlite",
             std::process::id()
         ));

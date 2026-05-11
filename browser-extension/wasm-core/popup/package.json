@@ -12,9 +12,7 @@
   },
   "overrides": {
     "picomatch": ">=4.0.4",
-    "vite": "^8.0.7",
-    "@emnapi/core": "1.9.2",
-    "@emnapi/runtime": "1.9.2"
+    "vite": "^8.0.7"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.91.0",
