@@ -16,4 +16,7 @@ pub use block_source::LightwalletdBlockSource;
 pub use client::{connect_lightwalletd, LwdClient};
 pub use compact_orchard::orchard_cmx_bytes_from_compact_block;
 pub use store::LwdCompactStore;
-pub use sync::{chain_tip_height, sync_compact_range};
+pub use sync::{
+    chain_tip_height, compact_sync_progress_height, sync_compact_range,
+    sync_compact_range_with_options, SyncCompactOptions, SyncCompactStats,
+};

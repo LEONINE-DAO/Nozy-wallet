@@ -1,4 +1,12 @@
 //! SQLite persistence for compact blocks and optional Orchard witness rows (Nozy prove shape).
+//!
+//! ## `sync_meta` keys written by compact sync (`zeaking::lwd::sync`)
+//!
+//! | Key | Meaning |
+//! |-----|---------|
+//! | `last_compact_progress` | Highest compact height successfully written this run / last persisted chunk (for resume UX). |
+//! | `last_sync_end` | Inclusive end height of last **completed** `sync_compact_range` call (best-effort). |
+//! | `last_sync_requested_start` / `last_sync_requested_end` | Requested range bounds for the in-flight / last attempt. |
 
 use std::path::Path;
 use std::sync::Mutex;
@@ -67,8 +75,9 @@ impl LwdCompactStore {
             .lock()
             .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         let v: Option<i64> = conn
-            .query_row("SELECT MAX(height) FROM compact_blocks", [], |r| r.get(0))
-            .optional()
+            .query_row("SELECT MAX(height) FROM compact_blocks", [], |r| {
+                r.get::<_, Option<i64>>(0)
+            })
             .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         Ok(v.map(|h| h as u64))
     }
@@ -100,5 +109,21 @@ impl LwdCompactStore {
         )
         .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         Ok(())
+    }
+
+    pub fn get_meta(&self, key: &str) -> ZeakingResult<Option<String>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let v: Option<String> = conn
+            .query_row(
+                "SELECT value FROM sync_meta WHERE key = ?1",
+                params![key],
+                |r| r.get(0),
+            )
+            .optional()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        Ok(v)
     }
 }

@@ -30,7 +30,8 @@ pub struct LwdInfoFfi {
 #[derive(Clone, uniffi::Record)]
 pub struct LwdSyncResultFfi {
     pub blocks_written: u64,
-    pub range_start: u64,
+    pub range_start_requested: u64,
+    pub range_start_effective: u64,
     pub range_end: u64,
 }
 
@@ -77,6 +78,7 @@ pub fn lwd_sync_compact(
     db_path: String,
     start: u64,
     end: Option<u64>,
+    resume: Option<bool>,
 ) -> Result<LwdSyncResultFfi, ZeakingFfiError> {
     runtime().block_on(async move {
         let path = Path::new(&db_path);
@@ -94,14 +96,24 @@ pub fn lwd_sync_compact(
                 .await
                 .map_err(|e| ZeakingFfiError::Message(e.to_string()))?,
         };
-        let blocks_written =
-            zeaking::lwd::sync_compact_range(&mut client, &store, start, range_end)
-                .await
-                .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
-        Ok(LwdSyncResultFfi {
-            blocks_written,
-            range_start: start,
+        let opts = zeaking::lwd::SyncCompactOptions {
+            resume_from_store: resume.unwrap_or(false),
+            ..Default::default()
+        };
+        let stats = zeaking::lwd::sync_compact_range_with_options(
+            &mut client,
+            &store,
+            start,
             range_end,
+            opts,
+        )
+        .await
+        .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        Ok(LwdSyncResultFfi {
+            blocks_written: stats.blocks_written,
+            range_start_requested: stats.range_start_requested,
+            range_start_effective: stats.range_start_effective,
+            range_end: stats.range_end,
         })
     })
 }

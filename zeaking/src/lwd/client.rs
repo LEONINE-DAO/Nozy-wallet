@@ -13,7 +13,8 @@ pub async fn connect_lightwalletd(grpc_base: &str) -> ZeakingResult<LwdClient> {
     } else {
         format!("http://{uri}")
     };
+    let uri_for_err = uri.clone();
     CompactTxStreamerClient::connect(uri)
         .await
-        .map_err(|e| ZeakingError::Network(format!("lightwalletd connect: {e}")))
+        .map_err(move |e| ZeakingError::Grpc(format!("connect to {uri_for_err}: {e}")))
 }

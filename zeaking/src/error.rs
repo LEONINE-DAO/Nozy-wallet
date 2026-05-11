@@ -6,6 +6,10 @@ pub enum ZeakingError {
     #[error("Storage error: {0}")]
     Storage(String),
 
+    /// lightwalletd / gRPC (connect, unary calls, streaming). Distinct from [`Storage`](Self::Storage) (SQLite) and misconfiguration.
+    #[error("Lightwalletd gRPC: {0}")]
+    Grpc(String),
+
     #[error("Network error: {0}")]
     Network(String),
 

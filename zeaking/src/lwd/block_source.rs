@@ -84,7 +84,7 @@ impl BlockSource for LightwalletdBlockSource {
                 hash: vec![],
             })
             .await
-            .map_err(|e| ZeakingError::Network(format!("GetBlock: {e}")))?
+            .map_err(|e| ZeakingError::Grpc(format!("GetBlock: {e}")))?
             .into_inner();
         compact_block_to_block_data(cb)
     }

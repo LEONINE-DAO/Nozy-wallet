@@ -18,7 +18,10 @@ pub struct LwdInfoResponse {
 #[derive(Debug, Serialize)]
 pub struct LwdSyncResponse {
     pub blocks_written: u64,
-    pub range_start: u64,
+    /// Height the client asked for (same as request `start`).
+    pub range_start_requested: u64,
+    /// First height actually fetched after optional resume skip.
+    pub range_start_effective: u64,
     pub range_end: u64,
 }
 
@@ -28,6 +31,8 @@ pub struct LwdSyncRequest {
     pub end: Option<u64>,
     pub lightwalletd_url: Option<String>,
     pub db_path: Option<String>,
+    /// Skip compact heights already present in the SQLite store.
+    pub resume: Option<bool>,
 }
 
 fn lwd_url(o: Option<String>) -> String {
@@ -36,9 +41,15 @@ fn lwd_url(o: Option<String>) -> String {
 }
 
 fn zeaking_err(e: zeaking::ZeakingError) -> TauriError {
+    let code = match &e {
+        zeaking::ZeakingError::Grpc(_) => Some("LWD_GRPC".to_string()),
+        zeaking::ZeakingError::Storage(_) => Some("LWD_STORAGE".to_string()),
+        zeaking::ZeakingError::InvalidOperation(_) => Some("LWD_INVALID".to_string()),
+        _ => Some("ZEAKING".to_string()),
+    };
     TauriError {
         message: e.to_string(),
-        code: Some("ZEAKING".to_string()),
+        code,
     }
 }
 
@@ -104,12 +115,23 @@ pub async fn lwd_sync_compact(request: LwdSyncRequest) -> Result<LwdSyncResponse
             .await
             .map_err(zeaking_err)?
     };
-    let n = zeaking::lwd::sync_compact_range(&mut client, &store, request.start, end)
-        .await
-        .map_err(zeaking_err)?;
+    let opts = zeaking::lwd::SyncCompactOptions {
+        resume_from_store: request.resume.unwrap_or(false),
+        ..Default::default()
+    };
+    let stats = zeaking::lwd::sync_compact_range_with_options(
+        &mut client,
+        &store,
+        request.start,
+        end,
+        opts,
+    )
+    .await
+    .map_err(zeaking_err)?;
     Ok(LwdSyncResponse {
-        blocks_written: n,
-        range_start: request.start,
-        range_end: end,
+        blocks_written: stats.blocks_written,
+        range_start_requested: stats.range_start_requested,
+        range_start_effective: stats.range_start_effective,
+        range_end: stats.range_end,
     })
 }

@@ -18,6 +18,17 @@ pub struct LwdSyncBody {
     pub end: Option<u64>,
     pub lightwalletd_url: Option<String>,
     pub db_path: Option<String>,
+    /// When `true`, skip heights already in the compact DB (`max(height)+1` .. `end`).
+    pub resume: Option<bool>,
+}
+
+fn zeaking_status(e: &zeaking::ZeakingError) -> StatusCode {
+    match e {
+        zeaking::ZeakingError::Grpc(_) => StatusCode::BAD_GATEWAY,
+        zeaking::ZeakingError::Storage(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        zeaking::ZeakingError::InvalidOperation(_) => StatusCode::BAD_REQUEST,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    }
 }
 
 fn lwd_uri(q: &LwdUrlQuery) -> String {
@@ -84,7 +95,7 @@ pub async fn lwd_chain_tip(
     Ok(ResponseJson(serde_json::json!({ "chain_tip": tip })))
 }
 
-/// POST `/api/lwd/sync/compact` JSON body: `{ "start", "end"?, "lightwalletd_url"?, "db_path"? }`
+/// POST `/api/lwd/sync/compact` JSON body: `{ "start", "end"?, "lightwalletd_url"?, "db_path"?, "resume"? }`
 pub async fn lwd_sync_compact(
     axum::Json(body): axum::Json<LwdSyncBody>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
@@ -95,23 +106,34 @@ pub async fn lwd_sync_compact(
     }
     let mut client = zeaking::lwd::connect_lightwalletd(&url)
         .await
-        .map_err(|e| error_response(StatusCode::BAD_GATEWAY, e.to_string()))?;
-    let store = zeaking::lwd::LwdCompactStore::open(&db)
-        .map_err(|e| error_response(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| {
+            let status = zeaking_status(&e);
+            error_response(status, e.to_string())
+        })?;
+    let store = zeaking::lwd::LwdCompactStore::open(&db).map_err(|e| {
+        let status = zeaking_status(&e);
+        error_response(status, e.to_string())
+    })?;
     let end = if let Some(e) = body.end {
         e
     } else {
         zeaking::lwd::chain_tip_height(&mut client)
             .await
-            .map_err(|e| error_response(StatusCode::BAD_GATEWAY, e.to_string()))?
+            .map_err(|e| error_response(zeaking_status(&e), e.to_string()))?
     };
-    let blocks_written = zeaking::lwd::sync_compact_range(&mut client, &store, body.start, end)
-        .await
-        .map_err(|e| error_response(StatusCode::BAD_GATEWAY, e.to_string()))?;
+    let opts = zeaking::lwd::SyncCompactOptions {
+        resume_from_store: body.resume.unwrap_or(false),
+        ..Default::default()
+    };
+    let stats =
+        zeaking::lwd::sync_compact_range_with_options(&mut client, &store, body.start, end, opts)
+            .await
+            .map_err(|e| error_response(zeaking_status(&e), e.to_string()))?;
     Ok(ResponseJson(serde_json::json!({
-        "blocks_written": blocks_written,
-        "range_start": body.start,
-        "range_end": end,
+        "blocks_written": stats.blocks_written,
+        "range_start_requested": stats.range_start_requested,
+        "range_start_effective": stats.range_start_effective,
+        "range_end": stats.range_end,
         "db_path": db.to_string_lossy(),
     })))
 }
