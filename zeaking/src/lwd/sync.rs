@@ -140,7 +140,7 @@ pub async fn sync_compact_range_with_options(
         };
         store.put_compact_block(height, hash, &buf)?;
         count += 1;
-        if count % every == 0 || height == end {
+        if count.is_multiple_of(every) || height == end {
             store.set_meta("last_compact_progress", &height.to_string())?;
         }
     }
