@@ -8,7 +8,8 @@ UniFFI bindings for **[`zeaking::lwd`](../zeaking)** — the same lightwalletd s
 |----------|---------|
 | `lwd_get_info(url)` | `GetLightdInfo` |
 | `lwd_chain_tip(url)` | Tip height (`GetLatestBlock`) |
-| `lwd_sync_compact(url, db_path, start, end?)` | Stream compact blocks into SQLite |
+| `lwd_sync_compact(url, db_path, start, end?, resume?)` | Stream compact blocks into SQLite |
+| `lwd_sync_compact_to_tip(url, db_path, start_floor?, persist_progress_every?)` | Sync from next missing height through tip (resume-safe) |
 
 Errors are returned as `ZeakingFfiError` with a message string (maps from `ZeakingError`).
 

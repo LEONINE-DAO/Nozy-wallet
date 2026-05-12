@@ -409,7 +409,24 @@ function SendView() {
 const NU5_ORCHARD_START_MAINNET = 1_687_104;
 const NU5_ORCHARD_START_TESTNET = 1_842_420;
 
-function ReceiveView({
+function ReceiveView({ status }: { status: WalletStatus | null }) {
+  return (
+    <div className="space-y-2 p-4 text-sm">
+      <h2 className="text-base font-semibold">Receive</h2>
+      <div className="rounded border border-white/10 bg-white/5 p-3 break-all">
+        {status?.address || "No address yet"}
+      </div>
+      <p className="text-[11px] leading-snug text-white/60">
+        Share this unified address to receive shielded ZEC. Auto-sync runs in the background while unlocked.
+      </p>
+      <p className="text-[10px] leading-snug text-white/40">
+        Use the <span className="text-white/60">Scan</span> tab for manual ranges, birthday settings, and recovery rescans.
+      </p>
+    </div>
+  );
+}
+
+function ScanView({
   status,
   scan,
   onWalletMetaChanged
@@ -575,10 +592,7 @@ function ReceiveView({
 
   return (
     <div className="space-y-2 p-4 text-sm">
-      <h2 className="text-base font-semibold">Receive</h2>
-      <div className="rounded border border-white/10 bg-white/5 p-3 break-all">
-        {status?.address || "No address yet"}
-      </div>
+      <h2 className="text-base font-semibold">Scan</h2>
 
       {scanning && (
         <div className="h-1.5 w-full rounded bg-white/10 overflow-hidden">
@@ -702,6 +716,13 @@ function ReceiveView({
             </button>
             <button
               type="button"
+              className="rounded bg-amber-400 px-2 py-1 text-[11px] text-black"
+              onClick={() => void startScanWindow(500)}
+            >
+              Last 500
+            </button>
+            <button
+              type="button"
               className="rounded bg-amber-500 px-2 py-1 text-[11px] text-black"
               onClick={() => void startScanWindow(20_000)}
             >
@@ -781,6 +802,7 @@ function CompanionView() {
   const [busy, setBusy] = useState(false);
   const [syncStart, setSyncStart] = useState("0");
   const [syncEnd, setSyncEnd] = useState("");
+  const [syncTipFloor, setSyncTipFloor] = useState("");
 
   useEffect(() => {
     getCompanionPrefs()
@@ -1003,6 +1025,37 @@ function CompanionView() {
           }
         >
           Sync compact range
+        </button>
+        <div className="text-[11px] text-white/50 pt-1">
+          Optional birthday / floor for “to tip” (empty = default 1):
+        </div>
+        <input
+          className="w-full rounded bg-white/10 p-1.5 text-xs outline-none"
+          value={syncTipFloor}
+          onChange={(e) => setSyncTipFloor(e.target.value)}
+          placeholder="start_floor (optional)"
+        />
+        <button
+          type="button"
+          disabled={busy}
+          className="rounded bg-emerald-800 px-3 py-1 text-xs text-white"
+          onClick={() =>
+            run(async () => {
+              const prefs = await getCompanionPrefs();
+              const q = prefs.lightwalletdUrl.trim();
+              const floorRaw = syncTipFloor.trim();
+              const start_floor =
+                floorRaw === "" ? undefined : Math.max(0, Math.floor(Number(floorRaw) || 0));
+              const res = await extensionApi.companionLwdSyncCompactToTip({
+                baseUrl: prefs.baseUrl,
+                lightwalletd_url: q || undefined,
+                start_floor
+              });
+              setLog(JSON.stringify(res, null, 2));
+            })
+          }
+        >
+          Sync compact to tip
         </button>
       </div>
 
@@ -1338,8 +1391,9 @@ export function App() {
         />
       )}
       {view === "send" && <SendView />}
-      {view === "receive" && (
-        <ReceiveView status={status} scan={scanProgress} onWalletMetaChanged={() => void refresh()} />
+      {view === "receive" && <ReceiveView status={status} />}
+      {view === "scan" && (
+        <ScanView status={status} scan={scanProgress} onWalletMetaChanged={() => void refresh()} />
       )}
       {view === "companion" && <CompanionView />}
       {view === "settings" && (

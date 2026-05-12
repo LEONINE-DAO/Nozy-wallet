@@ -304,9 +304,22 @@ export const extensionApi = {
     end?: number;
     lightwalletd_url?: string;
     db_path?: string;
+    resume?: boolean;
   }) =>
     sendMessage<Record<string, unknown>>({
       method: "companion_lwd_sync_compact",
+      params
+    }),
+
+  companionLwdSyncCompactToTip: (params: {
+    baseUrl?: string;
+    lightwalletd_url?: string;
+    db_path?: string;
+    start_floor?: number;
+    persist_progress_every?: number;
+  }) =>
+    sendMessage<Record<string, unknown>>({
+      method: "companion_lwd_sync_compact_to_tip",
       params
     })
 };

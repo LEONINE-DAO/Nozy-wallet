@@ -120,6 +120,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/lwd/sync/compact",
             post(lwd_handlers::lwd_sync_compact),
         )
+        .route(
+            "/api/lwd/sync/compact-to-tip",
+            post(lwd_handlers::lwd_sync_compact_to_tip),
+        )
         .route("/health", get(health_check))
         .layer(axum::middleware::from_fn(
             move |req: axum::extract::Request, next: axum::middleware::Next| {

@@ -39,6 +39,7 @@ fn main() {
             lwd_get_info,
             lwd_chain_tip,
             lwd_sync_compact,
+            lwd_sync_compact_to_tip,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

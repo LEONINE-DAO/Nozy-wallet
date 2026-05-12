@@ -35,6 +35,16 @@ pub struct LwdSyncResultFfi {
     pub range_end: u64,
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct LwdSyncToTipResultFfi {
+    pub chain_tip: u64,
+    pub already_at_tip: bool,
+    pub blocks_written: u64,
+    pub range_start_requested: u64,
+    pub range_start_effective: u64,
+    pub range_end: u64,
+}
+
 /// gRPC `GetLightdInfo` via lightwalletd (URL like `http://127.0.0.1:9067`).
 #[uniffi::export]
 pub fn lwd_get_info(lightwalletd_url: String) -> Result<LwdInfoFfi, ZeakingFfiError> {
@@ -110,6 +120,46 @@ pub fn lwd_sync_compact(
         .await
         .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
         Ok(LwdSyncResultFfi {
+            blocks_written: stats.blocks_written,
+            range_start_requested: stats.range_start_requested,
+            range_start_effective: stats.range_start_effective,
+            range_end: stats.range_end,
+        })
+    })
+}
+
+/// Sync from next missing compact height through lightwalletd tip (`resume_from_store` semantics).
+#[uniffi::export]
+pub fn lwd_sync_compact_to_tip(
+    lightwalletd_url: String,
+    db_path: String,
+    start_floor: Option<u64>,
+    persist_progress_every: Option<u64>,
+) -> Result<LwdSyncToTipResultFfi, ZeakingFfiError> {
+    runtime().block_on(async move {
+        let path = Path::new(&db_path);
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let mut client = zeaking::lwd::connect_lightwalletd(&lightwalletd_url)
+            .await
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        let store = zeaking::lwd::LwdCompactStore::open(path)
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        let tip_opts = zeaking::lwd::SyncCompactToTipOptions {
+            start_floor,
+            persist_progress_every: persist_progress_every
+                .unwrap_or_else(|| {
+                    zeaking::lwd::SyncCompactToTipOptions::default().persist_progress_every
+                })
+                .max(1),
+        };
+        let stats = zeaking::lwd::sync_compact_to_tip_with_options(&mut client, &store, tip_opts)
+            .await
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        Ok(LwdSyncToTipResultFfi {
+            chain_tip: stats.chain_tip,
+            already_at_tip: stats.already_at_tip,
             blocks_written: stats.blocks_written,
             range_start_requested: stats.range_start_requested,
             range_start_effective: stats.range_start_effective,
