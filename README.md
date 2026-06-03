@@ -338,7 +338,11 @@ Manage Orchard proving parameters for transaction creation.
 
 ```bash
 cargo run --bin nozy send --recipient "u1..." --amount 0.1
+# Opt-in priority fee (ZIP-317 standard × 4, ~2-block expiry):
+cargo run --bin nozy send --recipient "u1..." --amount 0.1 --priority
 ```
+
+Fees are computed **client-side** (ZIP-317). Zebrad does not implement `estimatefee`; the wallet no longer uses a fixed 10k zat fallback for sends.
 
 **Complete Transaction Flow Example:**
 
