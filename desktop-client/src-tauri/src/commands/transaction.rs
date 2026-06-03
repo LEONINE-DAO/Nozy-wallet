@@ -1,11 +1,44 @@
 use crate::error::TauriError;
 use nozy::{
     estimate_transaction_fee, load_config, scan_notes_for_sending,
-    transaction_history::{SentTransactionRecord, SentTransactionStorage},
+    transaction_history::{
+        SentTransactionRecord, SentTransactionStorage, TransactionStatus,
+    },
     WalletStorage, ZcashTransactionBuilder, ZebraClient,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;
+
+fn status_key(status: &TransactionStatus) -> &'static str {
+    match status {
+        TransactionStatus::Pending => "pending",
+        TransactionStatus::Confirmed => "confirmed",
+        TransactionStatus::Failed => "failed",
+    }
+}
+
+fn tx_record_json(tx: &SentTransactionRecord) -> serde_json::Value {
+    serde_json::json!({
+        "txid": tx.txid,
+        "recipient_address": tx.recipient_address,
+        "recipient": tx.recipient_address,
+        "amount_zatoshis": tx.amount_zatoshis,
+        "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
+        "fee_zatoshis": tx.fee_zatoshis,
+        "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
+        "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok()),
+        "status": status_key(&tx.status),
+        "transaction_type": "sent",
+        "type": "sent",
+        "block_height": tx.block_height,
+        "confirmations": tx.confirmations,
+        "broadcast_at": tx.broadcast_at.map(|d| d.to_rfc3339()),
+        "created_at": tx.created_at.to_rfc3339(),
+        "timestamp": tx.created_at.timestamp(),
+        "broadcast": tx.broadcast_at.is_some(),
+        "spent_note_ids": tx.spent_note_ids,
+    })
+}
 
 #[derive(Debug, Serialize)]
 pub struct SendTransactionResponse {
@@ -155,18 +188,7 @@ pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriEr
 
     let json_transactions: Vec<serde_json::Value> = transactions
         .iter()
-        .map(|tx| {
-            serde_json::json!({
-                "txid": tx.txid.clone(),
-                "recipient": tx.recipient_address.clone(),
-                "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
-                "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
-                "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok()),
-                "broadcast": tx.broadcast_at.is_some(),
-                "confirmations": tx.confirmations,
-                "timestamp": tx.created_at.timestamp(),
-            })
-        })
+        .map(tx_record_json)
         .collect();
 
     Ok(json_transactions)
@@ -185,15 +207,5 @@ pub async fn get_transaction(txid: String) -> Result<serde_json::Value, TauriErr
             code: Some("TRANSACTION_NOT_FOUND".to_string()),
         })?;
 
-    Ok(serde_json::json!({
-        "txid": transaction.txid.clone(),
-        "recipient": transaction.recipient_address.clone(),
-        "amount_zec": transaction.amount_zatoshis as f64 / 100_000_000.0,
-        "fee_zec": transaction.fee_zatoshis as f64 / 100_000_000.0,
-        "memo": transaction.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok()),
-        "broadcast": transaction.broadcast_at.is_some(),
-        "confirmations": transaction.confirmations,
-        "timestamp": transaction.created_at.timestamp(),
-        "spent_notes": transaction.spent_note_ids.clone(),
-    }))
+    Ok(tx_record_json(&transaction))
 }

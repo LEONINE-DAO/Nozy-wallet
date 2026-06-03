@@ -137,8 +137,8 @@ All commands are exposed to the frontend via Tauri's invoke system.
 ### Transactions
 - `send_transaction(recipient, amount, memo?, zebra_url?, password?)` - Send ZEC
 - `estimate_fee(zebra_url?)` - Estimate transaction fee
-- `get_transaction_history()` - Get transaction history
-- `get_transaction(txid)` - Get specific transaction
+- `get_transaction_history()` - Local sent txs (`status`, `confirmations`, `block_height`, etc.)
+- `get_transaction(txid)` - Same fields for one tx
 
 ### Configuration
 - `get_config()` - Get configuration
