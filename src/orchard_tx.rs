@@ -18,7 +18,6 @@ use orchard::{
 use rand::rngs::OsRng;
 use std::sync::{Arc, OnceLock};
 use zcash_address::unified::{Container, Encoding};
-use zcash_primitives::transaction::builder::DEFAULT_TX_EXPIRY_DELTA;
 use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
 use zcash_primitives::transaction::txid::TxIdDigester;
 use zcash_primitives::transaction::{Authorized, TransactionData, TxVersion, Unauthorized};
@@ -155,6 +154,7 @@ impl OrchardTransactionBuilder {
         amount_zatoshis: u64,
         fee_zatoshis: u64,
         memo: Option<&[u8]>,
+        expiry_delta_blocks: u32,
     ) -> NozyResult<OrchardBuiltSpend> {
         println!("Building Orchard transaction...");
 
@@ -309,7 +309,7 @@ impl OrchardTransactionBuilder {
             }
         };
         let expiry_height =
-            BlockHeight::from_u32(tx_build_height.saturating_add(DEFAULT_TX_EXPIRY_DELTA));
+            BlockHeight::from_u32(tx_build_height.saturating_add(expiry_delta_blocks));
         let unauthorized_zat = unauthorized.clone().try_map_value_balance(|vb| {
             ZatBalance::from_i64(vb).map_err(|e| {
                 NozyError::InvalidOperation(format!(

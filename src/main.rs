@@ -114,6 +114,11 @@ pub enum Commands {
         // No short flag: global `--mainnet` already uses `-m`.
         #[arg(long, help = "Optional memo message (max 512 characters)")]
         memo: Option<String>,
+        #[arg(
+            long,
+            help = "Pay priority fee (ZIP-317 standard fee × 4; opt-in pilot)"
+        )]
+        priority: bool,
     },
 
     #[command(about = "Display wallet information including addresses and network")]
@@ -562,7 +567,14 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             } else {
                 None
             };
-            let scan_start = effective_start.unwrap_or(3_050_000);
+            // Mainnet: Orchard-heavy range default. Testnet: chain height / resets differ — start from
+            // genesis unless user set last_scan or --start-height (first chunk is still capped below).
+            let default_first_scan_start: u32 = if config.network == "testnet" {
+                1
+            } else {
+                3_050_000
+            };
+            let scan_start = effective_start.unwrap_or(default_first_scan_start);
             let chain_tip = zebra_client.get_block_count().await?;
             let requested_end = if let Some(end) = end_height {
                 end.max(scan_start)
@@ -687,6 +699,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             amount,
             zebra_url,
             memo,
+            priority,
         } => {
             if let Some(url) = zebra_url {
                 config.zebra_url = url;
@@ -773,7 +786,16 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             );
 
             println!("\n💸 Estimating transaction fee...");
-            let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
+            let memo_preview = memo
+                .as_deref()
+                .map(|m| m.trim().as_bytes())
+                .filter(|b| !b.is_empty());
+            let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee_for_send(
+                &zebra_client,
+                memo_preview,
+                priority,
+            )
+            .await;
             let total_amount = amount_zatoshis + fee_zatoshis;
             println!(
                 "  Fee:       {:.8} ZEC",
@@ -941,6 +963,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
             println!("Processing...");
 
+            let pilot = nozy::PilotSendOptions {
+                priority,
+                expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
+            };
             match build_and_broadcast_transaction(
                 &zebra_client,
                 &spendable_notes,
@@ -950,6 +976,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 memo_bytes_opt.as_deref(),
                 enable_broadcast,
                 &config.zebra_url,
+                pilot,
             )
             .await
             {

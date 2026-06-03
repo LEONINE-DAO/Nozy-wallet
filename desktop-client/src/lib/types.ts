@@ -39,6 +39,8 @@ export interface SendTransactionRequest {
   amount: number;
   memo?: string;
   password?: string;
+  /** Pilot: ZIP-317 standard fee × 4 when true (default false). */
+  priority?: boolean;
 }
 
 export interface ConfigResponse {

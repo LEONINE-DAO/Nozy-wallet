@@ -200,6 +200,7 @@ async fn test_end_to_end_flow_create_scan_send() {
             amount_zatoshis,
             fee_zatoshis,
             Some(b"Integration test transaction"),
+            nozy::PILOT_EXPIRY_DELTA_BLOCKS,
         )
         .await
         .expect("Failed to build transaction");
@@ -281,6 +282,7 @@ async fn test_transaction_building() {
             10_000,
             10_000,
             None,
+            nozy::PILOT_EXPIRY_DELTA_BLOCKS,
         )
         .await;
 

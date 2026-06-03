@@ -40,6 +40,14 @@ pub struct SentTransactionRecord {
     pub confirmations: u32,
 
     pub spent_note_ids: Vec<String>,
+
+    /// Dynamic-fee pilot: user opted into priority (fee ×4).
+    #[serde(default)]
+    pub priority: bool,
+
+    /// Absolute chain height after which the tx must not be mined (pilot: tip + 2).
+    #[serde(default)]
+    pub expiry_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +97,9 @@ pub enum TransactionStatus {
     Confirmed,
 
     Failed,
+
+    /// Broadcast but never mined before [`SentTransactionRecord::expiry_height`].
+    Expired,
 }
 
 impl TransactionStatus {
@@ -98,6 +109,10 @@ impl TransactionStatus {
 
     pub fn is_pending(&self) -> bool {
         matches!(self, TransactionStatus::Pending)
+    }
+
+    pub fn is_expired(&self) -> bool {
+        matches!(self, TransactionStatus::Expired)
     }
 }
 
@@ -134,6 +149,36 @@ impl SentTransactionRecord {
             block_time: None,
             confirmations: 0,
             spent_note_ids,
+            priority: false,
+            expiry_height: None,
+        }
+    }
+
+    pub fn new_pilot(
+        txid: String,
+        recipient_address: String,
+        amount_zatoshis: u64,
+        fee_zatoshis: u64,
+        memo: Option<Vec<u8>>,
+        spent_note_ids: Vec<String>,
+        priority: bool,
+        expiry_height: u32,
+    ) -> Self {
+        Self {
+            txid,
+            recipient_address,
+            amount_zatoshis,
+            fee_zatoshis,
+            memo,
+            created_at: Utc::now(),
+            broadcast_at: None,
+            status: TransactionStatus::Pending,
+            block_height: None,
+            block_time: None,
+            confirmations: 0,
+            spent_note_ids,
+            priority,
+            expiry_height: Some(expiry_height),
         }
     }
 
@@ -155,6 +200,11 @@ impl SentTransactionRecord {
 
     pub fn mark_failed(&mut self) {
         self.status = TransactionStatus::Failed;
+    }
+
+    pub fn mark_expired(&mut self) {
+        self.status = TransactionStatus::Expired;
+        self.confirmations = 0;
     }
 }
 

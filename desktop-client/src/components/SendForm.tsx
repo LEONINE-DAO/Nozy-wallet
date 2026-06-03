@@ -9,23 +9,13 @@ import { Tooltip } from "../components/Tooltip";
 import {
   Scanner,
   InfoCircle,
-  BoltCircle,
   CheckCircle,
   User,
 } from "@solar-icons/react";
 import { useWalletStore } from "../store/walletStore";
 import { useTokenStore } from "../store/tokenStore";
 import { walletApi } from "../lib/api";
-import { cn } from "../components/Button";
 import type { AddressBookEntry } from "../lib/types";
-
-type Priority = "slow" | "normal" | "fast";
-
-const FEES = {
-  slow: 0.00004,
-  normal: 0.0002,
-  fast: 0.001,
-};
 
 interface SendFormProps {
   onSuccess?: () => void;
@@ -43,7 +33,8 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [address, setAddress] = useState("");
   const [password, setPassword] = useState("");
   const [memo, setMemo] = useState("");
-  const [priority, setPriority] = useState<Priority>("normal");
+  const [priority, setPriority] = useState(false);
+  const [feeZec, setFeeZec] = useState(0.00015);
   const [showMemo, setShowMemo] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [isSending, setIsSending] = useState(false);
@@ -59,13 +50,26 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     amount &&
     address &&
     parseFloat(amount) > 0 &&
-    parseFloat(amount) + FEES[priority] <= balance;
+    parseFloat(amount) + feeZec <= balance;
 
   useEffect(() => {
     if (pickContactOpen) {
       walletApi.listAddressBook().then((r) => setContacts(Array.isArray(r?.data) ? r.data : []));
     }
   }, [pickContactOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    walletApi
+      .estimateFee({ priority })
+      .then((r) => {
+        if (!cancelled && typeof r?.data === "number") setFeeZec(r.data);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [priority, memo]);
 
   const handleSaveToContacts = async () => {
     const name = saveContactName.trim();
@@ -96,7 +100,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   };
 
   const handleMax = () => {
-    const maxAmount = Math.max(0, balance - FEES[priority]);
+    const maxAmount = Math.max(0, balance - feeZec);
     setAmount(maxAmount >= 0 ? maxAmount.toString() : "0");
   };
 
@@ -111,6 +115,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         amount: parseFloat(amount),
         memo: memo || undefined,
         password: password,
+        priority,
       });
       const txidMsg = sent.txid ? ` TXID: ${sent.txid}` : "";
       toast.success(`Transaction sent successfully!${txidMsg}`, { id: sendToast });
@@ -163,14 +168,15 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
               <div className="flex justify-between items-center">
                 <span className="text-gray-500 text-sm">Fee</span>
                 <span className="text-gray-900 font-medium text-sm">
-                  {FEES[priority]} {tokenSymbol}
+                  {feeZec.toFixed(8)} {tokenSymbol}
+                  {priority ? " (priority ×4)" : ""}
                 </span>
               </div>
               <div className="h-px bg-gray-200 my-2" />
               <div className="flex justify-between items-center text-base">
                 <span className="font-bold text-gray-900">Total</span>
                 <span className="font-bold text-primary-700">
-                  {(parseFloat(amount || "0") + FEES[priority]).toFixed(5)}{" "}
+                  {(parseFloat(amount || "0") + feeZec).toFixed(8)}{" "}
                   {tokenSymbol}
                 </span>
               </div>
@@ -378,45 +384,22 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         )}
       </div>
 
-      <div className="space-y-3">
-        <label className="text-sm font-medium text-gray-700 ml-1">
-          Transaction Priority
+      <div className="space-y-2">
+        <label className="flex items-center justify-between gap-3 ml-1 cursor-pointer">
+          <span className="text-sm font-medium text-gray-700">
+            Priority fee (ZIP-317 × 4)
+          </span>
+          <input
+            type="checkbox"
+            checked={priority}
+            onChange={(e) => setPriority(e.target.checked)}
+            className="h-5 w-5 rounded border-gray-300 text-primary focus:ring-primary"
+          />
         </label>
-        <div className="grid grid-cols-3 gap-3">
-          {(["slow", "normal", "fast"] as Priority[]).map((p) => (
-            <button
-              key={p}
-              onClick={() => setPriority(p)}
-              className={cn(
-                "flex flex-col items-center justify-center py-2.5 rounded-xl border transition-all duration-200 relative overflow-hidden",
-                priority === p
-                  ? "bg-primary text-black border-primary shadow-md shadow-primary/20"
-                  : "bg-white/40 border-gray-200 text-gray-600 hover:border-primary/30 hover:bg-white/80"
-              )}
-            >
-              <span className="capitalize font-bold text-sm tracking-wide">
-                {p}
-              </span>
-              <span
-                className={cn(
-                  "text-[10px] mt-0.5 opacity-80",
-                  priority === p ? "text-black" : "text-gray-400"
-                )}
-              >
-                {p === "slow" ? "~20m" : p === "normal" ? "~2m" : "~0m"}
-              </span>
-              {priority === p && p === "fast" && (
-                <div className="absolute top-1 right-1">
-                  <BoltCircle
-                    size={10}
-                    weight="Bold"
-                    className="text-white"
-                  />
-                </div>
-              )}
-            </button>
-          ))}
-        </div>
+        <p className="text-xs text-gray-500 ml-1">
+          Estimated fee: {feeZec.toFixed(8)} {tokenSymbol}. Tx expires in ~2
+          minutes if not mined (pilot).
+        </p>
       </div>
 
       <div className="flex gap-3 pt-4">

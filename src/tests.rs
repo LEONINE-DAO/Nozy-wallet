@@ -163,6 +163,7 @@ mod tests {
                 1000,
                 100,
                 None,
+                crate::PILOT_EXPIRY_DELTA_BLOCKS,
             )
             .await;
         assert!(result.is_err() || result.is_ok());

@@ -32,6 +32,8 @@ pub mod cli_helpers;
 #[cfg(feature = "native")]
 pub mod config;
 #[cfg(feature = "native")]
+pub mod fee_policy;
+#[cfg(feature = "native")]
 pub mod grpc_client;
 #[cfg(feature = "native")]
 pub mod local_analytics;
@@ -109,11 +111,18 @@ pub use bridge::{
     StoredSwap, SwapStorage,
 };
 #[cfg(feature = "native")]
-pub use cli_helpers::{estimate_transaction_fee, scan_notes_for_sending};
+pub use cli_helpers::{
+    estimate_transaction_fee, estimate_transaction_fee_for_send, scan_notes_for_sending,
+};
 #[cfg(feature = "native")]
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
 #[cfg(feature = "native")]
 pub use config::{BackendKind, Protocol};
+#[cfg(feature = "native")]
+pub use fee_policy::{
+    estimate_orchard_send_fee_zatoshis, OrchardSendFeeShape, PilotSendOptions,
+    PILOT_EXPIRY_DELTA_BLOCKS, PRIORITY_MULTIPLIER,
+};
 #[cfg(feature = "native")]
 pub use monero::{
     MoneroRpcClient, MoneroTransactionRecord, MoneroTransactionStatus, MoneroTransactionStorage,

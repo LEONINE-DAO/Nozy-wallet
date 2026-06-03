@@ -1,56 +1,30 @@
 use crate::error::{NozyError, NozyResult};
+use crate::fee_policy::{estimate_orchard_send_fee_zatoshis, PilotSendOptions};
 use crate::{load_config, HDWallet, NoteScanner, WalletStorage, ZebraClient};
 use dialoguer::Password;
 
+/// ZIP-317 client-side fee for an Orchard send (Zebrad does not implement `estimatefee`).
+pub async fn estimate_transaction_fee_for_send(
+    _zebra_client: &ZebraClient,
+    memo: Option<&[u8]>,
+    priority: bool,
+) -> u64 {
+    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, priority);
+    let label = if priority {
+        "priority (×4)"
+    } else {
+        "standard"
+    };
+    println!(
+        "💰 Estimated fee ({label}): {:.8} ZEC ({fee_zatoshis} zats, ZIP-317)",
+        fee_zatoshis as f64 / 100_000_000.0,
+    );
+    fee_zatoshis
+}
+
+/// Back-compat: standard (non-priority) ZIP-317 estimate.
 pub async fn estimate_transaction_fee(zebra_client: &ZebraClient) -> u64 {
-    const DEFAULT_FEE_ZATOSHIS: u64 = 10_000;
-
-    match zebra_client.get_fee_estimate().await {
-        Ok(estimate) => {
-            if let Some(fee_value) = estimate.get("fee") {
-                if let Some(fee_f64) = fee_value.as_f64() {
-                    let fee_zatoshis = (fee_f64 * 100_000_000.0) as u64;
-                    if fee_zatoshis > 0 {
-                        println!("💰 Estimated fee: {:.8} ZEC ({})", fee_f64, fee_zatoshis);
-                        return fee_zatoshis;
-                    }
-                } else if let Some(fee_u64) = fee_value.as_u64() {
-                    println!(
-                        "💰 Estimated fee: {:.8} ZEC ({})",
-                        fee_u64 as f64 / 100_000_000.0,
-                        fee_u64
-                    );
-                    return fee_u64;
-                }
-            }
-
-            for field in &["feerate", "feeRate", "fee_rate"] {
-                if let Some(fee_value) = estimate.get(*field) {
-                    if let Some(fee_f64) = fee_value.as_f64() {
-                        let fee_zatoshis = (fee_f64 * 100_000_000.0) as u64;
-                        if fee_zatoshis > 0 {
-                            println!("💰 Estimated fee: {:.8} ZEC ({})", fee_f64, fee_zatoshis);
-                            return fee_zatoshis;
-                        }
-                    }
-                }
-            }
-
-            println!(
-                "⚠️  Could not parse fee estimate, using default: {:.8} ZEC",
-                DEFAULT_FEE_ZATOSHIS as f64 / 100_000_000.0
-            );
-            DEFAULT_FEE_ZATOSHIS
-        }
-        Err(e) => {
-            println!(
-                "⚠️  Fee estimation failed: {}, using default: {:.8} ZEC",
-                e,
-                DEFAULT_FEE_ZATOSHIS as f64 / 100_000_000.0
-            );
-            DEFAULT_FEE_ZATOSHIS
-        }
-    }
+    estimate_transaction_fee_for_send(zebra_client, None, false).await
 }
 
 pub async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
@@ -118,11 +92,12 @@ pub async fn build_and_broadcast_transaction(
     memo: Option<&[u8]>,
     enable_broadcast: bool,
     zebra_url: &str,
+    pilot: PilotSendOptions,
 ) -> NozyResult<String> {
     let fee_zatoshis = if let Some(fee) = fee_zatoshis {
         fee
     } else {
-        estimate_transaction_fee(zebra_client).await
+        estimate_transaction_fee_for_send(zebra_client, memo, pilot.priority).await
     };
     use crate::transaction_history::{SentTransactionRecord, SentTransactionStorage};
     use crate::ZcashTransactionBuilder;
@@ -134,6 +109,9 @@ pub async fn build_and_broadcast_transaction(
         tx_builder.enable_mainnet_broadcast();
     }
 
+    let tip_height = zebra_client.get_best_block_height().await?;
+    let expiry_height = tip_height.saturating_add(pilot.expiry_delta_blocks);
+
     let transaction = tx_builder
         .build_send_transaction(
             zebra_client,
@@ -142,6 +120,7 @@ pub async fn build_and_broadcast_transaction(
             amount_zatoshis,
             fee_zatoshis,
             memo,
+            pilot,
         )
         .await?;
 
@@ -165,13 +144,15 @@ pub async fn build_and_broadcast_transaction(
                     .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
                     .collect();
 
-                let mut tx_record = SentTransactionRecord::new(
+                let mut tx_record = SentTransactionRecord::new_pilot(
                     network_txid.clone(),
                     recipient.to_string(),
                     amount_zatoshis,
                     fee_zatoshis,
                     memo.map(|m| m.to_vec()),
                     spent_note_ids,
+                    pilot.priority,
+                    expiry_height,
                 );
                 tx_record.mark_broadcast();
                 tx_storage.save_transaction(tx_record)?;

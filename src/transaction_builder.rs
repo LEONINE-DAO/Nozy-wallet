@@ -1,4 +1,5 @@
 use crate::error::{NozyError, NozyResult};
+use crate::fee_policy::{OrchardSendFeeShape, PilotSendOptions};
 use crate::notes::SpendableNote;
 use crate::orchard_tx::{OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider};
 use crate::zebra_integration::ZebraClient;
@@ -42,6 +43,7 @@ impl ZcashTransactionBuilder {
         amount_zatoshis: u64,
         fee_zatoshis: u64,
         memo: Option<&[u8]>,
+        pilot: PilotSendOptions,
     ) -> NozyResult<SignedTransaction> {
         use crate::privacy::validate_shielded_address;
         validate_shielded_address(recipient_address)?;
@@ -80,6 +82,16 @@ impl ZcashTransactionBuilder {
             )));
         }
 
+        let has_change = total_available > amount_zatoshis.saturating_add(fee_zatoshis);
+        let shape = OrchardSendFeeShape::single_spend_send(has_change, memo);
+        let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority);
+        if fee_zatoshis < expected_fee {
+            return Err(NozyError::InvalidOperation(format!(
+                "Fee {} zats is below ZIP-317 minimum {} zats for this transaction shape",
+                fee_zatoshis, expected_fee
+            )));
+        }
+
         let orchard_builder = OrchardTransactionBuilder::new(true);
         let built = orchard_builder
             .build_single_spend(
@@ -90,6 +102,7 @@ impl ZcashTransactionBuilder {
                 amount_zatoshis,
                 fee_zatoshis,
                 memo,
+                pilot.expiry_delta_blocks,
             )
             .await?;
 

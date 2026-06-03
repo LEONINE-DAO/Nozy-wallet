@@ -92,8 +92,14 @@ export const walletApi = {
     return { data: result };
   },
 
-  estimateFee: async (zebraUrl?: string): Promise<{ data: number }> => {
-    const result = await invoke<number>("estimate_fee", { zebra_url: zebraUrl });
+  estimateFee: async (opts?: {
+    zebraUrl?: string;
+    priority?: boolean;
+  }): Promise<{ data: number }> => {
+    const result = await invoke<number>("estimate_fee", {
+      zebra_url: opts?.zebraUrl,
+      priority: opts?.priority ?? false,
+    });
     return { data: result };
   },
 
