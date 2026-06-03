@@ -13,6 +13,7 @@ const tabLabel: Record<PopupView, string> = {
   dashboard: "Home",
   send: "Send",
   receive: "Receive",
+  scan: "Scan",
   companion: "API",
   settings: "Settings"
 };

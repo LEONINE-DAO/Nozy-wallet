@@ -6,6 +6,7 @@ export type PopupView =
   | "dashboard"
   | "send"
   | "receive"
+  | "scan"
   | "companion"
   | "settings";
 
