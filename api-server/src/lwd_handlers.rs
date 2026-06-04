@@ -100,7 +100,9 @@ pub async fn lwd_info(
     let info = client
         .get_lightd_info(Empty {})
         .await
-        .map_err(|e| zeaking_err_response(zeaking::ZeakingError::Grpc(format!("GetLightdInfo: {e}"))))?
+        .map_err(|e| {
+            zeaking_err_response(zeaking::ZeakingError::Grpc(format!("GetLightdInfo: {e}")))
+        })?
         .into_inner();
     Ok(ResponseJson(serde_json::json!({
         "version": info.version,
