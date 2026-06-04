@@ -1,16 +1,41 @@
-# NozyWallet - Privacy by Default
+# NozyWallet
 
-**Monero-Level Privacy, Zcash Speed**
+**Orchard-first Zcash wallet** — CLI, desktop app, and browser extension. This repository is a **wallet and companion services**, not a consensus node.
 
-> Delivery mode: extension-first. See `EXTENSION_FIRST_SCOPE.md` and `EXTENSION_BRANCH_WORKFLOW.md`.
+## What NozyWallet is
 
-NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet **only supports shielded transactions** - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees.
+NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for incoming notes, build transactions, and (on supported surfaces) send ZEC. The project **does not ship a full blockchain node**. You run **[Zebra](https://github.com/ZcashFoundation/zebra) (`zebrad`)** for JSON-RPC and **[lightwalletd](https://github.com/zcash/lightwalletd)** for compact blocks, then point the wallet at those endpoints.
 
-**Lightwalletd / compact sync** is implemented once in Rust as **`zeaking`** (`zeaking::lwd`). It is wired for **desktop** (Tauri + `api-server`), **Chrome/Edge** (MV3 calls the localhost companion — see `browser-extension/COMPANION.md`), and **mobile** (`zeaking-ffi` + UniFFI). See `zeaking/README.md`. On Windows, **`scripts/run-nozy-api.ps1`** starts `api-server` against WSL lightwalletd; see **`scripts/README.md`**.
+**Privacy policy in the wallet:** transparent `t1` addresses are **rejected** for user-facing send/receive flows; the product is **shielded-first** (Orchard / unified `u1`), not a mixed transparent wallet. That is a design choice, not a claim of “Monero equivalence.”
 
-**Zebrad (Zebra) + shielded sends:** Nozy targets a Zebrad-first stack. Sync/receive use lightwalletd + zeaking, and shielded sends use **local witness tracking** with `z_gettreestate` anchor checks. Architecture notes are documented in **`ZEBRAD_SHIELDED_SEND_LIMIT.md`**.
+| Surface | Path | Role |
+|--------|------|------|
+| **CLI + core library** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, `ZebraClient`, transaction building |
+| **Zeaking** | `zeaking/` | Compact sync via lightwalletd → SQLite (`zeaking::lwd`) |
+| **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`, default `:3000`) |
+| **Desktop** | `desktop-client/` | Tauri app (recommended full UX today) |
+| **Browser extension** | `browser-extension/` | MV3 + WASM; compact sync via companion API |
+| **Mobile (in progress)** | `zeaking-ffi/` | UniFFI bindings; not on app stores yet |
+| **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
-**Extension releases (Chrome & Edge zip):** maintainers run the **extension-release-bundles** GitHub Action (see **`browser-extension/RELEASES.md`**); each run publishes a **GitHub Release** with Chromium and Firefox bundles so users can load unpacked or track versions.
+**Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`run-nozy-api.ps1`, `zeaking-lwd-smoke.ps1`).
+
+**Contributor priority:** new feature work is **extension-first** ([`EXTENSION_FIRST_SCOPE.md`](EXTENSION_FIRST_SCOPE.md)). **End users** who want a full wallet today should prefer **desktop** or **CLI**; the extension is a lighter mode that relies on the companion API for LWD sync ([`browser-extension/COMPANION.md`](browser-extension/COMPANION.md)).
+
+**Extension releases:** maintainers publish Chromium/Firefox zips via the **extension-release-bundles** workflow — see [`browser-extension/RELEASES.md`](browser-extension/RELEASES.md).
+
+## Built with
+
+| Layer | Technology |
+|-------|------------|
+| Language | **Rust** (2021 edition), workspace crates `nozy`, `zeaking`, `nozywallet-api`, `zeaking-ffi` |
+| Zcash / Orchard | `orchard`, `zcash_primitives`, `zcash_protocol`, `zcash_address`, `zip32`, `bip39` (versions in root `Cargo.toml`) |
+| Desktop UI | **Tauri 2** + **React** + **Vite** (`desktop-client/`) |
+| Extension | **Rust → WASM** (`browser-extension/wasm-core/`) + MV3 service worker |
+| Compact sync | **gRPC** to lightwalletd, **SQLite** cache in `zeaking::lwd` |
+| Node (you run separately) | **[Zebra](https://github.com/ZcashFoundation/zebra)** (`zebrad` JSON-RPC) + **[lightwalletd](https://github.com/zcash/lightwalletd)** — not `zcashd` |
+
+Optional: **Secret Network** CLI features (`--features secret-network`) share the same seed for SCRT/Shade workflows — see docs in `docs/` and the published book.
 
 ## Downloads (latest release)
 
@@ -42,7 +67,7 @@ Extension: unzip, then Chrome/Edge **Load unpacked**. If Assets are empty for de
 
 - ✅ **Protocol Version 170140** - Fully compatible with NU 6.1
 - ✅ **Activation Height**: Block 3,146,400 (November 23, 2025)
-- ✅ **Latest Libraries**: Using `zcash_protocol 0.6.2+` and `zcash_primitives 0.24.1+`
+- ✅ **Current workspace crates** (see root `Cargo.toml`): `zcash_protocol 0.7`, `zcash_primitives 0.26`, `orchard 0.11`
 - ✅ **NU 6.1 Features**: ZIP 271, ZIP 1016 support
 
 Check your NU 6.1 status:
@@ -55,15 +80,11 @@ Or see it in your wallet status:
 nozy status
 ```
 
-##  Privacy Guarantees
+## Privacy stance (what the code actually enforces)
 
-- ✅ **Every transaction is private** - No transparent transactions possible
-- ✅ **Untraceable** - Sender, receiver, and amount are all hidden
-- ✅ **Fungible** - No blacklisted or tainted coins
-- ✅ **Zero-knowledge proofs** - Cryptographically proven privacy
-- ✅ **Privacy by default** - You cannot accidentally compromise your privacy
-
-Just like Monero, but faster and more efficient.
+- **Shielded-first:** Orchard / unified shielded receivers; transparent `t1` is blocked for sends (see `src/privacy.rs`).
+- **Orchard proofs:** Halo 2 proving is built into the Orchard stack (no legacy Sapling parameter download).
+- **Operational privacy** still depends on how you run your node, network, and device security — this wallet does not replace full-network anonymity guarantees.
 
 ## Features
 
@@ -86,8 +107,8 @@ Just like Monero, but faster and more efficient.
 - **Merkle Path Construction**: Convert authentication paths to MerkleHashOrchard arrays
 - **Bundle Authorization Framework**: Complete transaction authorization framework
 
-#### Desktop Application (NEW)
-- **✅ Desktop GUI**: Beautiful cross-platform desktop application (Windows, macOS, Linux)
+#### Desktop application (Tauri)
+- **Desktop GUI**: Cross-platform desktop app (Windows, macOS, Linux) — see [releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)
 - **✅ Web3 Browser**: Built-in browser for Zcash dApps with full navigation
 - **✅ dApp Integration**: EIP-1193 compatible provider for seamless dApp connections
 - **✅ Transaction Signing**: Approve and sign transactions from dApps
@@ -103,16 +124,20 @@ Just like Monero, but faster and more efficient.
 - **CLI:** Build with `cargo build --release --features secret-network`, then use `nozy shade` for balance, send, receive, history (e.g. `nozy shade balance`, `nozy shade receive`).
 - **Docs:** [Secret Network (ZEC + Secret from one seed)](https://leonine-dao.github.io/Nozy-wallet/book/advanced/secret-network.html) in the book; [SECRET_NETWORK_RESEARCH_AND_BUILD.md](SECRET_NETWORK_RESEARCH_AND_BUILD.md) for implementation details and build plan.
 
-###  Upcoming Features & Roadmap
+### Upcoming features and roadmap
 
->  **Full Roadmap Available**: See **[ENHANCEMENT_ROADMAP.md](ENHANCEMENT_ROADMAP.md)** for complete development plans, priorities, and implementation details.
+> **Full roadmap:** [ENHANCEMENT_ROADMAP.md](ENHANCEMENT_ROADMAP.md)
 
-NozyWallet is actively being developed with exciting features on the horizon! We're building the most private and user-friendly Zcash wallet.
+**Shipped today (maintained):**
 
-** High-Priority Features (Looking for Contributors!):**
+- **Desktop** — [User guide](desktop-client/USER_GUIDE.md) | [dApp integration](desktop-client/DAPP_INTEGRATION_GUIDE.md) | [Releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)
+- **CLI** — `cargo run --bin nozy` (see [Command help](COMMAND_HELP.md))
+- **Extension + companion API** — [COMPANION.md](browser-extension/COMPANION.md)
 
--  **Desktop GUI Application** - ✅ **RELEASED!** Cross-platform desktop app with beautiful UI, Web3 browser, and dApp integration - **[Download →](desktop-client/)** | **[User Guide →](desktop-client/USER_GUIDE.md)** | **[dApp Integration →](desktop-client/DAPP_INTEGRATION_GUIDE.md)**
--  **Mobile Applications** - Native iOS and Android apps for on-the-go privacy - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#16-mobile-applications)**
+**Active priorities (contributors welcome):**
+
+- **Extension milestones** — per [EXTENSION_FIRST_SCOPE.md](EXTENSION_FIRST_SCOPE.md)
+- **Mobile applications** — iOS/Android via `zeaking-ffi` — [roadmap](ENHANCEMENT_ROADMAP.md#16-mobile-applications)
 -  **Hardware Wallet Integration** - Ledger, Trezor, and other hardware wallet support - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#8-enhanced-security-features)**
 -  **Multi-Signature Support** - Enhanced security with multi-sig transactions - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#8-enhanced-security-features)**
 
@@ -135,21 +160,16 @@ Check out our [Contributing Guide](#-contributing) and the **[Enhancement Roadma
 
 ##  Installation
 
-### Desktop Application (Recommended for Most Users)
+### Desktop application
 
-**NozyWallet Desktop Client** is now available! A beautiful, user-friendly desktop application with Web3 browser and dApp integration.
+**NozyWallet Desktop** (Tauri) is the recommended graphical wallet for full Orchard flows when you run your own `zebrad` + `lightwalletd`.
 
-**Quick Start:**
+**Quick start:**
 1. Download the installer for your platform (Windows/macOS/Linux)
 2. Install and launch the application
 3. Follow the setup wizard to create or restore your wallet
 
-**Features:**
-- ✅ Beautiful GUI (no command line needed!)
-- ✅ Built-in Web3 browser for Zcash dApps
-- ✅ Transaction and message signing from dApps
-- ✅ Dark mode support
-- ✅ Enhanced security features
+**Includes:** GUI wallet UI, built-in browser with dApp provider hooks, dark mode — see the desktop guides for what is implemented vs experimental.
 
 **Documentation:**
 - 📖 [User Guide](desktop-client/USER_GUIDE.md) - Complete user documentation
@@ -183,7 +203,7 @@ cargo build --release
 - **[User Guide](desktop-client/USER_GUIDE.md)** - Complete guide for desktop users
 - **[dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)** - Developer guide for dApp integration
 - **[Changelog](desktop-client/CHANGELOG.md)** - Desktop client version history
-- **[Feature Coverage](desktop-client/FEATURE_COVERAGE.md)** - What's implemented vs core library
+- **[Desktop README](desktop-client/README.md)** - Build and dev notes for the Tauri app
 
 ### CLI Documentation
 
@@ -199,7 +219,7 @@ cargo build --release
 cargo run --bin nozy new
 ```
 
-**Example Output:**
+**Example output (illustrative — your mnemonic and addresses will differ):**
 ```
  Creating new wallet...
  Wallet created successfully!
@@ -1213,13 +1233,10 @@ We welcome contributions! NozyWallet is an open-source project, and there are ma
 
 Based on our [Enhancement Roadmap](ENHANCEMENT_ROADMAP.md), we're particularly looking for contributions in:
 
-** High Priority (Active Development):**
+**High priority (active development):**
 
-- **🖥️ Desktop GUI Development** - Build cross-platform desktop app with Tauri or GTK
-  - See: [Priority 6: Desktop GUI Application](ENHANCEMENT_ROADMAP.md#15-desktop-gui-application)
-  - Skills: Frontend (React/Vue), Rust, UI/UX design
-  
-- **📱 Mobile App Development** - Native iOS and Android applications
+- **Extension + zeaking companion** — MV3, WASM, LWD sync via `api-server` ([EXTENSION_FIRST_SCOPE.md](EXTENSION_FIRST_SCOPE.md))
+- **📱 Mobile app development** — Native iOS and Android applications
   - See: [Priority 6: Mobile Applications](ENHANCEMENT_ROADMAP.md#16-mobile-applications)
   - Skills: React Native, Flutter, Swift, Kotlin, Mobile UI/UX
 
