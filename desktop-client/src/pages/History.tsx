@@ -26,9 +26,15 @@ function normalizeTx(raw: any): HistoryTx {
     ? raw.amount_zec
     : (raw.amount_zatoshis != null ? raw.amount_zatoshis / 100_000_000 : 0);
   const recipient = raw.recipient_address ?? raw.recipient ?? "";
-  const status = raw.status != null
+  const statusRaw = raw.status != null
     ? String(raw.status).toLowerCase().replace(/\s/g, "_")
     : "unknown";
+  const status =
+    statusRaw === "confirmed" ||
+    statusRaw === "pending" ||
+    statusRaw === "failed"
+      ? statusRaw
+      : statusRaw;
   const dateRaw = raw.broadcast_at ?? raw.created_at ?? raw.date ?? raw.block_time;
   const date =
     typeof dateRaw === "string"
@@ -47,13 +53,13 @@ function normalizeTx(raw: any): HistoryTx {
     amount: amountZec,
     date,
     address: recipient || (txid ? `${txid.slice(0, 8)}...${txid.slice(-4)}` : "—"),
-    status: status === "confirmed" ? "confirmed" : status === "pending" ? "pending" : status,
+    status,
     memo,
   };
 }
 
 type FilterType = "all" | "sent" | "received";
-type FilterStatus = "all" | "confirmed" | "pending";
+type FilterStatus = "all" | "confirmed" | "pending" | "failed";
 type FilterDateRange = "all" | "7" | "30" | "90";
 
 function filterAndSortTxs(
@@ -305,6 +311,7 @@ export function HistoryPage() {
               <option value="all">All statuses</option>
               <option value="confirmed">Confirmed</option>
               <option value="pending">Pending</option>
+              <option value="failed">Failed</option>
             </select>
             <select
               value={filterDateRange}
@@ -422,12 +429,14 @@ export function HistoryPage() {
                     )}
                   </p>
                   <span
-                    className={`text-xs px-2 py-0.5 rounded-full ${
+                    className={`text-xs px-2 py-0.5 rounded-full capitalize ${
                       tx.status === "confirmed"
                         ? "bg-green-100 text-green-700"
                         : tx.status === "pending"
                           ? "bg-yellow-100 text-yellow-700"
-                          : "bg-gray-100 text-gray-700"
+                          : tx.status === "failed"
+                            ? "bg-red-100 text-red-700"
+                            : "bg-gray-100 text-gray-700"
                     }`}
                   >
                     {tx.status}

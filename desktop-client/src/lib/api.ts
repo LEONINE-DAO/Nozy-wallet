@@ -93,7 +93,7 @@ export const walletApi = {
   },
 
   estimateFee: async (zebraUrl?: string): Promise<{ data: number }> => {
-    const result = await invoke<number>("estimate_fee", { zebraUrl });
+    const result = await invoke<number>("estimate_fee", { zebra_url: zebraUrl });
     return { data: result };
   },
 
