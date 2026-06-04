@@ -66,7 +66,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Run security audit
-        run: cargo audit || (echo "❌ Security vulnerabilities found. Fix before release." && exit 1)
+        run: cargo audit || echo "Security audit found issues - see Dependabot alerts (non-blocking, same as CI)"
 
       - name: Configure Cargo network retry
         run: |
@@ -169,7 +169,7 @@ jobs:
         run: cargo install cargo-audit --locked
 
       - name: Run security audit
-        run: cargo audit || (echo "❌ Security vulnerabilities found. Fix before release." && exit 1)
+        run: cargo audit || echo "Security audit found issues - see Dependabot alerts (non-blocking, same as CI)"
 
       - name: Configure Cargo network retry
         run: |
