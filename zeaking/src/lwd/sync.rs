@@ -49,6 +49,84 @@ pub struct SyncCompactStats {
     pub range_end: u64,
 }
 
+/// Options for [`sync_compact_to_tip_with_options`].
+#[derive(Clone, Debug)]
+pub struct SyncCompactToTipOptions {
+    /// Optional lower bound for the first height to fetch (e.g. Orchard activation or wallet birthday).
+    /// Heights below this are never requested. Default is `1` when `None`.
+    pub start_floor: Option<u64>,
+    /// Checkpoint interval for [`SyncCompactOptions::persist_progress_every`].
+    pub persist_progress_every: u64,
+}
+
+impl Default for SyncCompactToTipOptions {
+    fn default() -> Self {
+        Self {
+            start_floor: None,
+            persist_progress_every: SyncCompactOptions::default().persist_progress_every,
+        }
+    }
+}
+
+/// Result of [`sync_compact_to_tip_with_options`] (includes tip context for UI / callers).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SyncCompactToTipStats {
+    pub chain_tip: u64,
+    pub blocks_written: u64,
+    pub range_start_requested: u64,
+    pub range_start_effective: u64,
+    pub range_end: u64,
+    /// `true` when the store is already caught up through `chain_tip` (no range to download).
+    pub already_at_tip: bool,
+}
+
+/// First height to use for a “sync to tip” pass: `max(max_compact_height + 1, start_floor_or_1)`.
+pub fn requested_start_height_for_tip_sync(
+    store: &LwdCompactStore,
+    start_floor: Option<u64>,
+) -> ZeakingResult<u64> {
+    let floor = start_floor.unwrap_or(1);
+    Ok(match store.max_compact_height()? {
+        Some(m) => m.saturating_add(1).max(floor),
+        None => floor,
+    })
+}
+
+/// Download compact blocks from the next missing height through the current lightwalletd tip.
+///
+/// Uses [`sync_compact_range_with_options`] with `resume_from_store: true` so retries stay idempotent.
+/// Call [`requested_start_height_for_tip_sync`] if you only need the resolved start height.
+pub async fn sync_compact_to_tip_with_options(
+    client: &mut LwdClient,
+    store: &LwdCompactStore,
+    options: SyncCompactToTipOptions,
+) -> ZeakingResult<SyncCompactToTipStats> {
+    let tip = chain_tip_height(client).await?;
+    let start = requested_start_height_for_tip_sync(store, options.start_floor)?;
+    let compact = SyncCompactOptions {
+        resume_from_store: true,
+        persist_progress_every: options.persist_progress_every,
+    };
+    let stats = sync_compact_range_with_options(client, store, start, tip, compact).await?;
+    let already_at_tip = stats.range_start_effective > stats.range_end;
+    Ok(SyncCompactToTipStats {
+        chain_tip: tip,
+        blocks_written: stats.blocks_written,
+        range_start_requested: stats.range_start_requested,
+        range_start_effective: stats.range_start_effective,
+        range_end: stats.range_end,
+        already_at_tip,
+    })
+}
+
+/// Same as [`sync_compact_to_tip_with_options`] with [`SyncCompactToTipOptions::default`].
+pub async fn sync_compact_to_tip(
+    client: &mut LwdClient,
+    store: &LwdCompactStore,
+) -> ZeakingResult<SyncCompactToTipStats> {
+    sync_compact_to_tip_with_options(client, store, SyncCompactToTipOptions::default()).await
+}
+
 /// Download inclusive `[start, end]` compact blocks from lightwalletd into `store`.
 /// Returns the number of blocks written.
 ///
@@ -199,6 +277,45 @@ mod tests {
         assert_eq!(compact_sync_progress_height(&store).unwrap(), None);
         store.set_meta("last_compact_progress", " 100500 ").unwrap();
         assert_eq!(compact_sync_progress_height(&store).unwrap(), Some(100500));
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn requested_start_height_for_tip_empty_store() {
+        let path = std::env::temp_dir().join(format!(
+            "zeaking_tip_start_empty_{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let store = LwdCompactStore::open(&path).unwrap();
+        assert_eq!(
+            requested_start_height_for_tip_sync(&store, None).unwrap(),
+            1
+        );
+        assert_eq!(
+            requested_start_height_for_tip_sync(&store, Some(500)).unwrap(),
+            500
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn requested_start_height_for_tip_after_max() {
+        let path = std::env::temp_dir().join(format!(
+            "zeaking_tip_start_max_{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let store = LwdCompactStore::open(&path).unwrap();
+        store.put_compact_block(100, None, &[1, 2, 3]).unwrap();
+        assert_eq!(
+            requested_start_height_for_tip_sync(&store, None).unwrap(),
+            101
+        );
+        assert_eq!(
+            requested_start_height_for_tip_sync(&store, Some(200)).unwrap(),
+            200
+        );
         let _ = std::fs::remove_file(&path);
     }
 }

@@ -75,13 +75,14 @@ When **Nozy desktop** or **`nozywallet-api`** is running, extensions can sync co
 |---------|---------|
 | `lwd_get_info` | `{ lightwalletdUrl?: string }` → chain name, tip height |
 | `lwd_chain_tip` | optional URL → tip height |
-| `lwd_sync_compact` | `{ start, end?, lightwalletdUrl?, dbPath? }` → blocks written |
+| `lwd_sync_compact` | `{ start, end?, lightwalletdUrl?, dbPath?, resume? }` → range + blocks written |
+| `lwd_sync_compact_to_tip` | `{ lightwalletdUrl?, dbPath?, startFloor?, persistProgressEvery? }` → tip + `alreadyAtTip` + range stats |
 
 Default lightwalletd URL: env `LIGHTWALLETD_GRPC` or `http://127.0.0.1:9067`.
 
 **HTTP API** (if you run `nozywallet-api`): see [`api-server`](../api-server) routes `/api/lwd/*`.
 
-**Browser extension (Chrome / Edge):** [`browser-extension/COMPANION.md`](../browser-extension/COMPANION.md) — `host_permissions` for `http://127.0.0.1:3000/*` and service-worker methods `companion_status`, `companion_lwd_*`.
+**Browser extension (Chrome / Edge):** [`browser-extension/COMPANION.md`](../browser-extension/COMPANION.md) — `host_permissions` for `http://127.0.0.1:3000/*` and service-worker methods `companion_status`, `companion_lwd_*` (including `companion_lwd_sync_compact_to_tip`).
 
 **Mobile:** [`zeaking-ffi`](../zeaking-ffi) — UniFFI bindings for the same `zeaking::lwd` calls.
 

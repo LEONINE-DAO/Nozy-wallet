@@ -77,7 +77,7 @@ export async function companionLwdChainTip(baseUrl, lightwalletdUrl) {
 /**
  * Triggers compact sync on the companion machine (desktop SQLite path).
  * @param {string} [baseUrl]
- * @param {{ start: number, end?: number, lightwalletd_url?: string, db_path?: string }} body
+ * @param {{ start: number, end?: number, lightwalletd_url?: string, db_path?: string, resume?: boolean }} body
  */
 export async function companionLwdSyncCompact(baseUrl, body) {
   const base = normalizeCompanionBase(baseUrl);
@@ -88,7 +88,29 @@ export async function companionLwdSyncCompact(baseUrl, body) {
       start: body.start,
       end: body.end,
       lightwalletd_url: body.lightwalletd_url,
-      db_path: body.db_path
+      db_path: body.db_path,
+      resume: body.resume
+    })
+  });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
+
+/**
+ * Sync compact blocks from next missing height through chain tip (companion desktop DB).
+ * @param {string} [baseUrl]
+ * @param {{ lightwalletd_url?: string, db_path?: string, start_floor?: number, persist_progress_every?: number }} body
+ */
+export async function companionLwdSyncCompactToTip(baseUrl, body) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/lwd/sync/compact-to-tip`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      lightwalletd_url: body.lightwalletd_url,
+      db_path: body.db_path,
+      start_floor: body.start_floor,
+      persist_progress_every: body.persist_progress_every
     })
   });
   if (!r.ok) throw new Error(await readErrorBody(r));

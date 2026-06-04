@@ -26,6 +26,7 @@ import {
   companionLwdChainTip,
   companionLwdInfo,
   companionLwdSyncCompact,
+  companionLwdSyncCompactToTip,
   companionStatus
 } from "./companion-api.js";
 
@@ -1058,6 +1059,8 @@ const SCAN_SAVE_EVERY_BLOCKS = 10;
 const SCAN_ALARM = "nozy_scan_tick";
 const SCAN_MODE_MANUAL = "manual";
 const SCAN_MODE_AUTO = "auto";
+/** Auto mode rewind window when prior scan found no notes (safety for missed receives near tip). */
+const AUTO_SYNC_RESCAN_OVERLAP_BLOCKS = 100;
 /** Session-only copy of mnemonic+UA so `scanTick` can run after MV3 service worker restarts (cleared on lock / scan end). */
 const SCAN_RESUME_SESSION_KEY = "nozy_scan_resume_wallet_v1";
 
@@ -1290,12 +1293,8 @@ async function scanTick() {
 }
 
 async function startBackgroundScan(startHeight, endHeight) {
-  const existing = await loadScanState();
-  if (existing && existing.status === "scanning") {
-    scheduleScanAlarm(0.02);
-    void scanTick();
-    return existing;
-  }
+  // User explicitly started a range (window / custom / birthday). Always replace any
+  // in-progress job — otherwise "Last 500" is ignored while auto-sync is still "scanning".
   const state = {
     status: "scanning",
     scanMode: SCAN_MODE_MANUAL,
@@ -1346,11 +1345,15 @@ async function startAutoBackgroundScan() {
   const priorDone =
     existing &&
     (existing.status === "done" || existing.status === "stopped" || existing.status === "failed");
+  let resumedFrom = chainTip;
+  let rewoundForSafety = false;
 
   if (priorDone && typeof existing.heightProgress === "number" && existing.heightProgress >= 0) {
-    startHeight = Math.min(chainTip, Math.max(0, Math.floor(existing.heightProgress) + 1));
+    resumedFrom = Math.min(chainTip, Math.max(0, Math.floor(existing.heightProgress) + 1));
+    startHeight = resumedFrom;
   } else if (priorDone && typeof existing.currentHeight === "number" && existing.currentHeight >= 0) {
-    startHeight = Math.min(chainTip, Math.max(0, Math.floor(existing.currentHeight)));
+    resumedFrom = Math.min(chainTip, Math.max(0, Math.floor(existing.currentHeight)));
+    startHeight = resumedFrom;
   } else {
     const ws = await loadWalletState();
     const bh = Number(ws?.orchardBirthdayHeight);
@@ -1360,9 +1363,21 @@ async function startAutoBackgroundScan() {
       const orchardActivation = await getOrchardActivationHeight();
       startHeight = Math.max(0, Math.min(chainTip, orchardActivation));
     }
+    resumedFrom = startHeight;
   }
 
-  const keepHistory = priorDone && Array.isArray(existing?.discoveredNotes);
+  // If prior scans found no notes, rewind a small overlap window to avoid missing near-tip
+  // receives due to transient RPC/service-worker interruptions.
+  const priorNoteCount = Array.isArray(existing?.discoveredNotes) ? existing.discoveredNotes.length : 0;
+  if (priorDone && priorNoteCount === 0) {
+    const rewound = Math.max(0, startHeight - AUTO_SYNC_RESCAN_OVERLAP_BLOCKS);
+    if (rewound < startHeight) {
+      startHeight = rewound;
+      rewoundForSafety = true;
+    }
+  }
+
+  const keepHistory = priorDone && Array.isArray(existing?.discoveredNotes) && !rewoundForSafety;
   const state = {
     status: "scanning",
     scanMode: SCAN_MODE_AUTO,
@@ -1495,7 +1510,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                 start: Number(params.start ?? 0),
                 end: params.end !== undefined && params.end !== null ? Number(params.end) : undefined,
                 lightwalletd_url: params.lightwalletd_url,
-                db_path: params.db_path
+                db_path: params.db_path,
+                resume: params.resume === true
+              })
+            )
+          );
+          return;
+        case "companion_lwd_sync_compact_to_tip":
+          sendResponse(
+            ok(
+              await companionLwdSyncCompactToTip(params.baseUrl, {
+                lightwalletd_url: params.lightwalletd_url,
+                db_path: params.db_path,
+                start_floor:
+                  params.start_floor !== undefined && params.start_floor !== null
+                    ? Number(params.start_floor)
+                    : undefined,
+                persist_progress_every:
+                  params.persist_progress_every !== undefined &&
+                  params.persist_progress_every !== null
+                    ? Number(params.persist_progress_every)
+                    : undefined
               })
             )
           );

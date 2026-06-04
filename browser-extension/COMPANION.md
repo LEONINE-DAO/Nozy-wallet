@@ -19,6 +19,7 @@ The MV3 extension does **not** embed `zeaking`, gRPC, or SQLite. For **lightwall
    - `GET /api/lwd/info`
    - `GET /api/lwd/chain-tip`
    - `POST /api/lwd/sync/compact`
+   - `POST /api/lwd/sync/compact-to-tip`
 3. **Manifest**: `host_permissions` includes `http://127.0.0.1:3000/*` (and broader patterns as needed). This works in **Google Chrome** and **Microsoft Edge** (Chromium).
 
 ### Service worker API
@@ -30,7 +31,8 @@ Messages to the background (`NOZY_REQUEST`):
 | `companion_status` | `{ baseUrl? }` | Health + optional chain-tip probe |
 | `companion_lwd_info` | `{ baseUrl?, lightwalletd_url? }` | `GetLightdInfo` via companion |
 | `companion_lwd_chain_tip` | `{ baseUrl?, lightwalletd_url? }` | Tip height via companion |
-| `companion_lwd_sync_compact` | `{ baseUrl?, start, end?, lightwalletd_url?, db_path? }` | Sync on **desktop** DB |
+| `companion_lwd_sync_compact` | `{ baseUrl?, start, end?, lightwalletd_url?, db_path?, resume? }` | Sync on **desktop** DB |
+| `companion_lwd_sync_compact_to_tip` | `{ baseUrl?, lightwalletd_url?, db_path?, start_floor?, persist_progress_every? }` | Sync from next missing height through tip |
 
 Default `baseUrl` is `http://127.0.0.1:3000`. Override per-call for non-default ports.
 

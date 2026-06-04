@@ -25,6 +25,16 @@ pub struct LwdSyncResponse {
     pub range_end: u64,
 }
 
+#[derive(Debug, Serialize)]
+pub struct LwdSyncToTipResponse {
+    pub chain_tip: u64,
+    pub already_at_tip: bool,
+    pub blocks_written: u64,
+    pub range_start_requested: u64,
+    pub range_start_effective: u64,
+    pub range_end: u64,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct LwdSyncRequest {
     pub start: u64,
@@ -33,6 +43,14 @@ pub struct LwdSyncRequest {
     pub db_path: Option<String>,
     /// Skip compact heights already present in the SQLite store.
     pub resume: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LwdSyncToTipRequest {
+    pub lightwalletd_url: Option<String>,
+    pub db_path: Option<String>,
+    pub start_floor: Option<u64>,
+    pub persist_progress_every: Option<u64>,
 }
 
 fn lwd_url(o: Option<String>) -> String {
@@ -54,9 +72,11 @@ fn zeaking_err(e: zeaking::ZeakingError) -> TauriError {
 }
 
 fn compact_db_path(request: &LwdSyncRequest) -> PathBuf {
-    request
-        .db_path
-        .as_ref()
+    compact_db_path_opt(request.db_path.as_ref())
+}
+
+fn compact_db_path_opt(db_path: Option<&String>) -> PathBuf {
+    db_path
         .map(PathBuf::from)
         .unwrap_or_else(|| get_wallet_data_dir().join("lwd_compact.sqlite"))
 }
@@ -129,6 +149,40 @@ pub async fn lwd_sync_compact(request: LwdSyncRequest) -> Result<LwdSyncResponse
     .await
     .map_err(zeaking_err)?;
     Ok(LwdSyncResponse {
+        blocks_written: stats.blocks_written,
+        range_start_requested: stats.range_start_requested,
+        range_start_effective: stats.range_start_effective,
+        range_end: stats.range_end,
+    })
+}
+
+/// Sync compact blocks from the next missing height through lightwalletd tip (resume-safe).
+#[command]
+pub async fn lwd_sync_compact_to_tip(
+    request: LwdSyncToTipRequest,
+) -> Result<LwdSyncToTipResponse, TauriError> {
+    let url = lwd_url(request.lightwalletd_url.clone());
+    let db = compact_db_path_opt(request.db_path.as_ref());
+    if let Some(parent) = db.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let mut client = zeaking::lwd::connect_lightwalletd(&url)
+        .await
+        .map_err(zeaking_err)?;
+    let store = zeaking::lwd::LwdCompactStore::open(&db).map_err(zeaking_err)?;
+    let tip_opts = zeaking::lwd::SyncCompactToTipOptions {
+        start_floor: request.start_floor,
+        persist_progress_every: request
+            .persist_progress_every
+            .unwrap_or_else(|| zeaking::lwd::SyncCompactToTipOptions::default().persist_progress_every)
+            .max(1),
+    };
+    let stats = zeaking::lwd::sync_compact_to_tip_with_options(&mut client, &store, tip_opts)
+        .await
+        .map_err(zeaking_err)?;
+    Ok(LwdSyncToTipResponse {
+        chain_tip: stats.chain_tip,
+        already_at_tip: stats.already_at_tip,
         blocks_written: stats.blocks_written,
         range_start_requested: stats.range_start_requested,
         range_start_effective: stats.range_start_effective,
