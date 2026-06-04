@@ -5,7 +5,7 @@ use serde::Deserialize;
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::handlers::{error_response, error_response_with_code};
+use crate::handlers::error_response_with_code;
 
 #[derive(Debug, Deserialize)]
 pub struct LwdUrlQuery {
@@ -95,12 +95,12 @@ pub async fn lwd_info(
     let url = lwd_uri(&q);
     let mut client = zeaking::lwd::connect_lightwalletd(&url)
         .await
-        .map_err(|e| error_response(StatusCode::BAD_GATEWAY, e.to_string()))?;
+        .map_err(zeaking_err_response)?;
     use zeaking::lwd::proto::Empty;
     let info = client
         .get_lightd_info(Empty {})
         .await
-        .map_err(|e| error_response(StatusCode::BAD_GATEWAY, format!("gRPC: {e}")))?
+        .map_err(|e| zeaking_err_response(zeaking::ZeakingError::Grpc(format!("GetLightdInfo: {e}"))))?
         .into_inner();
     Ok(ResponseJson(serde_json::json!({
         "version": info.version,
@@ -120,10 +120,10 @@ pub async fn lwd_chain_tip(
     let url = lwd_uri(&q);
     let mut client = zeaking::lwd::connect_lightwalletd(&url)
         .await
-        .map_err(|e| error_response(StatusCode::BAD_GATEWAY, e.to_string()))?;
+        .map_err(zeaking_err_response)?;
     let tip = zeaking::lwd::chain_tip_height(&mut client)
         .await
-        .map_err(|e| error_response(StatusCode::BAD_GATEWAY, e.to_string()))?;
+        .map_err(zeaking_err_response)?;
     Ok(ResponseJson(serde_json::json!({ "chain_tip": tip })))
 }
 
