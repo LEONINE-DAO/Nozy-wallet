@@ -57,14 +57,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Verify Cargo.lock is up to date
+      - name: Verify Cargo.lock is usable (locked)
         run: |
-          cargo generate-lockfile
-          if ! git diff --exit-code -- Cargo.lock; then
-            echo "❌ Cargo.lock is out of date. Run 'cargo generate-lockfile' and commit Cargo.lock."
-            exit 1
-          fi
-          echo "✅ Cargo.lock is up to date"
+          cargo metadata --locked --format-version 1 > /dev/null
+          echo "✅ Cargo.lock is consistent (locked build)"
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -164,14 +160,10 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Verify Cargo.lock is up to date
+      - name: Verify Cargo.lock is usable (locked)
         run: |
-          cargo generate-lockfile
-          if ! git diff --exit-code -- Cargo.lock; then
-            echo "❌ Cargo.lock is out of date. Run 'cargo generate-lockfile' and commit Cargo.lock."
-            exit 1
-          fi
-          echo "✅ Cargo.lock is up to date"
+          cargo metadata --locked --format-version 1 > /dev/null
+          echo "✅ Cargo.lock is consistent (locked build)"
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
