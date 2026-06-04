@@ -8,7 +8,11 @@ on:
     inputs:
       version:
         description: "Must match browser-extension/manifest.json version (e.g. 0.1.4)"
-        required: true
+        required: false
+        type: string
+      attach_tag:
+        description: "Attach zips to an existing release tag (e.g. v2.3.0). Omit to create extension-v* release only."
+        required: false
         type: string
   release:
     types: [published]
@@ -30,7 +34,7 @@ jobs:
           echo "Zipping as nozy-extension-*-${MVER}.zip"
 
       - name: Verify workflow_dispatch version matches manifest
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.version != ''
         run: |
           test "${{ github.event.inputs.version }}" = "${{ steps.extver.outputs.manifest_version }}"
 
@@ -98,7 +102,7 @@ jobs:
             dist/nozy-extension-firefox.zip
 
       - name: Create or update extension-v* GitHub Release (manual)
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.attach_tag == ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: extension-v${{ github.event.inputs.version }}
@@ -122,10 +126,10 @@ jobs:
           generate_release_notes: true
 
       - name: Attach extension zips to published repository release
-        if: github.event_name == 'release'
+        if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.attach_tag != '')
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: ${{ github.event_name == 'release' && github.event.release.tag_name || github.event.inputs.attach_tag }}
           files: |
             dist/nozy-extension-chromium-${{ steps.extver.outputs.manifest_version }}.zip
             dist/nozy-extension-firefox-${{ steps.extver.outputs.manifest_version }}.zip
