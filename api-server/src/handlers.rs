@@ -100,6 +100,8 @@ pub struct SendTransactionRequest {
     pub amount: f64,
     pub memo: Option<String>,
     pub zebra_url: Option<String>,
+    #[serde(default)]
+    pub priority: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -548,7 +550,26 @@ pub async fn send_transaction(
     let amount_zatoshis = (payload.request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::new(zebra_url.clone());
 
-    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
+    let pilot = nozy::PilotSendOptions {
+        priority: payload.request.priority,
+        expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
+    };
+    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee_for_send(
+        &zebra_client,
+        memo_bytes_opt.as_deref(),
+        pilot.priority,
+    )
+    .await;
+
+    let tip_height = zebra_client.get_best_block_height().await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to read chain tip: {}", e)
+            })),
+        )
+    })?;
+    let expiry_height = tip_height.saturating_add(pilot.expiry_delta_blocks);
 
     let mut tx_builder = ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(&zebra_url);
@@ -562,6 +583,7 @@ pub async fn send_transaction(
             amount_zatoshis,
             fee_zatoshis,
             memo_bytes_opt.as_deref(),
+            pilot,
         )
         .await
         .map_err(|e| {
@@ -585,13 +607,15 @@ pub async fn send_transaction(
                     .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
                     .collect();
 
-                let mut tx_record = SentTransactionRecord::new(
+                let mut tx_record = SentTransactionRecord::new_pilot(
                     network_txid.clone(),
                     payload.request.recipient.clone(),
                     amount_zatoshis,
                     fee_zatoshis,
                     memo_bytes_opt.clone(),
                     spent_note_ids,
+                    pilot.priority,
+                    expiry_height,
                 );
                 tx_record.mark_broadcast();
                 let _ = tx_storage.save_transaction(tx_record);
@@ -612,18 +636,21 @@ pub async fn send_transaction(
 }
 
 pub async fn estimate_fee(
+    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, ZebraClient};
-
-    let config = load_config();
-    let zebra_client = ZebraClient::new(config.zebra_url);
-
-    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
+    let priority = params
+        .get("priority")
+        .map(|v| v == "true" || v == "1")
+        .unwrap_or(false);
+    let fee_zatoshis = nozy::estimate_orchard_send_fee_zatoshis(None, priority);
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
 
     Ok(ResponseJson(serde_json::json!({
         "fee_zatoshis": fee_zatoshis,
         "fee_zec": fee_zec,
+        "priority": priority,
+        "expiry_delta_blocks": nozy::PILOT_EXPIRY_DELTA_BLOCKS,
+        "fee_source": "zip317_client",
         "estimated_at": chrono::Utc::now().to_rfc3339()
     })))
 }

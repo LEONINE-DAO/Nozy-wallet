@@ -79,6 +79,8 @@ struct SendTransactionRequest {
     memo: Option<String>,
     zebra_url: Option<String>,
     password: Option<String>,
+    #[serde(default)]
+    priority: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -483,7 +485,26 @@ async fn send_transaction(
 
     let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
     let zebra_client = nozy::ZebraClient::new(zebra_url.clone());
-    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
+    let pilot = nozy::PilotSendOptions {
+        priority: request.priority,
+        expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
+    };
+    let memo_preview = request
+        .memo
+        .as_ref()
+        .map(|m| m.trim().as_bytes())
+        .filter(|b| !b.is_empty());
+    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee_for_send(
+        &zebra_client,
+        memo_preview,
+        pilot.priority,
+    )
+    .await;
+    let expiry_height = zebra_client
+        .get_best_block_height()
+        .await
+        .map_err(|e| format!("Failed to read chain tip: {}", e))?
+        .saturating_add(pilot.expiry_delta_blocks);
 
     let mut tx_builder = nozy::ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(&zebra_url);
@@ -497,6 +518,7 @@ async fn send_transaction(
             amount_zatoshis,
             fee_zatoshis,
             memo_bytes_opt.as_deref(),
+            pilot,
         )
         .await
         .map_err(|e| format!("Failed to build transaction: {}", e))?;
@@ -512,13 +534,15 @@ async fn send_transaction(
                     .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
                     .collect();
 
-                let mut tx_record = nozy::transaction_history::SentTransactionRecord::new(
+                let mut tx_record = nozy::transaction_history::SentTransactionRecord::new_pilot(
                     network_txid.clone(),
                     request.recipient,
                     amount_zatoshis,
                     fee_zatoshis,
                     memo_bytes_opt,
                     spent_note_ids,
+                    pilot.priority,
+                    expiry_height,
                 );
                 tx_record.mark_broadcast();
                 let _ = tx_storage.save_transaction(tx_record);
@@ -539,10 +563,12 @@ async fn send_transaction(
 }
 
 #[tauri::command]
-async fn estimate_fee(zebra_url: Option<String>) -> Result<f64, String> {
+async fn estimate_fee(zebra_url: Option<String>, priority: Option<bool>) -> Result<f64, String> {
     let config = nozy::load_config();
     let client = nozy::ZebraClient::new(zebra_url.unwrap_or(config.zebra_url));
-    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&client).await;
+    let priority = priority.unwrap_or(false);
+    let fee_zatoshis =
+        nozy::cli_helpers::estimate_transaction_fee_for_send(&client, None, priority).await;
     Ok(fee_zatoshis as f64 / 100_000_000.0)
 }
 

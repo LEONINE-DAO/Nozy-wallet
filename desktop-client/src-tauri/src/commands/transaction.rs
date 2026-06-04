@@ -1,6 +1,6 @@
 use crate::error::TauriError;
 use nozy::{
-    estimate_transaction_fee, load_config, scan_notes_for_sending,
+    estimate_transaction_fee_for_send, load_config, scan_notes_for_sending,
     transaction_history::{
         SentTransactionRecord, SentTransactionStorage, TransactionStatus,
     },
@@ -14,6 +14,7 @@ fn status_key(status: &TransactionStatus) -> &'static str {
         TransactionStatus::Pending => "pending",
         TransactionStatus::Confirmed => "confirmed",
         TransactionStatus::Failed => "failed",
+        TransactionStatus::Expired => "expired",
     }
 }
 
@@ -30,6 +31,8 @@ fn tx_record_json(tx: &SentTransactionRecord) -> serde_json::Value {
         "status": status_key(&tx.status),
         "transaction_type": "sent",
         "type": "sent",
+        "priority": tx.priority,
+        "expiry_height": tx.expiry_height,
         "block_height": tx.block_height,
         "confirmations": tx.confirmations,
         "broadcast_at": tx.broadcast_at.map(|d| d.to_rfc3339()),
@@ -54,6 +57,8 @@ pub struct SendTransactionRequest {
     pub memo: Option<String>,
     pub zebra_url: Option<String>,
     pub password: Option<String>,
+    #[serde(default)]
+    pub priority: bool,
 }
 
 #[command]
@@ -101,7 +106,22 @@ pub async fn send_transaction(
     let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::new(zebra_url.clone());
 
-    let fee_zatoshis = estimate_transaction_fee(&zebra_client).await;
+    let pilot = nozy::PilotSendOptions {
+        priority: request.priority,
+        expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
+    };
+    let memo_preview = request
+        .memo
+        .as_ref()
+        .map(|m| m.trim().as_bytes())
+        .filter(|b| !b.is_empty());
+    let fee_zatoshis =
+        estimate_transaction_fee_for_send(&zebra_client, memo_preview, pilot.priority).await;
+    let expiry_height = zebra_client
+        .get_best_block_height()
+        .await
+        .map_err(|e| TauriError::from(e.to_string()))?
+        .saturating_add(pilot.expiry_delta_blocks);
 
     let memo_bytes = request
         .memo
@@ -121,6 +141,7 @@ pub async fn send_transaction(
             amount_zatoshis,
             fee_zatoshis,
             memo_bytes.as_deref(),
+            pilot,
         )
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
@@ -138,13 +159,15 @@ pub async fn send_transaction(
                 .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
                 .collect();
 
-            let mut tx_record = SentTransactionRecord::new(
+            let mut tx_record = SentTransactionRecord::new_pilot(
                 network_txid.clone(),
                 request.recipient.clone(),
                 amount_zatoshis,
                 fee_zatoshis,
                 memo_bytes.clone(),
                 spent_note_ids,
+                pilot.priority,
+                expiry_height,
             );
             tx_record.mark_broadcast();
 
@@ -167,12 +190,16 @@ pub async fn send_transaction(
 }
 
 #[command]
-pub async fn estimate_fee(zebra_url: Option<String>) -> Result<f64, TauriError> {
+pub async fn estimate_fee(
+    zebra_url: Option<String>,
+    priority: Option<bool>,
+) -> Result<f64, TauriError> {
     let config = load_config();
     let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
     let zebra_client = ZebraClient::new(zebra_url);
+    let priority = priority.unwrap_or(false);
 
-    let fee_zatoshis = estimate_transaction_fee(&zebra_client).await;
+    let fee_zatoshis = estimate_transaction_fee_for_send(&zebra_client, None, priority).await;
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
 
     Ok(fee_zec)

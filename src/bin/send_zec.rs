@@ -98,7 +98,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let amount_zatoshis = (amount * 100_000_000.0) as u64;
 
     println!("💸 Estimating transaction fee...");
-    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee(&zebra_client).await;
+    let pilot = nozy::PilotSendOptions::default();
+    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee_for_send(
+        &zebra_client,
+        memo_bytes_opt.as_deref(),
+        pilot.priority,
+    )
+    .await;
 
     println!("🔧 Building transaction...");
     let transaction = transaction_builder
@@ -109,6 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             amount_zatoshis,
             fee_zatoshis,
             memo_bytes_opt.as_deref(),
+            pilot,
         )
         .await?;
 
