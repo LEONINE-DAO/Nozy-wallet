@@ -35,9 +35,9 @@ jobs:
         run: npm ci
 
       - name: Ensure desktop icons for bundling
-        shell: pwsh
+        shell: bash
         run: |
-          New-Item -ItemType Directory -Force -Path "desktop-client/src-tauri/icons" | Out-Null
+          mkdir -p desktop-client/src-tauri/icons
           python - <<'PY'
           import struct
           import zlib

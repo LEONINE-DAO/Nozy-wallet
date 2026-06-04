@@ -86,6 +86,7 @@ push_url_update.ps1
 !book/
 !book/**/*.md
 !browser-extension/LOCAL_RPC.md
+!browser-extension/CHANGELOG.md
 !browser-extension/COMPANION.md
 !browser-extension/RELEASES.md
 
