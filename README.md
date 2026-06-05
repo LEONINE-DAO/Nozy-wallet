@@ -22,6 +22,45 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 
 **Contributor priority:** new feature work is **extension-first** ([`EXTENSION_FIRST_SCOPE.md`](EXTENSION_FIRST_SCOPE.md)). **End users** who want a full wallet today should prefer **desktop** or **CLI**; the extension is a lighter mode that relies on the companion API for LWD sync ([`browser-extension/COMPANION.md`](browser-extension/COMPANION.md)).
 
+## Node operator FAQ
+
+**Does Nozy require a fully synced Zebra node before wallet sync can begin?**
+
+**No.** Wallet sync is **incremental** and **node-tip-relative**. Nozy does not wait for `zebrad` to reach network tip before scanning or downloading compact blocks. It syncs from your chosen start height (or last scanned height) up to **whatever height your node stack reports now** — then you run sync again as `zebrad` catches up.
+
+| Activity | Needs full network sync? |
+|----------|---------------------------|
+| Start scanning / compact download | **No** — only up to **node tip** |
+| See incoming notes in recent blocks | Node must have validated those blocks |
+| Shielded send (witness + anchor) | Node must have blocks through your **anchor height** (`z_gettreestate`) |
+| Reliable broadcast / mempool | Practically **near network tip** |
+| “Balance at chain tip” | Really **balance at node tip** until the node catches up |
+
+**Two sync paths in Nozy:**
+
+| Path | Tip source | Used by |
+|------|------------|---------|
+| **Direct RPC scan** | `zebrad` `getblockcount` | CLI `nozy sync`, API `/api/sync` |
+| **Compact / LWD** | lightwalletd `GetLatestBlock` | `zeaking::lwd`, API `/api/lwd/sync/compact-to-tip`, extension companion |
+
+Nozy does **not** check “fully synced”, `verificationprogress`, or lightwalletd `estimatedHeight` — only the current served tip.
+
+**Minimum to start wallet sync**
+
+- `zebrad` JSON-RPC reachable (default `:8232`); `getblockcount` returns a sensible height.
+- **Recommended:** `zebrad` + **lightwalletd** (gRPC, default `:9067`) on the same network (mainnet/testnet).
+- Optional: `nozywallet-api` on `:3000` for desktop/extension LWD routes.
+
+**Practical setup for testers**
+
+1. Start `zebrad` (snapshot or from genesis).
+2. Start **lightwalletd** once RPC is up — it does not need 100% sync.
+3. Create/restore wallet; set **`--start-height`** (wallet birthday) on mainnet to avoid scanning from ~3M by default.
+4. Run **`nozy sync`** (or LWD compact-to-tip) **while** `zebrad` keeps indexing; repeat until node tip is near network tip.
+5. For **sends**, wait until the node is close to network tip and you have scanned through spendable notes.
+
+Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (testnet default start: height `1`). See [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md) for shielded-send architecture.
+
 **Extension releases:** maintainers publish Chromium/Firefox zips via the **extension-release-bundles** workflow — see [`browser-extension/RELEASES.md`](browser-extension/RELEASES.md).
 
 ## Built with
