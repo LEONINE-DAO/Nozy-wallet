@@ -33,7 +33,7 @@ tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync"], opt
 tonic = { version = "0.14", optional = true, default-features = false, features = ["transport", "codegen"] }
 tonic-prost = { version = "0.14", optional = true }
 prost = { version = "0.14", optional = true }
-rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+rusqlite = { version = "0.40", features = ["bundled"], optional = true }
 
 [build-dependencies]
 tonic-prost-build = "0.14"
