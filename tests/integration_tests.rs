@@ -322,7 +322,10 @@ async fn test_lwd_compact_sync_follows_tip() {
 
     let lwd_url = get_test_lightwalletd_url();
     if !check_lightwalletd_available(&lwd_url).await {
-        println!("⚠️  lightwalletd not available at {} - skipping LWD tip-follow test", lwd_url);
+        println!(
+            "⚠️  lightwalletd not available at {} - skipping LWD tip-follow test",
+            lwd_url
+        );
         return;
     }
 
@@ -356,10 +359,7 @@ async fn test_lwd_compact_sync_follows_tip() {
     assert!(stats1.range_end <= tip1);
     println!(
         "🧪 First compact sync: range {}-{} tip={} written={}",
-        stats1.range_start_effective,
-        stats1.range_end,
-        stats1.chain_tip,
-        stats1.blocks_written
+        stats1.range_start_effective, stats1.range_end, stats1.chain_tip, stats1.blocks_written
     );
 
     tokio::time::sleep(std::time::Duration::from_secs(10)).await;

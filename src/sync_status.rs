@@ -137,5 +137,7 @@ pub fn print_sync_status(snapshot: &SyncStatusSnapshot) {
         }
     }
 
-    println!("   ℹ️  Sync is node-tip-relative; a catching-up node is OK for scan/compact download.");
+    println!(
+        "   ℹ️  Sync is node-tip-relative; a catching-up node is OK for scan/compact download."
+    );
 }

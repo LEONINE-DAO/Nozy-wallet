@@ -310,17 +310,13 @@ mod tests {
 
     #[test]
     fn prune_compact_blocks_above_drops_stale_rows() {
-        let path = std::env::temp_dir().join(format!(
-            "zeaking_prune_stale_{}.sqlite",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("zeaking_prune_stale_{}.sqlite", std::process::id()));
         let _ = std::fs::remove_file(&path);
         let store = LwdCompactStore::open(&path).unwrap();
         store.put_compact_block(100, None, &[1]).unwrap();
         store.put_compact_block(200, None, &[2]).unwrap();
-        store
-            .set_meta("last_compact_progress", "200")
-            .unwrap();
+        store.set_meta("last_compact_progress", "200").unwrap();
         let deleted = store.prune_compact_blocks_above(150).unwrap();
         assert_eq!(deleted, 1);
         assert_eq!(store.max_compact_height().unwrap(), Some(100));

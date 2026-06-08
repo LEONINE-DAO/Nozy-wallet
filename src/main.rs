@@ -727,7 +727,11 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!(
                             "   💡 Recent deposits are often in newer blocks — run: nozy sync --to-tip"
                         );
-                        if behind > 1_000 && end_height.is_none() && !to_tip && start_height.is_none() {
+                        if behind > 1_000
+                            && end_height.is_none()
+                            && !to_tip
+                            && start_height.is_none()
+                        {
                             println!(
                                 "   💡 Plain `sync` scans ~1000 blocks per run; use `nozy sync --to-tip` after receiving funds."
                             );
@@ -1686,7 +1690,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 }
                 Err(e) => {
                     println!("   (unlock skipped: {})", e);
-                    println!("   💡 Run `nozy status` in your terminal to enter your wallet password");
+                    println!(
+                        "   💡 Run `nozy status` in your terminal to enter your wallet password"
+                    );
                 }
             }
 
@@ -1791,20 +1797,19 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 .await
                 .map_err(|e| NozyError::InvalidOperation(format!("chain tip: {}", e)))?;
 
-            let store = zeaking::lwd::LwdCompactStore::open(&db_path).map_err(|e| {
-                NozyError::Storage(format!("open {}: {}", db_path.display(), e))
-            })?;
+            let store = zeaking::lwd::LwdCompactStore::open(&db_path)
+                .map_err(|e| NozyError::Storage(format!("open {}: {}", db_path.display(), e)))?;
 
             match command {
                 LwdCommand::Prune => {
-                    let before = store.max_compact_height().map_err(|e| {
-                        NozyError::Storage(format!("max compact height: {}", e))
-                    })?;
+                    let before = store
+                        .max_compact_height()
+                        .map_err(|e| NozyError::Storage(format!("max compact height: {}", e)))?;
                     let pruned = zeaking::lwd::prune_stale_compact_cache(&store, tip)
                         .map_err(|e| NozyError::Storage(format!("prune: {}", e)))?;
-                    let after = store.max_compact_height().map_err(|e| {
-                        NozyError::Storage(format!("max compact height: {}", e))
-                    })?;
+                    let after = store
+                        .max_compact_height()
+                        .map_err(|e| NozyError::Storage(format!("max compact height: {}", e)))?;
                     println!("🧹 LWD compact cache prune");
                     println!("   URL: {}", lwd_url);
                     println!("   DB:  {}", db_path.display());
