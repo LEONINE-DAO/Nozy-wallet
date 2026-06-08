@@ -45,6 +45,10 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 
 Nozy does **not** check “fully synced”, `verificationprogress`, or lightwalletd `estimatedHeight` — only the current served tip.
 
+**Zebrad below wallet birthday (e.g. node at ~12k, birthday ~3.07M)**
+
+**Expected.** Nozy scans from birthday (or `last_scan_height+1`) **up to zebrad tip only**. If tip &lt; birthday, sync errors — Orchard scan cannot run on blocks your node does not have yet. Wallet create/`receive` still work; balance and notes appear after `zebrad` passes birthday height. For mainnet pilot testing, use a **snapshot** near chain tip or **testnet**; do not expect mainnet receive at tip while `zebrad` is at block 12k.
+
 **Minimum to start wallet sync**
 
 - `zebrad` JSON-RPC reachable (default `:8232`); `getblockcount` returns a sensible height.

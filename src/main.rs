@@ -617,8 +617,11 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
             if scan_start > scan_end {
                 return Err(NozyError::InvalidOperation(format!(
-                    "start height ({}) is above the effective end height ({}, chain tip {}).",
-                    scan_start, scan_end, chain_tip
+                    "start height ({}) is above the effective end height ({}, zebrad tip {}). \
+                     If zebrad is still catching up and your wallet birthday is ~{}, wait until \
+                     zebrad indexes past that height, use a mainnet snapshot, or pass a lower \
+                     --start-height for testing (e.g. 1).",
+                    scan_start, scan_end, chain_tip, scan_start
                 )));
             }
 
