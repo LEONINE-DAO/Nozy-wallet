@@ -86,6 +86,8 @@ pub mod transaction_tracker;
 #[cfg(feature = "native")]
 pub mod zeaking_adapter;
 #[cfg(feature = "native")]
+pub mod sync_status;
+#[cfg(feature = "native")]
 pub mod zebra_integration;
 #[cfg(feature = "native")]
 pub mod zebra_tree_rpc;
@@ -114,6 +116,8 @@ pub use bridge::{
 pub use cli_helpers::{
     estimate_transaction_fee, estimate_transaction_fee_for_send, scan_notes_for_sending,
 };
+#[cfg(feature = "native")]
+pub use sync_status::{gather_sync_status, print_sync_status, resolve_lightwalletd_url};
 #[cfg(feature = "native")]
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
 #[cfg(feature = "native")]

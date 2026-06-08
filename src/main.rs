@@ -91,6 +91,11 @@ pub enum Commands {
         end_height: Option<u32>,
         #[arg(
             long,
+            help = "Scan from last scanned height (or --start-height) through chain tip — use after receiving funds"
+        )]
+        to_tip: bool,
+        #[arg(
+            long,
             help = "Override Zebra RPC URL (overrides config and global --zebra-url)"
         )]
         zebra_url: Option<String>,
@@ -188,6 +193,12 @@ pub enum Commands {
     #[command(about = "Display current wallet status and sync information")]
     Status,
 
+    #[command(about = "lightwalletd compact-block cache (Zeaking LWD)")]
+    Lwd {
+        #[command(subcommand)]
+        command: LwdCommand,
+    },
+
     #[command(about = "Manage saved addresses in your address book")]
     AddressBook {
         #[command(subcommand)]
@@ -251,6 +262,20 @@ pub enum AddressBookCommand {
     Search {
         #[arg(long)]
         query: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum LwdCommand {
+    #[command(about = "Remove compact blocks above current lightwalletd tip (fixes stale cache)")]
+    Prune,
+    #[command(about = "Download compact blocks from next missing height through lightwalletd tip")]
+    SyncToTip {
+        #[arg(
+            long,
+            help = "Optional lower bound for first height to fetch (e.g. wallet birthday)"
+        )]
+        start_floor: Option<u64>,
     },
 }
 
@@ -540,7 +565,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     println!("Your wallet address:");
                     println!("{}", address);
                     println!("\n💡 Share this address to receive ZEC.");
-                    println!("   All funds go to your wallet automatically.");
+                    println!("   After a deposit confirms on-chain, run:");
+                    println!("     nozy -m sync --to-tip");
+                    println!("   Plain `sync` only advances ~1000 blocks; --to-tip scans through chain tip.");
                 }
                 Err(e) => {
                     println!("❌ Failed to generate address: {}", e);
@@ -551,6 +578,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
         Commands::Sync {
             start_height,
             end_height,
+            to_tip,
             zebra_url,
         } => {
             if let Some(url) = zebra_url {
@@ -578,8 +606,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             let chain_tip = zebra_client.get_block_count().await?;
             let requested_end = if let Some(end) = end_height {
                 end.max(scan_start)
-            } else if start_height.is_some() {
-                // Explicit start without end: scan through tip (expected for "rescan this range").
+            } else if to_tip || start_height.is_some() {
+                // --to-tip or explicit --start-height without end: scan through chain tip.
                 chain_tip
             } else {
                 // Incremental default: bounded chunk when only last_scan / default start drives the window.
@@ -594,7 +622,14 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 )));
             }
 
-            if let Some(start) = effective_start {
+            if to_tip {
+                println!(
+                    "🔄 Sync to chain tip: scanning blocks {} to {} ({} blocks)",
+                    scan_start,
+                    scan_end,
+                    scan_end.saturating_sub(scan_start).saturating_add(1)
+                );
+            } else if let Some(start) = effective_start {
                 if let Some(last) = config.last_scan_height {
                     println!(
                         "🔄 Incremental sync: scanning from block {} (last sync: {})",
@@ -680,6 +715,21 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!("   Found {} new notes", result.notes.len());
                     }
                     println!("   Last scanned height: {}", final_height);
+                    if chain_tip > final_height {
+                        let behind = chain_tip - final_height;
+                        println!(
+                            "   ⚠️  Chain tip is {} ({} blocks ahead of this scan)",
+                            chain_tip, behind
+                        );
+                        println!(
+                            "   💡 Recent deposits are often in newer blocks — run: nozy sync --to-tip"
+                        );
+                        if behind > 1_000 && end_height.is_none() && !to_tip && start_height.is_none() {
+                            println!(
+                                "   💡 Plain `sync` scans ~1000 blocks per run; use `nozy sync --to-tip` after receiving funds."
+                            );
+                        }
+                    }
                 }
                 Err(e) => {
                     if let Some(ref progress_bar) = pb {
@@ -1620,18 +1670,22 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
             println!();
 
-            let (wallet, _storage) = load_wallet().await?;
-            let config = load_config();
-            let zebra_client = ZebraClient::from_config(&config);
-
             println!("📊 NozyWallet Status Dashboard");
             println!("{}", "=".repeat(60));
 
             println!("\n🔐 Wallet:");
-            println!(
-                "   Mnemonic: {} (masked for security)",
-                display_mnemonic_safe(&wallet.get_mnemonic())
-            );
+            match load_wallet().await {
+                Ok((wallet, _storage)) => {
+                    println!(
+                        "   Mnemonic: {} (masked for security)",
+                        display_mnemonic_safe(&wallet.get_mnemonic())
+                    );
+                }
+                Err(e) => {
+                    println!("   (unlock skipped: {})", e);
+                    println!("   💡 Run `nozy status` in your terminal to enter your wallet password");
+                }
+            }
 
             println!("\n🔗 Connection:");
             match config.backend {
@@ -1711,24 +1765,86 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 }
             }
 
-            println!("\n🔄 Sync Status:");
-            if let Some(last_height) = config.last_scan_height {
-                println!("   Last scanned: Block {}", last_height);
-                if let Ok(current_height) = zebra_client.get_block_count().await {
-                    let blocks_behind = current_height.saturating_sub(last_height);
-                    if blocks_behind > 0 {
-                        println!("   Behind: {} blocks", blocks_behind);
-                        println!("   💡 Run 'sync' to catch up");
-                    } else {
-                        println!("   ✅ Up to date");
-                    }
-                }
-            } else {
-                println!("   ⚠️  Never synced");
-                println!("   💡 Run 'sync' to start");
-            }
+            let sync_snapshot = nozy::gather_sync_status(&zebra_client, &config).await;
+            nozy::print_sync_status(&sync_snapshot);
 
             println!("\n{}", "=".repeat(60));
+        }
+
+        Commands::Lwd { command } => {
+            use nozy::paths::get_wallet_data_dir;
+            use nozy::sync_status::resolve_lightwalletd_url;
+
+            let lwd_url = resolve_lightwalletd_url();
+            let db_path = get_wallet_data_dir().join("lwd_compact.sqlite");
+            std::fs::create_dir_all(get_wallet_data_dir()).map_err(|e| {
+                NozyError::Storage(format!("Failed to create wallet data dir: {}", e))
+            })?;
+
+            let mut client = zeaking::lwd::connect_lightwalletd(&lwd_url)
+                .await
+                .map_err(|e| NozyError::InvalidOperation(format!("lightwalletd: {}", e)))?;
+            let tip = zeaking::lwd::chain_tip_height(&mut client)
+                .await
+                .map_err(|e| NozyError::InvalidOperation(format!("chain tip: {}", e)))?;
+
+            let store = zeaking::lwd::LwdCompactStore::open(&db_path).map_err(|e| {
+                NozyError::Storage(format!("open {}: {}", db_path.display(), e))
+            })?;
+
+            match command {
+                LwdCommand::Prune => {
+                    let before = store.max_compact_height().map_err(|e| {
+                        NozyError::Storage(format!("max compact height: {}", e))
+                    })?;
+                    let pruned = zeaking::lwd::prune_stale_compact_cache(&store, tip)
+                        .map_err(|e| NozyError::Storage(format!("prune: {}", e)))?;
+                    let after = store.max_compact_height().map_err(|e| {
+                        NozyError::Storage(format!("max compact height: {}", e))
+                    })?;
+                    println!("🧹 LWD compact cache prune");
+                    println!("   URL: {}", lwd_url);
+                    println!("   DB:  {}", db_path.display());
+                    println!("   LWD tip: {}", tip);
+                    if let Some(h) = before {
+                        println!("   Max height before: {}", h);
+                    }
+                    if pruned > 0 {
+                        println!("   Removed {} stale block(s) above tip", pruned);
+                    } else {
+                        println!("   No stale blocks above tip");
+                    }
+                    if let Some(h) = after {
+                        println!("   Max height after:  {}", h);
+                    } else {
+                        println!("   Max height after:  (empty)");
+                    }
+                }
+                LwdCommand::SyncToTip { start_floor } => {
+                    let stats = zeaking::lwd::sync_compact_to_tip_with_options(
+                        &mut client,
+                        &store,
+                        zeaking::lwd::SyncCompactToTipOptions {
+                            start_floor,
+                            ..Default::default()
+                        },
+                    )
+                    .await
+                    .map_err(|e| NozyError::InvalidOperation(format!("compact-to-tip: {}", e)))?;
+                    println!("✅ LWD compact sync to tip");
+                    println!("   URL: {}", lwd_url);
+                    println!("   DB:  {}", db_path.display());
+                    println!("   Chain tip: {}", stats.chain_tip);
+                    println!(
+                        "   Range: {} - {} (requested start {})",
+                        stats.range_start_effective, stats.range_end, stats.range_start_requested
+                    );
+                    println!("   Blocks written: {}", stats.blocks_written);
+                    if stats.already_at_tip {
+                        println!("   Already at tip");
+                    }
+                }
+            }
         }
 
         Commands::AddressBook { command } => {

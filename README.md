@@ -61,6 +61,12 @@ Nozy does **not** check “fully synced”, `verificationprogress`, or lightwall
 
 Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (testnet default start: height `1`). See [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md) for shielded-send architecture.
 
+**Stale compact cache:** If `nozy status` shows compact heights **above** the LWD tip, run `nozy lwd prune` (or `nozy lwd sync-to-tip`, which prunes automatically). Then re-download with `nozy lwd sync-to-tip --start-floor <birthday>`.
+
+**After receiving funds:** run `nozy sync --to-tip` (not plain `sync` — that only advances ~1000 blocks per run on mainnet).
+
+**Verify:** `nozy status` shows Zebra tip, RPC last scan, LWD tip, and compact-cache height. Integration tests (require live node): `cargo test --test integration_tests -- --ignored test_sync_follows_zebra_tip` and `test_lwd_compact_sync_follows_tip` — see [`tests/integration_tests.rs`](tests/integration_tests.rs).
+
 **Extension releases:** maintainers publish Chromium/Firefox zips via the **extension-release-bundles** workflow — see [`browser-extension/RELEASES.md`](browser-extension/RELEASES.md).
 
 ## Built with

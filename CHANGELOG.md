@@ -1,5 +1,25 @@
 # Changelog
 
+## [2.3.1] — Receive / sync UX (2026-06-05)
+
+### Added
+
+- CLI `nozy sync --to-tip` — scan from last scanned height through chain tip (recommended after receiving funds)
+- CLI `nozy lwd prune` and `nozy lwd sync-to-tip` — compact cache maintenance
+- `nozy status` sync section: Zebra tip, RPC scan gap, LWD tip, compact cache (with stale-cache warning)
+- Integration tests: `test_sync_follows_zebra_tip`, `test_lwd_compact_sync_follows_tip` (live node, `#[ignore]`)
+
+### Fixed
+
+- **Shielded Labs pilot:** plain `sync` only advances ~1000 blocks; deposits in newer blocks were missed until `--to-tip` (see discussion #37)
+- Stale `lwd_compact.sqlite` rows above LWD tip — auto-prune on compact-to-tip; `nozy lwd prune`
+- Release dispatch for desktop/extension assets after tag publish
+- `nozy status` works without interactive wallet unlock for node/sync section
+
+### Changed
+
+- `receive` and post-`sync` output warn when chain tip is ahead of scanned range
+
 ## [2.3.0] — Priority Lane (2026-06-03)
 
 ### Added

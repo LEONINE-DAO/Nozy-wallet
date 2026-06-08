@@ -17,8 +17,8 @@ pub use client::{connect_lightwalletd, LwdClient};
 pub use compact_orchard::orchard_cmx_bytes_from_compact_block;
 pub use store::LwdCompactStore;
 pub use sync::{
-    chain_tip_height, compact_sync_progress_height, requested_start_height_for_tip_sync,
-    sync_compact_range, sync_compact_range_with_options, sync_compact_to_tip,
-    sync_compact_to_tip_with_options, SyncCompactOptions, SyncCompactStats,
+    chain_tip_height, compact_sync_progress_height, prune_stale_compact_cache,
+    requested_start_height_for_tip_sync, sync_compact_range, sync_compact_range_with_options,
+    sync_compact_to_tip, sync_compact_to_tip_with_options, SyncCompactOptions, SyncCompactStats,
     SyncCompactToTipOptions, SyncCompactToTipStats,
 };

@@ -96,12 +96,21 @@ pub fn requested_start_height_for_tip_sync(
 ///
 /// Uses [`sync_compact_range_with_options`] with `resume_from_store: true` so retries stay idempotent.
 /// Call [`requested_start_height_for_tip_sync`] if you only need the resolved start height.
+/// Drop compact blocks above `tip` when the local cache is ahead of the current lightwalletd chain.
+pub fn prune_stale_compact_cache(store: &LwdCompactStore, tip: u64) -> ZeakingResult<u64> {
+    match store.max_compact_height()? {
+        Some(max) if max > tip => store.prune_compact_blocks_above(tip),
+        _ => Ok(0),
+    }
+}
+
 pub async fn sync_compact_to_tip_with_options(
     client: &mut LwdClient,
     store: &LwdCompactStore,
     options: SyncCompactToTipOptions,
 ) -> ZeakingResult<SyncCompactToTipStats> {
     let tip = chain_tip_height(client).await?;
+    let _pruned = prune_stale_compact_cache(store, tip)?;
     let start = requested_start_height_for_tip_sync(store, options.start_floor)?;
     let compact = SyncCompactOptions {
         resume_from_store: true,
@@ -295,6 +304,29 @@ mod tests {
         assert_eq!(
             requested_start_height_for_tip_sync(&store, Some(500)).unwrap(),
             500
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn prune_compact_blocks_above_drops_stale_rows() {
+        let path = std::env::temp_dir().join(format!(
+            "zeaking_prune_stale_{}.sqlite",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_file(&path);
+        let store = LwdCompactStore::open(&path).unwrap();
+        store.put_compact_block(100, None, &[1]).unwrap();
+        store.put_compact_block(200, None, &[2]).unwrap();
+        store
+            .set_meta("last_compact_progress", "200")
+            .unwrap();
+        let deleted = store.prune_compact_blocks_above(150).unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(store.max_compact_height().unwrap(), Some(100));
+        assert_eq!(
+            store.get_meta("last_compact_progress").unwrap().as_deref(),
+            Some("100")
         );
         let _ = std::fs::remove_file(&path);
     }

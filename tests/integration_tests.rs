@@ -251,6 +251,164 @@ async fn test_note_scanning() {
 
 #[tokio::test]
 #[ignore]
+async fn test_sync_follows_zebra_tip() {
+    setup_test_env();
+
+    let wallet = HDWallet::new().expect("Failed to create wallet");
+    let client = ZebraClient::new(get_test_zebra_url());
+
+    if !check_zebra_available(&client).await {
+        println!("⚠️  Zebra node not available - skipping tip-follow test");
+        return;
+    }
+
+    let tip1 = client
+        .get_block_count()
+        .await
+        .expect("Failed to get initial block count");
+    println!("🧪 Initial Zebra tip height: {}", tip1);
+
+    let start1 = tip1.saturating_sub(50);
+    let mut scanner1 = NoteScanner::new(wallet.clone(), client.clone());
+    let (_result1, _spendable1) = scanner1
+        .scan_notes(Some(start1), Some(tip1))
+        .await
+        .expect("First scan (up to tip1) failed");
+
+    // Give Zebra time to advance; this test is best-effort and may no-op if the node is idle.
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+    let tip2 = client
+        .get_block_count()
+        .await
+        .expect("Failed to get second block count");
+    println!("🧪 Second Zebra tip height: {}", tip2);
+
+    if tip2 <= tip1 {
+        println!(
+            "ℹ️  Zebra did not advance (tip2 <= tip1); tip-follow behavior cannot be asserted here."
+        );
+        return;
+    }
+
+    let start2 = tip1.saturating_add(1);
+    let mut scanner2 = NoteScanner::new(wallet, client);
+    let (_result2, _spendable2) = scanner2
+        .scan_notes(Some(start2), Some(tip2))
+        .await
+        .expect("Second scan (up to tip2) failed");
+
+    println!(
+        "✅ Sync followed Zebra tip: first pass ended at {}, second pass ended at {}",
+        tip1, tip2
+    );
+}
+
+fn get_test_lightwalletd_url() -> String {
+    std::env::var("LIGHTWALLETD_GRPC").unwrap_or_else(|_| "http://127.0.0.1:9067".to_string())
+}
+
+async fn check_lightwalletd_available(url: &str) -> bool {
+    match zeaking::lwd::connect_lightwalletd(url).await {
+        Ok(mut client) => zeaking::lwd::chain_tip_height(&mut client).await.is_ok(),
+        Err(_) => false,
+    }
+}
+
+#[tokio::test]
+#[ignore]
+async fn test_lwd_compact_sync_follows_tip() {
+    setup_test_env();
+
+    let lwd_url = get_test_lightwalletd_url();
+    if !check_lightwalletd_available(&lwd_url).await {
+        println!("⚠️  lightwalletd not available at {} - skipping LWD tip-follow test", lwd_url);
+        return;
+    }
+
+    let db_path = std::env::temp_dir().join(format!(
+        "nozy_lwd_tip_follow_test_{}.sqlite",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&db_path);
+
+    let mut client = zeaking::lwd::connect_lightwalletd(&lwd_url)
+        .await
+        .expect("connect lightwalletd");
+    let tip1 = zeaking::lwd::chain_tip_height(&mut client)
+        .await
+        .expect("chain tip 1");
+    println!("🧪 Initial LWD tip height: {}", tip1);
+
+    let store = zeaking::lwd::LwdCompactStore::open(&db_path).expect("open compact store");
+    let window = 32u64;
+    let start_floor = tip1.saturating_sub(window).max(1);
+    let stats1 = zeaking::lwd::sync_compact_to_tip_with_options(
+        &mut client,
+        &store,
+        zeaking::lwd::SyncCompactToTipOptions {
+            start_floor: Some(start_floor),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("first compact-to-tip failed");
+    assert!(stats1.range_end <= tip1);
+    println!(
+        "🧪 First compact sync: range {}-{} tip={} written={}",
+        stats1.range_start_effective,
+        stats1.range_end,
+        stats1.chain_tip,
+        stats1.blocks_written
+    );
+
+    tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+
+    let mut client2 = zeaking::lwd::connect_lightwalletd(&lwd_url)
+        .await
+        .expect("reconnect lightwalletd");
+    let tip2 = zeaking::lwd::chain_tip_height(&mut client2)
+        .await
+        .expect("chain tip 2");
+    println!("🧪 Second LWD tip height: {}", tip2);
+
+    if tip2 <= tip1 {
+        println!(
+            "ℹ️  LWD did not advance (tip2 <= tip1); tip-follow behavior cannot be asserted here."
+        );
+        let _ = std::fs::remove_file(&db_path);
+        return;
+    }
+
+    let stats2 = zeaking::lwd::sync_compact_to_tip_with_options(
+        &mut client2,
+        &store,
+        zeaking::lwd::SyncCompactToTipOptions::default(),
+    )
+    .await
+    .expect("second compact-to-tip failed");
+
+    assert!(
+        stats2.range_end >= tip2 || stats2.already_at_tip,
+        "second sync should reach tip2={} (range_end={}, already_at_tip={})",
+        tip2,
+        stats2.range_end,
+        stats2.already_at_tip
+    );
+
+    let max_h = store.max_compact_height().expect("max height").unwrap_or(0);
+    assert!(max_h >= stats1.range_end.min(tip1));
+
+    println!(
+        "✅ LWD compact sync followed tip: first ended at {}, second reached {}",
+        tip1, tip2
+    );
+
+    let _ = std::fs::remove_file(&db_path);
+}
+
+#[tokio::test]
+#[ignore]
 async fn test_transaction_building() {
     setup_test_env();
 

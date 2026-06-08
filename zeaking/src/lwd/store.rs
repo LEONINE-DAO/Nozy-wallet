@@ -82,6 +82,46 @@ impl LwdCompactStore {
         Ok(v.map(|h| h as u64))
     }
 
+    /// Remove compact rows (and witness rows) above `tip`. Returns rows deleted from `compact_blocks`.
+    /// Use when the cache contains heights from a prior network/backend that exceed the current LWD tip.
+    pub fn prune_compact_blocks_above(&self, tip: u64) -> ZeakingResult<u64> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let deleted = conn
+            .execute(
+                "DELETE FROM compact_blocks WHERE height > ?1",
+                params![tip as i64],
+            )
+            .map_err(|e| ZeakingError::Storage(e.to_string()))? as u64;
+        let _ = conn.execute(
+            "DELETE FROM orchard_witness WHERE block_height > ?1",
+            params![tip as i64],
+        );
+        drop(conn);
+        self.reconcile_sync_meta_after_prune(tip)?;
+        Ok(deleted)
+    }
+
+    fn reconcile_sync_meta_after_prune(&self, tip: u64) -> ZeakingResult<()> {
+        let progress = self.max_compact_height()?.map(|m| m.min(tip)).unwrap_or(0);
+        for key in [
+            "last_compact_progress",
+            "last_sync_end",
+            "last_sync_requested_end",
+        ] {
+            if let Some(raw) = self.get_meta(key)? {
+                if let Ok(h) = raw.trim().parse::<u64>() {
+                    if h > tip {
+                        self.set_meta(key, &progress.to_string())?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
     pub fn get_compact_block(&self, height: u64) -> ZeakingResult<Option<Vec<u8>>> {
         let conn = self
             .conn

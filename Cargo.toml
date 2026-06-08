@@ -1,6 +1,6 @@
 [package]
 name = "nozy"
-version = "2.3.0"
+version = "2.3.1"
 edition = "2021"
 default-run = "nozy"
 description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
@@ -179,3 +179,6 @@ path = "src/bin/test_password_variations.rs"
 [[bin]]
 name = "diagnose_wallet"
 path = "src/bin/diagnose_wallet.rs"
+
+[dev-dependencies]
+zeaking = { path = "zeaking", features = ["lightwalletd"] }
