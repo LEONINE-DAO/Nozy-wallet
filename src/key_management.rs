@@ -60,7 +60,7 @@ where
     F: FnOnce(&orchard::keys::SpendingKey) -> NozyResult<T>,
 {
     use orchard::keys::SpendingKey;
-    use zcash_primitives::zip32::AccountId;
+    use zip32::AccountId;
 
     let account_id = AccountId::try_from(account_id)
         .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
