@@ -8,8 +8,8 @@ pub const MARGINAL_FEE_ZATOSHIS: u64 = 5_000;
 pub const GRACE_ACTIONS: u32 = 2;
 /// Pilot priority multiplier when the user opts in.
 pub const PRIORITY_MULTIPLIER: u64 = 4;
-/// Default transaction expiry delta (~2 minutes at 75s/block).
-pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 2;
+/// Default transaction expiry delta (~6 minutes at 75s/block).
+pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 5;
 /// Last-resort fee if shape computation overflows (should not happen in practice).
 pub const FALLBACK_FEE_ZATOSHIS: u64 = 10_000;
 
