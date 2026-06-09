@@ -34,7 +34,7 @@ impl Default for PilotSendOptions {
 /// ZIP-317 inputs for a typical Orchard-only shielded send built by `orchard_tx`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OrchardSendFeeShape {
-    /// Orchard bundle actions (spend + outputs).
+    /// Orchard bundle actions = max(spends, outputs) (the bundle pads the shorter side).
     pub orchard_actions: u32,
     /// Non-empty memo byte length on the recipient output (0 if none).
     pub memo_len: usize,
@@ -43,9 +43,13 @@ pub struct OrchardSendFeeShape {
 impl OrchardSendFeeShape {
     /// Shape for `build_single_spend`: one spend, one recipient output, optional change output.
     pub fn single_spend_send(has_change: bool, memo: Option<&[u8]>) -> Self {
+        let spends = 1u32;
         let outputs = if has_change { 2 } else { 1 };
         Self {
-            orchard_actions: 1 + outputs,
+            // An Orchard bundle has max(spends, outputs) actions (the shorter side
+            // is padded with dummies), not spends + outputs. Counting additively
+            // over-bills every send (e.g. 1 spend + 2 outputs is 2 actions, not 3).
+            orchard_actions: spends.max(outputs),
             memo_len: memo.map(|m| m.len()).unwrap_or(0),
         }
     }
@@ -120,23 +124,26 @@ mod tests {
     }
 
     #[test]
-    fn typical_three_action_send_is_15000_zats() {
+    fn typical_send_is_two_actions_10000_zats() {
+        // 1 spend + 2 outputs (recipient + change) => max(1, 2) = 2 Orchard actions.
         let shape = OrchardSendFeeShape::single_spend_send(true, None);
-        assert_eq!(shape.orchard_actions, 3);
-        assert_eq!(conventional_fee_zatoshis(&shape), 15_000);
+        assert_eq!(shape.orchard_actions, 2);
+        assert_eq!(conventional_fee_zatoshis(&shape), 10_000);
     }
 
     #[test]
     fn priority_multiplies_by_four() {
         let shape = OrchardSendFeeShape::estimate_preview(None);
-        assert_eq!(fee_zatoshis(&shape, false), 15_000);
-        assert_eq!(fee_zatoshis(&shape, true), 60_000);
+        assert_eq!(fee_zatoshis(&shape, false), 10_000);
+        assert_eq!(fee_zatoshis(&shape, true), 40_000);
     }
 
     #[test]
     fn memo_adds_logical_actions_beyond_free_chunks() {
+        // No-memo baseline is 2 actions / 10,000; a 1,200-byte memo adds one
+        // logical action beyond the 2 free chunks, raising both.
         let shape = OrchardSendFeeShape::single_spend_send(true, Some(&[0u8; 1200]));
-        assert!(logical_actions(&shape) > 3);
-        assert!(conventional_fee_zatoshis(&shape) > 15_000);
+        assert!(logical_actions(&shape) > 2);
+        assert!(conventional_fee_zatoshis(&shape) > 10_000);
     }
 }
