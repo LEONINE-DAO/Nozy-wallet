@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.3.2] — NU6.2 mainnet compatibility (2026-06-10)
+
+### Fixed
+
+- **NU6.2 consensus branch ID:** bump librustzcash to orchard 0.14, zcash_primitives 0.28, zcash_protocol 0.9, and related crates so `BranchId::for_height` returns NU6.2 (`0x5437f330`) on mainnet. Prevents zebrad rejection with incorrect consensus branch id (code -25).
+- **Transaction expiry:** default expiry delta raised from 2 to 5 blocks for Orchard sends.
+- **ZIP-317 Orchard fees:** count actions as `max(spends, outputs)` instead of `spends + outputs` (correct conventional fee for typical 1-in / 1-out sends).
+- **api-server, desktop, extension wasm-core:** align `zcash_protocol` and lockfiles with the NU6.2 dependency set.
+
+### Changed
+
+- Extension CI runs when root `Cargo.toml` or `src/**` changes so wasm-core stays in sync with the main crate.
+
 ## [2.3.1] — Receive / sync UX (2026-06-05)
 
 ### Added
