@@ -19,7 +19,7 @@ use orchard::{
     note::{Note, Nullifier},
     Address as OrchardAddress,
 };
-use zcash_primitives::zip32::AccountId;
+use zip32::AccountId;
 
 use zcash_note_encryption::try_compact_note_decryption;
 

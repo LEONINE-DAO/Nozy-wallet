@@ -15,7 +15,7 @@ use orchard::{
     Address as OrchardAddress,
 };
 use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
-use zcash_primitives::zip32::AccountId;
+use zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
 
 #[derive(Debug, Clone)]
@@ -409,7 +409,7 @@ impl HDWallet {
         let seed_bytes = self.mnemonic.to_seed("").to_vec();
         let secure_seed = SecureSeed::new(seed_bytes);
 
-        let account_id = zcash_primitives::zip32::AccountId::try_from(0)
+        let account_id = zip32::AccountId::try_from(0)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
 
         let orchard_sk = SpendingKey::from_zip32_seed(secure_seed.as_bytes(), 133, account_id)
