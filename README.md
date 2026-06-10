@@ -2,6 +2,8 @@
 
 **Orchard-first Zcash wallet** — CLI, desktop app, and browser extension. This repository is a **wallet and companion services**, not a consensus node.
 
+**Latest release:** [v2.3.3 — Teriyaki Hot (NU6.2)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.3) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
+
 ## What NozyWallet is
 
 NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for incoming notes, build transactions, and (on supported surfaces) send ZEC. The project **does not ship a full blockchain node**. You run **[Zebra](https://github.com/ZcashFoundation/zebra) (`zebrad`)** for JSON-RPC and **[lightwalletd](https://github.com/zcash/lightwalletd)** for compact blocks, then point the wallet at those endpoints.
@@ -18,7 +20,7 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 | **Mobile (in progress)** | `zeaking-ffi/` | UniFFI bindings; not on app stores yet |
 | **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
-**Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`run-nozy-api.ps1`, `zeaking-lwd-smoke.ps1`).
+**Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`zebra-wsl-rpc.ps1`, `start-lightwalletd-wsl.ps1`, `run-nozy-api.ps1`).
 
 **Contributor priority:** new feature work is **extension-first** ([`EXTENSION_FIRST_SCOPE.md`](EXTENSION_FIRST_SCOPE.md)). **End users** who want a full wallet today should prefer **desktop** or **CLI**; the extension is a lighter mode that relies on the companion API for LWD sync ([`browser-extension/COMPANION.md`](browser-extension/COMPANION.md)).
 
@@ -57,10 +59,10 @@ Nozy does **not** check “fully synced”, `verificationprogress`, or lightwall
 
 **Practical setup for testers**
 
-1. Start `zebrad` (snapshot or from genesis).
-2. Start **lightwalletd** once RPC is up — it does not need 100% sync.
+1. Start `zebrad` (snapshot or from genesis). On **Windows**, run Zebrad in WSL only — see [`scripts/README.md`](scripts/README.md).
+2. Start **lightwalletd** once RPC is up (`scripts/start-lightwalletd-wsl.ps1` on Windows) — it does not need 100% sync.
 3. Create/restore wallet; set **`--start-height`** (wallet birthday) on mainnet to avoid scanning from ~3M by default.
-4. Run **`nozy sync`** (or LWD compact-to-tip) **while** `zebrad` keeps indexing; repeat until node tip is near network tip.
+4. Run **`nozy sync --to-tip`** (or LWD compact-to-tip) **while** `zebrad` keeps indexing; plain `sync` only advances ~1000 blocks per run on mainnet.
 5. For **sends**, wait until the node is close to network tip and you have scanned through spendable notes.
 
 Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (testnet default start: height `1`). See [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md) for shielded-send architecture.
@@ -68,6 +70,8 @@ Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (t
 **Stale compact cache:** If `nozy status` shows compact heights **above** the LWD tip, run `nozy lwd prune` (or `nozy lwd sync-to-tip`, which prunes automatically). Then re-download with `nozy lwd sync-to-tip --start-floor <birthday>`.
 
 **After receiving funds:** run `nozy sync --to-tip` (not plain `sync` — that only advances ~1000 blocks per run on mainnet).
+
+**After upgrading to v2.3.3+:** run `nozy sync --to-tip` once to repair note nullifiers from older compact discovery (fixes second-send double-spend — [#61](https://github.com/LEONINE-DAO/Nozy-wallet/issues/61)).
 
 **Verify:** `nozy status` shows Zebra tip, RPC last scan, LWD tip, and compact-cache height. Integration tests (require live node): `cargo test --test integration_tests -- --ignored test_sync_follows_zebra_tip` and `test_lwd_compact_sync_follows_tip` — see [`tests/integration_tests.rs`](tests/integration_tests.rs).
 
@@ -78,7 +82,7 @@ Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (t
 | Layer | Technology |
 |-------|------------|
 | Language | **Rust** (2021 edition), workspace crates `nozy`, `zeaking`, `nozywallet-api`, `zeaking-ffi` |
-| Zcash / Orchard | `orchard`, `zcash_primitives`, `zcash_protocol`, `zcash_address`, `zip32`, `bip39` (versions in root `Cargo.toml`) |
+| Zcash / Orchard | `orchard 0.14`, `zcash_primitives 0.28`, `zcash_protocol 0.9`, `zcash_address`, `zip32`, `bip39` (NU6.2 stack — see root `Cargo.toml`) |
 | Desktop UI | **Tauri 2** + **React** + **Vite** (`desktop-client/`) |
 | Extension | **Rust → WASM** (`browser-extension/wasm-core/`) + MV3 service worker |
 | Compact sync | **gRPC** to lightwalletd, **SQLite** cache in `zeaking::lwd` |
@@ -110,21 +114,21 @@ Extension: unzip, then Chrome/Edge **Load unpacked**. If Assets are empty for de
 
 >  **Want to help build the future of private cryptocurrency?** Check out our **[Enhancement Roadmap](ENHANCEMENT_ROADMAP.md)** to see exciting features we're building, including **Desktop GUI**, **Mobile Apps**, **Hardware Wallet Support**, and more! We welcome contributors!
 
-##  NU 6.1 Support - Ready for Network Upgrade 6.1!
+## NU6.2 mainnet support (v2.3.2+)
 
-**NozyWallet is fully updated and ready for Zcash Network Upgrade 6.1 (NU 6.1)!**
+**NozyWallet tracks mainnet NU6.2** (consensus branch ID `0x5437f330`) via the librustzcash release set pinned in root `Cargo.toml`:
 
-- ✅ **Protocol Version 170140** - Fully compatible with NU 6.1
-- ✅ **Activation Height**: Block 3,146,400 (November 23, 2025)
-- ✅ **Current workspace crates** (see root `Cargo.toml`): `zcash_protocol 0.7`, `zcash_primitives 0.26`, `orchard 0.11`
-- ✅ **NU 6.1 Features**: ZIP 271, ZIP 1016 support
+- `orchard 0.14`, `zcash_primitives 0.28`, `zcash_protocol 0.9`
+- **NU 6.1** activated at block **3,146,400** (November 23, 2025); NU6.2 is active on mainnet today — your node must be NU6.2-aware (e.g. **zebrad 5.x**)
 
-Check your NU 6.1 status:
+**Sending on mainnet post-NU6.2:** wallet and node must agree on branch ID. A stale dependency stack can produce NU6.1 branch IDs and zebrad rejects broadcast with code `-25` (“incorrect consensus branch id”).
+
+Check NU 6.1 activation / protocol info (historical helper):
 ```bash
 nozy nu61
 ```
 
-Or see it in your wallet status:
+Node and wallet sync summary:
 ```bash
 nozy status
 ```
@@ -140,7 +144,10 @@ nozy status
 ###  Implemented Features
 
 #### Core Wallet Features
-- **NU 6.1 Support**: Fully compatible with Zcash Network Upgrade 6.1 (protocol version 170140)
+- **NU6.2 mainnet**: librustzcash stack aligned with NU6.2 consensus (v2.3.2+)
+- **ZIP-317 fees**: client-side conventional fees for Orchard sends; `nozy send --priority` for pilot priority lane (×4)
+- **Spend detection**: canonical nullifiers at discovery; on-chain spend marking during scan and on broadcast (v2.3.3, #61)
+- **Sync to tip**: `nozy sync --to-tip` scans through chain tip (recommended after receives and after upgrading)
 - **HD Wallet Support**: Hierarchical deterministic wallet with BIP39 mnemonic support
 - **Password Protection**: Argon2-based password hashing for wallet security
 - **Address Generation**: Generate Orchard addresses for receiving ZEC
@@ -180,8 +187,9 @@ nozy status
 **Shipped today (maintained):**
 
 - **Desktop** — [User guide](desktop-client/USER_GUIDE.md) | [dApp integration](desktop-client/DAPP_INTEGRATION_GUIDE.md) | [Releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)
-- **CLI** — `cargo run --bin nozy` (see [Command help](COMMAND_HELP.md))
-- **Extension + companion API** — [COMPANION.md](browser-extension/COMPANION.md)
+- **CLI** — `cargo run --bin nozy` (see [Command help](COMMAND_HELP.md)); `sync --to-tip`, `send --priority`, `lwd prune` / `lwd sync-to-tip`
+- **Extension + companion API** — [COMPANION.md](browser-extension/COMPANION.md) (wasm-core on NU6.2 stack)
+- **v2.3.x highlights** — NU6.2 sends, ZIP-317 fees, 5-block expiry, spend-detection fix — [CHANGELOG.md](CHANGELOG.md)
 
 **Active priorities (contributors welcome):**
 
@@ -351,9 +359,13 @@ Address 4: u1testaddress5678901234efghijklmnopqrstuvwxyzabcde...
 
 Generate multiple Orchard addresses for receiving ZEC.
 
-### 4. Scan for Notes
+### 4. Sync / Scan for Notes
 
 ```bash
+# Recommended after receiving funds or upgrading to v2.3.3+
+cargo run --bin nozy sync --to-tip
+
+# Bounded range scan (advanced)
 cargo run --bin nozy scan --start-height 1000000 --end-height 1000100
 ```
 
@@ -411,7 +423,7 @@ cargo run --bin nozy send --recipient "u1..." --amount 0.1
 cargo run --bin nozy send --recipient "u1..." --amount 0.1 --priority
 ```
 
-Fees are computed **client-side** (ZIP-317). Zebrad does not implement `estimatefee`; the wallet no longer uses a fixed 10k zat fallback for sends.
+Fees are computed **client-side** (ZIP-317): `5,000` zats per logical action, minimum **2** grace actions (typical 1-in / 1-out send ≈ **0.0001 ZEC**). Zebrad does not implement `estimatefee`. Use `--priority` for ×4 pilot fees. Transactions expire **5 blocks** after chain tip at build time by default.
 
 **Complete Transaction Flow Example:**
 
@@ -576,7 +588,7 @@ async fn main() -> nozy::NozyResult<()> {
         &spendable_notes,
         "u1recipientaddress...",
         50_000_000, // 0.5 ZEC in zatoshis
-        10_000,     // fee in zatoshis
+        10_000,     // ZIP-317 fee in zatoshis (typical 2-action minimum)
         Some(b"Payment from automated script"),
     )
         .await?;
@@ -780,6 +792,8 @@ NozyWallet stores wallet data and configuration in platform-specific directories
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `ZEBRA_RPC_URL` | `http://127.0.0.1:8232` | Override default Zebra RPC URL |
+| `LIGHTWALLETD_GRPC` | (unset) | lightwalletd gRPC URL (e.g. `http://<WSL-IP>:9067` on Windows) |
+| `NOZY_PLAIN_OUTPUT` | (unset) | Set to `1` for non-interactive / script-friendly CLI output |
 | `RUST_LOG` | (unset) | Set log level (e.g., `debug`, `info`, `warn`, `error`) |
 | `HOME` | (system) | Home directory (used for fallback data paths on Unix) |
 | `USERPROFILE` | (system) | User profile directory (used for fallback data paths on Windows) |
@@ -1183,15 +1197,15 @@ NozyWallet uses modern Rust dependency management with security-focused practice
 **Cryptography:**
 - **aes-gcm 0.10** - Wallet encryption
 - **argon2 0.5** - Password hashing
-- **orchard 0.11.0** - Zcash Orchard protocol
-- **zcash_primitives 0.24.1** - Zcash cryptographic primitives
-- **zcash_protocol 0.6.2** - Zcash protocol support (NU 6.1)
+- **orchard 0.14** - Zcash Orchard protocol (NU6.2)
+- **zcash_primitives 0.28** - Zcash cryptographic primitives
+- **zcash_protocol 0.9** - Zcash protocol support (NU6.2 mainnet)
 
 **Zcash Libraries:**
-- **orchard 0.11.0** - Orchard shielded transactions
-- **zcash_primitives 0.24.1** - Core Zcash primitives
-- **zcash_protocol 0.6.2** - Protocol version 170140 (NU 6.1)
-- **zcash_address 0.9.0** - Address parsing and encoding
+- **orchard 0.14** - Orchard shielded transactions
+- **zcash_primitives 0.28** - Core Zcash primitives
+- **zcash_protocol 0.9** - NU6.2 branch ID / height rules
+- **zcash_address** - Address parsing and encoding (see `Cargo.toml`)
 
 ### Security Practices
 
