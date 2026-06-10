@@ -2744,7 +2744,7 @@ dependencies = [
  "zcash_note_encryption",
  "zcash_primitives",
  "zcash_proofs",
- "zcash_protocol 0.9.0",
+ "zcash_protocol",
  "zcash_transparent",
  "zeaking",
  "zeroize",
@@ -2769,7 +2769,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber 0.3.23",
- "zcash_protocol 0.7.2",
+ "zcash_protocol",
  "zeaking",
 ]
 
@@ -5689,7 +5689,7 @@ dependencies = [
  "corez",
  "f4jumble",
  "zcash_encoding",
- "zcash_protocol 0.9.0",
+ "zcash_protocol",
 ]
 
 [[package]]
@@ -5741,7 +5741,7 @@ dependencies = [
  "sha2 0.10.9",
  "zcash_encoding",
  "zcash_note_encryption",
- "zcash_protocol 0.9.0",
+ "zcash_protocol",
  "zcash_script",
  "zcash_transparent",
 ]
@@ -5764,18 +5764,6 @@ dependencies = [
  "tracing",
  "wagyu-zcash-parameters",
  "zcash_primitives",
-]
-
-[[package]]
-name = "zcash_protocol"
-version = "0.7.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "18b1a337bbc9a7d55ae35d31189f03507dbc7934e9a4bee5c1d5c47464860e48"
-dependencies = [
- "core2",
- "document-features",
- "hex",
- "memuse",
 ]
 
 [[package]]
@@ -5836,7 +5824,7 @@ dependencies = [
  "subtle",
  "zcash_address",
  "zcash_encoding",
- "zcash_protocol 0.9.0",
+ "zcash_protocol",
  "zcash_script",
  "zcash_spec",
  "zip32",

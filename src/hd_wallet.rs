@@ -15,8 +15,8 @@ use orchard::{
     Address as OrchardAddress,
 };
 use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
-use zip32::AccountId;
 use zcash_protocol::consensus::NetworkType;
+use zip32::AccountId;
 
 #[derive(Debug, Clone)]
 pub struct HDWallet {
