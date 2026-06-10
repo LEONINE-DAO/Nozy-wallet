@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.3.3] — Teriyaki Hot (NU6.2) (2026-06-10)
+
+### Fixed
+
+- **Orchard spend detection (#61):** derive and store canonical note nullifiers at discovery; detect on-chain spends during scan; mark notes spent immediately on broadcast. Fixes second-send double-spend (duplicate nullifier / `-25`) when change notes were not excluded from the spendable set.
+- **Release lockfiles:** refresh `Cargo.lock` when bumping crate version (CI `cargo metadata --locked`).
+
 ## [2.3.2] — NU6.2 mainnet compatibility (2026-06-10)
 
 ### Fixed
