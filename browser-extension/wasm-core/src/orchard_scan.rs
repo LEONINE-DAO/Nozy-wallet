@@ -159,7 +159,7 @@ mod tests {
     use rand::rngs::StdRng;
     use rand::{RngCore, SeedableRng};
     use zcash_note_encryption::{Domain, ShieldedOutput};
-    use zcash_primitives::zip32::AccountId;
+    use zip32::AccountId;
     use zcash_protocol::consensus::NetworkType;
 
     const TEST_MNEMONIC: &str =

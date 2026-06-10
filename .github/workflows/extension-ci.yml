@@ -4,11 +4,17 @@ on:
   pull_request:
     paths:
       - "browser-extension/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
       - ".github/workflows/extension-ci.yml"
   push:
     branches: [master]
     paths:
       - "browser-extension/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "src/**"
       - ".github/workflows/extension-ci.yml"
 
 jobs:

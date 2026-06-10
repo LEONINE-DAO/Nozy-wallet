@@ -471,7 +471,7 @@ pub fn prove_orchard_transaction_spend_from_note(
     use rand::rngs::OsRng;
     use sha2::Digest;
     use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding, Receiver};
-    use zcash_primitives::zip32::AccountId;
+    use zip32::AccountId;
 
     let (anchor, merkle_path) = parse_orchard_witness_for_spend(witness_json)?;
 
@@ -651,7 +651,7 @@ pub fn build_orchard_v5_tx_from_note(
         Address as OrchardAddress,
     };
     use rand::rngs::OsRng;
-    use transparent::builder::TransparentSigningSet;
+    use zcash_transparent::builder::TransparentSigningSet;
     use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding, Receiver};
     use zcash_primitives::transaction::builder::{BuildConfig, Builder as TxBuilder};
     use zcash_primitives::transaction::fees::{FeeRule, transparent::InputSize};
@@ -816,7 +816,7 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Invalid mnemonic: {e}")))?;
 
     let seed_bytes = mnemonic.to_seed("").to_vec();
-    let account_id = zcash_primitives::zip32::AccountId::try_from(0).map_err(|e| {
+    let account_id = zip32::AccountId::try_from(0).map_err(|e| {
         JsError::new(&format!("Invalid ZIP32 account id: {e}"))
     })?;
 
@@ -882,8 +882,9 @@ pub fn build_orchard_v5_tx_from_note(
         total_input_value = total_input_value.saturating_add(spend_note.value);
     }
 
-    let recipient_value = amount_zatoshis;
-    let total_required = recipient_value.saturating_add(fee_zatoshis);
+    let recipient_value = Zatoshis::from_u64(amount_zatoshis)
+        .map_err(|_| JsError::new("Invalid recipient amount"))?;
+    let total_required = amount_zatoshis.saturating_add(fee_zatoshis);
     if total_input_value < total_required {
         return Err(JsError::new(&format!(
             "Insufficient input value for amount+fee: inputs={} required={}",
@@ -905,11 +906,13 @@ pub fn build_orchard_v5_tx_from_note(
 
     let change_amount = total_input_value.saturating_sub(total_required);
     if change_amount > 0 {
+        let change_zats = Zatoshis::from_u64(change_amount)
+            .map_err(|_| JsError::new("Invalid change amount"))?;
         builder
             .add_orchard_output::<core::convert::Infallible>(
                 None,
                 note_recipient,
-                change_amount,
+                change_zats,
                 MemoBytes::empty(),
             )
             .map_err(|e| {
