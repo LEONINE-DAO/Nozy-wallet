@@ -3272,7 +3272,7 @@ name = "nozywallet-desktop"
 version = "2.3.2"
 dependencies = [
  "hex",
- "indexmap 1.9.3",
+ "indexmap 2.13.1",
  "nozy",
  "serde",
  "serde_json",
