@@ -139,10 +139,20 @@ pub async fn build_and_broadcast_transaction(
                 println!("🆔 Network TXID: {}", network_txid);
 
                 let tx_storage = SentTransactionStorage::new()?;
+                use orchard::keys::FullViewingKey;
                 let spent_note_ids: Vec<String> = spendable_notes
                     .iter()
-                    .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
+                    .map(|note| {
+                        let fvk = FullViewingKey::from(&note.spending_key);
+                        hex::encode(note.orchard_note.note.nullifier(&fvk).to_bytes())
+                    })
                     .collect();
+
+                if let Err(e) =
+                    crate::notes::mark_wallet_notes_spent_from_spendables(spendable_notes)
+                {
+                    eprintln!("Warning: could not mark spent notes locally: {e}");
+                }
 
                 let mut tx_record = SentTransactionRecord::new_pilot(
                     network_txid.clone(),

@@ -691,6 +691,19 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         .collect();
 
                     for new_note in &result.notes {
+                        if let Some(existing) = existing_notes.iter_mut().find(|n| {
+                            n.txid == new_note.txid
+                                && n.block_height == new_note.block_height
+                                && n.value == new_note.value
+                        }) {
+                            existing.spent = existing.spent || new_note.spent;
+                            if new_note.rho_bytes.is_some() {
+                                existing.nullifier_bytes = new_note.nullifier_bytes.clone();
+                                existing.rho_bytes = new_note.rho_bytes.clone();
+                                existing.rseed_bytes = new_note.rseed_bytes.clone();
+                            }
+                            continue;
+                        }
                         if !existing_nullifiers.contains(&new_note.nullifier_bytes) {
                             existing_notes.push(new_note.clone());
                         }

@@ -60,6 +60,33 @@ pub struct SerializableOrchardNote {
     /// Block height through which the witness was advanced (matches chain order used during scan).
     #[serde(default)]
     pub orchard_witness_tip_height: Option<u32>,
+    /// Note rho (needed to derive the canonical Orchard nullifier; not present in compact actions).
+    #[serde(default)]
+    pub rho_bytes: Option<Vec<u8>>,
+    /// Note rseed (needed to derive the canonical Orchard nullifier).
+    #[serde(default)]
+    pub rseed_bytes: Option<Vec<u8>>,
+}
+
+impl SerializableOrchardNote {
+    /// Reconstruct the Orchard note when rho/rseed were persisted at discovery time.
+    pub fn to_orchard_note(&self) -> Option<Note> {
+        use orchard::note::{RandomSeed, Rho};
+        let rho_bytes: [u8; 32] = self.rho_bytes.as_ref()?.as_slice().try_into().ok()?;
+        let rho = Rho::from_bytes(&rho_bytes).into_option()?;
+        let rseed_bytes: [u8; 32] = self.rseed_bytes.as_ref()?.as_slice().try_into().ok()?;
+        let rseed = RandomSeed::from_bytes(rseed_bytes, &rho).into_option()?;
+        let addr_bytes: [u8; 43] = self.address_bytes.as_slice().try_into().ok()?;
+        let recipient = OrchardAddress::from_raw_address_bytes(&addr_bytes).into_option()?;
+        let value = orchard::value::NoteValue::from_raw(self.value);
+        Note::from_parts(recipient, value, rho, rseed).into_option()
+    }
+
+    /// Canonical nullifier for this note (matches spend builder / on-chain spends).
+    pub fn canonical_nullifier_bytes(&self, fvk: &FullViewingKey) -> Option<[u8; 32]> {
+        let note = self.to_orchard_note()?;
+        Some(note.nullifier(fvk).to_bytes())
+    }
 }
 
 impl From<&OrchardNote> for SerializableOrchardNote {
@@ -84,8 +111,89 @@ impl From<&OrchardNote> for SerializableOrchardNote {
             memo: note.memo.clone(),
             orchard_incremental_witness_hex: None,
             orchard_witness_tip_height: None,
+            rho_bytes: Some(note.note.rho().to_bytes().to_vec()),
+            rseed_bytes: Some(note.note.rseed().as_bytes().to_vec()),
         }
     }
+}
+
+/// Mark notes spent in `notes.json` immediately after broadcast.
+///
+/// Matches by canonical nullifier and, for legacy rows with a wrong stored nullifier,
+/// by `(txid, block_height, value)` from the notes that were actually spent.
+#[cfg(feature = "native")]
+pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyResult<usize> {
+    use crate::paths::get_wallet_data_dir;
+    use std::collections::HashSet;
+    use std::fs;
+
+    if spent.is_empty() {
+        return Ok(0);
+    }
+
+    let notes_path = get_wallet_data_dir().join("notes.json");
+    if !notes_path.exists() {
+        return Ok(0);
+    }
+
+    let content = fs::read_to_string(&notes_path)
+        .map_err(|e| NozyError::Storage(format!("Failed to read notes: {}", e)))?;
+    let mut notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content)
+        .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
+
+    let mut canonical: HashSet<[u8; 32]> = HashSet::new();
+    for sn in spent {
+        let fvk = FullViewingKey::from(&sn.spending_key);
+        canonical.insert(sn.orchard_note.note.nullifier(&fvk).to_bytes());
+    }
+
+    let mut marked = 0usize;
+    for note in &mut notes {
+        if note.spent {
+            continue;
+        }
+
+        let mut matched = false;
+        if note.nullifier_bytes.len() == 32 {
+            let mut nf = [0u8; 32];
+            nf.copy_from_slice(&note.nullifier_bytes);
+            if canonical.contains(&nf) {
+                matched = true;
+            }
+        }
+
+        if !matched {
+            for sn in spent {
+                if note.txid == sn.orchard_note.txid
+                    && note.block_height == sn.orchard_note.block_height
+                    && note.value == sn.orchard_note.value
+                {
+                    matched = true;
+                    let fvk = FullViewingKey::from(&sn.spending_key);
+                    note.nullifier_bytes = sn.orchard_note.note.nullifier(&fvk).to_bytes().to_vec();
+                    if note.rho_bytes.is_none() {
+                        note.rho_bytes = Some(sn.orchard_note.note.rho().to_bytes().to_vec());
+                        note.rseed_bytes = Some(sn.orchard_note.note.rseed().as_bytes().to_vec());
+                    }
+                    break;
+                }
+            }
+        }
+
+        if matched {
+            note.spent = true;
+            marked += 1;
+        }
+    }
+
+    if marked > 0 {
+        let serialized = serde_json::to_string_pretty(&notes)
+            .map_err(|e| NozyError::Storage(format!("Failed to serialize notes: {}", e)))?;
+        fs::write(&notes_path, serialized)
+            .map_err(|e| NozyError::Storage(format!("Failed to write notes: {}", e)))?;
+    }
+
+    Ok(marked)
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -330,6 +438,7 @@ impl NoteScanner {
                         if let Err(e) = self.process_block_orchard_actions(
                             &transactions,
                             height,
+                            &orchard_fvk,
                             &orchard_ivk_external,
                             &orchard_ivk_internal,
                             &orchard_sk,
@@ -370,6 +479,14 @@ impl NoteScanner {
             }
         }
 
+        spendable_notes.retain(|sn| {
+            let nf = sn.orchard_note.nullifier.to_bytes();
+            note_index
+                .get_note_by_nullifier(&nf)
+                .map(|n| !n.spent)
+                .unwrap_or(!sn.orchard_note.spent)
+        });
+
         pb.finish_with_message("Scanning complete!");
 
         let total_balance = note_index.total_balance();
@@ -401,6 +518,7 @@ impl NoteScanner {
         &self,
         transactions: &[ParsedTransaction],
         block_height: u32,
+        orchard_fvk: &FullViewingKey,
         orchard_ivk_external: &IncomingViewingKey,
         orchard_ivk_internal: &IncomingViewingKey,
         orchard_sk: &SpendingKey,
@@ -412,6 +530,14 @@ impl NoteScanner {
     ) -> NozyResult<()> {
         for tx in transactions {
             for (action_idx, action) in tx.orchard_actions.iter().enumerate() {
+                if action.nullifier.len() == 32 {
+                    if note_index.mark_note_spent_on_chain(&action.nullifier, orchard_fvk) {
+                        spendable_notes.retain(|sn| {
+                            sn.orchard_note.nullifier.to_bytes().as_slice() != action.nullifier
+                        });
+                    }
+                }
+
                 let cmx_node = merkle_hash_from_cmx_bytes(&action.cmx)?;
                 if let Some(tr) = witness_tracker.as_mut() {
                     tr.append_cmx(cmx_node)?;
@@ -419,6 +545,7 @@ impl NoteScanner {
 
                 let chosen = match self.decrypt_orchard_action(
                     action,
+                    orchard_fvk,
                     orchard_ivk_external,
                     block_height,
                     &tx.txid,
@@ -427,6 +554,7 @@ impl NoteScanner {
                     Ok(Some(n)) => Some((n, orchard::keys::Scope::External)),
                     Ok(None) => match self.decrypt_orchard_action(
                         action,
+                        orchard_fvk,
                         orchard_ivk_internal,
                         block_height,
                         &tx.txid,
@@ -483,6 +611,7 @@ impl NoteScanner {
     fn decrypt_orchard_action(
         &self,
         action: &OrchardActionData,
+        orchard_fvk: &FullViewingKey,
         ivk: &IncomingViewingKey,
         block_height: u32,
         txid: &str,
@@ -574,11 +703,13 @@ impl NoteScanner {
                     note.value().inner()
                 );
 
+                let canonical_nullifier = note.nullifier(orchard_fvk);
+
                 let orchard_note = OrchardNote {
                     note: note.clone(),
                     value: note.value().inner(),
                     address: address.clone(),
-                    nullifier: nullifier,
+                    nullifier: canonical_nullifier,
                     block_height,
                     txid: txid.to_string(),
                     spent: false,

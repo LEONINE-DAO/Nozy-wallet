@@ -128,6 +128,51 @@ impl NoteIndex {
         false
     }
 
+    /// Match an on-chain action nullifier against held notes (direct index or canonical recompute).
+    pub fn mark_note_spent_on_chain(
+        &mut self,
+        chain_nullifier: &[u8],
+        fvk: &orchard::keys::FullViewingKey,
+    ) -> bool {
+        if chain_nullifier.len() != 32 {
+            return false;
+        }
+        if self.mark_note_spent(chain_nullifier) {
+            return true;
+        }
+
+        let mut found_idx = None;
+        for (idx, note) in self.notes.iter().enumerate() {
+            if note.spent {
+                continue;
+            }
+            if let Some(computed) = note.canonical_nullifier_bytes(fvk) {
+                if computed.as_slice() == chain_nullifier {
+                    found_idx = Some(idx);
+                    break;
+                }
+            }
+        }
+
+        if let Some(idx) = found_idx {
+            if let Some(note) = self.notes.get_mut(idx) {
+                note.spent = true;
+                if let Some(canonical) = note.canonical_nullifier_bytes(fvk) {
+                    let old = note.nullifier_bytes.clone();
+                    if old != canonical.to_vec() {
+                        self.nullifier_index.remove(&old);
+                        note.nullifier_bytes = canonical.to_vec();
+                        self.nullifier_index
+                            .insert(note.nullifier_bytes.clone(), idx);
+                    }
+                }
+                return true;
+            }
+        }
+
+        false
+    }
+
     /// Refresh serialized Orchard incremental witnesses after sync (see [`crate::orchard_witness::OrchardWitnessTracker`]).
     pub fn apply_orchard_witnesses_from_tracker(
         &mut self,
