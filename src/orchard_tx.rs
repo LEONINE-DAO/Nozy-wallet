@@ -190,7 +190,8 @@ impl OrchardTransactionBuilder {
                 NozyError::InvalidOperation(format!("Invalid recipient address: {}", e))
             })?;
 
-        let spendable_note = select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
+        let spendable_note =
+            select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
         let total_input_value = spendable_note.orchard_note.value;
 
         let change_amount = total_input_value.saturating_sub(amount_zatoshis + fee_zatoshis);
