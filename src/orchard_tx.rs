@@ -118,6 +118,33 @@ impl OrchardWitnessProvider for ZebraJsonRpcOrchardWitnessProvider {
     }
 }
 
+/// Pick one unspent note that covers `amount + fee`, preferring the smallest sufficient note.
+///
+/// `build_single_spend` only creates one Orchard spend action today. Change must be derived
+/// from that note's value alone — not the sum of every spendable note in the wallet.
+pub fn select_single_spend_note<'a>(
+    spendable_notes: &'a [SpendableNote],
+    amount_zatoshis: u64,
+    fee_zatoshis: u64,
+) -> NozyResult<&'a SpendableNote> {
+    let needed = amount_zatoshis.saturating_add(fee_zatoshis);
+    let mut best: Option<&SpendableNote> = None;
+    for note in spendable_notes.iter().filter(|n| !n.orchard_note.spent) {
+        if note.orchard_note.value >= needed {
+            best = match best {
+                None => Some(note),
+                Some(current) if note.orchard_note.value < current.orchard_note.value => Some(note),
+                _ => best,
+            };
+        }
+    }
+    best.ok_or_else(|| {
+        NozyError::InvalidOperation(format!(
+            "No single Orchard note covers {needed} zats (multi-note spends are not supported yet)"
+        ))
+    })
+}
+
 #[derive(Debug)]
 pub struct OrchardTransactionBuilder {
     proving_manager: OrchardProvingManager,
@@ -163,20 +190,10 @@ impl OrchardTransactionBuilder {
                 NozyError::InvalidOperation(format!("Invalid recipient address: {}", e))
             })?;
 
-        let total_input_value: u64 = spendable_notes
-            .iter()
-            .map(|note| note.orchard_note.value)
-            .sum();
+        let spendable_note = select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
+        let total_input_value = spendable_note.orchard_note.value;
 
         let change_amount = total_input_value.saturating_sub(amount_zatoshis + fee_zatoshis);
-
-        if total_input_value < amount_zatoshis + fee_zatoshis {
-            return Err(NozyError::InvalidOperation(format!(
-                "Insufficient funds: have {} zatoshis, need {} zatoshis",
-                total_input_value,
-                amount_zatoshis + fee_zatoshis
-            )));
-        }
 
         let bundle_type = BundleType::Transactional {
             flags: Flags::ENABLED,
@@ -185,8 +202,6 @@ impl OrchardTransactionBuilder {
         let tip_height = zebra_client.get_best_block_height().await?;
         // Mempool consensus checks use the next block context, not the current tip block.
         let tx_build_height = tip_height.saturating_add(1);
-
-        let spendable_note = &spendable_notes[0];
 
         println!(
             "Adding spend action for {} zatoshis",

@@ -1,7 +1,9 @@
 use crate::error::{NozyError, NozyResult};
 use crate::fee_policy::{OrchardSendFeeShape, PilotSendOptions};
 use crate::notes::SpendableNote;
-use crate::orchard_tx::{OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider};
+use crate::orchard_tx::{
+    select_single_spend_note, OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider,
+};
 use crate::zebra_integration::ZebraClient;
 use zcash_address::unified::{Container, Encoding};
 
@@ -82,7 +84,9 @@ impl ZcashTransactionBuilder {
             )));
         }
 
-        let has_change = total_available > amount_zatoshis.saturating_add(fee_zatoshis);
+        let spend_note = select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
+        let has_change =
+            spend_note.orchard_note.value > amount_zatoshis.saturating_add(fee_zatoshis);
         let shape = OrchardSendFeeShape::single_spend_send(has_change, memo);
         let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority);
         if fee_zatoshis < expected_fee {
@@ -97,7 +101,7 @@ impl ZcashTransactionBuilder {
             .build_single_spend(
                 zebra_client,
                 &ZebraJsonRpcOrchardWitnessProvider,
-                spendable_notes,
+                std::slice::from_ref(spend_note),
                 recipient_address,
                 amount_zatoshis,
                 fee_zatoshis,

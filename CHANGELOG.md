@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.3.4] — Send Select (2026-06-10)
+
+### Fixed
+
+- **Orchard single-note coin selection:** `build_single_spend` only creates one Orchard spend, but change was computed from the **sum of all** spendable notes. Wallets with multiple notes built txs whose outputs exceeded the spent note; zebrad rejected broadcast with `could not calculate the transaction fee` (code `-25`). Now selects the smallest note that covers amount + fee and derives change from that note only (`select_single_spend_note`).
+
 ## [2.3.3] — Teriyaki Hot (NU6.2) (2026-06-10)
 
 ### Fixed
