@@ -17,11 +17,7 @@ pub fn cached_unspent_balance_zatoshis() -> NozyResult<u64> {
         .map_err(|e| NozyError::Storage(format!("Failed to read notes: {e}")))?;
     let notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content)
         .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {e}")))?;
-    Ok(notes
-        .iter()
-        .filter(|n| !n.spent)
-        .map(|n| n.value)
-        .sum())
+    Ok(notes.iter().filter(|n| !n.spent).map(|n| n.value).sum())
 }
 
 pub fn format_insufficient_funds_message(

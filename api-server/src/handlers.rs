@@ -558,7 +558,11 @@ pub async fn send_transaction(
         return Ok(ResponseJson(SendTransactionResponse {
             success: false,
             txid: None,
-            message: format_insufficient_funds_message(cached_balance, amount_zatoshis, fee_zatoshis),
+            message: format_insufficient_funds_message(
+                cached_balance,
+                amount_zatoshis,
+                fee_zatoshis,
+            ),
         }));
     }
 
