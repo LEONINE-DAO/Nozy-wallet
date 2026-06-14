@@ -1,5 +1,17 @@
 # Changelog
 
+## [2.3.6] — Teriyaki Hot (CLI) (2026-06-14)
+
+### Changed
+
+- **Release policy:** GitHub releases attach **CLI binaries only** (`nozy` for Windows, Linux, macOS Intel/ARM). Desktop, extension, and API server remain in the repo for contributors but are not promoted on release pages until production-ready.
+- **Documentation:** README and landing page download sections point to CLI only.
+
+### Fixed
+
+- **CI:** sync desktop Tauri `Cargo.lock` after version bumps; patch `esbuild` npm audit on desktop-client.
+- **Repo:** remove legacy broken `temp-electron-client` submodule entry (CI cleanup noise).
+
 ## [2.3.5] — Teriyaki Hot (2026-06-14)
 
 ### Fixed

@@ -10,4 +10,4 @@ macro_rules! set_release_codename {
     };
 }
 
-set_release_codename!("Teriyaki Hot");
+set_release_codename!("Teriyaki Hot (CLI)");
