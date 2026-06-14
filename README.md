@@ -2,7 +2,7 @@
 
 **Orchard-first Zcash wallet** — CLI, desktop app, and browser extension. This repository is a **wallet and companion services**, not a consensus node.
 
-**Latest release:** [v2.3.4 — Send Select](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.4) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
+**Latest release:** [v2.3.5 — Teriyaki Hot](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.5) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
 
 ## What NozyWallet is
 
@@ -17,7 +17,7 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 | **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`, default `:3000`) |
 | **Desktop** | `desktop-client/` | Tauri app (recommended full UX today) |
 | **Browser extension** | `browser-extension/` | MV3 + WASM; compact sync via companion API |
-| **Mobile (in progress)** | `zeaking-ffi/` | UniFFI bindings; not on app stores yet |
+| **Mobile (in progress)** | `mobile/` + `zeaking-ffi/` | Expo shell (Phase 1); UniFFI for on-device LWD (Phase 4) |
 | **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
 **Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`zebra-wsl-rpc.ps1`, `start-lightwalletd-wsl.ps1`, `run-nozy-api.ps1`).

@@ -48,10 +48,6 @@ pub fn error_response_with_details(
     )
 }
 
-fn validate_address(address: &str) -> bool {
-    address.starts_with("u1") && address.len() >= 78 && address.len() <= 100
-}
-
 fn validate_amount(amount: f64) -> bool {
     amount > 0.0 && amount <= 21_000_000.0
 }
@@ -503,12 +499,11 @@ pub async fn send_transaction(
             )
         })?;
 
-    if !validate_address(&payload.request.recipient) {
+    if let Err(e) = nozy::input_validation::validate_zcash_address(&payload.request.recipient) {
         return Ok(ResponseJson(SendTransactionResponse {
             success: false,
             txid: None,
-            message: "Invalid recipient address. Must be a valid shielded address (u1...)"
-                .to_string(),
+            message: format!("Invalid recipient address: {e}"),
         }));
     }
 

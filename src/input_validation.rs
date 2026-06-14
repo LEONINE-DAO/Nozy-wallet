@@ -86,3 +86,16 @@ pub fn sanitize_input(input: &str) -> String {
         .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_long_unified_addresses_from_nozy() {
+        // Regression: api-server used to cap u1 at 100 chars; Nozy-generated UAs can be ~106+.
+        let addr = "u13nkpl0xejf50y2l2nwq44jeg6u28ayey0k80htxspz6vqfa4zru4v45ez7n3qz9c3e6h29m89w4ket6wlmpgpq4ra4f7gd42uyp7c94e";
+        assert_eq!(addr.len(), 106);
+        validate_zcash_address(addr).expect("106-char Nozy UA should validate");
+    }
+}

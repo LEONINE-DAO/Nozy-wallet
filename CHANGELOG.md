@@ -1,10 +1,20 @@
 # Changelog
 
+## [2.3.5] — Teriyaki Hot (2026-06-14)
+
+### Fixed
+
+- **api-server `/api/transaction/send` address validation:** rejected valid mainnet unified addresses (`u1...`) longer than 100 characters (Nozy-generated UAs are often ~106 chars). Validation now uses shared `validate_zcash_address` (up to 256 chars), matching CLI and core wallet behavior.
+
 ## [2.3.4] — Send Select (2026-06-10)
 
 ### Fixed
 
 - **Orchard single-note coin selection:** `build_single_spend` only creates one Orchard spend, but change was computed from the **sum of all** spendable notes. Wallets with multiple notes built txs whose outputs exceeded the spent note; zebrad rejected broadcast with `could not calculate the transaction fee` (code `-25`). Now selects the smallest note that covers amount + fee and derives change from that note only (`select_single_spend_note`).
+
+### Changed
+
+- **Desktop + extension stack alignment:** desktop Tauri app version `2.3.4`; extension `0.1.5` uses shared `fee_policy` (ZIP-317 fees, 5-block expiry constant) via wasm-core; tx build height `tip + 1` matches CLI/desktop; wasm `Cargo.lock` tracks core `2.3.4`.
 
 ## [2.3.3] — Teriyaki Hot (NU6.2) (2026-06-10)
 
