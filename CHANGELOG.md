@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- **api-server `/api/transaction/send`:** check cached `notes.json` balance before Zebra rescan; return `success: false` with **Insufficient funds** instead of HTTP 500 when balance is too low. Zebra connection failures during send rescan return **503** with `code: ZEBRA_UNAVAILABLE`.
+- **`/api/balance`:** exclude spent notes from balance sum (match CLI `balance` behavior).
 - **CI:** sync desktop Tauri `Cargo.lock` after version bumps; patch `esbuild` npm audit on desktop-client.
 - **Repo:** remove legacy broken `temp-electron-client` submodule entry (CI cleanup noise).
 

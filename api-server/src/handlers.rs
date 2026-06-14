@@ -400,6 +400,7 @@ pub async fn get_balance(
         .as_array()
         .unwrap_or(&vec![])
         .iter()
+        .filter(|n| !n.get("spent").and_then(|v| v.as_bool()).unwrap_or(false))
         .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
         .sum();
 
@@ -478,9 +479,12 @@ pub async fn sync_wallet(
 pub async fn send_transaction(
     Json(payload): Json<SendTransactionRequestWrapper>,
 ) -> Result<ResponseJson<SendTransactionResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::cli_helpers::scan_notes_for_sending;
+    use nozy::cli_helpers::{
+        cached_unspent_balance_zatoshis, format_insufficient_funds_message,
+        is_insufficient_funds_error, is_zebra_unavailable_error, scan_notes_for_sending,
+    };
     use nozy::ZcashTransactionBuilder;
-    use nozy::{load_config, ZebraClient};
+    use nozy::{estimate_orchard_send_fee_zatoshis, load_config, ZebraClient};
 
     let config = load_config();
     let zebra_url = payload
@@ -524,17 +528,6 @@ pub async fn send_transaction(
         }));
     }
 
-    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to scan notes: {}", e)
-                })),
-            )
-        })?;
-
     let memo_bytes_opt = payload
         .request
         .memo
@@ -543,26 +536,70 @@ pub async fn send_transaction(
         .filter(|b| !b.is_empty());
 
     let amount_zatoshis = (payload.request.amount * 100_000_000.0) as u64;
-    let zebra_client = ZebraClient::new(zebra_url.clone());
 
     let pilot = nozy::PilotSendOptions {
         priority: payload.request.priority,
         expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
     };
-    let fee_zatoshis = nozy::cli_helpers::estimate_transaction_fee_for_send(
-        &zebra_client,
-        memo_bytes_opt.as_deref(),
-        pilot.priority,
-    )
-    .await;
+    let fee_zatoshis =
+        estimate_orchard_send_fee_zatoshis(memo_bytes_opt.as_deref(), pilot.priority);
 
-    let tip_height = zebra_client.get_best_block_height().await.map_err(|e| {
+    let cached_balance = cached_unspent_balance_zatoshis().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({
-                "error": format!("Failed to read chain tip: {}", e)
+                "error": format!("Failed to read cached balance: {e}")
             })),
         )
+    })?;
+
+    let total_needed = amount_zatoshis.saturating_add(fee_zatoshis);
+    if cached_balance < total_needed {
+        return Ok(ResponseJson(SendTransactionResponse {
+            success: false,
+            txid: None,
+            message: format_insufficient_funds_message(cached_balance, amount_zatoshis, fee_zatoshis),
+        }));
+    }
+
+    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
+        .await
+        .map_err(|e| {
+            let msg = e.to_string();
+            if is_zebra_unavailable_error(&msg) {
+                error_response_with_code(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    format!("Zebra node unavailable during note scan: {msg}"),
+                    "ZEBRA_UNAVAILABLE",
+                )
+            } else {
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    ResponseJson(serde_json::json!({
+                        "error": format!("Failed to scan notes: {msg}")
+                    })),
+                )
+            }
+        })?;
+
+    let zebra_client = ZebraClient::new(zebra_url.clone());
+
+    let tip_height = zebra_client.get_best_block_height().await.map_err(|e| {
+        let msg = e.to_string();
+        if is_zebra_unavailable_error(&msg) {
+            error_response_with_code(
+                StatusCode::SERVICE_UNAVAILABLE,
+                format!("Zebra node unavailable: {msg}"),
+                "ZEBRA_UNAVAILABLE",
+            )
+        } else {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ResponseJson(serde_json::json!({
+                    "error": format!("Failed to read chain tip: {msg}")
+                })),
+            )
+        }
     })?;
     let expiry_height = tip_height.saturating_add(pilot.expiry_delta_blocks);
 
@@ -570,7 +607,7 @@ pub async fn send_transaction(
     tx_builder.set_zebra_url(&zebra_url);
     tx_builder.enable_mainnet_broadcast();
 
-    let transaction = tx_builder
+    let transaction = match tx_builder
         .build_send_transaction(
             &zebra_client,
             &spendable_notes,
@@ -581,14 +618,25 @@ pub async fn send_transaction(
             pilot,
         )
         .await
-        .map_err(|e| {
-            (
+    {
+        Ok(tx) => tx,
+        Err(e) => {
+            let msg = e.to_string();
+            if is_insufficient_funds_error(&msg) {
+                return Ok(ResponseJson(SendTransactionResponse {
+                    success: false,
+                    txid: None,
+                    message: msg,
+                }));
+            }
+            return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ResponseJson(serde_json::json!({
-                    "error": format!("Failed to build transaction: {}", e)
+                    "error": format!("Failed to build transaction: {msg}")
                 })),
-            )
-        })?;
+            ));
+        }
+    };
 
     match tx_builder
         .broadcast_transaction(&zebra_client, &transaction)

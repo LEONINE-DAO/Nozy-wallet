@@ -3,6 +3,50 @@ use crate::fee_policy::{estimate_orchard_send_fee_zatoshis, PilotSendOptions};
 use crate::{load_config, HDWallet, NoteScanner, WalletStorage, ZebraClient};
 use dialoguer::Password;
 
+/// Sum unspent note values from cached `notes.json` (no Zebra RPC).
+pub fn cached_unspent_balance_zatoshis() -> NozyResult<u64> {
+    use crate::notes::SerializableOrchardNote;
+    use crate::paths::get_wallet_data_dir;
+    use std::fs;
+
+    let notes_path = get_wallet_data_dir().join("notes.json");
+    if !notes_path.exists() {
+        return Ok(0);
+    }
+    let content = fs::read_to_string(&notes_path)
+        .map_err(|e| NozyError::Storage(format!("Failed to read notes: {e}")))?;
+    let notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content)
+        .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {e}")))?;
+    Ok(notes
+        .iter()
+        .filter(|n| !n.spent)
+        .map(|n| n.value)
+        .sum())
+}
+
+pub fn format_insufficient_funds_message(
+    available_zat: u64,
+    amount_zat: u64,
+    fee_zat: u64,
+) -> String {
+    let need = amount_zat.saturating_add(fee_zat);
+    format!(
+        "Insufficient funds: need {:.8} ZEC (amount + fee), have {:.8} ZEC",
+        need as f64 / 100_000_000.0,
+        available_zat as f64 / 100_000_000.0,
+    )
+}
+
+pub fn is_insufficient_funds_error(err: &str) -> bool {
+    err.contains("Insufficient Orchard funds") || err.contains("Insufficient funds")
+}
+
+pub fn is_zebra_unavailable_error(err: &str) -> bool {
+    err.contains("Failed to connect to Zebra")
+        || err.contains("Connection failed to")
+        || err.contains("Is Zebra running")
+}
+
 /// ZIP-317 client-side fee for an Orchard send (Zebrad does not implement `estimatefee`).
 pub async fn estimate_transaction_fee_for_send(
     _zebra_client: &ZebraClient,
@@ -181,8 +225,31 @@ pub async fn build_and_broadcast_transaction(
 }
 
 pub fn handle_insufficient_funds_error(error: &NozyError) {
-    if error.to_string().contains("Insufficient funds") {
+    if is_insufficient_funds_error(&error.to_string()) {
         println!("💡 You don't have enough ZEC to send this amount.");
         println!("   Run 'sync' to update your balance.");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn format_insufficient_funds_message_includes_amounts() {
+        let msg = format_insufficient_funds_message(0, 1_000_000, 10_000);
+        assert!(msg.contains("Insufficient funds"));
+        assert!(msg.contains("0.00000000"));
+        assert!(msg.contains("0.01010000"));
+    }
+
+    #[test]
+    fn classifies_zebra_and_insufficient_errors() {
+        assert!(is_zebra_unavailable_error(
+            "Failed to connect to Zebra node(s) [http://127.0.0.1:8232]"
+        ));
+        assert!(is_insufficient_funds_error(
+            "Insufficient Orchard funds: need 0.01000000 ZEC, have 0.00000000 ZEC"
+        ));
     }
 }
