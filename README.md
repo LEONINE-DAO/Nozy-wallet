@@ -1,6 +1,6 @@
 ﻿# NozyWallet
 
-**Orchard-first Zcash wallet** — CLI, desktop app, and browser extension. This repository is a **wallet and companion services**, not a consensus node.
+**Orchard-first Zcash wallet** — **CLI production release** today; desktop app, browser extension, and companion API in active development. This repository is a **wallet and companion services**, not a consensus node.
 
 **Latest release:** [v2.3.6 — Teriyaki Hot (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.6) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
 
@@ -14,9 +14,9 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 |--------|------|------|
 | **CLI + core library** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, `ZebraClient`, transaction building |
 | **Zeaking** | `zeaking/` | Compact sync via lightwalletd → SQLite (`zeaking::lwd`) |
-| **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`, default `:3000`) |
+| **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`) — **in development** |
 | **Desktop** | `desktop-client/` | Tauri app — **in development** (not promoted for production use yet) |
-| **Browser extension** | `browser-extension/` | MV3 + WASM; compact sync via companion API |
+| **Browser extension** | `browser-extension/` | MV3 + WASM — **in development**; compact sync via companion API when used |
 | **Mobile (in progress)** | `mobile/` + `zeaking-ffi/` | Expo shell (Phase 1); UniFFI for on-device LWD (Phase 4) |
 | **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
@@ -75,7 +75,7 @@ Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (t
 
 **Verify:** `nozy status` shows Zebra tip, RPC last scan, LWD tip, and compact-cache height. Integration tests (require live node): `cargo test --test integration_tests -- --ignored test_sync_follows_zebra_tip` and `test_lwd_compact_sync_follows_tip` — see [`tests/integration_tests.rs`](tests/integration_tests.rs).
 
-**Extension releases:** maintainers publish Chromium/Firefox zips via the **extension-release-bundles** workflow — see [`browser-extension/RELEASES.md`](browser-extension/RELEASES.md).
+**Extension / desktop builds:** source in repo for contributors; not attached to GitHub release downloads until production-ready. See [`browser-extension/README.md`](browser-extension/README.md) and [`desktop-client/README.md`](desktop-client/README.md).
 
 ## Built with
 
@@ -159,15 +159,12 @@ nozy status
 - **Merkle Path Construction**: Convert authentication paths to MerkleHashOrchard arrays
 - **Bundle Authorization Framework**: Complete transaction authorization framework
 
-#### Desktop application (Tauri)
-- **Desktop GUI**: Cross-platform desktop app (Windows, macOS, Linux) — see [releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)
-- **✅ Web3 Browser**: Built-in browser for Zcash dApps with full navigation
-- **✅ dApp Integration**: EIP-1193 compatible provider for seamless dApp connections
-- **✅ Transaction Signing**: Approve and sign transactions from dApps
-- **✅ Message Signing**: Cryptographically sign messages for dApp authentication
-- **✅ Dark Mode**: Full dark mode support with persistent preferences
-- **✅ Enhanced Security**: Phishing detection, rate limiting, security warnings
-- **✅ Modern UI**: Intuitive interface with tabs, bookmarks, and history
+#### Desktop application (Tauri) — in development
+
+Not a promoted production download yet. Build from source under `desktop-client/` if contributing.
+
+- **Desktop GUI (WIP):** Cross-platform Tauri app (Windows, macOS, Linux)
+- **Web3 browser, dApp provider, dark mode** — experimental; see guides below
 - **📖 [User Guide](desktop-client/USER_GUIDE.md)** | **📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)**
 
 #### Unified privacy wallet (ZEC + Secret Network)
@@ -200,7 +197,7 @@ nozy status
 ** Other Planned Features:**
 
 -  **Multi-Account Management** - Manage multiple wallets from one interface - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#18-multi-account-management)**
--  **Web Interface** - Browser-based wallet (API server ready!) - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#17-web-interface)**
+-  **Web Interface** - Browser-based wallet (companion API in development) - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#17-web-interface)**
 -  **Address Labeling** - Organize and label addresses - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#11-multi-address-support)**
 -  **Enhanced Transaction History** - Detailed tracking with export - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#12-transaction-history)**
 -  **Multi-Device Sync** - Sync wallet across devices - **[See Roadmap →](ENHANCEMENT_ROADMAP.md#14-backup-and-recovery)**
@@ -231,7 +228,7 @@ cargo build --release
 Quick start after install:
 
 ```bash
-nozy wallet create          # or: nozy wallet restore
+nozy new                    # or: nozy restore
 nozy sync --to-tip
 nozy receive
 ```
@@ -263,7 +260,7 @@ cargo build --release
 - **[NozyWallet Whitepaper](docs/NOZYWALLET_WHITEPAPER.md)** — Privacy by default, architecture, threat model, and roadmap (PDF-style document).
 - **[Zebrad shielded-send migration notes](ZEBRAD_SHIELDED_SEND_LIMIT.md)** — Historical context, local witness approach, and troubleshooting for Zebrad + lightwalletd + zeaking.
 
-### Desktop Client
+### Desktop Client (in development)
 - **[User Guide](desktop-client/USER_GUIDE.md)** - Complete guide for desktop users
 - **[dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)** - Developer guide for dApp integration
 - **[Changelog](desktop-client/CHANGELOG.md)** - Desktop client version history
@@ -1138,9 +1135,9 @@ All tests run automatically in CI on every push and pull request:
 ### Security Audits
 
 **Self-Audit:** ✅ Completed (December 2025)  
-**Third-Party Audit:** 🎯 Planned for Production (Q1-Q2 2026)
+**Third-Party Audit:** 🎯 Planned before declaring the full multi-surface product production-grade (Q1–Q2 2026)
 
-NozyWallet has completed a comprehensive self-security audit. **A professional third-party security audit is planned before production release** to ensure the highest security standards.
+NozyWallet has completed a comprehensive self-security audit. The **CLI is our production release surface today**; a professional third-party audit is planned before broader production sign-off (desktop, extension, etc.).
 
 **Audit Status:**
 -  Self-audit completed - See [SELF_AUDIT_RESULTS.md](SELF_AUDIT_RESULTS.md)
