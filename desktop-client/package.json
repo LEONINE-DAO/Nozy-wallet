@@ -12,7 +12,8 @@
   },
   "overrides": {
     "@emnapi/core": "1.9.2",
-    "@emnapi/runtime": "1.9.2"
+    "@emnapi/runtime": "1.9.2",
+    "esbuild": ">=0.28.1"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.0",

@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "productName": "NozyWallet",
-  "version": "2.1.0",
+  "version": "2.3.5",
   "identifier": "com.nozywallet.app",
   "build": {
     "beforeDevCommand": "npm run dev",
