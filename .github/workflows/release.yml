@@ -119,6 +119,7 @@ jobs:
 
   build-api:
     name: Build API Server Binaries
+    if: false  # Re-enable when nozywallet-api is promoted on releases (CLI-only for now).
     defaults:
       run:
         shell: bash
@@ -241,7 +242,7 @@ jobs:
 
   create-release:
     name: Create Release
-    needs: [build-cli, build-api]
+    needs: [build-cli]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -259,30 +260,6 @@ jobs:
           # Copy CLI binaries (already have friendly names)
           find artifacts -type f -name "nozy-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
           find artifacts -type f -name "nozy-*.sha256" -exec cp {} release-files/ \;
-          # Copy and rename API server binaries (artifact layout: api-upload/<binary> + hash.txt)
-          for dir in artifacts/nozywallet-api-*/; do
-            [ -d "$dir" ] || continue
-            target_name=$(basename "$dir")
-            copied=
-            for bin in "$dir"nozywallet-api* "$dir"/*.exe; do
-              [ -f "$bin" ] || continue
-              base=$(basename "$bin")
-              if [ "$base" = "hash.txt" ]; then
-                continue
-              fi
-              cp "$bin" "release-files/${target_name}"
-              copied=1
-              break
-            done
-            if [ -z "$copied" ]; then
-              echo "::error::No API binary under $dir (only hash?)"
-              ls -la "$dir" || true
-              exit 1
-            fi
-            if [ -f "${dir}hash.txt" ]; then
-              cp "${dir}hash.txt" "release-files/${target_name}.sha256"
-            fi
-          done
 
       - name: Generate hashes file
         run: |
@@ -309,65 +286,47 @@ jobs:
           body: |
             ## 🎉 NozyWallet ${{ github.ref_name }} Release
             
-            ### One-click links (`/releases/latest/download/…`)
+            **Production-ready download:** **CLI only** (`nozy`). Desktop, extension, and API companion are in development — build from source; they are not attached to this release until production-ready.
             
-            Release tag: **`${{ github.ref_name }}`**. These URLs always resolve to the **latest** published release:
+            ### CLI one-click links (`/releases/latest/download/…`)
             
-            | Product | URL |
-            |--------|-----|
-            | Windows desktop **.exe** (NSIS) | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.exe` |
-            | Windows desktop **.msi** | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-desktop-windows-x86_64-installer.msi` |
-            | **Extension** (Chromium zip) | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-extension-chromium.zip` |
-            | CLI Windows | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe` |
+            | Platform | URL |
+            |----------|-----|
+            | Windows | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe` |
+            | Linux | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-linux` |
+            | macOS Apple Silicon | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-arm` |
+            | macOS Intel | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-intel` |
             
-            Desktop installers and extension zips may appear a few minutes after publish (separate workflows attach them to this tag).
+            ### 📦 CLI downloads
             
-            ### 📦 Downloads
-            
-            **CLI Binary:**
             - **Windows (x86_64):** `nozy-windows.exe`
             - **Linux (x86_64):** `nozy-linux`
             - **macOS Intel:** `nozy-macos-intel`
             - **macOS Apple Silicon (M1/M2/M3):** `nozy-macos-arm`
             
-            **API Server:**
-            - Linux (x86_64): `nozywallet-api-x86_64-unknown-linux-gnu`
-            - Windows (x86_64): `nozywallet-api-x86_64-pc-windows-msvc.exe`
-            - macOS Intel: `nozywallet-api-x86_64-apple-darwin`
-            - macOS Apple Silicon: `nozywallet-api-aarch64-apple-darwin`
+            ### 📝 Installation
             
-            ### 📝 Installation Instructions
+            **Windows:** download `nozy-windows.exe` and run it.
             
-            **Windows:**
-            1. Download `nozy-windows.exe`
-            2. Run the executable directly
+            **Linux:** `chmod +x nozy-linux` then `./nozy-linux`
             
-            **Linux:**
-            1. Download `nozy-linux`
-            2. Make it executable: `chmod +x nozy-linux`
-            3. Run: `./nozy-linux`
+            **macOS:** `chmod +x nozy-macos-*` then run the binary for your chip.
             
-            **macOS:**
-            1. Download the appropriate version for your Mac:
-               - Intel Macs: `nozy-macos-intel`
-               - Apple Silicon (M1/M2/M3): `nozy-macos-arm`
-            2. Make it executable: `chmod +x nozy-macos-*`
-            3. Run: `./nozy-macos-*`
-            
-            **Note:** Desktop assets for Windows, Linux, and macOS are attached by the `Build Desktop Release` workflow shortly after this release is published.
+            Run with **zebrad** (RPC, typically `:8232`) and **lightwalletd** (typically `:9067`) on the same network.
             
             ### 🔒 Security
             
-            All binaries are signed with SHA256 hashes. Verify downloads using `HASHES.txt` or the individual `.sha256` files.
+            Verify downloads using `HASHES.txt` or the individual `.sha256` files.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Releases created with GITHUB_TOKEN do not emit `release: published` to other workflows.
   # Dispatch desktop + extension builds so installers and zips attach to this tag.
+  # Re-enable when desktop + extension are production-ready on releases.
   dispatch-surface-builds:
     name: Trigger desktop and extension release builds
     needs: create-release
-    if: startsWith(github.ref, 'refs/tags/')
+    if: false
     runs-on: ubuntu-latest
     permissions:
       actions: write

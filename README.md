@@ -1,4 +1,4 @@
-# NozyWallet
+﻿# NozyWallet
 
 **Orchard-first Zcash wallet** — CLI, desktop app, and browser extension. This repository is a **wallet and companion services**, not a consensus node.
 
@@ -15,14 +15,14 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 | **CLI + core library** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, `ZebraClient`, transaction building |
 | **Zeaking** | `zeaking/` | Compact sync via lightwalletd → SQLite (`zeaking::lwd`) |
 | **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`, default `:3000`) |
-| **Desktop** | `desktop-client/` | Tauri app (recommended full UX today) |
+| **Desktop** | `desktop-client/` | Tauri app — **in development** (not promoted for production use yet) |
 | **Browser extension** | `browser-extension/` | MV3 + WASM; compact sync via companion API |
 | **Mobile (in progress)** | `mobile/` + `zeaking-ffi/` | Expo shell (Phase 1); UniFFI for on-device LWD (Phase 4) |
 | **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
 **Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`zebra-wsl-rpc.ps1`, `start-lightwalletd-wsl.ps1`, `run-nozy-api.ps1`).
 
-**Contributor priority:** new feature work is **extension-first** ([`EXTENSION_FIRST_SCOPE.md`](EXTENSION_FIRST_SCOPE.md)). **End users** who want a full wallet today should prefer **desktop** or **CLI**; the extension is a lighter mode that relies on the companion API for LWD sync ([`browser-extension/COMPANION.md`](browser-extension/COMPANION.md)).
+**Production-ready today:** the **`nozy` CLI** with your own **`zebrad` + `lightwalletd`**. Desktop, extension, API companion, and mobile are in active development — build from source if you are contributing; do not treat release assets for those surfaces as production-ready yet.
 
 ## Node operator FAQ
 
@@ -92,13 +92,7 @@ Optional: **Secret Network** CLI features (`--features secret-network`) share th
 
 ## Downloads (latest release)
 
-**Desktop (.exe / .msi)** and **browser extension (.zip)** are attached by **follow-up GitHub Actions** after a version tag is published. They are **not always** available at `…/releases/latest/download/<filename>` (that URL **404s** if the asset was never uploaded for the current “latest” release). Open **[Releases — latest](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)** and download from **Assets** — look for:
-
-- `nozy-desktop-windows-x86_64-installer.exe` (recommended on Windows)
-- `nozy-desktop-windows-x86_64-installer.msi` (optional, IT / silent install)
-- `nozy-extension-chromium.zip` / `nozy-extension-firefox.zip`
-
-**CLI** binaries are attached with every release; one-click links are safe:
+**Production-ready surface:** the **CLI** (`nozy`) only. Download the binary for your OS:
 
 | What | Direct link |
 |------|-------------|
@@ -106,11 +100,13 @@ Optional: **Secret Network** CLI features (`--features secret-network`) share th
 | **CLI — Linux** | [nozy-linux](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-linux) |
 | **CLI — macOS Apple Silicon** | [nozy-macos-arm](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-arm) |
 | **CLI — macOS Intel** | [nozy-macos-intel](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-intel) |
-| **All assets & checksums** | [Releases — latest](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest) |
+| **Checksums** | [HASHES.txt](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/HASHES.txt) on the [release page](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest) |
 
-**iOS & Android:** not on App Store / Google Play yet — see **[Enhancement roadmap — mobile](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md)**. The [landing page](https://leonine-dao.github.io/Nozy-wallet/) download section shows “coming soon” for phone users.
+Run with **Zebra** (`zebrad`, typically `:8232`) and **lightwalletd** (typically `:9067`) on the same network. See [Installation](#-installation) below.
 
-Extension: unzip, then Chrome/Edge **Load unpacked**. If Assets are empty for desktop/extension, run or wait for **Build Desktop Release** and **extension-release-bundles** on that tag (or use an older release that lists the files).
+**In development (not linked for end-user download yet):** desktop (Tauri), browser extension, API server companion, mobile. Contributors can build from source under `desktop-client/`, `browser-extension/`, and `api-server/`. Release CI attaches **CLI binaries only** until those surfaces are production-ready.
+
+**iOS & Android:** not on App Store / Google Play yet — see **[Enhancement roadmap — mobile](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md)**.
 
 >  **Want to help build the future of private cryptocurrency?** Check out our **[Enhancement Roadmap](ENHANCEMENT_ROADMAP.md)** to see exciting features we're building, including **Desktop GUI**, **Mobile Apps**, **Hardware Wallet Support**, and more! We welcome contributors!
 
@@ -184,11 +180,14 @@ nozy status
 
 > **Full roadmap:** [ENHANCEMENT_ROADMAP.md](ENHANCEMENT_ROADMAP.md)
 
-**Shipped today (maintained):**
+**Shipped for production use today:**
 
-- **Desktop** — [User guide](desktop-client/USER_GUIDE.md) | [dApp integration](desktop-client/DAPP_INTEGRATION_GUIDE.md) | [Releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest)
-- **CLI** — `cargo run --bin nozy` (see [Command help](COMMAND_HELP.md)); `sync --to-tip`, `send --priority`, `lwd prune` / `lwd sync-to-tip`
-- **Extension + companion API** — [COMPANION.md](browser-extension/COMPANION.md) (wasm-core on NU6.2 stack)
+- **CLI** — [Downloads](#downloads-latest-release); `nozy sync --to-tip`, `send --priority`, `lwd prune` / `lwd sync-to-tip` — see [Command help](COMMAND_HELP.md)
+
+**In development (build from source; not promoted on releases yet):**
+
+- **Desktop** — [User guide](desktop-client/USER_GUIDE.md) | [dApp integration](desktop-client/DAPP_INTEGRATION_GUIDE.md)
+- **Extension + companion API** — [COMPANION.md](browser-extension/COMPANION.md)
 - **v2.3.x highlights** — NU6.2 sends, ZIP-317 fees, 5-block expiry, spend-detection fix — [CHANGELOG.md](CHANGELOG.md)
 
 **Active priorities (contributors welcome):**
@@ -217,32 +216,40 @@ Check out our [Contributing Guide](#-contributing) and the **[Enhancement Roadma
 
 ##  Installation
 
-### Desktop application
+### CLI (production-ready)
 
-**NozyWallet Desktop** (Tauri) is the recommended graphical wallet for full Orchard flows when you run your own `zebrad` + `lightwalletd`.
+Download a release binary from [Downloads](#downloads-latest-release) or build from source:
 
-**Quick start:**
-1. Download the installer for your platform (Windows/macOS/Linux)
-2. Install and launch the application
-3. Follow the setup wizard to create or restore your wallet
+```bash
+git clone https://github.com/LEONINE-DAO/Nozy-wallet.git
+cd Nozy-wallet
+cargo build --release
+```
 
-**Includes:** GUI wallet UI, built-in browser with dApp provider hooks, dark mode — see the desktop guides for what is implemented vs experimental.
+**Prerequisites:** Rust 1.70+ ([rustup.rs](https://rustup.rs/)), **Zebra** RPC (`http://127.0.0.1:8232`), and **lightwalletd** (`http://127.0.0.1:9067`) on the same network.
 
-**Documentation:**
-- 📖 [User Guide](desktop-client/USER_GUIDE.md) - Complete user documentation
-- 📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md) - For developers
-- 📖 [Changelog](desktop-client/CHANGELOG.md) - Version history
+Quick start after install:
 
-**Note:** Balance, sync, and **broadcast** depend on a reachable node and correct RPC. Nozy is designed to run with **Zebrad + lightwalletd** and local witness derivation. See **`ZEBRAD_SHIELDED_SEND_LIMIT.md`** for architecture and troubleshooting.
+```bash
+nozy wallet create          # or: nozy wallet restore
+nozy sync --to-tip
+nozy receive
+```
 
-### CLI Installation (For Advanced Users)
+See [Command help](COMMAND_HELP.md) for the full command reference.
 
-### Prerequisites
+### Desktop application (in development)
 
-- Rust 1.70+ (install from [rustup.rs](https://rustup.rs/))
-- Zebra RPC node running on `http://127.0.0.1:8232`
+The Tauri desktop app lives in `desktop-client/`. It is **not** the promoted end-user download yet — use the **CLI** for production mainnet use. Contributors: see [Desktop README](desktop-client/README.md) to build locally (`cargo tauri dev`).
 
-### Build from Source
+**Documentation (WIP product):**
+- 📖 [User Guide](desktop-client/USER_GUIDE.md)
+- 📖 [dApp Integration Guide](desktop-client/DAPP_INTEGRATION_GUIDE.md)
+- 📖 [Changelog](desktop-client/CHANGELOG.md)
+
+**Note:** Balance, sync, and **broadcast** depend on a reachable node and correct RPC. See **`ZEBRAD_SHIELDED_SEND_LIMIT.md`** for architecture and troubleshooting.
+
+### Build from source (all surfaces)
 
 ```bash
 git clone https://github.com/LEONINE-DAO/Nozy-wallet.git
