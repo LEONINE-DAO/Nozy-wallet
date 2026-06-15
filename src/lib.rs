@@ -101,7 +101,7 @@ pub use fee_policy::{
 };
 pub use hd_wallet::HDWallet;
 pub use transactions::{SignedTransaction, TransactionBuilder, TransactionDetails};
-pub use version_info::{RELEASE_CODENAME, VERSION_DISPLAY};
+pub use version_info::{RELEASE_CODENAME, RELEASE_VERSION, VERSION_DISPLAY};
 
 // ============================================================
 // Native-only re-exports

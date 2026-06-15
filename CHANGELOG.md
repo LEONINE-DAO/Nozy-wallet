@@ -2,7 +2,7 @@
 
 ## [2.3.6.1] — Teriyaki Hot (CLI) (2026-06-15)
 
-Patch on **v2.3.6** (crate version remains **2.3.6**; release tag **v2.3.6.1**).
+Patch on **v2.3.6**. Crate SemVer remains **2.3.6** (Cargo); `nozy --version` reports **2.3.6.1 (Teriyaki Hot (CLI))**.
 
 ### Fixed
 

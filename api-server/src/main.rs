@@ -269,7 +269,7 @@ async fn health_check() -> impl IntoResponse {
     ResponseJson(serde_json::json!({
         "status": "ok",
         "service": "nozywallet-api",
-        "version": env!("CARGO_PKG_VERSION"),
+        "version": nozy::version_info::RELEASE_VERSION,
         "nozy_wallet": nozy::version_info::VERSION_DISPLAY,
         "nozy_release_codename": nozy::version_info::RELEASE_CODENAME
     }))
