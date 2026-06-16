@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Added
+
+- **Dynamic-fee pilot speed-up:** `POST /api/transaction/speed-up` rebuilds a new priority transaction after expiry (not a rebroadcast). Core logic in `nozy::tx_lifecycle`.
+- **Expired transaction detection:** pending pilot txs past `expiry_height` are marked `Expired` and release locally locked notes via `/api/transaction/check-confirmations`.
+
+### Fixed
+
+- **`/api/sync` repeat calls:** when already caught up to chain tip, return cached balance without rescanning; serialize concurrent syncs; richer sync response (`balance_zatoshis`, `already_synced`, `total_notes`).
+- **api-server send:** mark notes spent in `notes.json` after broadcast (match CLI).
+- **Transaction history note marking:** use v2 `notes.json` index format when marking spent notes.
+
 ## [2.3.6.2] — Teriyaki Hot (CLI) (2026-06-16)
 
 Patch on **v2.3.6.1**. Crate SemVer remains **2.3.6** until next release bump.

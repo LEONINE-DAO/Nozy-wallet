@@ -48,6 +48,10 @@ pub struct SentTransactionRecord {
     /// Absolute chain height after which the tx must not be mined (pilot: tip + 2).
     #[serde(default)]
     pub expiry_height: Option<u32>,
+
+    /// When this tx is a speed-up replacement, the original txid it replaces.
+    #[serde(default)]
+    pub speed_up_of_txid: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -151,6 +155,7 @@ impl SentTransactionRecord {
             spent_note_ids,
             priority: false,
             expiry_height: None,
+            speed_up_of_txid: None,
         }
     }
 
@@ -179,6 +184,33 @@ impl SentTransactionRecord {
             spent_note_ids,
             priority,
             expiry_height: Some(expiry_height),
+            speed_up_of_txid: None,
+        }
+    }
+
+    pub fn new_speed_up(
+        txid: String,
+        original: &SentTransactionRecord,
+        fee_zatoshis: u64,
+        expiry_height: u32,
+        spent_note_ids: Vec<String>,
+    ) -> Self {
+        Self {
+            txid,
+            recipient_address: original.recipient_address.clone(),
+            amount_zatoshis: original.amount_zatoshis,
+            fee_zatoshis,
+            memo: original.memo.clone(),
+            created_at: Utc::now(),
+            broadcast_at: None,
+            status: TransactionStatus::Pending,
+            block_height: None,
+            block_time: None,
+            confirmations: 0,
+            spent_note_ids,
+            priority: true,
+            expiry_height: Some(expiry_height),
+            speed_up_of_txid: Some(original.txid.clone()),
         }
     }
 
@@ -584,6 +616,78 @@ impl SentTransactionStorage {
         Ok(updated_count)
     }
 
+    /// Mark pending pilot txs as expired when chain tip passes `expiry_height` without confirmation.
+    pub async fn check_expired_pending_transactions(
+        &self,
+        zebra_client: &crate::zebra_integration::ZebraClient,
+    ) -> NozyResult<usize> {
+        use crate::notes::release_wallet_notes_by_nullifier_hex;
+
+        let current_height = zebra_client.get_block_count().await.unwrap_or(0);
+        let expired_candidates: Vec<(String, Vec<String>)> = {
+            let transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            transactions
+                .values()
+                .filter(|tx| {
+                    tx.status == TransactionStatus::Pending
+                        && tx.expiry_height.is_some_and(|exp| current_height > exp)
+                })
+                .map(|tx| (tx.txid.clone(), tx.spent_note_ids.clone()))
+                .collect()
+        };
+
+        let mut expired_count = 0usize;
+        for (txid, spent_note_ids) in expired_candidates {
+            if zebra_client
+                .check_transaction_exists(&txid)
+                .await
+                .unwrap_or(false)
+            {
+                continue;
+            }
+
+            let marked = self.mark_transaction_expired(&txid)?;
+            if marked {
+                let _ = release_wallet_notes_by_nullifier_hex(&spent_note_ids);
+                expired_count += 1;
+            }
+        }
+
+        Ok(expired_count)
+    }
+
+    pub fn mark_transaction_expired(&self, txid: &str) -> NozyResult<bool> {
+        let mut updated = false;
+        {
+            let mut transactions = self
+                .transactions
+                .lock()
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
+            if let Some(tx) = transactions.get_mut(txid) {
+                if tx.status == TransactionStatus::Pending {
+                    tx.mark_expired();
+                    updated = true;
+                }
+            }
+        }
+
+        if updated {
+            self.save_transactions()?;
+        }
+
+        Ok(updated)
+    }
+
+    pub fn get_transaction_record(&self, txid: &str) -> Option<SentTransactionRecord> {
+        self.transactions
+            .lock()
+            .ok()
+            .and_then(|transactions| transactions.get(txid).cloned())
+    }
+
     pub async fn update_confirmations(
         &self,
         zebra_client: &crate::zebra_integration::ZebraClient,
@@ -615,13 +719,7 @@ impl SentTransactionStorage {
     }
 
     pub fn mark_spent_notes_for_confirmed_transactions(&self) -> NozyResult<usize> {
-        use crate::paths::get_wallet_data_dir;
-        use std::fs;
-
-        let notes_path = get_wallet_data_dir().join("notes.json");
-        if !notes_path.exists() {
-            return Ok(0);
-        }
+        use crate::notes::{load_wallet_notes, save_wallet_notes};
 
         let confirmed_txs: Vec<(String, Vec<String>)> = {
             self.transactions.lock()
@@ -641,11 +739,7 @@ impl SentTransactionStorage {
             return Ok(0);
         }
 
-        let content = fs::read_to_string(&notes_path)
-            .map_err(|e| NozyError::Storage(format!("Failed to read notes: {}", e)))?;
-
-        let mut notes: Vec<crate::notes::SerializableOrchardNote> = serde_json::from_str(&content)
-            .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
+        let mut notes = load_wallet_notes()?;
 
         let spent_nullifiers: std::collections::HashSet<Vec<u8>> = confirmed_txs
             .iter()
@@ -662,10 +756,7 @@ impl SentTransactionStorage {
         }
 
         if marked_count > 0 {
-            let serialized = serde_json::to_string_pretty(&notes)
-                .map_err(|e| NozyError::Storage(format!("Failed to serialize notes: {}", e)))?;
-            fs::write(&notes_path, serialized)
-                .map_err(|e| NozyError::Storage(format!("Failed to write notes: {}", e)))?;
+            save_wallet_notes(&notes)?;
         }
 
         Ok(marked_count)

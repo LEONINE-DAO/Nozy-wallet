@@ -228,6 +228,39 @@ pub fn wallet_unspent_balance_zatoshis(notes: &[SerializableOrchardNote]) -> u64
         .sum()
 }
 
+/// Release notes marked spent locally when a pilot tx expires unmined.
+#[cfg(feature = "native")]
+pub fn release_wallet_notes_by_nullifier_hex(nullifier_hexes: &[String]) -> NozyResult<usize> {
+    use std::collections::HashSet;
+
+    if nullifier_hexes.is_empty() {
+        return Ok(0);
+    }
+
+    let targets: HashSet<Vec<u8>> = nullifier_hexes
+        .iter()
+        .filter_map(|h| hex::decode(h.trim()).ok())
+        .collect();
+    if targets.is_empty() {
+        return Ok(0);
+    }
+
+    let mut notes = load_wallet_notes()?;
+    let mut released = 0usize;
+    for note in &mut notes {
+        if note.spent && targets.contains(&note.nullifier_bytes) {
+            note.spent = false;
+            released += 1;
+        }
+    }
+
+    if released > 0 {
+        save_wallet_notes(&notes)?;
+    }
+
+    Ok(released)
+}
+
 /// Merge notes discovered during a scan into an existing cache.
 #[cfg(feature = "native")]
 pub fn merge_scanned_notes(

@@ -81,6 +81,10 @@ async fn main() -> anyhow::Result<()> {
             "/api/transaction/check-confirmations",
             post(handlers::check_transaction_confirmations),
         )
+        .route(
+            "/api/transaction/speed-up",
+            post(handlers::speed_up_transaction),
+        )
         .route("/api/address-book", get(handlers::list_address_book))
         .route("/api/address-book", post(handlers::add_address_book_entry))
         .route(

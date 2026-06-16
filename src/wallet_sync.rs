@@ -73,6 +73,8 @@ pub struct WalletSyncResult {
     pub chain_tip: u32,
     pub blocks_scanned: u32,
     pub last_scan_height: u32,
+    /// True when the wallet is already caught up to chain tip (no blocks scanned).
+    pub already_synced: bool,
 }
 
 /// Resolve inclusive scan bounds from config + options (no network I/O).
@@ -104,13 +106,6 @@ pub fn resolve_scan_range(
 
     let scan_end = requested_end.min(chain_tip);
 
-    if scan_start > scan_end {
-        return Err(NozyError::InvalidOperation(format!(
-            "start height ({scan_start}) is above effective end height ({scan_end}, zebrad tip {chain_tip}). \
-             Wait for zebrad to pass your wallet birthday, use a snapshot, or pass a lower start height."
-        )));
-    }
-
     Ok(ScanRange {
         scan_start,
         scan_end,
@@ -134,6 +129,24 @@ pub async fn sync_wallet_notes(
 
     let notes_before = load_wallet_notes()?;
     let total_before = notes_before.len();
+    let balance_before = wallet_unspent_balance_zatoshis(&notes_before);
+
+    // Already caught up: return cached balance without re-scanning or rewriting notes.json.
+    if range.scan_start > range.scan_end {
+        let last_scan_height = config.last_scan_height.unwrap_or(range.chain_tip);
+        return Ok(WalletSyncResult {
+            balance_zatoshis: balance_before,
+            unspent_notes: notes_before.iter().filter(|n| !n.spent).count(),
+            total_notes: notes_before.len(),
+            new_notes_in_scan: 0,
+            scan_start: range.scan_start,
+            scan_end: range.scan_end,
+            chain_tip: range.chain_tip,
+            blocks_scanned: 0,
+            last_scan_height,
+            already_synced: true,
+        });
+    }
 
     let mut note_scanner = NoteScanner::new(wallet, zebra_client);
     let (scan_result, _spendable) = note_scanner
@@ -144,7 +157,7 @@ pub async fn sync_wallet_notes(
     merge_scanned_notes(&mut cached_notes, &scan_result.notes);
     save_wallet_notes(&cached_notes)?;
 
-    let _ = update_last_scan_height(range.scan_end);
+    update_last_scan_height(range.scan_end)?;
 
     let balance_zatoshis = wallet_unspent_balance_zatoshis(&cached_notes);
     let unspent_notes = cached_notes.iter().filter(|n| !n.spent).count();
@@ -164,6 +177,7 @@ pub async fn sync_wallet_notes(
         chain_tip: range.chain_tip,
         blocks_scanned,
         last_scan_height: range.scan_end,
+        already_synced: false,
     })
 }
 
@@ -206,9 +220,35 @@ mod tests {
     }
 
     #[test]
-    fn rejects_start_above_end() {
+    fn already_at_tip_yields_empty_scan_range() {
         let config = test_config(Some(3_100_000), "mainnet");
         let opts = WalletSyncOptions::default();
-        assert!(resolve_scan_range(&config, &opts, 3_050_000).is_err());
+        let range = resolve_scan_range(&config, &opts, 3_050_000).unwrap();
+        assert!(range.scan_start > range.scan_end);
+    }
+
+    #[test]
+    fn merge_preserves_cached_notes_across_incremental_scans() {
+        use crate::notes::{merge_scanned_notes, SerializableOrchardNote};
+
+        let mut cached = vec![SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            nullifier_bytes: vec![1; 32],
+            block_height: 3_050_500,
+            txid: "abc".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            rho_bytes: None,
+            rseed_bytes: None,
+        }];
+
+        let scanned: Vec<SerializableOrchardNote> = vec![];
+        merge_scanned_notes(&mut cached, &scanned);
+        assert_eq!(cached.len(), 1);
+        assert_eq!(cached[0].value, 250_000);
     }
 }
