@@ -14,6 +14,23 @@ use std::net::IpAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
 
+/// Transient Zebra JSON-RPC transport errors worth retrying with exponential backoff.
+fn is_retryable_zebra_transport_error(msg: &str) -> bool {
+    let m = msg.to_lowercase();
+    m.contains("failed to connect")
+        || m.contains("connection refused")
+        || m.contains("connection failed")
+        || m.contains("connection reset")
+        || m.contains("connection closed")
+        || m.contains("broken pipe")
+        || m.contains("timeout")
+        || m.contains("error sending request")
+        // reqwest body read/decode failures under load (Gilmore: "error decoding response body")
+        || m.contains("failed to read response")
+        || m.contains("decoding response body")
+        || m.contains("unexpected eof")
+}
+
 #[derive(Debug, Clone)]
 pub struct ZebraClient {
     url: String,
@@ -815,17 +832,7 @@ This blocks remote RPC only; localhost RPC remains allowed.",
                                 }
                             };
 
-                            let m = error_msg.to_lowercase();
-                            // Match reqwest / OS phrasing; `try_request` uses "Connection failed to …"
-                            // and generic "error sending request for url", which previously skipped retries.
-                            if m.contains("failed to connect")
-                                || m.contains("connection refused")
-                                || m.contains("connection failed")
-                                || m.contains("connection reset")
-                                || m.contains("broken pipe")
-                                || m.contains("timeout")
-                                || m.contains("error sending request")
-                            {
+                            if is_retryable_zebra_transport_error(error_msg) {
                                 let delay_ms = 100 * (1 << attempt);
                                 tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
                                     .await;
@@ -1020,4 +1027,30 @@ pub struct OrchardTreeState {
     pub height: u32,
     pub anchor: [u8; 32],
     pub commitment_count: u64,
+}
+
+#[cfg(test)]
+mod transport_retry_tests {
+    use super::is_retryable_zebra_transport_error;
+
+    #[test]
+    fn retries_response_body_decode_errors() {
+        assert!(is_retryable_zebra_transport_error(
+            "Failed to read response: error decoding response body"
+        ));
+    }
+
+    #[test]
+    fn retries_connection_failures() {
+        assert!(is_retryable_zebra_transport_error(
+            "Connection failed to http://127.0.0.1:8232: connection refused"
+        ));
+    }
+
+    #[test]
+    fn does_not_retry_invalid_rpc_payload() {
+        assert!(!is_retryable_zebra_transport_error(
+            "Zebra RPC error: block not found (code: -5)"
+        ));
+    }
 }

@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- **Zebra RPC during scan:** retry transient `getblock` transport failures (`error decoding response body`, truncated reads) instead of failing the whole `/api/sync` on first glitch.
 - **`/api/sync` repeat calls:** when already caught up to chain tip, return cached balance without rescanning; serialize concurrent syncs; richer sync response (`balance_zatoshis`, `already_synced`, `total_notes`).
 - **api-server send:** mark notes spent in `notes.json` after broadcast (match CLI).
 - **Transaction history note marking:** use v2 `notes.json` index format when marking spent notes.
