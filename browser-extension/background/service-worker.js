@@ -11,26 +11,36 @@ import {
 import {
   buildBuiltTxStateEntry,
   buildFailedTxStateEntry,
+  buildSpeedUpTxStateEntry,
+  canSpeedUpTx,
   findRecentBuiltTxId,
+  isPilotTxExpired,
   nextLifecycleStateFromConfirmation,
   resolveTxidFromBroadcast
 } from "./tx-lifecycle.js";
 import {
   findReachableRpcEndpoint,
+  isWslStyleHost,
   normalizeRpcEndpoint,
+  parseJsonRpcResponse,
+  probeZebradRpcEndpoint,
   rpcGetBlockVerboseByHeight,
   rpcNetworkErrorMessage
 } from "./rpc-utils.js";
 import { selectNotesForSpend, rpcFallbackWithRequester } from "./tx-utils.js";
 import {
+  companionCheckConfirmations,
   companionLwdChainTip,
   companionLwdInfo,
   companionLwdSyncCompact,
   companionLwdSyncCompactToTip,
+  companionSpeedUpTransaction,
   companionStatus
 } from "./companion-api.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
+const RPC_CACHE_KEY = "nozy_zebra_rpc_cache_v1";
+const COMPANION_BASE_KEY = "nozy_companion_base_url";
 const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
 const TX_STATE_KEY = "nozy_tx_state_v1";
 const SESSION_POLICY_KEY = "nozy_session_policy_v1";
@@ -255,20 +265,14 @@ function orchardWitnessFieldsFromNote(noteObj) {
 }
 
 async function _inlineRpcRequest(endpoint, method, params = []) {
-  const resp = await fetch(endpoint, {
+  const url = normalizeRpcEndpoint(endpoint);
+  const resp = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
   });
   if (!resp.ok) throw new Error(`RPC ${method} HTTP ${resp.status}`);
-  const body = await resp.json();
-  if (body?.error) {
-    const e = new Error(body.error.message || `RPC ${method} error`);
-    if (typeof body.error.code === "number") e.jsonRpcCode = body.error.code;
-    e.jsonRpcMethod = method;
-    throw e;
-  }
-  return body?.result ?? null;
+  return parseJsonRpcResponse(resp, url, method);
 }
 
 async function _inlineProveTransaction(params) {
@@ -311,8 +315,9 @@ async function _inlineProveTransaction(params) {
   }
 
   const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
-  const targetHeight = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
-  const heightStr = String(targetHeight);
+  const chainTip = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
+  const txBuildHeight = chainTip + 1;
+  const heightStr = String(chainTip);
 
   const rpcReq = (at) => _inlineRpcRequest(endpoint, at.method, at.params ?? []);
   const orchardTree = await rpcFallbackWithRequester(rpcReq, [
@@ -337,7 +342,7 @@ async function _inlineProveTransaction(params) {
     if (!Number.isFinite(tip) || tip < 0) {
       throw new Error("Invalid orchard_witness_tip_height on note.");
     }
-    for (let h = tip + 1; h <= targetHeight; h += 1) {
+    for (let h = tip + 1; h <= chainTip; h += 1) {
       const block = await rpcGetBlockVerboseByHeight(endpoint, h);
       witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
     }
@@ -347,7 +352,7 @@ async function _inlineProveTransaction(params) {
     selectedWitnesses.push({
       incremental_witness_hex: witnessHex,
       anchor_hex: anchorHex,
-      target_height: targetHeight
+      target_height: txBuildHeight
     });
   }
 
@@ -452,7 +457,7 @@ function parseFeeToZats(v) {
 
 async function buildTxPreflight(tx) {
   const { recipientAddress, amount, memo } = parseTxForOrchardV5(tx);
-  const fee = await estimateFeeZats();
+  const fee = await estimateFeeZats(memo);
   const proving = await callWorker("prove_transaction", {
     recipientAddress,
     walletAddress: session.address,
@@ -571,6 +576,139 @@ async function retryBroadcastById(id) {
   return String(txid);
 }
 
+async function pilotExpiryHeightForTip(chainTip) {
+  await ensureWasm();
+  const delta = Number(wasm.pilot_expiry_delta_blocks?.() ?? 5);
+  const tip = Number(chainTip);
+  if (!Number.isFinite(tip)) return null;
+  return tip + delta;
+}
+
+async function refreshTxExpiryStates() {
+  if (!session.rpcEndpoint) return;
+  let chainTip;
+  try {
+    chainTip = Number(await rpcCall("getblockcount", []));
+  } catch (_) {
+    return;
+  }
+  if (!Number.isFinite(chainTip)) return;
+
+  const state = await loadTxState();
+  const txs = Array.isArray(state.txs) ? state.txs : [];
+  let changed = false;
+
+  for (const tx of txs) {
+    if (!tx?.txid) continue;
+    if (tx.state !== "pending" && tx.state !== "broadcast") continue;
+    if (!tx.expiryHeight) continue;
+    if (!isPilotTxExpired(chainTip, tx.expiryHeight)) continue;
+    try {
+      const resp = await rpcCall("getrawtransaction", [tx.txid, true]);
+      const height = resp?.blockheight ?? resp?.blockHeight ?? resp?.block_height ?? null;
+      const bh = typeof height === "number" ? height : parseNumberMaybeHex(height);
+      if (Number.isFinite(bh) && bh > 0) continue;
+    } catch (_) {
+      // Not mined — eligible for expired.
+    }
+    tx.state = "expired";
+    tx.updatedAt = nowMs();
+    changed = true;
+  }
+
+  if (changed) {
+    await saveTxState({ txs, updatedAt: nowMs() });
+  }
+}
+
+async function speedUpTxById(id, opts = {}) {
+  await refreshTxExpiryStates();
+  const state = await loadTxState();
+  const txs = Array.isArray(state.txs) ? state.txs : [];
+  const tx = txs.find((t) => t.id === id);
+  if (!tx) throw new Error("Transaction record not found.");
+  if (!canSpeedUpTx(tx)) {
+    throw new Error(`Speed-up is not available for transaction state: ${tx.state}`);
+  }
+  if (!tx.txid) throw new Error("Speed-up requires a broadcast txid.");
+  if (!session.unlocked || !session.mnemonic) throw new Error("Wallet is locked.");
+
+  const companionBase = await loadCompanionBaseUrl();
+  const companionPassword = String(opts.companionPassword ?? "").trim();
+  if (companionPassword) {
+    try {
+      const result = await companionSpeedUpTransaction(companionBase, {
+        original_txid: tx.txid,
+        password: companionPassword,
+        zebra_url: session.rpcEndpoint
+      });
+      if (result?.success && result?.txid) {
+        await patchTxStateById(id, { state: "expired", error: null });
+        const chainTip = Number(await rpcCall("getblockcount", []));
+        const expiryHeight = await pilotExpiryHeightForTip(chainTip);
+        await appendTxState(
+          buildSpeedUpTxStateEntry({
+            id: crypto.randomUUID(),
+            origin: tx.origin || "",
+            proving: {
+              txid: result.txid,
+              recipientAddress: tx.recipientAddress,
+              amount: tx.amount,
+              fee: await estimateFeeZats(tx.memo || "", true),
+              memo: tx.memo || "",
+              inputs_used: tx.inputsUsed ?? 1,
+              rawTxHex: ""
+            },
+            createdAt: nowMs(),
+            speedUpOf: tx.txid,
+            expiryHeight
+          })
+        );
+        return String(result.txid);
+      }
+      if (result?.message) throw new Error(result.message);
+    } catch (e) {
+      if (!opts.allowWasmFallback) throw e;
+    }
+  }
+
+  const priorityFee = await estimateFeeZats(tx.memo || "", true);
+  const proving = await callWorker("prove_transaction", {
+    recipientAddress: tx.recipientAddress,
+    walletAddress: session.address,
+    mnemonic: session.mnemonic,
+    rpcEndpoint: session.rpcEndpoint,
+    amount: tx.amount,
+    fee: priorityFee,
+    memo: tx.memo || ""
+  });
+  if (!proving?.rawTxHex) {
+    throw new Error("Speed-up proving did not return rawTxHex");
+  }
+
+  const broadcastResult = await rpcCallWithRetry("sendrawtransaction", [proving.rawTxHex], {
+    retries: 3,
+    baseDelayMs: 400
+  });
+  const newTxid = resolveTxidFromBroadcast(broadcastResult, proving.txid);
+  const chainTip = Number(await rpcCall("getblockcount", []));
+  const expiryHeight = await pilotExpiryHeightForTip(chainTip);
+
+  await patchTxStateById(id, { state: "expired", error: null });
+  await appendTxState(
+    buildSpeedUpTxStateEntry({
+      id: crypto.randomUUID(),
+      origin: tx.origin || "",
+      proving: { ...proving, fee: priorityFee },
+      createdAt: nowMs(),
+      speedUpOf: tx.txid,
+      expiryHeight
+    })
+  );
+
+  return String(newTxid);
+}
+
 async function loadWalletState() {
   const state = await storageGet(STORAGE_KEY);
   return state || null;
@@ -578,6 +716,64 @@ async function loadWalletState() {
 
 async function saveWalletState(state) {
   await storageSet({ [STORAGE_KEY]: state });
+}
+
+async function loadRpcEndpointCache() {
+  const cached = await storageGet(RPC_CACHE_KEY);
+  return Array.isArray(cached) ? cached.filter((u) => typeof u === "string") : [];
+}
+
+async function rememberRpcEndpoint(endpoint) {
+  const url = String(endpoint ?? "").trim();
+  if (!url) return;
+  const prev = await loadRpcEndpointCache();
+  const next = [url, ...prev.filter((u) => u !== url)].slice(0, 8);
+  await storageSet({ [RPC_CACHE_KEY]: next });
+}
+
+async function loadCompanionBaseUrl() {
+  const raw = await storageGet(COMPANION_BASE_KEY);
+  const s = String(raw ?? "").trim().replace(/\/+$/, "");
+  return s || "http://127.0.0.1:3000";
+}
+
+async function persistRpcEndpoint(found) {
+  session.rpcEndpoint = found;
+  await rememberRpcEndpoint(found);
+  const existing = (await loadWalletState()) || {};
+  await saveWalletState({ ...existing, rpcEndpoint: session.rpcEndpoint });
+  return found;
+}
+
+async function autodetectZebradRpcEndpoint() {
+  const cached = await loadRpcEndpointCache();
+  const companionBase = await loadCompanionBaseUrl();
+  const found = await findReachableRpcEndpoint(session.rpcEndpoint, {
+    extraCandidates: cached,
+    companionBase
+  });
+  if (!found) {
+    throw new Error(
+      "Could not find Zebrad on localhost or WSL. Start zebrad in WSL, then run: " +
+        "wsl -d Ubuntu -- hostname -I (use http://<first-ip>:8232). " +
+        "Or: powershell -File C:\\Zebrad\\scripts\\get-wsl-rpc-url.ps1"
+    );
+  }
+  return persistRpcEndpoint(found);
+}
+
+/** Probe current RPC; auto-detect WSL/local Zebrad if saved URL (often 127.0.0.1) is wrong. */
+async function ensureReachableZebradRpc() {
+  let endpoint;
+  try {
+    endpoint = normalizeRpcEndpoint(session.rpcEndpoint);
+  } catch (e) {
+    throw e instanceof Error ? e : new Error(String(e));
+  }
+  if (await probeZebradRpcEndpoint(endpoint, 3500)) {
+    return endpoint;
+  }
+  return autodetectZebradRpcEndpoint();
 }
 
 async function loadMobileSyncState() {
@@ -876,10 +1072,20 @@ async function walletUnlock(password) {
     await persistScanResumeForBackground(mnemonic, address);
   }
 
+  try {
+    await ensureReachableZebradRpc();
+  } catch {
+    // User can fix RPC in Settings; unlock should still succeed.
+  }
+
   return { address };
 }
 
-function walletLock() {
+async function walletLock() {
+  const scan = await loadScanState();
+  if (scan?.status === "scanning") {
+    await stopBackgroundScan();
+  }
   session.unlocked = false;
   session.mnemonic = null;
   session.address = null;
@@ -943,9 +1149,13 @@ async function rpcCall(method, params = []) {
     });
   } catch (err) {
     // Auto-recover from common local RPC port mismatch (8232 vs 18232).
-    const fallbackEndpoint = await findReachableRpcEndpoint(endpoint);
+    const fallbackEndpoint = await findReachableRpcEndpoint(endpoint, {
+      extraCandidates: await loadRpcEndpointCache(),
+      companionBase: await loadCompanionBaseUrl()
+    });
     if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
       session.rpcEndpoint = fallbackEndpoint;
+      await rememberRpcEndpoint(fallbackEndpoint);
       const existing = (await loadWalletState()) || {};
       await saveWalletState({ ...existing, rpcEndpoint: session.rpcEndpoint });
       resp = await fetch(fallbackEndpoint, {
@@ -969,11 +1179,26 @@ async function rpcCall(method, params = []) {
     );
   }
   if (!resp.ok) throw new Error(`RPC HTTP ${resp.status}`);
-  const body = await resp.json();
-  if (body.error) {
-    throw new Error(body.error.message || "RPC error");
+  try {
+    const result = await parseJsonRpcResponse(resp, endpoint, method);
+    try {
+      const host = new URL(endpoint).hostname;
+      if (isWslStyleHost(host) || host === "127.0.0.1" || host === "localhost") {
+        await rememberRpcEndpoint(endpoint);
+      }
+    } catch {
+      // ignore cache errors
+    }
+    return result;
+  } catch (parseErr) {
+    const msg = String(parseErr?.message ?? parseErr);
+    if (!/web page|not JSON|DOCTYPE|127\.0\.0\.1|localhost/i.test(msg)) {
+      throw parseErr;
+    }
+    const found = await autodetectZebradRpcEndpoint();
+    if (found === endpoint) throw parseErr;
+    return rpcCall(method, params);
   }
-  return body.result;
 }
 
 async function rpcCallWithRetry(method, params = [], opts = {}) {
@@ -1022,27 +1247,33 @@ async function getOrchardActivationHeight() {
   }
 }
 
-async function estimateFeeZats() {
+async function estimateFeeZats(memo = "", priority = false) {
   try {
-    const feeResult = await rpcCallWithRetry("estimatefee", [1], { retries: 1, baseDelayMs: 200 });
-    const fromRoot = parseFeeToZats(feeResult);
-    const fromObj = parseFeeToZats(feeResult?.feerate);
-    const candidate = fromRoot ?? fromObj;
-    if (candidate && candidate > 0) {
-      return Math.max(1_000, Math.min(candidate, 250_000));
-    }
+    await ensureWasm();
+    const fee = wasm.estimate_orchard_send_fee_zats(memo, Boolean(priority));
+    if (Number.isFinite(fee) && fee > 0) return fee;
   } catch (_) {
     // ignore and fallback
   }
-  return 10_000;
+  return priority ? 40_000 : 10_000;
 }
 
 setInterval(() => {
   if (!session.unlocked) return;
   if (!session.lastActivityAt) return;
-  if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
-    walletLock();
-  }
+  // Keep wallet unlocked while a background Orchard scan is running (popup may be closed).
+  loadScanState()
+    .then((scan) => {
+      if (scan?.status === "scanning") return;
+      if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
+        walletLock();
+      }
+    })
+    .catch(() => {
+      if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
+        walletLock();
+      }
+    });
 }, 20_000);
 
 setInterval(() => {
@@ -1055,7 +1286,20 @@ const SCAN_BATCH = 50;
 /** First wake processes fewer blocks so the first `saveScanState` (and UI poll) happens sooner. */
 const SCAN_FIRST_BATCH = 12;
 /** Persist notes / tracker during a long batch so balance and storage do not stall until 50 blocks finish. */
-const SCAN_SAVE_EVERY_BLOCKS = 10;
+const SCAN_SAVE_EVERY_BLOCKS = 5;
+
+function scanPercentInt(state) {
+  const total = Math.max(1, (state.endHeight ?? 0) - (state.startHeight ?? 0) + 1);
+  const done =
+    typeof state.heightProgress === "number"
+      ? Math.min(total, Math.max(0, state.heightProgress - state.startHeight + 1))
+      : Math.min(total, state.scannedBlocks ?? 0);
+  return Math.min(100, Math.max(0, Math.floor((done / total) * 100)));
+}
+
+function scanRpcEndpoint(state) {
+  return session.rpcEndpoint || state?.rpcEndpoint || "http://127.0.0.1:8232";
+}
 const SCAN_ALARM = "nozy_scan_tick";
 const SCAN_MODE_MANUAL = "manual";
 const SCAN_MODE_AUTO = "auto";
@@ -1138,11 +1382,17 @@ async function scanTick() {
   scanRunning = true;
   try {
     await ensureSessionInitialized();
+    if (session.unlocked) touchSession();
     const resume = await readScanResumeForBackground();
     const mnemonicForScan = session.mnemonic || resume?.mnemonic || null;
     const addressForScan = session.address || resume?.address || null;
     if (!mnemonicForScan || !addressForScan) {
-      scheduleScanAlarm(1);
+      state.status = "failed";
+      state.scanError =
+        "Scan could not run: wallet session expired. Lock and unlock the wallet, then try Sync again.";
+      state.finishedAt = nowMs();
+      clearScanResumeForBackground();
+      await saveScanState(state);
       return;
     }
 
@@ -1208,9 +1458,26 @@ async function scanTick() {
     let blocksSinceProgressSave = 0;
     const loopStart = state.currentHeight;
     const failLimit = 30;
+    if (
+      (state.consecutiveFailures ?? 0) > 0 &&
+      typeof state.lastRpcError === "string" &&
+      /DOCTYPE|web page|not JSON|127\.0\.0\.1/i.test(state.lastRpcError)
+    ) {
+      try {
+        const fixed = await ensureReachableZebradRpc();
+        state.rpcEndpoint = fixed;
+        state.consecutiveFailures = 0;
+        state.lastRpcError = null;
+        await saveScanState(state);
+      } catch {
+        // keep failing with existing errors
+      }
+    }
+
+    const rpcEndpoint = scanRpcEndpoint(state);
     for (let h = loopStart; h <= end; h++) {
       try {
-        const block = await rpcGetBlockVerboseByHeight(session.rpcEndpoint, h);
+        const block = await rpcGetBlockVerboseByHeight(rpcEndpoint, h);
         if (block) {
           const blockJson = JSON.stringify(block);
           const out = wasm.orchard_scan_tracker_apply_block(
@@ -1262,8 +1529,11 @@ async function scanTick() {
         state.scannedBlocks = h - state.startHeight + 1;
         state.updatedAt = nowMs();
         blocksSinceProgressSave += 1;
-        if (blocksSinceProgressSave >= SCAN_SAVE_EVERY_BLOCKS) {
+        const pctInt = scanPercentInt(state);
+        const crossedPercent = pctInt > (state.lastSavedPercentInt ?? -1);
+        if (blocksSinceProgressSave >= SCAN_SAVE_EVERY_BLOCKS || crossedPercent) {
           blocksSinceProgressSave = 0;
+          if (crossedPercent) state.lastSavedPercentInt = pctInt;
           await saveScanState(state);
         }
       }
@@ -1295,6 +1565,9 @@ async function scanTick() {
 async function startBackgroundScan(startHeight, endHeight) {
   // User explicitly started a range (window / custom / birthday). Always replace any
   // in-progress job — otherwise "Last 500" is ignored while auto-sync is still "scanning".
+  if (session.unlocked && session.mnemonic && session.address) {
+    await persistScanResumeForBackground(session.mnemonic, session.address);
+  }
   const state = {
     status: "scanning",
     scanMode: SCAN_MODE_MANUAL,
@@ -1304,6 +1577,9 @@ async function startBackgroundScan(startHeight, endHeight) {
     scannedBlocks: 0,
     /** Highest block height fully processed this scan (for UI percent). */
     heightProgress: startHeight - 1,
+    /** Last integer percent persisted to storage (for UI step updates). */
+    lastSavedPercentInt: -1,
+    rpcEndpoint: scanRpcEndpoint({}),
     discoveredNotes: [],
     totalBalanceZats: 0,
     /** Serialized OrchardWitnessTracker JSON; required for Zebrad-style spends. */
@@ -1394,7 +1670,9 @@ async function startAutoBackgroundScan() {
     finishedAt: null,
     consecutiveFailures: 0,
     lastRpcError: null,
-    scanError: null
+    scanError: null,
+    lastSavedPercentInt: -1,
+    rpcEndpoint: scanRpcEndpoint({})
   };
   await saveScanState(state);
   scheduleScanAlarm(0.02);
@@ -1452,10 +1730,11 @@ chrome.runtime.onInstalled.addListener((details) => {
     .catch(() => undefined);
 });
 
-// Resume scan on service worker restart
+// Resume scan on service worker restart (popup closed / MV3 sleep).
 loadScanState().then((s) => {
   if (s && s.status === "scanning") {
-    scheduleScanAlarm(0.05);
+    scheduleScanAlarm(0.01);
+    void scanTick();
   }
 });
 
@@ -1485,7 +1764,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           sendResponse(ok(await walletUnlock(params.password)));
           return;
         case "wallet_lock":
-          sendResponse(ok(walletLock()));
+          sendResponse(ok(await walletLock()));
           return;
         case "wallet_status":
           sendResponse(ok(await getWalletStatus()));
@@ -1544,10 +1823,24 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           return;
         }
         case "wallet_get_transactions":
+          await refreshTxExpiryStates();
           sendResponse(ok(await loadTxState()));
           return;
         case "wallet_retry_broadcast":
           sendResponse(ok({ txid: await retryBroadcastById(String(params.id ?? "")) }));
+          return;
+        case "wallet_speed_up":
+          sendResponse(
+            ok({
+              txid: await speedUpTxById(String(params.id ?? ""), {
+                companionPassword: params.companionPassword,
+                allowWasmFallback: params.allowWasmFallback !== false
+              })
+            })
+          );
+          return;
+        case "companion_check_confirmations":
+          sendResponse(ok(await companionCheckConfirmations(params.baseUrl)));
           return;
         case "wallet_generate_address":
           if (!session.unlocked || !session.mnemonic) throw new Error("Wallet is locked");
@@ -1605,10 +1898,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                   ], { retries: 3, baseDelayMs: 400 });
 
                   const txid = resolveTxidFromBroadcast(broadcastResult, proving.txid);
+                  const chainTip = Number(await rpcCall("getblockcount", []));
+                  const expiryHeight = await pilotExpiryHeightForTip(chainTip);
                   await patchTxStateById(txStateId, {
                     txid: String(txid),
                     state: "broadcast",
-                    error: null
+                    error: null,
+                    expiryHeight
                   });
 
                   const confirmation = await waitForTxConfirmation({
@@ -1678,11 +1974,34 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           } catch (e) {
             throw e instanceof Error ? e : new Error(String(e));
           }
+          await rememberRpcEndpoint(session.rpcEndpoint);
           {
             const existing = (await loadWalletState()) || {};
             await saveWalletState({ ...existing, rpcEndpoint: session.rpcEndpoint });
           }
           sendResponse(ok({ rpcEndpoint: session.rpcEndpoint }));
+          return;
+        }
+        case "rpc_autodetect": {
+          const found = await autodetectZebradRpcEndpoint();
+          const blockCount = await rpcCallWithRetry("getblockcount", [], { retries: 1 });
+          sendResponse(
+            ok({
+              rpcEndpoint: found,
+              blockCount: typeof blockCount === "number" ? blockCount : Number(blockCount)
+            })
+          );
+          return;
+        }
+        case "rpc_probe_endpoint": {
+          const url = normalizeRpcEndpoint(String(params?.url ?? session.rpcEndpoint));
+          const okProbe = await probeZebradRpcEndpoint(url, 4000);
+          if (!okProbe) {
+            throw new Error(
+              `Zebrad not reachable at ${url}. If zebrad runs in WSL, use your WSL IP instead of 127.0.0.1.`
+            );
+          }
+          sendResponse(ok({ endpoint: url, connected: true }));
           return;
         }
         case "rpc_get_status":
@@ -1745,6 +2064,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             throw new Error("Unlock wallet first.");
           }
           await persistScanResumeForBackground(session.mnemonic, session.address);
+          const rpcUrl = await ensureReachableZebradRpc();
           const blockCount = await rpcCallWithRetry("getblockcount", []);
 
           const rawEnd = params?.endHeight;
@@ -1759,19 +2079,45 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           let startH;
           if (params.useBirthdayRange === true) {
             const ws = await loadWalletState();
+            const existingScan = await loadScanState();
             const bh = ws?.orchardBirthdayHeight;
             const orchardActivation = await getOrchardActivationHeight();
-            // With a saved birthday (set at create/restore): scan **creation height → tip** only — no blocks before
-            // the wallet existed (fast path for new Nozy users). Restored old seeds: set birthday lower or use NU5 / full chain presets.
+            let birthdayStart;
+            // With a saved birthday (set at create/restore): scan creation height → tip.
+            // Restored old seeds: set birthday lower or use Advanced custom scan.
             if (bh === undefined || bh === null || bh === "") {
-              startH = Math.max(0, Math.min(orchardActivation, endH));
+              birthdayStart = Math.max(0, Math.min(orchardActivation, endH));
             } else {
               const nb = Number(bh);
               if (!Number.isFinite(nb) || nb < 0) {
-                startH = Math.max(0, Math.min(orchardActivation, endH));
+                birthdayStart = Math.max(0, Math.min(orchardActivation, endH));
               } else {
-                startH = Math.max(0, Math.min(Math.floor(nb), endH));
+                birthdayStart = Math.max(0, Math.min(Math.floor(nb), endH));
               }
+            }
+            startH = birthdayStart;
+            // Resume from last scanned height when re-syncing to tip (incremental catch-up).
+            // If the user lowered birthday (e.g. CLI note at 3_276_066), do NOT skip blocks —
+            // a prior "done" scan from a higher start height must be rescanned from birthdayStart.
+            const priorScanStart =
+              typeof existingScan?.startHeight === "number"
+                ? Math.floor(existingScan.startHeight)
+                : birthdayStart;
+            const birthdayWasLowered = birthdayStart < priorScanStart;
+            if (
+              !birthdayWasLowered &&
+              existingScan &&
+              (existingScan.status === "done" ||
+                existingScan.status === "stopped" ||
+                existingScan.status === "failed") &&
+              typeof existingScan.heightProgress === "number" &&
+              existingScan.heightProgress >= birthdayStart - 1
+            ) {
+              startH = Math.min(endH, Math.floor(existingScan.heightProgress) + 1);
+            }
+            // Re-scan the tip block when already caught up (new deposits same height).
+            if (startH > endH) {
+              startH = endH;
             }
           } else {
             const rawStart = params?.startHeight;
@@ -1796,7 +2142,13 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
 
           const s = await startBackgroundScan(startH, endH);
           sendResponse(
-            ok({ started: true, startHeight: startH, endHeight: endH, status: s.status })
+            ok({
+              started: true,
+              startHeight: startH,
+              endHeight: endH,
+              status: s.status,
+              rpcEndpoint: rpcUrl
+            })
           );
           return;
         }
@@ -1809,7 +2161,15 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             throw new Error("height must be a non-negative integer (Orchard scan birthday).");
           }
           const orchardBirthdayHeight = Math.floor(n);
+          const prevBh = Number(existing.orchardBirthdayHeight);
           await saveWalletState({ ...existing, orchardBirthdayHeight });
+          // Lower birthday requires rescanning older blocks; clear stale "done" scan metadata.
+          if (Number.isFinite(prevBh) && orchardBirthdayHeight < prevBh) {
+            const scan = await loadScanState();
+            if (scan && (scan.status === "done" || scan.status === "stopped" || scan.status === "failed")) {
+              await chrome.storage.local.remove(SCAN_STATE_KEY);
+            }
+          }
           sendResponse(ok({ orchardBirthdayHeight }));
           return;
         }
@@ -1828,8 +2188,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             } else {
               done = Math.min(total, scanState.scannedBlocks ?? 0);
             }
-            // Keep decimal precision so very large scans don't look "stuck" at one integer percent.
             const pct = Number(((done / total) * 100).toFixed(2));
+            const percentInt = Math.min(100, Math.max(0, Math.floor(pct)));
             sendResponse(ok({
               status: scanState.status,
               startHeight: scanState.startHeight,
@@ -1838,6 +2198,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               scannedBlocks: done,
               totalBlocks: total,
               percent: pct,
+              percentInt,
               discoveredNotes: scanState.discoveredNotes?.length ?? 0,
               totalBalanceZats: scanState.totalBalanceZats ?? 0,
               scanError: scanState.scanError ?? null,
@@ -1854,6 +2215,19 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "wallet_stop_scan": {
           const stopped = await stopBackgroundScan();
           sendResponse(ok({ status: stopped?.status ?? "idle" }));
+          return;
+        }
+        case "wallet_estimate_send_fee": {
+          await ensureWasm();
+          const memo = String(params?.memo ?? "");
+          const priority = Boolean(params?.priority ?? false);
+          sendResponse(
+            ok({
+              fee: wasm.estimate_orchard_send_fee_zats(memo, priority),
+              expiry_delta_blocks: wasm.pilot_expiry_delta_blocks(),
+              core_version: wasm.nozy_version_display()
+            })
+          );
           return;
         }
         case "wallet_prove_transaction":

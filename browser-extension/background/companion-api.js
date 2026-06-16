@@ -116,3 +116,34 @@ export async function companionLwdSyncCompactToTip(baseUrl, body) {
   if (!r.ok) throw new Error(await readErrorBody(r));
   return r.json();
 }
+
+/**
+ * Refresh pending pilot txs (mark expired, release notes on companion wallet).
+ * @param {string} [baseUrl]
+ */
+export async function companionCheckConfirmations(baseUrl) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/transaction/check-confirmations`, { method: "POST" });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
+
+/**
+ * Rebuild an expired transaction at priority fee via companion api-server.
+ * @param {string} [baseUrl]
+ * @param {{ original_txid: string, password?: string, zebra_url?: string }} body
+ */
+export async function companionSpeedUpTransaction(baseUrl, body) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/transaction/speed-up`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      original_txid: body.original_txid,
+      password: body.password ?? "",
+      zebra_url: body.zebra_url
+    })
+  });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}

@@ -32,7 +32,8 @@ function normalizeTx(raw: any): HistoryTx {
   const status =
     statusRaw === "confirmed" ||
     statusRaw === "pending" ||
-    statusRaw === "failed"
+    statusRaw === "failed" ||
+    statusRaw === "expired"
       ? statusRaw
       : statusRaw;
   const dateRaw = raw.broadcast_at ?? raw.created_at ?? raw.date ?? raw.block_time;
@@ -59,7 +60,7 @@ function normalizeTx(raw: any): HistoryTx {
 }
 
 type FilterType = "all" | "sent" | "received";
-type FilterStatus = "all" | "confirmed" | "pending" | "failed";
+type FilterStatus = "all" | "confirmed" | "pending" | "failed" | "expired";
 type FilterDateRange = "all" | "7" | "30" | "90";
 
 function filterAndSortTxs(
@@ -147,6 +148,8 @@ export function HistoryPage() {
   const [saveContactName, setSaveContactName] = useState("");
   const [saveContactNotes, setSaveContactNotes] = useState("");
   const [saveContactSaving, setSaveContactSaving] = useState(false);
+  const [speedUpPassword, setSpeedUpPassword] = useState("");
+  const [speedUpBusy, setSpeedUpBusy] = useState(false);
 
   const {
     showFiatEquivalent,
@@ -155,14 +158,14 @@ export function HistoryPage() {
     customFiatPerZec,
   } = useSettingsStore();
 
-  useEffect(() => {
-    let cancelled = false;
+  const loadHistory = () => {
     setLoading(true);
     setError(null);
-    walletApi
-      .getTransactionHistory()
+    return walletApi
+      .checkTransactionConfirmations()
+      .catch(() => ({ data: { pending_updated: 0, expired_updated: 0, confirmations_updated: 0 } }))
+      .then(() => walletApi.getTransactionHistory())
       .then((res) => {
-        if (cancelled) return;
         const raw = res?.data;
         if (Array.isArray(raw)) {
           const normalized = raw.map(normalizeTx).filter((t) => t.id);
@@ -172,14 +175,17 @@ export function HistoryPage() {
         }
       })
       .catch((e) => {
-        if (!cancelled) {
-          setError(formatErrorForDisplay(e, "Failed to load transaction history"));
-          setTxs([]);
-        }
+        setError(formatErrorForDisplay(e, "Failed to load transaction history"));
+        setTxs([]);
       })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+      .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    loadHistory().then(() => {
+      if (cancelled) return;
+    });
     return () => {
       cancelled = true;
     };
@@ -240,6 +246,33 @@ export function HistoryPage() {
     const fiat = amountZec * effectiveFiatRate;
     return formatFiatAmount(fiat, fiatCurrency);
   }
+
+  const handleSpeedUp = async () => {
+    if (!selectedTx) return;
+    if (!speedUpPassword.trim()) {
+      toast.error("Enter your wallet password to speed up");
+      return;
+    }
+    setSpeedUpBusy(true);
+    try {
+      const { data } = await walletApi.speedUpTransaction({
+        originalTxid: selectedTx.id,
+        password: speedUpPassword,
+      });
+      if (!data.success) {
+        toast.error(data.message || "Speed-up failed");
+        return;
+      }
+      toast.success(data.message || "Speed-up transaction broadcast");
+      setSpeedUpPassword("");
+      setSelectedTx(null);
+      await loadHistory();
+    } catch (e) {
+      toast.error(formatErrorForDisplay(e, "Speed-up failed"));
+    } finally {
+      setSpeedUpBusy(false);
+    }
+  };
 
   const handleSaveToContacts = async () => {
     if (!selectedTx) return;
@@ -312,6 +345,7 @@ export function HistoryPage() {
               <option value="confirmed">Confirmed</option>
               <option value="pending">Pending</option>
               <option value="failed">Failed</option>
+              <option value="expired">Expired</option>
             </select>
             <select
               value={filterDateRange}
@@ -435,7 +469,9 @@ export function HistoryPage() {
                         : tx.status === "pending"
                           ? "bg-yellow-100 text-yellow-700"
                           : tx.status === "failed"
-                            ? "bg-red-100 text-red-700"
+                          ? "bg-red-100 text-red-700"
+                          : tx.status === "expired"
+                            ? "bg-orange-100 text-orange-700"
                             : "bg-gray-100 text-gray-700"
                     }`}
                   >
@@ -506,6 +542,27 @@ export function HistoryPage() {
                 {detailExtra.broadcast_at && (
                   <DetailRow label="Broadcast at" value={formatDetailDate(detailExtra.broadcast_at)} />
                 )}
+              </div>
+            )}
+            {selectedTx.type === "sent" && selectedTx.status === "expired" && (
+              <div className="pt-4 mt-2 border-t border-gray-200 space-y-3">
+                <p className="text-sm text-gray-600">
+                  This transaction expired unmined. Speed up rebuilds a new transaction at priority fee (×4).
+                </p>
+                <Input
+                  type="password"
+                  label="Wallet password"
+                  placeholder="Required to sign the new transaction"
+                  value={speedUpPassword}
+                  onChange={(e) => setSpeedUpPassword(e.target.value)}
+                />
+                <Button
+                  onClick={handleSpeedUp}
+                  disabled={speedUpBusy || !speedUpPassword.trim()}
+                  className="w-full"
+                >
+                  {speedUpBusy ? "Building priority transaction…" : "Speed up (priority fee ×4)"}
+                </Button>
               </div>
             )}
           </div>

@@ -20,7 +20,7 @@ export type WalletStatus = {
 export type TxStateEntry = {
   id: string;
   txid: string | null;
-  state: "built" | "broadcast" | "pending" | "confirmed" | "failed";
+  state: "built" | "broadcast" | "pending" | "confirmed" | "failed" | "expired";
   origin: string;
   recipientAddress: string;
   amount: number;
@@ -33,6 +33,9 @@ export type TxStateEntry = {
   rawTxHex?: string | null;
   inputsUsed?: number;
   inputMode?: "single" | "multi" | string;
+  expiryHeight?: number | null;
+  priority?: boolean;
+  speedUpOf?: string | null;
 };
 
 export type PendingApproval = {
@@ -50,6 +53,8 @@ export type WalletScanProgressResult = {
   scannedBlocks?: number;
   totalBlocks?: number;
   percent?: number;
+  /** Integer 0–100 for stepped progress display. */
+  percentInt?: number;
   discoveredNotes?: number;
   totalBalanceZats?: number;
   scanError?: string | null;
@@ -162,9 +167,21 @@ export const extensionApi = {
     sendMessage<{ txs: TxStateEntry[]; updatedAt: number }>({ method: "wallet_get_transactions" }),
   walletRetryBroadcast: (id: string) =>
     sendMessage<{ txid: string }>({ method: "wallet_retry_broadcast", params: { id } }),
+  walletSpeedUp: (id: string, opts?: { companionPassword?: string }) =>
+    sendMessage<{ txid: string }>({
+      method: "wallet_speed_up",
+      params: { id, companionPassword: opts?.companionPassword, allowWasmFallback: true }
+    }),
   rpcSetEndpoint: (url: string) =>
     sendMessage<{ rpcEndpoint: string }>({
       method: "rpc_set_endpoint",
+      params: { url }
+    }),
+  rpcAutodetect: () =>
+    sendMessage<{ rpcEndpoint: string; blockCount: number }>({ method: "rpc_autodetect" }),
+  rpcProbeEndpoint: (url: string) =>
+    sendMessage<{ endpoint: string; connected: boolean }>({
+      method: "rpc_probe_endpoint",
       params: { url }
     }),
   rpcGetStatus: () =>
@@ -208,6 +225,7 @@ export const extensionApi = {
       startHeight: number;
       endHeight: number;
       status: string;
+      rpcEndpoint?: string;
     }>({ method: "wallet_start_scan", params });
   },
   walletScanProgress: () =>
@@ -216,6 +234,15 @@ export const extensionApi = {
     sendMessage<{ status: string }>({ method: "wallet_stop_scan" }),
   rpcSendRawTx: (rawTxHex: string) =>
     sendMessage<string>({ method: "rpc_send_raw_tx", params: { rawTxHex } }),
+  walletEstimateSendFee: (params?: { memo?: string; priority?: boolean }) =>
+    sendMessage<{
+      fee: number;
+      expiry_delta_blocks: number;
+      core_version: string;
+    }>({
+      method: "wallet_estimate_send_fee",
+      params: params ?? {}
+    }),
   walletProveTransaction: (tx: Record<string, unknown>) =>
     sendMessage<{
       txid: string;
@@ -326,7 +353,15 @@ export const extensionApi = {
 
 const STORAGE_COMPANION_BASE = "nozy_companion_base_url";
 const STORAGE_LWD_URL = "nozy_lightwalletd_url";
-const DEFAULT_TESTNET_LWD_URL = "https://testnet.zec.rocks:443/";
+const DEFAULT_LWD_URL = "http://127.0.0.1:9067";
+
+function normalizeStoredLwdUrl(raw: string): string {
+  const s = String(raw ?? "").trim();
+  if (!s || /zec\.rocks/i.test(s)) {
+    return DEFAULT_LWD_URL;
+  }
+  return s;
+}
 
 /** Local Nozy API + optional lightwalletd URL (popup chrome.storage; not sent to sites). */
 export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalletdUrl: string }> {
@@ -334,7 +369,7 @@ export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalle
     chrome.storage.local.get(
       {
         [STORAGE_COMPANION_BASE]: "http://127.0.0.1:3000",
-        [STORAGE_LWD_URL]: DEFAULT_TESTNET_LWD_URL
+        [STORAGE_LWD_URL]: DEFAULT_LWD_URL
       },
       (items) => {
         if (chrome.runtime.lastError) {
@@ -343,7 +378,7 @@ export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalle
         }
         resolve({
           baseUrl: String(items[STORAGE_COMPANION_BASE]),
-          lightwalletdUrl: String(items[STORAGE_LWD_URL] ?? "")
+          lightwalletdUrl: normalizeStoredLwdUrl(String(items[STORAGE_LWD_URL] ?? ""))
         });
       }
     );
@@ -361,7 +396,7 @@ export async function setCompanionPrefs(prefs: {
       patch[STORAGE_COMPANION_BASE] = u || "http://127.0.0.1:3000";
     }
     if (prefs.lightwalletdUrl !== undefined) {
-      patch[STORAGE_LWD_URL] = prefs.lightwalletdUrl.trim();
+      patch[STORAGE_LWD_URL] = normalizeStoredLwdUrl(prefs.lightwalletdUrl);
     }
     chrome.storage.local.set(patch, () => {
       if (chrome.runtime.lastError) {

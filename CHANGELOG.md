@@ -4,8 +4,14 @@
 
 ### Added
 
+- **Desktop History:** Speed up button on expired transactions (rebuild at priority ×4 fee via Tauri `speed_up_transaction`).
+- **Extension:** Pilot speed-up rebuilds a new priority transaction in WASM (replaces wrong rebroadcast retry for expired txs); optional companion API path when `companionPassword` is supplied.
 - **Dynamic-fee pilot speed-up:** `POST /api/transaction/speed-up` rebuilds a new priority transaction after expiry (not a rebroadcast). Core logic in `nozy::tx_lifecycle`.
 - **Expired transaction detection:** pending pilot txs past `expiry_height` are marked `Expired` and release locally locked notes via `/api/transaction/check-confirmations`.
+
+### Changed
+
+- **Extension:** `wallet_retry_broadcast` kept for failed pre-broadcast retries only; expired txs use `wallet_speed_up`.
 
 ### Fixed
 

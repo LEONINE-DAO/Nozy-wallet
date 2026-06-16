@@ -66,3 +66,29 @@ export function findRecentBuiltTxId(txs, origin, now, windowMs = 5 * 60 * 1000) 
 export function nextLifecycleStateFromConfirmation(confirmation) {
   return confirmation?.confirmed ? "confirmed" : "pending";
 }
+
+/** True when chain tip is past the pilot expiry height. */
+export function isPilotTxExpired(chainTip, expiryHeight) {
+  const tip = Number(chainTip);
+  const exp = Number(expiryHeight);
+  if (!Number.isFinite(tip) || !Number.isFinite(exp)) return false;
+  return tip > exp;
+}
+
+/** Whether a local tx entry can use pilot speed-up (rebuild at priority fee). */
+export function canSpeedUpTx(tx) {
+  if (!tx) return false;
+  const state = String(tx.state || "");
+  return state === "expired";
+}
+
+export function buildSpeedUpTxStateEntry({ id, origin, proving, createdAt, speedUpOf, expiryHeight }) {
+  const base = buildBuiltTxStateEntry({ id, origin, proving, createdAt });
+  return {
+    ...base,
+    state: "broadcast",
+    priority: true,
+    speedUpOf: speedUpOf ? String(speedUpOf) : null,
+    expiryHeight: Number.isFinite(Number(expiryHeight)) ? Number(expiryHeight) : null
+  };
+}
