@@ -139,7 +139,11 @@ impl SyncRangeContext {
     }
 
     fn scan_fields(&self) -> (Option<u32>, Option<u32>, Option<u32>) {
-        (Some(self.scan_start), Some(self.scan_end), Some(self.chain_tip))
+        (
+            Some(self.scan_start),
+            Some(self.scan_end),
+            Some(self.chain_tip),
+        )
     }
 }
 
@@ -257,14 +261,7 @@ pub async fn sync_wallet_notes(
 
     let zebra_client = ZebraClient::from_config(&config);
     let chain_tip = zebra_client.get_block_count().await.map_err(|e| {
-        WalletSyncError::with_range(
-            WalletSyncPhase::Connect,
-            e,
-            None,
-            None,
-            None,
-            None,
-        )
+        WalletSyncError::with_range(WalletSyncPhase::Connect, e, None, None, None, None)
     })?;
     let range = resolve_scan_range(&config, &options, chain_tip).map_err(|e| {
         WalletSyncError::with_range(

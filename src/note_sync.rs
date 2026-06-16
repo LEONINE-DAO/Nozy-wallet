@@ -21,7 +21,8 @@ impl NoteSyncManager {
 
     pub async fn sync_once(&self) -> NozyResult<SyncResult> {
         let options = WalletSyncOptions::api_default();
-        let result = sync_wallet_notes(self.wallet.clone(), options).await
+        let result = sync_wallet_notes(self.wallet.clone(), options)
+            .await
             .map_err(|e| NozyError::NoteScanning(e.message))?;
 
         Ok(SyncResult {

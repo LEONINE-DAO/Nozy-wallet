@@ -703,11 +703,7 @@ impl NoteScanner {
                             block_height, scope
                         ));
                     } else {
-                        tracing::info!(
-                            block_height,
-                            ?scope,
-                            "Found Orchard note"
-                        );
+                        tracing::info!(block_height, ?scope, "Found Orchard note");
                     }
 
                     let nf = orchard_note.nullifier.to_bytes();
@@ -811,10 +807,7 @@ impl NoteScanner {
 
         match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
             Some((note, address)) => {
-                scan_verbose!(
-                    "Successfully decrypted note: {} ZAT",
-                    note.value().inner()
-                );
+                scan_verbose!("Successfully decrypted note: {} ZAT", note.value().inner());
 
                 let canonical_nullifier = note.nullifier(orchard_fvk);
 

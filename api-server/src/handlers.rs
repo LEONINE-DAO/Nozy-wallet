@@ -452,8 +452,8 @@ pub async fn sync_wallet(
             }))
         }
         Err(e) => {
-            let status =
-                StatusCode::from_u16(e.api_status_code()).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            let status = StatusCode::from_u16(e.api_status_code())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
             Err((status, ResponseJson(e.to_api_json())))
         }
     }
