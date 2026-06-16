@@ -1222,7 +1222,10 @@ pub struct WalletStatusResponse {
 
 pub async fn get_wallet_status(
 ) -> Result<ResponseJson<WalletStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, load_wallet_notes, transaction_history::SentTransactionStorage, wallet_unspent_balance_zatoshis, ZebraClient};
+    use nozy::{
+        load_config, load_wallet_notes, transaction_history::SentTransactionStorage,
+        wallet_unspent_balance_zatoshis, ZebraClient,
+    };
 
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url.clone());
@@ -1312,7 +1315,10 @@ pub struct WebReadStateResponse {
 
 pub async fn web_read_state(
 ) -> Result<ResponseJson<WebReadStateResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, load_wallet_notes, transaction_history::SentTransactionStorage, wallet_unspent_balance_zatoshis, ZebraClient};
+    use nozy::{
+        load_config, load_wallet_notes, transaction_history::SentTransactionStorage,
+        wallet_unspent_balance_zatoshis, ZebraClient,
+    };
 
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);

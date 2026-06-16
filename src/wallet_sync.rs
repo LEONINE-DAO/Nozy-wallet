@@ -149,7 +149,10 @@ pub async fn sync_wallet_notes(
     let balance_zatoshis = wallet_unspent_balance_zatoshis(&cached_notes);
     let unspent_notes = cached_notes.iter().filter(|n| !n.spent).count();
     let new_notes_in_scan = cached_notes.len().saturating_sub(total_before);
-    let blocks_scanned = range.scan_end.saturating_sub(range.scan_start).saturating_add(1);
+    let blocks_scanned = range
+        .scan_end
+        .saturating_sub(range.scan_start)
+        .saturating_add(1);
 
     Ok(WalletSyncResult {
         balance_zatoshis,

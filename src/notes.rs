@@ -236,10 +236,8 @@ pub fn merge_scanned_notes(
 ) {
     use std::collections::HashSet;
 
-    let existing_nullifiers: HashSet<Vec<u8>> = existing
-        .iter()
-        .map(|n| n.nullifier_bytes.clone())
-        .collect();
+    let existing_nullifiers: HashSet<Vec<u8>> =
+        existing.iter().map(|n| n.nullifier_bytes.clone()).collect();
 
     for new_note in new_notes {
         if let Some(existing) = existing.iter_mut().find(|n| {
