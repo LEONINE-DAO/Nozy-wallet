@@ -1,4 +1,4 @@
-use crate::error::NozyResult;
+use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use crate::wallet_sync::{sync_wallet_notes, WalletSyncOptions, WalletSyncResult};
 use crate::zebra_integration::ZebraClient;
@@ -21,7 +21,8 @@ impl NoteSyncManager {
 
     pub async fn sync_once(&self) -> NozyResult<SyncResult> {
         let options = WalletSyncOptions::api_default();
-        let result = sync_wallet_notes(self.wallet.clone(), options).await?;
+        let result = sync_wallet_notes(self.wallet.clone(), options).await
+            .map_err(|e| NozyError::NoteScanning(e.message))?;
 
         Ok(SyncResult {
             notes_found: result.new_notes_in_scan,

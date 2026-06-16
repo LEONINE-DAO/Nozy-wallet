@@ -8,6 +8,8 @@ use crate::note_index::NoteIndex;
 use crate::orchard_tree_codec::orchard_commitment_tree_from_final_state;
 use crate::orchard_tree_codec::OrchardCommitmentTree;
 use crate::orchard_witness::{merkle_hash_from_cmx_bytes, OrchardWitnessTracker};
+use crate::scan_log;
+use crate::scan_verbose;
 use crate::zebra_integration::ZebraClient;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -397,19 +399,33 @@ impl NoteScanner {
         let start_height = start_height.min(end_height);
 
         let total_blocks = (end_height - start_height + 1) as u64;
-        println!(
-            "Scanning blocks {} to {} for Orchard notes... ({} blocks)",
-            start_height, end_height, total_blocks
-        );
+        if scan_log::scan_progress_enabled() {
+            println!(
+                "Scanning blocks {} to {} for Orchard notes... ({} blocks)",
+                start_height, end_height, total_blocks
+            );
+        } else {
+            tracing::info!(
+                start_height,
+                end_height,
+                total_blocks,
+                "Scanning Orchard notes"
+            );
+        }
 
-        let pb = ProgressBar::new(total_blocks);
-        pb.set_style(
-            ProgressStyle::default_bar()
-                .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} blocks ({percent}%) | {msg}")
-                .unwrap_or_else(|_| ProgressStyle::default_bar())
-                .progress_chars("#>-")
-        );
-        pb.set_message("Scanning blocks...");
+        let pb = if scan_log::scan_progress_enabled() {
+            let pb = ProgressBar::new(total_blocks);
+            pb.set_style(
+                ProgressStyle::default_bar()
+                    .template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {pos}/{len} blocks ({percent}%) | {msg}")
+                    .unwrap_or_else(|_| ProgressStyle::default_bar())
+                    .progress_chars("#>-"),
+            );
+            pb.set_message("Scanning blocks...");
+            pb
+        } else {
+            ProgressBar::hidden()
+        };
 
         let account_id = AccountId::try_from(0)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
@@ -429,9 +445,11 @@ impl NoteScanner {
 
         zeroize_bytes(&mut seed_bytes);
 
-        pb.println(
-            "🔑 Generated scanning keys from wallet mnemonic (Orchard only; External and Internal scopes)",
-        );
+        if scan_log::scan_progress_enabled() {
+            pb.println(
+                "Generated scanning keys from wallet mnemonic (Orchard only; External and Internal scopes)",
+            );
+        }
 
         let mut note_index = self.note_index.take().unwrap_or_else(NoteIndex::new);
         let mut all_notes = Vec::new();
@@ -544,17 +562,17 @@ impl NoteScanner {
                             &mut spendable_notes,
                             &pb,
                         ) {
-                            return Err(NozyError::InvalidOperation(format!(
-                                "Orchard scan failed at block {}: {}",
-                                height, e
-                            )));
+                            return Err(NozyError::ScanAtBlock {
+                                height,
+                                detail: e.to_string(),
+                            });
                         }
                     }
                     Err(e) => {
-                        return Err(NozyError::NetworkError(format!(
-                            "Failed to fetch block {} while scanning notes: {}",
-                            height, e
-                        )));
+                        return Err(NozyError::ScanAtBlock {
+                            height,
+                            detail: format!("Failed to fetch block while scanning notes: {}", e),
+                        });
                     }
                 }
 
@@ -583,7 +601,9 @@ impl NoteScanner {
                 .unwrap_or(!sn.orchard_note.spent)
         });
 
-        pb.finish_with_message("Scanning complete!");
+        if scan_log::scan_progress_enabled() {
+            pb.finish_with_message("Scanning complete!");
+        }
 
         let total_balance = note_index.total_balance();
         let unspent_count = note_index.unspent_count();
@@ -600,12 +620,21 @@ impl NoteScanner {
             spendable_count,
         };
 
-        println!(
-            "Scan complete: Orchard {} notes ({} spendable, {} ZAT)",
-            result.notes.len(),
-            spendable_count,
-            total_balance
-        );
+        if scan_log::scan_progress_enabled() {
+            println!(
+                "Scan complete: Orchard {} notes ({} spendable, {} ZAT)",
+                result.notes.len(),
+                spendable_count,
+                total_balance
+            );
+        } else {
+            tracing::info!(
+                notes = result.notes.len(),
+                spendable = spendable_count,
+                balance_zat = total_balance,
+                "Orchard scan complete"
+            );
+        }
 
         Ok((result, spendable_notes))
     }
@@ -668,10 +697,18 @@ impl NoteScanner {
                         tr.register_discovered_note(orchard_note.nullifier.to_bytes())?;
                     }
 
-                    pb.println(format!(
-                        "🎉 Found note in block {} (scope: {:?})",
-                        block_height, scope
-                    ));
+                    if scan_log::scan_progress_enabled() {
+                        pb.println(format!(
+                            "Found note in block {} (scope: {:?})",
+                            block_height, scope
+                        ));
+                    } else {
+                        tracing::info!(
+                            block_height,
+                            ?scope,
+                            "Found Orchard note"
+                        );
+                    }
 
                     let nf = orchard_note.nullifier.to_bytes();
                     let witness_hex = if let Some(t) = witness_tracker.as_ref() {
@@ -720,16 +757,17 @@ impl NoteScanner {
         };
         use zcash_note_encryption::EphemeralKeyBytes;
 
-        println!(
-            "🔍 Attempting REAL Orchard action decryption in transaction {} (scope: {:?})",
-            txid, scope
+        scan_verbose!(
+            "Attempting Orchard action decryption in transaction {} (scope: {:?})",
+            txid,
+            scope
         );
 
         let nullifier_result = Nullifier::from_bytes(&action.nullifier);
         let nullifier = match nullifier_result.into_option() {
             Some(n) => n,
             None => {
-                println!("⚠️  Invalid nullifier bytes");
+                scan_verbose!("Invalid nullifier bytes");
                 return Ok(None);
             }
         };
@@ -738,7 +776,7 @@ impl NoteScanner {
         let cmx = match cmx_result.into_option() {
             Some(c) => c,
             None => {
-                println!("⚠️  Invalid cmx bytes");
+                scan_verbose!("Invalid cmx bytes");
                 return Ok(None);
             }
         };
@@ -749,19 +787,18 @@ impl NoteScanner {
         if action.encrypted_note.len() >= 52 {
             compact_enc_ciphertext.copy_from_slice(&action.encrypted_note[..52]);
         } else {
-            println!("⚠️  Encrypted note too short for CompactAction");
+            scan_verbose!("Encrypted note too short for CompactAction");
             return Ok(None);
         }
 
-        println!("✅ **REAL NOTE DECRYPTION FRAMEWORK OPERATIONAL!**");
-        println!("   Successfully parsed ALL Action components from blockchain:");
-        println!("   Nullifier: {}", hex::encode(&action.nullifier));
-        println!("   CMX: {}", hex::encode(&action.cmx));
-        println!("   CV: {}", hex::encode(&action.cv));
-        println!("   RK: {}", hex::encode(&action.rk));
-        println!("   Ephemeral Key: {}", hex::encode(&action.ephemeral_key));
-        println!("   Encrypted Note: {} bytes", action.encrypted_note.len());
-        println!("   Out Ciphertext: {} bytes", action.enc_ciphertext.len());
+        scan_verbose!("Parsed Orchard action components from blockchain");
+        scan_verbose!("   Nullifier: {}", hex::encode(&action.nullifier));
+        scan_verbose!("   CMX: {}", hex::encode(&action.cmx));
+        scan_verbose!("   CV: {}", hex::encode(&action.cv));
+        scan_verbose!("   RK: {}", hex::encode(&action.rk));
+        scan_verbose!("   Ephemeral Key: {}", hex::encode(&action.ephemeral_key));
+        scan_verbose!("   Encrypted Note: {} bytes", action.encrypted_note.len());
+        scan_verbose!("   Out Ciphertext: {} bytes", action.enc_ciphertext.len());
 
         let compact_action =
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
@@ -770,32 +807,12 @@ impl NoteScanner {
 
         let prepared_ivk = PreparedIncomingViewingKey::new(ivk);
 
-        println!("🔧 **COMPLETE DECRYPTION FRAMEWORK READY:**");
-        println!("   ✅ Real Zebra RPC integration");
-        println!("   ✅ Real Orchard action parsing");
-        println!("   ✅ Real cryptographic key generation");
-        println!("   ✅ Real zcash_note_encryption library integration");
-        println!("   ✅ Real CompactAction construction");
-        println!("   ✅ Real OrchardDomain creation");
-        println!("   ✅ Real PreparedIncomingViewingKey");
-
-        println!("🎉 **COMPLETE NOTE DECRYPTION IMPLEMENTED!**");
-        println!("   ✅ Real Nullifier parsed and validated");
-        println!("   ✅ Real ExtractedNoteCommitment constructed");
-        println!("   ✅ Real EphemeralKeyBytes created");
-        println!("   ✅ Real CompactAction constructed from blockchain data");
-        println!("   ✅ Real OrchardDomain created for decryption");
-        println!("   ✅ Real PreparedIncomingViewingKey prepared");
-        println!("   ✅ Using official zcash_note_encryption library");
-
-        println!("💡 **NOTE DECRYPTION STATUS: FULLY IMPLEMENTED**");
-        println!("   All cryptographic components working with real blockchain data!");
-        println!("   Ready to detect and decrypt your ZEC when present!");
+        scan_verbose!("Orchard decryption framework ready (CompactAction + OrchardDomain + IVK)");
 
         match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
             Some((note, address)) => {
-                println!(
-                    "✅ Successfully decrypted note: {} ZAT",
+                scan_verbose!(
+                    "Successfully decrypted note: {} ZAT",
                     note.value().inner()
                 );
 
@@ -891,7 +908,7 @@ impl NoteScanner {
         let mut actions = Vec::new();
 
         if let Some(actions_array) = orchard_json["actions"].as_array() {
-            println!("📋 Found {} Orchard actions to parse", actions_array.len());
+            scan_verbose!("Found {} Orchard actions to parse", actions_array.len());
             for (idx, action) in actions_array.iter().enumerate() {
                 let nullifier_hex = action["nullifier"].as_str().unwrap_or("");
                 let cmx_hex = action["cmx"].as_str().unwrap_or("");
@@ -969,14 +986,21 @@ impl NoteScanner {
                     };
 
                     actions.push(action_data);
-                    println!("✅ Parsed action {} successfully", idx);
+                    scan_verbose!("Parsed action {} successfully", idx);
                 } else {
-                    eprintln!("⚠️  Skipping action {} with invalid field sizes", idx);
-                    eprintln!("    nullifier: {} bytes (expected 32), cmx: {} bytes (expected 32), ephemeral_key: {} bytes (expected 32)", 
-                             nullifier.len(), cmx.len(), ephemeral_key.len());
-                    eprintln!("    enc_ciphertext: {} bytes (expected >= 52), out_ciphertext: {} bytes (expected 80)", 
-                             enc_ciphertext.len(), out_ciphertext.len());
-                    eprintln!(
+                    scan_verbose!("Skipping action {} with invalid field sizes", idx);
+                    scan_verbose!(
+                        "    nullifier: {} bytes (expected 32), cmx: {} bytes (expected 32), ephemeral_key: {} bytes (expected 32)",
+                        nullifier.len(),
+                        cmx.len(),
+                        ephemeral_key.len()
+                    );
+                    scan_verbose!(
+                        "    enc_ciphertext: {} bytes (expected >= 52), out_ciphertext: {} bytes (expected 80)",
+                        enc_ciphertext.len(),
+                        out_ciphertext.len()
+                    );
+                    scan_verbose!(
                         "    cv: {} bytes (expected 32), rk: {} bytes (expected 32)",
                         cv.len(),
                         rk.len()
@@ -984,7 +1008,7 @@ impl NoteScanner {
                 }
             }
         } else {
-            println!("⚠️  No 'actions' array found in Orchard JSON");
+            scan_verbose!("No 'actions' array found in Orchard JSON");
         }
 
         Ok(actions)
@@ -1008,19 +1032,30 @@ pub async fn scan_real_notes(
     start_height: u32,
     end_height: u32,
 ) -> NozyResult<Vec<SpendableNote>> {
-    println!(
-        "🔍 Scanning blockchain for Orchard notes from height {} to {}",
-        start_height, end_height
-    );
+    if scan_log::scan_progress_enabled() {
+        println!(
+            "Scanning blockchain for Orchard notes from height {} to {}",
+            start_height, end_height
+        );
+    } else {
+        tracing::info!(start_height, end_height, "Scanning Orchard notes");
+    }
 
     let mut scanner = NoteScanner::new(wallet.clone(), zebra_client.clone());
     let (_, spendable_notes) = scanner
         .scan_notes(Some(start_height), Some(end_height))
         .await?;
 
-    println!(
-        "✅ Note scanning completed. Found {} spendable notes",
-        spendable_notes.len()
-    );
+    if scan_log::scan_progress_enabled() {
+        println!(
+            "Note scanning completed. Found {} spendable notes",
+            spendable_notes.len()
+        );
+    } else {
+        tracing::info!(
+            spendable = spendable_notes.len(),
+            "Orchard note scan completed"
+        );
+    }
     Ok(spendable_notes)
 }
