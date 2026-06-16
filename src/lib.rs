@@ -68,6 +68,8 @@ pub mod progress;
 pub mod proving;
 #[cfg(feature = "native")]
 pub mod rpc_test;
+#[cfg(feature = "native")]
+pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
 #[cfg(feature = "native")]
@@ -183,8 +185,8 @@ pub use transaction_history::{
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
 #[cfg(feature = "native")]
 pub use wallet_sync::{
-    resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncOptions, WalletSyncResult,
-    DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
+    resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncError, WalletSyncOptions,
+    WalletSyncPhase, WalletSyncResult, DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
 };
 #[cfg(feature = "native")]
 pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};

@@ -13,6 +13,11 @@
 
 - **Extension:** `wallet_retry_broadcast` kept for failed pre-broadcast retries only; expired txs use `wallet_speed_up`.
 
+### Changed
+
+- **`/api/sync` errors:** structured JSON (`phase`, `block_height`, `scan_start`/`scan_end`, `code`) instead of opaque HTTP 500; Zebra outages return **503** `ZEBRA_UNAVAILABLE`.
+- **Orchard scan logging:** per-action decrypt chatter is quiet by default; set `NOZY_VERBOSE_SCAN=1` or `RUST_LOG=nozy::notes=debug` for detail. API/non-TTY builds skip indicatif progress spam.
+
 ### Fixed
 
 - **`/api/sync` repeat calls:** when already caught up to chain tip, return cached balance without rescanning; serialize concurrent syncs; richer sync response (`balance_zatoshis`, `already_synced`, `total_notes`).

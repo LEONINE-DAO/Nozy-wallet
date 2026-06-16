@@ -451,12 +451,11 @@ pub async fn sync_wallet(
                 message,
             }))
         }
-        Err(e) => Err((
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseJson(serde_json::json!({
-                "error": format!("Sync failed: {}", e)
-            })),
-        )),
+        Err(e) => {
+            let status = StatusCode::from_u16(e.api_status_code())
+                .unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
+            Err((status, ResponseJson(e.to_api_json())))
+        }
     }
 }
 

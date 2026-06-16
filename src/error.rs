@@ -35,6 +35,9 @@ pub enum NozyError {
     #[error("Note scanning error: {0}")]
     NoteScanning(String),
 
+    #[error("Orchard scan failed at block {height}: {detail}")]
+    ScanAtBlock { height: u32, detail: String },
+
     #[error("RPC error: {0}")]
     Rpc(String),
 
@@ -76,6 +79,10 @@ impl NozyError {
             NozyError::NoteScanning(msg) => {
                 NozyError::NoteScanning(format!("{}: {}", context, msg))
             }
+            NozyError::ScanAtBlock { height, detail } => NozyError::ScanAtBlock {
+                height,
+                detail: format!("{}: {}", context, detail),
+            },
             NozyError::Rpc(msg) => NozyError::Rpc(format!("{}: {}", context, msg)),
             NozyError::Cryptographic(msg) => {
                 NozyError::Cryptographic(format!("{}: {}", context, msg))
@@ -86,6 +93,14 @@ impl NozyError {
             NozyError::InvalidInput(msg) => {
                 NozyError::InvalidInput(format!("{}: {}", context, msg))
             }
+        }
+    }
+
+    /// Block height when a scan failed mid-range (`ScanAtBlock` only).
+    pub fn scan_block_height(&self) -> Option<u32> {
+        match self {
+            NozyError::ScanAtBlock { height, .. } => Some(*height),
+            _ => None,
         }
     }
 
