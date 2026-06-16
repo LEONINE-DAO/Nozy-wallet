@@ -40,6 +40,7 @@ fn tx_record_json(tx: &SentTransactionRecord) -> serde_json::Value {
         "timestamp": tx.created_at.timestamp(),
         "broadcast": tx.broadcast_at.is_some(),
         "spent_note_ids": tx.spent_note_ids,
+        "speed_up_of_txid": tx.speed_up_of_txid,
     })
 }
 
@@ -235,4 +236,95 @@ pub async fn get_transaction(txid: String) -> Result<serde_json::Value, TauriErr
         })?;
 
     Ok(tx_record_json(&transaction))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpeedUpTransactionRequest {
+    pub original_txid: String,
+    pub password: Option<String>,
+    pub zebra_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SpeedUpTransactionResponse {
+    pub success: bool,
+    pub txid: Option<String>,
+    pub original_txid: String,
+    pub message: String,
+}
+
+#[command]
+pub async fn speed_up_transaction(
+    request: SpeedUpTransactionRequest,
+) -> Result<SpeedUpTransactionResponse, TauriError> {
+    let config = load_config();
+    let zebra_url = request
+        .zebra_url
+        .unwrap_or_else(|| config.zebra_url.clone());
+
+    let storage = WalletStorage::with_xdg_dir();
+    let password = request.password.as_deref().unwrap_or("");
+
+    let wallet = storage
+        .load_wallet(password)
+        .await
+        .map_err(|e| TauriError {
+            message: format!("Failed to load wallet: {}", e),
+            code: Some("WALLET_NOT_FOUND".to_string()),
+        })?;
+
+    match nozy::speed_up_transaction(wallet, &zebra_url, &request.original_txid).await {
+        Ok(new_txid) => Ok(SpeedUpTransactionResponse {
+            success: true,
+            txid: Some(new_txid.clone()),
+            original_txid: request.original_txid.clone(),
+            message: format!(
+                "Speed-up transaction broadcast. New TXID: {} (replaces {})",
+                new_txid, request.original_txid
+            ),
+        }),
+        Err(e) => Ok(SpeedUpTransactionResponse {
+            success: false,
+            txid: None,
+            original_txid: request.original_txid.clone(),
+            message: e.to_string(),
+        }),
+    }
+}
+
+#[derive(Debug, Serialize)]
+pub struct CheckConfirmationsResponse {
+    pub pending_updated: usize,
+    pub expired_updated: usize,
+    pub confirmations_updated: usize,
+}
+
+#[command]
+pub async fn check_transaction_confirmations(
+    zebra_url: Option<String>,
+) -> Result<CheckConfirmationsResponse, TauriError> {
+    let config = load_config();
+    let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
+    let zebra_client = ZebraClient::new(zebra_url);
+
+    let tx_storage = SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
+
+    let pending_updated = tx_storage
+        .check_all_pending_transactions(&zebra_client)
+        .await
+        .unwrap_or(0);
+    let expired_updated = tx_storage
+        .check_expired_pending_transactions(&zebra_client)
+        .await
+        .unwrap_or(0);
+    let confirmations_updated = tx_storage
+        .update_confirmations(&zebra_client)
+        .await
+        .unwrap_or(0);
+
+    Ok(CheckConfirmationsResponse {
+        pending_updated,
+        expired_updated,
+        confirmations_updated,
+    })
 }

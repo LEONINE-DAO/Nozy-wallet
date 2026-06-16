@@ -3,8 +3,10 @@ import assert from "node:assert/strict";
 import {
   buildBuiltTxStateEntry,
   buildFailedTxStateEntry,
+  canSpeedUpTx,
   findRecentBuiltTxId,
   inferInputMode,
+  isPilotTxExpired,
   nextLifecycleStateFromConfirmation,
   resolveTxidFromBroadcast
 } from "./tx-lifecycle.js";
@@ -72,4 +74,15 @@ test("findRecentBuiltTxId returns most recent matching built item", () => {
 test("nextLifecycleStateFromConfirmation maps confirm status", () => {
   assert.equal(nextLifecycleStateFromConfirmation({ confirmed: true }), "confirmed");
   assert.equal(nextLifecycleStateFromConfirmation({ confirmed: false }), "pending");
+});
+
+test("isPilotTxExpired compares tip to expiry height", () => {
+  assert.equal(isPilotTxExpired(100, 99), true);
+  assert.equal(isPilotTxExpired(99, 100), false);
+});
+
+test("canSpeedUpTx only allows expired local txs", () => {
+  assert.equal(canSpeedUpTx({ state: "expired" }), true);
+  assert.equal(canSpeedUpTx({ state: "pending" }), false);
+  assert.equal(canSpeedUpTx({ state: "failed" }), false);
 });

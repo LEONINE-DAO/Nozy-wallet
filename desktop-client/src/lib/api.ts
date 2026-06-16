@@ -113,6 +113,37 @@ export const walletApi = {
     return { data: result };
   },
 
+  checkTransactionConfirmations: async (zebraUrl?: string): Promise<{
+    data: { pending_updated: number; expired_updated: number; confirmations_updated: number };
+  }> => {
+    const result = await invoke<{
+      pending_updated: number;
+      expired_updated: number;
+      confirmations_updated: number;
+    }>("check_transaction_confirmations", { zebraUrl: zebraUrl ?? null });
+    return { data: result };
+  },
+
+  speedUpTransaction: async (opts: {
+    originalTxid: string;
+    password?: string;
+    zebraUrl?: string;
+  }): Promise<{ data: { success: boolean; txid?: string; original_txid: string; message: string } }> => {
+    const result = await invoke<{
+      success: boolean;
+      txid?: string;
+      original_txid: string;
+      message: string;
+    }>("speed_up_transaction", {
+      request: {
+        original_txid: opts.originalTxid,
+        password: opts.password ?? "",
+        zebra_url: opts.zebraUrl ?? null,
+      },
+    });
+    return { data: result };
+  },
+
   getConfig: async (): Promise<{ data: ConfigResponse }> => {
     const result = await invoke<ConfigResponse>("get_config");
     return { data: result };

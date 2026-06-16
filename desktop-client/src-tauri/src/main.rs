@@ -30,6 +30,8 @@ fn main() {
             estimate_fee,
             get_transaction_history,
             get_transaction,
+            speed_up_transaction,
+            check_transaction_confirmations,
             get_config,
             set_zebra_url,
             test_zebra_connection,

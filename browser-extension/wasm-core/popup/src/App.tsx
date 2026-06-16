@@ -11,18 +11,46 @@ import {
 import { TopNav } from "./components/TopNav";
 import { useUiStore } from "./store/uiStore";
 
-const NETWORK_RPC_PRESETS = {
-  mainnet: "https://zec.rocks:443",
-  testnet: "https://testnet.zec.rocks:443",
-  local18232: "http://127.0.0.1:18232",
-  local8232: "http://127.0.0.1:8232"
-} as const;
+/** Default when Zebrad runs natively on Windows (not WSL). */
+const DEFAULT_RPC = "http://127.0.0.1:8232";
 
-const NETWORK_LWD_PRESETS = {
-  mainnet: "https://zec.rocks:443/",
-  testnet: "https://testnet.zec.rocks:443/",
-  local: "http://127.0.0.1:9067"
-} as const;
+const NETWORK_RPC_OPTIONS = [
+  {
+    id: "mainnet-wsl",
+    label: "Mainnet — WSL Zebrad (auto-detect)",
+    url: "",
+    autodetect: true
+  },
+  {
+    id: "mainnet-local",
+    label: "Mainnet — Zebrad on this machine (127.0.0.1:8232)",
+    url: DEFAULT_RPC
+  },
+  {
+    id: "testnet-local",
+    label: "Testnet — local Zebrad (127.0.0.1:18232)",
+    url: "http://127.0.0.1:18232"
+  }
+] as const;
+
+function isWslZebradUrl(url: string): boolean {
+  return /^https?:\/\/172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+:8232\/?$/i.test(url.trim());
+}
+
+function scanPercentDisplay(scan: WalletScanProgressResult | null | undefined): number {
+  if (!scan) return 0;
+  if (typeof scan.percentInt === "number") return Math.min(100, Math.max(0, scan.percentInt));
+  return Math.min(100, Math.max(0, Math.floor(scan.percent ?? 0)));
+}
+
+function rpcPresetId(url: string): string {
+  if (isWslZebradUrl(url)) return "mainnet-wsl";
+  const hit = NETWORK_RPC_OPTIONS.find((o) => o.url && o.url === url);
+  return hit?.id ?? "custom";
+}
+
+/** Local lightwalletd only — public hosts (e.g. zec.rocks) are not offered here; they cannot scan blocks. */
+const DEFAULT_LWD_URL = "http://127.0.0.1:9067";
 
 function WelcomeView({
   onCreated,
@@ -160,22 +188,24 @@ function DashboardView({
   status,
   txs,
   onRetry,
+  onSpeedUp,
   scan
 }: {
   status: WalletStatus | null;
   txs: TxStateEntry[];
   onRetry: (id: string) => Promise<void>;
+  onSpeedUp: (id: string) => Promise<void>;
   scan: WalletScanProgressResult | null;
 }) {
   const [balanceZats, setBalanceZats] = useState<number | null>(null);
 
   const scanLabel = useMemo(() => {
     const p = scan;
-    if (!p || p.status === "idle") return "No scan yet — go to Receive tab to start";
-    if (p.status === "scanning") return `Scanning… ${p.percent ?? 0}%`;
-    if (p.status === "done") return `Scanned ${p.scannedBlocks ?? 0} blocks (complete)`;
-    if (p.status === "stopped") return `Scan stopped at ${p.percent ?? 0}%`;
-    if (p.status === "failed") return p.scanError ? `Scan failed — ${p.scanError}` : "Scan failed";
+    if (!p || p.status === "idle") return "Not synced yet — sync in Settings";
+    if (p.status === "scanning") return `Syncing… ${scanPercentDisplay(p)}%`;
+    if (p.status === "done") return `Synced ${p.scannedBlocks ?? 0} blocks`;
+    if (p.status === "stopped") return `Sync stopped at ${scanPercentDisplay(p)}%`;
+    if (p.status === "failed") return p.scanError ? `Sync failed — ${p.scanError}` : "Sync failed";
     return "";
   }, [scan]);
 
@@ -229,7 +259,15 @@ function DashboardView({
                   className="mt-1 rounded bg-white/10 px-2 py-1 text-[10px]"
                   onClick={() => onRetry(tx.id)}
                 >
-                  Retry Broadcast
+                  Retry broadcast
+                </button>
+              )}
+              {tx.state === "expired" && (
+                <button
+                  className="mt-1 rounded bg-amber-500/20 px-2 py-1 text-[10px] text-amber-100"
+                  onClick={() => onSpeedUp(tx.id)}
+                >
+                  Speed up (×4 fee)
                 </button>
               )}
             </div>
@@ -245,6 +283,7 @@ function SendView() {
   const [recipient, setRecipient] = useState("");
   const [amount, setAmount] = useState("");
   const [feeZats, setFeeZats] = useState("10000");
+  const [coreVersion, setCoreVersion] = useState<string>("");
   const [memo, setMemo] = useState("");
   const [rawTxHex, setRawTxHex] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<{
@@ -256,6 +295,16 @@ function SendView() {
     selectedNotes: Array<{ value: number; cmx: string; block_height: number }>;
   } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    extensionApi
+      .walletEstimateSendFee({ memo: memo || undefined })
+      .then((r) => {
+        setFeeZats(String(r.fee));
+        setCoreVersion(r.core_version);
+      })
+      .catch(() => undefined);
+  }, [memo]);
 
   async function runPreflight() {
     setBusy(true);
@@ -337,7 +386,7 @@ function SendView() {
           onChange={(e) => setFeeZats(e.target.value)}
         />
         <p className="mt-1 text-[10px] text-white/40">
-          Zebrad has no estimatefee RPC; set fee manually (10000 zats is a common default).
+          ZIP-317 conventional fee from core ({coreVersion || "nozy"}); adjust if needed. Zebrad has no estimatefee RPC.
         </p>
       </div>
 
@@ -405,27 +454,172 @@ function SendView() {
   );
 }
 
-/** Orchard (NU5) activation — use as scan start when you need “all Orchard” on that network. */
-const NU5_ORCHARD_START_MAINNET = 1_687_104;
-const NU5_ORCHARD_START_TESTNET = 1_842_420;
+function WalletSyncPanel({
+  status,
+  scan,
+  onScanProgress,
+  beforeSync
+}: {
+  status: WalletStatus | null;
+  scan: WalletScanProgressResult | null;
+  onScanProgress?: (p: WalletScanProgressResult) => void;
+  beforeSync?: () => Promise<void>;
+}) {
+  const [actionMsg, setActionMsg] = useState("");
+  const [infoMsg, setInfoMsg] = useState("");
+  const [busy, setBusy] = useState(false);
+  const scanning = busy || scan?.status === "scanning";
+  const percent = scanPercentDisplay(scan);
+
+  const statusLine = useMemo(() => {
+    if (!scan || scan.status === "idle") return null;
+    if (scan.status === "scanning") {
+      const done = scan.scannedBlocks ?? 0;
+      const total = scan.totalBlocks ?? 0;
+      const pct = scanPercentDisplay(scan);
+      const range =
+        typeof scan.startHeight === "number" && typeof scan.endHeight === "number"
+          ? ` · blocks ${scan.startHeight.toLocaleString()}–${scan.endHeight.toLocaleString()}`
+          : "";
+      return `${done.toLocaleString()} / ${total.toLocaleString()} blocks · ${pct}% · ${scan.discoveredNotes ?? 0} notes${range}`;
+    }
+    if (scan.status === "done") {
+      const zec = ((scan.totalBalanceZats ?? 0) / 1e8).toFixed(8);
+      return `Done — ${zec} ZEC · ${scan.discoveredNotes ?? 0} notes`;
+    }
+    if (scan.status === "failed" && scan.scanError) return scan.scanError;
+    if (scan.status === "stopped") return `Stopped at ${scan.percent ?? 0}%`;
+    return null;
+  }, [scan]);
+
+  const refreshScanProgress = async () => {
+    try {
+      const p = await extensionApi.walletScanProgress();
+      onScanProgress?.(p);
+      return p;
+    } catch {
+      return null;
+    }
+  };
+
+  const runSync = async (start: () => Promise<{ startHeight: number; endHeight: number }>) => {
+    setActionMsg("");
+    setInfoMsg("");
+    setBusy(true);
+    try {
+      if (beforeSync) await beforeSync();
+      const result = await start();
+      const blockCount = Math.max(1, result.endHeight - result.startHeight + 1);
+      const rpcNote =
+        "rpcEndpoint" in result && typeof result.rpcEndpoint === "string"
+          ? ` RPC: ${result.rpcEndpoint}.`
+          : "";
+      setInfoMsg(
+        `Scan started: ${result.startHeight.toLocaleString()} → ${result.endHeight.toLocaleString()} (${blockCount.toLocaleString()} blocks).${rpcNote} Large scans stay at 0% for a while — watch block counts below.`
+      );
+      await refreshScanProgress();
+      // Poll a few times quickly so the UI updates before the 2s app interval.
+      for (let i = 0; i < 5; i += 1) {
+        await new Promise((r) => setTimeout(r, 400));
+        const p = await refreshScanProgress();
+        if (p?.status === "scanning" && (p.scannedBlocks ?? 0) > 0) break;
+        if (p?.status === "done" || p?.status === "failed") break;
+      }
+    } catch (e) {
+      setActionMsg((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  if (!status?.unlocked) return null;
+
+  return (
+    <div className="rounded border border-white/10 bg-white/5 p-3 text-sm space-y-2">
+      <div className="font-medium text-white/90">Sync wallet</div>
+      <p className="text-[11px] leading-snug text-white/50">
+        Scans Orchard notes via your RPC node (save Network above first). Required before sending.
+      </p>
+      {(scanning || scan?.status === "scanning") && (
+        <div className="h-2 w-full rounded bg-white/10 overflow-hidden">
+          <div
+            className="h-full bg-amber-500 transition-all duration-500"
+            style={{ width: `${Math.max(scanning && percent === 0 ? 2 : 0, percent)}%` }}
+          />
+        </div>
+      )}
+      <div className="flex flex-wrap gap-2">
+        {scan?.status !== "scanning" && !busy ? (
+          <>
+            <button
+              type="button"
+              className="rounded bg-amber-500 px-3 py-2 text-sm font-medium text-black disabled:opacity-50"
+              disabled={busy}
+              onClick={() =>
+                void runSync(() => extensionApi.walletStartScan({ useBirthdayRange: true }))
+              }
+            >
+              Sync to tip
+            </button>
+            <button
+              type="button"
+              className="rounded bg-white/10 px-3 py-2 text-xs text-white/80 disabled:opacity-50"
+              disabled={busy}
+              onClick={() => void runSync(() => extensionApi.walletStartScan(20_000))}
+            >
+              Last 20k blocks
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="rounded bg-red-600 px-3 py-2 text-sm text-white"
+            onClick={async () => {
+              setActionMsg("");
+              setInfoMsg("");
+              try {
+                await extensionApi.walletStopScan();
+                await refreshScanProgress();
+              } catch (_) {
+                /* ignore */
+              }
+            }}
+          >
+            Stop sync
+          </button>
+        )}
+      </div>
+      {typeof status.orchardBirthdayHeight === "number" && (
+        <div className="text-[10px] text-white/40">
+          Birthday height: {status.orchardBirthdayHeight.toLocaleString()}
+        </div>
+      )}
+      {infoMsg && <div className="text-xs text-green-300/90">{infoMsg}</div>}
+      {statusLine && <div className="text-xs text-white/65">{statusLine}</div>}
+      {scan?.lastRpcError && scan.status === "scanning" && (
+        <div className="text-[10px] text-amber-200/80">RPC: {scan.lastRpcError}</div>
+      )}
+      {actionMsg && <div className="text-xs text-red-300">{actionMsg}</div>}
+    </div>
+  );
+}
 
 function ReceiveView({ status }: { status: WalletStatus | null }) {
   return (
-    <div className="space-y-2 p-4 text-sm">
+    <div className="space-y-3 p-4 text-sm">
       <h2 className="text-base font-semibold">Receive</h2>
-      <div className="rounded border border-white/10 bg-white/5 p-3 break-all">
+      <div className="rounded border border-white/10 bg-white/5 p-3 break-all text-[11px] font-mono">
         {status?.address || "No address yet"}
       </div>
-      <p className="text-[11px] leading-snug text-white/60">
-        Share this unified address to receive shielded ZEC. Auto-sync runs in the background while unlocked.
-      </p>
-      <p className="text-[10px] leading-snug text-white/40">
-        Use the <span className="text-white/60">Scan</span> tab for manual ranges, birthday settings, and recovery rescans.
+      <p className="text-[11px] leading-snug text-white/55">
+        Share this unified address to receive shielded ZEC on mainnet. After receiving, sync in{" "}
+        <span className="text-white/75">Settings</span> to update your balance.
       </p>
     </div>
   );
 }
 
+/** Advanced scan controls (birthday, custom heights) — tucked under Settings → Advanced. */
 function ScanView({
   status,
   scan,
@@ -442,7 +636,9 @@ function ScanView({
   const [birthdayEditStr, setBirthdayEditStr] = useState("");
 
   const scanning = scan?.status === "scanning";
-  const percent = Math.min(100, Math.max(0, scan?.percent ?? 0));
+  const percent = scanPercentDisplay(scan);
+  const NU5_ORCHARD_START_MAINNET = 1_687_104;
+  const NU5_ORCHARD_START_TESTNET = 1_842_420;
 
   const scanInfo = useMemo(() => {
     if (!scan) return "";
@@ -456,7 +652,7 @@ function ScanView({
         typeof scan.lastRpcError === "string" && scan.lastRpcError.trim()
           ? ` — RPC: ${scan.lastRpcError.slice(0, 120)}${scan.lastRpcError.length > 120 ? "…" : ""}`
           : "";
-      return `Scanning… ${scan.percent ?? 0}% (${scan.scannedBlocks ?? 0}/${scan.totalBlocks ?? 0} blocks, ${scan.discoveredNotes ?? 0} notes, ${elapsed}s)${range}${warn}`;
+      return `Scanning… ${scanPercentDisplay(scan)}% (${scan.scannedBlocks ?? 0}/${scan.totalBlocks ?? 0} blocks, ${scan.discoveredNotes ?? 0} notes, ${elapsed}s)${range}${warn}`;
     }
     if (scan.status === "done") {
       const elapsed = ((scan.elapsed ?? 0) / 1000).toFixed(1);
@@ -464,7 +660,7 @@ function ScanView({
       return `Done in ${elapsed}s — ${scan.scannedBlocks ?? 0} blocks, ${scan.discoveredNotes ?? 0} notes, balance: ${zec} ZEC${range}`;
     }
     if (scan.status === "stopped") {
-      return `Scan stopped at ${scan.percent ?? 0}% (${scan.scannedBlocks ?? 0}/${scan.totalBlocks ?? 0} blocks)${range}`;
+      return `Scan stopped at ${scanPercentDisplay(scan)}% (${scan.scannedBlocks ?? 0}/${scan.totalBlocks ?? 0} blocks)${range}`;
     }
     if (scan.status === "failed") {
       return scan.scanError ? `Scan failed: ${scan.scanError}` : "Scan failed.";
@@ -591,8 +787,8 @@ function ScanView({
   };
 
   return (
-    <div className="space-y-2 p-4 text-sm">
-      <h2 className="text-base font-semibold">Scan</h2>
+    <div className="space-y-2 text-sm">
+      <h3 className="text-sm font-medium text-white/80">Custom scan</h3>
 
       {scanning && (
         <div className="h-1.5 w-full rounded bg-white/10 overflow-hidden">
@@ -604,13 +800,11 @@ function ScanView({
       )}
 
       <p className="text-[10px] leading-snug text-white/45">
-        <span className="text-white/60">Orchard-only</span> scan. Default scan uses your saved{" "}
-        <span className="text-white/60">creation height</span> (chain tip at create/restore, unless you change it) through
-        tip — no blocks before the wallet existed. Restored seed with older funds: lower birthday or use{" "}
-        <span className="text-white/60">NU5 → tip</span> / <span className="text-white/60">Full chain</span>.
+        For recovery or older funds: set birthday height or pick a block range. Normal use:{" "}
+        <span className="text-white/60">Sync to tip</span> above.
       </p>
 
-      <div className="rounded border border-white/10 bg-white/5 p-2 space-y-2 text-[11px]">
+      <div className="rounded border border-white/10 bg-black/20 p-2 space-y-2 text-[11px]">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-white/55">
             Chain tip:{" "}
@@ -646,14 +840,6 @@ function ScanView({
             />
           </label>
         </div>
-        <button
-          type="button"
-          disabled={scanning}
-          className="w-full rounded bg-amber-500 py-1.5 text-[12px] font-medium text-black disabled:opacity-40"
-          onClick={() => void startScanBirthdayToTip()}
-        >
-          Start scan (saved birthday → tip)
-        </button>
         <div className="border-t border-white/10 pt-2 space-y-1">
           <div className="text-[10px] text-white/45">
             Saved Orchard birthday (default scan start):{" "}
@@ -692,35 +878,11 @@ function ScanView({
         </div>
       </div>
 
-      <div className="text-[10px] text-white/40 space-y-0.5">
-        <div>Quick presets (end = current chain tip)</div>
-        <div className="text-white/35 leading-snug">
-          <span className="text-white/50">Last N:</span> scans only block heights{" "}
-          <span className="font-mono text-white/55">tip − N</span> through <span className="font-mono text-white/55">tip</span>{" "}
-          (both inclusive; that is <span className="font-mono text-white/55">N + 1</span> heights when the chain is long
-          enough). Your saved birthday is <span className="text-white/50">not</span> used for these buttons. Nothing
-          outside that interval is scanned.
-        </div>
-      </div>
       <div className="flex flex-wrap gap-2 items-center">
         {!scan ? (
           <span className="text-xs text-white/50 py-1">Checking scan status…</span>
         ) : !scanning ? (
           <>
-            <button
-              type="button"
-              className="rounded bg-emerald-600 px-2 py-1 text-[11px] font-medium text-white"
-              onClick={() => void startScanBirthdayToTip()}
-            >
-              Birthday → tip
-            </button>
-            <button
-              type="button"
-              className="rounded bg-amber-400 px-2 py-1 text-[11px] text-black"
-              onClick={() => void startScanWindow(500)}
-            >
-              Last 500
-            </button>
             <button
               type="button"
               className="rounded bg-amber-500 px-2 py-1 text-[11px] text-black"
@@ -731,16 +893,9 @@ function ScanView({
             <button
               type="button"
               className="rounded bg-amber-600/90 px-2 py-1 text-[11px] text-black"
-              onClick={() => void startScanWindow(100_000)}
+              onClick={() => void startScanCustomFields()}
             >
-              Last 100k
-            </button>
-            <button
-              type="button"
-              className="rounded bg-amber-700/80 px-2 py-1 text-[11px] text-white"
-              onClick={() => void startScanWindow(500_000)}
-            >
-              Last 500k
+              Custom range
             </button>
             {chainTip !== null && (
               <>
@@ -797,7 +952,7 @@ function ScanView({
 
 function CompanionView() {
   const [baseUrl, setBaseUrl] = useState("http://127.0.0.1:3000");
-  const [lwdUrl, setLwdUrl] = useState("https://testnet.zec.rocks:443/");
+  const [lwdUrl, setLwdUrl] = useState<string>(DEFAULT_LWD_URL);
   const [log, setLog] = useState("");
   const [busy, setBusy] = useState(false);
   const [syncStart, setSyncStart] = useState("0");
@@ -823,21 +978,11 @@ function CompanionView() {
   };
 
   return (
-    <div className="space-y-3 p-4 text-sm">
-      <h2 className="text-base font-semibold">Local API (lightwalletd)</h2>
-      <p className="text-[11px] leading-relaxed text-white/55">
-        <span className="font-medium text-white/75">Easiest full wallet:</span> install{" "}
-        <a
-          className="text-amber-300 underline"
-          href="https://github.com/LEONINE-DAO/Nozy-wallet/releases"
-          target="_blank"
-          rel="noreferrer"
-        >
-          Nozy Desktop
-        </a>{" "}
-        (Tauri). This tab is the <span className="text-white/70">lighter path</span>: WASM in the
-        extension + <span className="font-mono text-white/70">nozywallet-api</span> on your PC for
-        zeaking/lightwalletd compact sync—no Zebrad required on the same machine for that sync step.
+    <div className="space-y-3 text-sm">
+      <h3 className="text-sm font-medium text-white/80">Local API (optional)</h3>
+      <p className="text-[11px] leading-relaxed text-white/50">
+        Optional: run <span className="font-mono text-white/70">nozywallet-api</span> or Nozy Desktop
+        for lightwalletd compact sync. Zebrad JSON-RPC in Settings is enough for scan + send.
       </p>
 
       <div className="rounded border border-white/10 bg-white/5 p-3 space-y-2">
@@ -851,60 +996,24 @@ function CompanionView() {
           />
         </div>
         <div>
-          <div className="mb-1 text-[11px] text-white/60">lightwalletd gRPC (optional override)</div>
-          <div className="mb-2">
-            <div className="mb-1 text-[11px] text-white/60">Network preset</div>
-            <select
-              className="w-full rounded bg-white/10 p-2 text-xs outline-none"
-              onChange={(e) => {
-                const v = e.target.value;
-                if (v === "mainnet") setLwdUrl(NETWORK_LWD_PRESETS.mainnet);
-                else if (v === "testnet") setLwdUrl(NETWORK_LWD_PRESETS.testnet);
-                else if (v === "local") setLwdUrl(NETWORK_LWD_PRESETS.local);
-              }}
-              value={
-                lwdUrl === NETWORK_LWD_PRESETS.mainnet
-                  ? "mainnet"
-                  : lwdUrl === NETWORK_LWD_PRESETS.testnet
-                    ? "testnet"
-                    : lwdUrl === NETWORK_LWD_PRESETS.local
-                      ? "local"
-                      : "custom"
-              }
-            >
-              <option value="testnet">Testnet</option>
-              <option value="mainnet">Mainnet</option>
-              <option value="local">Local</option>
-              <option value="custom">Custom</option>
-            </select>
-          </div>
+          <div className="mb-1 text-[11px] text-white/60">lightwalletd gRPC (optional, local only)</div>
+          <p className="mb-2 text-[10px] leading-snug text-white/40">
+            For compact sync via the desktop API — not used for in-extension block scan (use Zebrad RPC in
+            Settings).
+          </p>
           <input
             className="w-full rounded bg-white/10 p-2 text-xs outline-none font-mono"
             value={lwdUrl}
             onChange={(e) => setLwdUrl(e.target.value)}
-            placeholder="https://testnet.zec.rocks:443/"
+            placeholder={DEFAULT_LWD_URL}
           />
           <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
             <button
               type="button"
               className="rounded bg-white/10 px-2 py-1"
-              onClick={() => setLwdUrl("https://testnet.zec.rocks:443/")}
+              onClick={() => setLwdUrl(DEFAULT_LWD_URL)}
             >
-              Testnet zec.rocks
-            </button>
-            <button
-              type="button"
-              className="rounded bg-white/10 px-2 py-1"
-              onClick={() => setLwdUrl("https://zec.rocks:443/")}
-            >
-              Mainnet zec.rocks
-            </button>
-            <button
-              type="button"
-              className="rounded bg-white/10 px-2 py-1"
-              onClick={() => setLwdUrl("http://127.0.0.1:9067")}
-            >
-              Local 9067
+              Reset to local
             </button>
           </div>
         </div>
@@ -1072,91 +1181,170 @@ function SettingsView({
   endpoint,
   onEndpointChange,
   onLock,
-  onSetAutoLock
+  onSetAutoLock,
+  status,
+  scan,
+  onWalletMetaChanged,
+  onScanProgress
 }: {
   endpoint: string;
   onEndpointChange: (url: string) => void;
   onLock: () => void;
   onSetAutoLock: (ms: number) => Promise<void>;
+  status: WalletStatus | null;
+  scan: WalletScanProgressResult | null;
+  onWalletMetaChanged?: () => void;
+  onScanProgress?: (p: WalletScanProgressResult) => void;
 }) {
   const [value, setValue] = useState(endpoint);
   const [msg, setMsg] = useState<string | null>(null);
+  const [rpcBusy, setRpcBusy] = useState(false);
   const [autoLockMin, setAutoLockMin] = useState("15");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showCustomRpc, setShowCustomRpc] = useState(() => rpcPresetId(endpoint) === "custom");
+  const preset = rpcPresetId(value);
+  const showWslUrlField = preset === "mainnet-wsl" || isWslZebradUrl(value);
 
   return (
     <div className="space-y-3 p-4 text-sm">
-      <h2 className="text-base font-semibold">Settings</h2>
+      <h2 className="text-base font-semibold">
+        Settings
+        <span className="ml-2 text-[10px] font-normal text-white/35">
+          v{chrome.runtime.getManifest().version}
+        </span>
+      </h2>
       <div>
-        <div className="mb-1 text-white/70">RPC endpoint</div>
-        <div className="mb-2">
-          <div className="mb-1 text-[11px] text-white/60">Network preset</div>
-          <select
-            className="w-full rounded bg-white/10 p-2 text-xs outline-none"
-            onChange={(e) => {
-              const v = e.target.value;
-              if (v === "mainnet") setValue(NETWORK_RPC_PRESETS.mainnet);
-              else if (v === "testnet") setValue(NETWORK_RPC_PRESETS.testnet);
-              else if (v === "local18232") setValue(NETWORK_RPC_PRESETS.local18232);
-              else if (v === "local8232") setValue(NETWORK_RPC_PRESETS.local8232);
-            }}
-            value={
-              value === NETWORK_RPC_PRESETS.mainnet
-                ? "mainnet"
-                : value === NETWORK_RPC_PRESETS.testnet
-                  ? "testnet"
-                  : value === NETWORK_RPC_PRESETS.local18232
-                    ? "local18232"
-                    : value === NETWORK_RPC_PRESETS.local8232
-                      ? "local8232"
-                      : "custom"
+        <div className="mb-1 text-white/70">Network</div>
+        <select
+          className="w-full rounded bg-white/10 p-2 text-xs outline-none"
+          value={preset === "custom" ? "custom" : preset}
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "custom") {
+              setShowCustomRpc(true);
+              return;
             }
-          >
-            <option value="mainnet">Mainnet</option>
-            <option value="testnet">Testnet</option>
-            <option value="local18232">Local 18232</option>
-            <option value="local8232">Local 8232</option>
-            <option value="custom">Custom</option>
-          </select>
-        </div>
-        <input
-          className="w-full rounded bg-white/10 p-2 outline-none"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        <div className="mt-2 flex flex-wrap gap-2 text-xs">
-          <button
-            className="rounded bg-white/10 px-2 py-1"
-            onClick={() => setValue("http://127.0.0.1:18232")}
-          >
-            Local 18232
-          </button>
-          <button
-            className="rounded bg-white/10 px-2 py-1"
-            onClick={() => setValue("http://127.0.0.1:8232")}
-          >
-            Local 8232
-          </button>
-          <button
-            className="rounded bg-white/10 px-2 py-1"
-            onClick={() => setValue("https://zec.rocks:443")}
-          >
-            zec.rocks:443
-          </button>
-        </div>
-        <button
-          className="mt-2 rounded bg-amber-500 px-3 py-1 text-black"
-          onClick={async () => {
-            await onEndpointChange(value);
-            setMsg("Saved.");
+            setShowCustomRpc(false);
+            const opt = NETWORK_RPC_OPTIONS.find((o) => o.id === v);
+            if (opt) setValue(opt.url);
           }}
         >
-          Save
-        </button>
-        {msg && <div className="mt-1 text-xs text-green-300">{msg}</div>}
-        <div className="mt-1 text-[11px] text-white/60">
-          Tip: `zec.rocks443` is accepted and auto-normalized to `https://zec.rocks:443`.
+          {NETWORK_RPC_OPTIONS.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.label}
+            </option>
+          ))}
+          <option value="custom">Custom URL…</option>
+        </select>
+        {preset === "mainnet-wsl" && (
+          <p className="mt-2 text-[11px] text-amber-200/80 leading-snug">
+            Zebrad in WSL is not reachable at 127.0.0.1 from Windows. Click{" "}
+            <span className="font-medium">Auto-detect</span> (probes WSL IP) or paste{" "}
+            <span className="font-mono">http://&lt;WSL-IP&gt;:8232</span> from{" "}
+            <span className="font-mono">wsl -d Ubuntu -- hostname -I</span>.
+          </p>
+        )}
+        {(showCustomRpc || preset === "custom" || showWslUrlField) && (
+          <input
+            className="mt-2 w-full rounded bg-white/10 p-2 text-xs outline-none font-mono"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="http://172.20.199.206:8232"
+          />
+        )}
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            className="rounded bg-amber-500 px-3 py-1.5 text-sm font-medium text-black disabled:opacity-50"
+            disabled={rpcBusy}
+            onClick={async () => {
+              setRpcBusy(true);
+              setMsg(null);
+              try {
+                const { rpcEndpoint, blockCount } = await extensionApi.rpcAutodetect();
+                setValue(rpcEndpoint);
+                await onEndpointChange(rpcEndpoint);
+                setMsg(`Detected Zebrad at ${rpcEndpoint} (${blockCount.toLocaleString()} blocks).`);
+              } catch (e) {
+                setMsg((e as Error).message);
+              } finally {
+                setRpcBusy(false);
+              }
+            }}
+          >
+            {rpcBusy ? "Detecting…" : "Auto-detect Zebrad"}
+          </button>
+          <button
+            className="rounded bg-white/10 px-3 py-1.5 text-sm disabled:opacity-50"
+            disabled={rpcBusy || !value.trim()}
+            onClick={async () => {
+              setRpcBusy(true);
+              setMsg(null);
+              try {
+                await extensionApi.rpcProbeEndpoint(value.trim());
+                setMsg(`RPC OK at ${value.trim()}`);
+              } catch (e) {
+                setMsg((e as Error).message);
+              } finally {
+                setRpcBusy(false);
+              }
+            }}
+          >
+            Test RPC
+          </button>
+          <button
+            className="rounded bg-white/10 px-3 py-1.5 text-sm disabled:opacity-50"
+            disabled={rpcBusy || !value.trim()}
+            onClick={async () => {
+              await onEndpointChange(value);
+              setMsg("Network saved.");
+            }}
+          >
+            Save network
+          </button>
         </div>
+        {msg && (
+          <div
+            className={`mt-1 text-xs leading-snug ${
+              msg.includes("OK") || msg.includes("Detected") || msg === "Network saved."
+                ? "text-green-300"
+                : "text-amber-200"
+            }`}
+          >
+            {msg}
+          </div>
+        )}
+        <p className="mt-2 text-[11px] text-white/45 leading-snug">
+          Block scan needs Zebrad JSON-RPC (getblock / getblockhash). On Windows + WSL use your WSL IP,
+          not 127.0.0.1 — use Auto-detect above.
+        </p>
       </div>
+
+      <WalletSyncPanel
+        status={status}
+        scan={scan}
+        onScanProgress={onScanProgress}
+        beforeSync={async () => {
+          const trimmed = value.trim();
+          const looksPlaceholder = /x\.x\.x/i.test(trimmed) || !trimmed;
+          const looksWindowsLoopback =
+            /^https?:\/\/127\.0\.0\.1:8232\/?$/i.test(trimmed) ||
+            /^https?:\/\/localhost:8232\/?$/i.test(trimmed);
+          if (looksPlaceholder || looksWindowsLoopback) {
+            const { rpcEndpoint, blockCount } = await extensionApi.rpcAutodetect();
+            setValue(rpcEndpoint);
+            await onEndpointChange(rpcEndpoint);
+            setMsg(
+              `Using Zebrad at ${rpcEndpoint} (${blockCount.toLocaleString()} blocks) for sync.`
+            );
+            return;
+          }
+          if (trimmed !== endpoint) {
+            await onEndpointChange(trimmed);
+            setMsg("Network saved for sync.");
+          }
+        }}
+      />
+
       <button className="rounded bg-white/10 px-3 py-1" onClick={onLock}>
         Lock wallet
       </button>
@@ -1180,6 +1368,22 @@ function SettingsView({
           </button>
         </div>
       </div>
+
+      <button
+        type="button"
+        className="w-full rounded bg-white/10 px-3 py-2 text-left text-xs text-white/70"
+        onClick={() => setShowAdvanced((v) => !v)}
+      >
+        {showAdvanced ? "▾ Hide advanced" : "▸ Advanced (birthday, API, custom scan)"}
+      </button>
+      {showAdvanced && (
+        <div className="space-y-3 rounded border border-white/10 bg-white/5 p-3">
+          <ScanView status={status} scan={scan} onWalletMetaChanged={onWalletMetaChanged} />
+          <div className="border-t border-white/10 pt-3">
+            <CompanionView />
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -1253,7 +1457,7 @@ export function App() {
   const [bootDebug, setBootDebug] = useState<string | null>(null);
   /** Orchard block scan progress; polled app-wide so it keeps updating when you leave Receive. */
   const [scanProgress, setScanProgress] = useState<WalletScanProgressResult | null>(null);
-  const endpoint = useMemo(() => status?.rpcEndpoint || "http://127.0.0.1:8232", [status]);
+  const endpoint = useMemo(() => status?.rpcEndpoint || DEFAULT_RPC, [status]);
 
   const refresh = async () => {
     try {
@@ -1306,12 +1510,30 @@ export function App() {
       }
     }
     tick();
-    const id = setInterval(tick, 2000);
+    let id = setInterval(tick, 2000);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
   }, [status?.unlocked]);
+
+  // Poll faster while scanning so each integer % step is visible.
+  useEffect(() => {
+    if (!status?.unlocked || scanProgress?.status !== "scanning") return;
+    let cancelled = false;
+    const fast = setInterval(async () => {
+      try {
+        const p = await extensionApi.walletScanProgress();
+        if (!cancelled) setScanProgress(p);
+      } catch {
+        /* ignore transient poll errors */
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearInterval(fast);
+    };
+  }, [status?.unlocked, scanProgress?.status]);
 
   const autoSyncHeights = (() => {
     if (!status?.unlocked || !scanProgress) return null;
@@ -1352,17 +1574,24 @@ export function App() {
 
       {status?.unlocked && scanProgress?.status === "scanning" && (
         <div className="mx-3 mt-2 rounded border border-amber-500/35 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          <div className="mb-1.5 h-1.5 w-full overflow-hidden rounded bg-black/25">
+            <div
+              className="h-full bg-amber-400 transition-all duration-300"
+              style={{
+                width: `${Math.max(2, scanPercentDisplay(scanProgress))}%`
+              }}
+            />
+          </div>
           <span className="font-medium">
-            Auto-sync: ON
+            Syncing {scanPercentDisplay(scanProgress)}%
             {autoSyncHeights
-              ? ` (${autoSyncHeights.synced.toLocaleString()}/${autoSyncHeights.tip.toLocaleString()})`
+              ? ` · ${autoSyncHeights.synced.toLocaleString()}/${autoSyncHeights.tip.toLocaleString()} blocks`
               : ""}
           </span>{" "}
-          {Math.min(100, Math.max(0, Number(scanProgress.percent ?? 0))).toFixed(2)}% ·{" "}
-          {(scanProgress.scannedBlocks ?? 0).toLocaleString()}/{(scanProgress.totalBlocks ?? 0).toLocaleString()} blocks ·{" "}
-          {scanProgress.discoveredNotes ?? 0} notes
+          · {(scanProgress.scannedBlocks ?? 0).toLocaleString()}/
+          {(scanProgress.totalBlocks ?? 0).toLocaleString()} · {scanProgress.discoveredNotes ?? 0} notes
           <span className="mt-1 block text-[10px] leading-snug text-white/45">
-            Runs in the background while the wallet stays unlocked — switch tabs freely.
+            Keeps running in the background — switch tabs or close this popup until sync finishes.
           </span>
         </div>
       )}
@@ -1388,17 +1617,21 @@ export function App() {
             await extensionApi.walletRetryBroadcast(id);
             await refresh();
           }}
+          onSpeedUp={async (id) => {
+            await extensionApi.walletSpeedUp(id);
+            await refresh();
+          }}
         />
       )}
       {view === "send" && <SendView />}
       {view === "receive" && <ReceiveView status={status} />}
-      {view === "scan" && (
-        <ScanView status={status} scan={scanProgress} onWalletMetaChanged={() => void refresh()} />
-      )}
-      {view === "companion" && <CompanionView />}
       {view === "settings" && (
         <SettingsView
           endpoint={endpoint}
+          status={status}
+          scan={scanProgress}
+          onWalletMetaChanged={() => void refresh()}
+          onScanProgress={setScanProgress}
           onEndpointChange={async (url) => {
             await extensionApi.rpcSetEndpoint(url);
             await refresh();
