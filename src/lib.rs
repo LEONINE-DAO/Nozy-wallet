@@ -85,6 +85,8 @@ pub mod transaction_history;
 #[cfg(feature = "native")]
 pub mod transaction_tracker;
 #[cfg(feature = "native")]
+pub mod tx_lifecycle;
+#[cfg(feature = "native")]
 pub mod wallet_sync;
 #[cfg(feature = "native")]
 pub mod zeaking_adapter;
@@ -140,7 +142,8 @@ pub use note_index::NoteIndex;
 pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
 pub use notes::{
-    load_wallet_notes, merge_scanned_notes, save_wallet_notes, wallet_unspent_balance_zatoshis,
+    load_wallet_notes, mark_wallet_notes_spent_from_spendables, merge_scanned_notes,
+    release_wallet_notes_by_nullifier_hex, save_wallet_notes, wallet_unspent_balance_zatoshis,
     NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote,
 };
 #[cfg(feature = "native")]
@@ -176,6 +179,8 @@ pub use transaction_builder::ZcashTransactionBuilder;
 pub use transaction_history::{
     SentTransactionRecord, TransactionStatus, TransactionType, TransactionView,
 };
+#[cfg(feature = "native")]
+pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
 #[cfg(feature = "native")]
 pub use wallet_sync::{
     resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncOptions, WalletSyncResult,

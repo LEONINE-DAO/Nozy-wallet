@@ -5,6 +5,14 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::OnceLock;
+use tokio::sync::Mutex;
+
+static WALLET_SYNC_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+
+fn wallet_sync_lock() -> &'static Mutex<()> {
+    WALLET_SYNC_LOCK.get_or_init(|| Mutex::new(()))
+}
 
 #[allow(dead_code)]
 pub fn error_response(
@@ -86,7 +94,14 @@ pub struct BalanceResponse {
 pub struct SyncResponse {
     pub success: bool,
     pub balance_zec: f64,
+    pub balance_zatoshis: u64,
+    /// Total unspent notes in the persisted wallet cache (not just this scan).
     pub notes_found: usize,
+    pub total_notes: usize,
+    pub new_notes_in_scan: usize,
+    pub last_scan_height: u32,
+    pub chain_tip: u32,
+    pub already_synced: bool,
     pub message: String,
 }
 
@@ -391,6 +406,8 @@ pub async fn sync_wallet(
 ) -> Result<ResponseJson<SyncResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::{sync_wallet_notes, WalletSyncOptions};
 
+    let _sync_guard = wallet_sync_lock().lock().await;
+
     let (wallet, _storage) = load_wallet_with_password(payload.password)
         .await
         .map_err(|e| {
@@ -410,14 +427,28 @@ pub async fn sync_wallet(
     match sync_wallet_notes(wallet, options).await {
         Ok(result) => {
             let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
+            let message = if result.already_synced {
+                format!(
+                    "Wallet already synced to tip (height {}). Cached balance: {balance_zec:.8} ZEC",
+                    result.chain_tip
+                )
+            } else {
+                format!(
+                    "Sync completed for blocks {}-{}. Balance: {balance_zec:.8} ZEC",
+                    result.scan_start, result.scan_end
+                )
+            };
             Ok(ResponseJson(SyncResponse {
                 success: true,
                 balance_zec,
+                balance_zatoshis: result.balance_zatoshis,
                 notes_found: result.unspent_notes,
-                message: format!(
-                    "Sync completed for blocks {}-{}. Balance: {balance_zec:.8} ZEC",
-                    result.scan_start, result.scan_end
-                ),
+                total_notes: result.total_notes,
+                new_notes_in_scan: result.new_notes_in_scan,
+                last_scan_height: result.last_scan_height,
+                chain_tip: result.chain_tip,
+                already_synced: result.already_synced,
+                message,
             }))
         }
         Err(e) => Err((
@@ -606,6 +637,8 @@ pub async fn send_transaction(
                     .iter()
                     .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
                     .collect();
+
+                let _ = nozy::mark_wallet_notes_spent_from_spendables(&spendable_notes);
 
                 let mut tx_record = SentTransactionRecord::new_pilot(
                     network_txid.clone(),
@@ -1048,6 +1081,10 @@ pub async fn check_transaction_confirmations(
         .check_all_pending_transactions(&zebra_client)
         .await
         .unwrap_or(0);
+    let expired_updated = tx_storage
+        .check_expired_pending_transactions(&zebra_client)
+        .await
+        .unwrap_or(0);
     let updated_confirmations = tx_storage
         .update_confirmations(&zebra_client)
         .await
@@ -1055,8 +1092,65 @@ pub async fn check_transaction_confirmations(
 
     Ok(ResponseJson(serde_json::json!({
         "pending_updated": updated_pending,
+        "expired_updated": expired_updated,
         "confirmations_updated": updated_confirmations
     })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SpeedUpTransactionRequest {
+    pub original_txid: String,
+    pub password: Option<String>,
+    pub zebra_url: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct SpeedUpTransactionResponse {
+    pub success: bool,
+    pub txid: Option<String>,
+    pub original_txid: String,
+    pub message: String,
+}
+
+pub async fn speed_up_transaction(
+    Json(payload): Json<SpeedUpTransactionRequest>,
+) -> Result<ResponseJson<SpeedUpTransactionResponse>, (StatusCode, ResponseJson<serde_json::Value>)>
+{
+    use nozy::{load_config, speed_up_transaction as core_speed_up};
+
+    let config = load_config();
+    let zebra_url = payload
+        .zebra_url
+        .unwrap_or_else(|| config.zebra_url.clone());
+
+    let (wallet, _storage) = load_wallet_with_password(payload.password)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::UNAUTHORIZED,
+                ResponseJson(serde_json::json!({
+                    "error": e
+                })),
+            )
+        })?;
+
+    match core_speed_up(wallet, &zebra_url, &payload.original_txid).await {
+        Ok(new_txid) => Ok(ResponseJson(SpeedUpTransactionResponse {
+            success: true,
+            txid: Some(new_txid.clone()),
+            original_txid: payload.original_txid.clone(),
+            message: format!(
+                "Speed-up transaction broadcast. New TXID: {new_txid} (replaces {})",
+                payload.original_txid
+            ),
+        })),
+        Err(e) => Err((
+            StatusCode::BAD_REQUEST,
+            ResponseJson(serde_json::json!({
+                "error": e.to_string()
+            })),
+        )),
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
