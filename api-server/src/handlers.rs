@@ -367,18 +367,9 @@ pub async fn generate_address(
 
 pub async fn get_balance(
 ) -> Result<ResponseJson<BalanceResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use std::fs;
+    use nozy::{load_wallet_notes, wallet_unspent_balance_zatoshis};
 
-    use nozy::paths::get_wallet_data_dir;
-    let notes_path = get_wallet_data_dir().join("notes.json");
-    if !notes_path.exists() {
-        return Ok(ResponseJson(BalanceResponse {
-            balance_zec: 0.0,
-            balance_zatoshis: 0,
-        }));
-    }
-
-    let content = fs::read_to_string(notes_path).map_err(|e| {
+    let notes = load_wallet_notes().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({
@@ -387,22 +378,7 @@ pub async fn get_balance(
         )
     })?;
 
-    let parsed: serde_json::Value = serde_json::from_str(&content).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseJson(serde_json::json!({
-                "error": format!("Failed to parse notes: {}", e)
-            })),
-        )
-    })?;
-
-    let total_zat: u64 = parsed
-        .as_array()
-        .unwrap_or(&vec![])
-        .iter()
-        .filter(|n| !n.get("spent").and_then(|v| v.as_bool()).unwrap_or(false))
-        .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
-        .sum();
+    let total_zat = wallet_unspent_balance_zatoshis(&notes);
 
     Ok(ResponseJson(BalanceResponse {
         balance_zec: total_zat as f64 / 100_000_000.0,
@@ -413,12 +389,7 @@ pub async fn get_balance(
 pub async fn sync_wallet(
     Json(payload): Json<SyncRequest>,
 ) -> Result<ResponseJson<SyncResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, update_last_scan_height, NoteScanner, ZebraClient};
-
-    let config = load_config();
-    let zebra_url = payload
-        .zebra_url
-        .unwrap_or_else(|| config.zebra_url.clone());
+    use nozy::{sync_wallet_notes, WalletSyncOptions};
 
     let (wallet, _storage) = load_wallet_with_password(payload.password)
         .await
@@ -431,40 +402,22 @@ pub async fn sync_wallet(
             )
         })?;
 
-    let zebra_client = ZebraClient::new(zebra_url.clone());
-    let effective_start = payload.start_height.or(config.last_scan_height);
+    let mut options = WalletSyncOptions::api_default();
+    options.start_height = payload.start_height;
+    options.end_height = payload.end_height;
+    options.zebra_url = payload.zebra_url;
 
-    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
-
-    match note_scanner
-        .scan_notes(effective_start, payload.end_height)
-        .await
-    {
-        Ok((result, _spendable_notes)) => {
-            use nozy::paths::get_wallet_data_dir;
-            use std::fs;
-            let notes_dir = get_wallet_data_dir();
-            if !notes_dir.exists() {
-                let _ = fs::create_dir_all(&notes_dir);
-            }
-            let notes_path = notes_dir.join("notes.json");
-            if let Ok(serialized) = serde_json::to_string_pretty(&result.notes) {
-                let _ = fs::write(&notes_path, serialized);
-            }
-
-            if let Some(end) = payload.end_height {
-                let _ = update_last_scan_height(end);
-            } else if let Ok(block_count) = zebra_client.get_block_count().await {
-                let _ = update_last_scan_height(block_count);
-            }
-
-            let balance_zec = result.total_balance as f64 / 100_000_000.0;
-
+    match sync_wallet_notes(wallet, options).await {
+        Ok(result) => {
+            let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
             Ok(ResponseJson(SyncResponse {
                 success: true,
                 balance_zec,
-                notes_found: result.notes.len(),
-                message: format!("Sync completed. Balance: {balance_zec:.8} ZEC"),
+                notes_found: result.unspent_notes,
+                message: format!(
+                    "Sync completed for blocks {}-{}. Balance: {balance_zec:.8} ZEC",
+                    result.scan_start, result.scan_end
+                ),
             }))
         }
         Err(e) => Err((
@@ -1269,32 +1222,14 @@ pub struct WalletStatusResponse {
 
 pub async fn get_wallet_status(
 ) -> Result<ResponseJson<WalletStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::paths::get_wallet_data_dir;
-    use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
-    use std::fs;
+    use nozy::{load_config, load_wallet_notes, transaction_history::SentTransactionStorage, wallet_unspent_balance_zatoshis, ZebraClient};
 
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url.clone());
 
-    let notes_path = get_wallet_data_dir().join("notes.json");
-    let balance_zatoshis = if notes_path.exists() {
-        if let Ok(content) = fs::read_to_string(&notes_path) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                parsed
-                    .as_array()
-                    .unwrap_or(&vec![])
-                    .iter()
-                    .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
-                    .sum::<u64>()
-            } else {
-                0
-            }
-        } else {
-            0
-        }
-    } else {
-        0
-    };
+    let balance_zatoshis = load_wallet_notes()
+        .map(|notes| wallet_unspent_balance_zatoshis(&notes))
+        .unwrap_or(0);
 
     let (pending_count, total_count) = if let Ok(tx_storage) = SentTransactionStorage::new() {
         let pending = tx_storage.get_pending_transactions();
@@ -1377,31 +1312,14 @@ pub struct WebReadStateResponse {
 
 pub async fn web_read_state(
 ) -> Result<ResponseJson<WebReadStateResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
-    use std::fs;
+    use nozy::{load_config, load_wallet_notes, transaction_history::SentTransactionStorage, wallet_unspent_balance_zatoshis, ZebraClient};
 
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);
 
-    let notes_path = nozy::paths::get_wallet_data_dir().join("notes.json");
-    let balance_zatoshis = if notes_path.exists() {
-        if let Ok(content) = fs::read_to_string(&notes_path) {
-            if let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&content) {
-                parsed
-                    .as_array()
-                    .unwrap_or(&vec![])
-                    .iter()
-                    .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
-                    .sum::<u64>()
-            } else {
-                0
-            }
-        } else {
-            0
-        }
-    } else {
-        0
-    };
+    let balance_zatoshis = load_wallet_notes()
+        .map(|notes| wallet_unspent_balance_zatoshis(&notes))
+        .unwrap_or(0);
 
     let txs: Vec<serde_json::Value> = if let Ok(tx_storage) = SentTransactionStorage::new() {
         let all = tx_storage.get_all_transactions();
@@ -1616,22 +1534,9 @@ pub struct NotesResponse {
 
 pub async fn get_notes(
 ) -> Result<ResponseJson<NotesResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::paths::get_wallet_data_dir;
-    use nozy::SerializableOrchardNote;
-    use std::fs;
+    use nozy::{load_wallet_notes, wallet_unspent_balance_zatoshis};
 
-    let notes_path = get_wallet_data_dir().join("notes.json");
-
-    if !notes_path.exists() {
-        return Ok(ResponseJson(NotesResponse {
-            notes: vec![],
-            total: 0,
-            total_balance_zatoshis: 0,
-            total_balance_zec: 0.0,
-        }));
-    }
-
-    let content = fs::read_to_string(&notes_path).map_err(|e| {
+    let notes = load_wallet_notes().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({
@@ -1640,16 +1545,7 @@ pub async fn get_notes(
         )
     })?;
 
-    let notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content).map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            ResponseJson(serde_json::json!({
-                "error": format!("Failed to parse notes: {}", e)
-            })),
-        )
-    })?;
-
-    let total_balance_zatoshis: u64 = notes.iter().map(|n| n.value).sum();
+    let total_balance_zatoshis = wallet_unspent_balance_zatoshis(&notes);
     let total_balance_zec = total_balance_zatoshis as f64 / 100_000_000.0;
 
     let notes_json: Vec<serde_json::Value> = notes

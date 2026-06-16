@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.3.6.2] — Teriyaki Hot (CLI) (2026-06-16)
+
+Patch on **v2.3.6.1**. Crate SemVer remains **2.3.6** until next release bump.
+
+### Added
+
+- **`nozy::wallet_sync`:** unified note scan → merge → persist orchestrator; api-server and background sync use shared path.
+
+### Fixed
+
+- **api-server `/api/sync` + `/api/balance` mismatch:** sync merges scan results into cached `notes.json` (instead of overwriting), fails if save fails, updates `last_scan_height` to the scanned range, and returns the same unspent balance that `/api/balance` reads. Balance and wallet-status endpoints use shared note loading (array + v2 index format).
+
 ## [2.3.6.1] — Teriyaki Hot (CLI) (2026-06-15)
 
 Patch on **v2.3.6**. Crate SemVer remains **2.3.6** (Cargo); `nozy --version` reports **2.3.6.1 (Teriyaki Hot (CLI))**.

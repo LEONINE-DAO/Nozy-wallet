@@ -85,6 +85,8 @@ pub mod transaction_history;
 #[cfg(feature = "native")]
 pub mod transaction_tracker;
 #[cfg(feature = "native")]
+pub mod wallet_sync;
+#[cfg(feature = "native")]
 pub mod zeaking_adapter;
 #[cfg(feature = "native")]
 pub mod zebra_integration;
@@ -137,7 +139,10 @@ pub use note_index::NoteIndex;
 #[cfg(feature = "native")]
 pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
-pub use notes::{NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote};
+pub use notes::{
+    load_wallet_notes, merge_scanned_notes, save_wallet_notes, wallet_unspent_balance_zatoshis,
+    NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote,
+};
 #[cfg(feature = "native")]
 pub use orchard_tx::{
     select_single_spend_note, OrchardBuiltSpend, OrchardTransactionBuilder, OrchardWitnessProvider,
@@ -172,7 +177,10 @@ pub use transaction_history::{
     SentTransactionRecord, TransactionStatus, TransactionType, TransactionView,
 };
 #[cfg(feature = "native")]
-pub use transaction_tracker::TransactionConfirmationTracker;
+pub use wallet_sync::{
+    resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncOptions, WalletSyncResult,
+    DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
+};
 #[cfg(feature = "native")]
 pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
 #[cfg(feature = "native")]

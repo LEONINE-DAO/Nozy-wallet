@@ -5,19 +5,9 @@ use dialoguer::Password;
 
 /// Sum unspent note values from cached `notes.json` (no Zebra RPC).
 pub fn cached_unspent_balance_zatoshis() -> NozyResult<u64> {
-    use crate::notes::SerializableOrchardNote;
-    use crate::paths::get_wallet_data_dir;
-    use std::fs;
+    use crate::notes::{load_wallet_notes, wallet_unspent_balance_zatoshis};
 
-    let notes_path = get_wallet_data_dir().join("notes.json");
-    if !notes_path.exists() {
-        return Ok(0);
-    }
-    let content = fs::read_to_string(&notes_path)
-        .map_err(|e| NozyError::Storage(format!("Failed to read notes: {e}")))?;
-    let notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content)
-        .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {e}")))?;
-    Ok(notes.iter().filter(|n| !n.spent).map(|n| n.value).sum())
+    Ok(wallet_unspent_balance_zatoshis(&load_wallet_notes()?))
 }
 
 pub fn format_insufficient_funds_message(

@@ -53,7 +53,6 @@ WALLET_BACKUP.md
 .env.local
 
 frontend/
-mobile/
 src-tauri/
 !desktop-client/src-tauri/
 !desktop-client/src-tauri/**
@@ -89,5 +88,10 @@ push_url_update.ps1
 !browser-extension/CHANGELOG.md
 !browser-extension/COMPANION.md
 !browser-extension/RELEASES.md
+!mobile/README.md
+
+# Grant / internal planning — local only (never push to GitHub)
+docs/grant/
+docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
 
 book/book/

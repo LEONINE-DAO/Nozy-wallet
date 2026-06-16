@@ -196,6 +196,71 @@ pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyR
     Ok(marked)
 }
 
+/// Load cached wallet notes from `notes.json`, supporting legacy array and v2 index formats.
+#[cfg(feature = "native")]
+pub fn load_wallet_notes() -> NozyResult<Vec<SerializableOrchardNote>> {
+    use crate::note_index::NoteIndex;
+    use crate::paths::get_wallet_data_dir;
+
+    let notes_path = get_wallet_data_dir().join("notes.json");
+    Ok(NoteIndex::load_from_file(&notes_path)?
+        .get_all_notes()
+        .to_vec())
+}
+
+/// Persist wallet notes to `notes.json` using the v2 index format (atomic write).
+#[cfg(feature = "native")]
+pub fn save_wallet_notes(notes: &[SerializableOrchardNote]) -> NozyResult<()> {
+    use crate::note_index::NoteIndex;
+    use crate::paths::get_wallet_data_dir;
+
+    let notes_path = get_wallet_data_dir().join("notes.json");
+    NoteIndex::from_notes(notes.to_vec()).save_to_file(&notes_path)
+}
+
+/// Sum unspent note values from an in-memory note list.
+#[cfg(feature = "native")]
+pub fn wallet_unspent_balance_zatoshis(notes: &[SerializableOrchardNote]) -> u64 {
+    notes
+        .iter()
+        .filter(|note| !note.spent)
+        .map(|note| note.value)
+        .sum()
+}
+
+/// Merge notes discovered during a scan into an existing cache.
+#[cfg(feature = "native")]
+pub fn merge_scanned_notes(
+    existing: &mut Vec<SerializableOrchardNote>,
+    new_notes: &[SerializableOrchardNote],
+) {
+    use std::collections::HashSet;
+
+    let existing_nullifiers: HashSet<Vec<u8>> = existing
+        .iter()
+        .map(|n| n.nullifier_bytes.clone())
+        .collect();
+
+    for new_note in new_notes {
+        if let Some(existing) = existing.iter_mut().find(|n| {
+            n.txid == new_note.txid
+                && n.block_height == new_note.block_height
+                && n.value == new_note.value
+        }) {
+            existing.spent = existing.spent || new_note.spent;
+            if new_note.rho_bytes.is_some() {
+                existing.nullifier_bytes = new_note.nullifier_bytes.clone();
+                existing.rho_bytes = new_note.rho_bytes.clone();
+                existing.rseed_bytes = new_note.rseed_bytes.clone();
+            }
+            continue;
+        }
+        if !existing_nullifiers.contains(&new_note.nullifier_bytes) {
+            existing.push(new_note.clone());
+        }
+    }
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NoteScanResult {
     pub notes: Vec<SerializableOrchardNote>,
