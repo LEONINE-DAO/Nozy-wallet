@@ -95,7 +95,7 @@ impl ZebraClient {
     }
 
     pub async fn get_transaction(&self, txid: &str) -> NozyResult<TransactionInfo> {
-        let response = self.make_rpc_call("getrawtransaction", json!([txid, true])).await?;
+        let response = self.make_rpc_call("getrawtransaction", json!([txid, 1])).await?;
         
         let mut orchard_actions = Vec::new();
         
@@ -118,9 +118,15 @@ impl ZebraClient {
             }
         }
 
+        let block_height = response
+            .get("height")
+            .or_else(|| response.get("blockheight"))
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as u32;
+
         Ok(TransactionInfo {
             txid: txid.to_string(),
-            block_height: response["blockheight"].as_u64().unwrap_or(0) as u32,
+            block_height,
             orchard_actions,
         })
     }
