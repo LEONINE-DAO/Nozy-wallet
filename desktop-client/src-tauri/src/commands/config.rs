@@ -49,16 +49,19 @@ pub async fn test_zebra_connection(
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
 
-    let zebra_client = ZebraClient::new(zebra_url.clone());
+    let zebra_client = ZebraClient::from_config_with_url(
+        &config,
+        request.zebra_url.as_deref(),
+    );
+    let connection_mode = zebra_client.connection_mode().as_str();
 
     match zebra_client.get_block_count().await {
         Ok(block_count) => Ok(format!(
-            "✅ Connected to Zebra at {}. Current block height: {}",
-            zebra_url, block_count
+            "Connected to Zebra at {zebra_url} ({connection_mode}). Current block height: {block_count}"
         )),
         Err(e) => Err(TauriError {
-            message: format!("Failed to connect to Zebra at {}: {}", zebra_url, e),
-            code: Some("CONNECTION_FAILED".to_string()),
+            message: format!("Failed to connect to Zebra at {zebra_url}: {e}"),
+            code: Some(nozy::zebra_connect_api_code(&e.to_string()).to_string()),
         }),
     }
 }

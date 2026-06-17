@@ -1,4 +1,4 @@
-use crate::config::{BackendKind, Protocol, WalletConfig};
+use crate::config::{normalize_zebra_rpc_url, BackendKind, Protocol, WalletConfig};
 use crate::error::{NozyError, NozyResult};
 use crate::grpc_client::ZebraGrpcClient;
 use crate::zebra_tree_rpc::{
@@ -7,6 +7,7 @@ use crate::zebra_tree_rpc::{
 };
 use hex;
 use serde::Deserialize;
+use serde::Serialize;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::fs;
@@ -31,6 +32,30 @@ fn is_retryable_zebra_transport_error(msg: &str) -> bool {
         || m.contains("unexpected eof")
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZebraConnectionMode {
+    DirectLocal,
+    DirectTrusted,
+    DirectRemote,
+    TorProxy,
+    I2pProxy,
+    Blocked,
+}
+
+impl ZebraConnectionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectLocal => "direct_local",
+            Self::DirectTrusted => "direct_trusted",
+            Self::DirectRemote => "direct_remote",
+            Self::TorProxy => "tor_proxy",
+            Self::I2pProxy => "i2p_proxy",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ZebraClient {
     url: String,
@@ -48,6 +73,7 @@ pub struct ZebraClient {
     privacy_proxy_url: Option<String>,
     block_remote_without_privacy: bool,
     privacy_block_reason: Option<String>,
+    connection_mode: ZebraConnectionMode,
     #[allow(dead_code)]
     grpc_client: Option<Arc<ZebraGrpcClient>>,
 }
@@ -260,11 +286,32 @@ impl ZebraClient {
             privacy_proxy_url: None,
             block_remote_without_privacy: false,
             privacy_block_reason: None,
+            connection_mode: if is_local {
+                ZebraConnectionMode::DirectLocal
+            } else {
+                ZebraConnectionMode::DirectRemote
+            },
             grpc_client: None,
         }
     }
 
-    pub fn from_config(config: &crate::config::WalletConfig) -> Self {
+    pub fn connection_mode(&self) -> ZebraConnectionMode {
+        self.connection_mode
+    }
+
+    pub fn from_config(config: &WalletConfig) -> Self {
+        Self::from_config_with_url(config, None)
+    }
+
+    /// Unified wallet Zebra client: applies privacy policy, trusted operator URLs, and Tor/I2P.
+    pub fn from_config_with_url(config: &WalletConfig, zebra_url_override: Option<&str>) -> Self {
+        let effective = config
+            .clone()
+            .with_zebra_url_override(zebra_url_override.map(|s| s.to_string()));
+        Self::build_from_config(&effective)
+    }
+
+    fn build_from_config(config: &WalletConfig) -> Self {
         let (backend, url, fallback_urls) = match &config.backend {
             BackendKind::Zebra => (
                 BackendKind::Zebra,
@@ -284,17 +331,27 @@ impl ZebraClient {
         let mut client = Self::new_with_backend_and_protocol(url, backend, config.protocol.clone());
         client.fallback_urls = fallback_urls
             .into_iter()
-            .map(Self::normalize_url)
+            .map(|u| Self::normalize_url(u))
             .filter(|u| !u.is_empty())
             .collect();
 
-        let primary_is_remote = !Self::is_local_url(&client.url);
+        let primary_local = Self::is_local_url(&client.url);
+        let primary_trusted = config.is_trusted_zebra_url(&client.url);
+
+        if primary_local || primary_trusted {
+            client.connection_mode = if primary_local {
+                ZebraConnectionMode::DirectLocal
+            } else {
+                ZebraConnectionMode::DirectTrusted
+            };
+            return client;
+        }
+
+        let primary_is_remote = !primary_local;
         let any_fallback_remote = client.fallback_urls.iter().any(|u| !Self::is_local_url(u));
         let remote_rpc_possible = primary_is_remote || any_fallback_remote;
 
         let require_privacy = config.privacy_network.require_privacy_network;
-        // Local RPC should never be forced through Tor/I2P proxies.
-        // Keep privacy proxy policy for remote endpoints only.
         let selected_proxy = if remote_rpc_possible {
             Self::selected_proxy_from_config(config)
         } else {
@@ -302,11 +359,23 @@ impl ZebraClient {
         };
         client.privacy_proxy_url = selected_proxy.clone();
 
-        let timeout_secs = if Self::is_local_url(&client.url) {
-            10
-        } else {
-            30
-        };
+        let timeout_secs = if primary_local { 10 } else { 30 };
+        match selected_proxy.as_deref() {
+            Some(proxy_url) if proxy_url.to_ascii_lowercase().contains("socks") => {
+                client.connection_mode = ZebraConnectionMode::TorProxy;
+            }
+            Some(_) => {
+                client.connection_mode = ZebraConnectionMode::I2pProxy;
+            }
+            None if remote_rpc_possible && !require_privacy => {
+                client.connection_mode = ZebraConnectionMode::DirectRemote;
+            }
+            None if remote_rpc_possible => {
+                client.connection_mode = ZebraConnectionMode::Blocked;
+            }
+            _ => {}
+        }
+
         match selected_proxy {
             Some(proxy_url) => {
                 match Self::build_http_client(timeout_secs, Some(proxy_url.as_str())) {
@@ -318,9 +387,9 @@ impl ZebraClient {
                     Err(proxy_err) => {
                         if require_privacy && remote_rpc_possible {
                             client.block_remote_without_privacy = true;
+                            client.connection_mode = ZebraConnectionMode::Blocked;
                             client.privacy_block_reason = Some(format!(
-                                "Remote Zebra RPC blocked: privacy proxy configuration is invalid ({})",
-                                proxy_err
+                                "Remote Zebra RPC blocked: privacy proxy configuration is invalid ({proxy_err})"
                             ));
                         }
                     }
@@ -329,8 +398,11 @@ impl ZebraClient {
             None => {
                 if require_privacy && remote_rpc_possible {
                     client.block_remote_without_privacy = true;
+                    client.connection_mode = ZebraConnectionMode::Blocked;
                     client.privacy_block_reason = Some(
-                        "Remote Zebra RPC blocked: require_privacy_network=true but no Tor/I2P proxy is configured".to_string(),
+                        "Remote Zebra RPC blocked: require_privacy_network=true but no Tor/I2P proxy is configured. \
+Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
+                            .to_string(),
                     );
                 }
             }
@@ -339,50 +411,7 @@ impl ZebraClient {
     }
 
     fn normalize_url(url: String) -> String {
-        let mut url = url.trim().to_string();
-
-        // Fix double dots in URLs (e.g., "zec..leoninedao.org" -> "zec.leoninedao.org")
-        url = url.replace("..", ".");
-
-        // Fix triple slashes (e.g., "https:///host" -> "https://host")
-        url = url.replace(":///", "://");
-
-        // Fix double slashes after protocol (e.g., "https:///host" -> "https://host")
-        if url.starts_with("http://") {
-            url = url.replace("http:///", "http://");
-        } else if url.starts_with("https://") {
-            url = url.replace("https:///", "https://");
-        }
-
-        if url.starts_with("http://") || url.starts_with("https://") {
-            // Keep the port if it's specified - don't remove it
-            // Only fix path slashes, preserve protocol and port
-            // The URL should be in format: https://host:port/path
-            // We want to preserve https:// and :port, only fix // in path
-
-            // Simple approach: if URL already has proper format, return as-is
-            // Only fix if there are obvious issues like triple slashes (already fixed above)
-            return url;
-        }
-
-        if url.contains(':') {
-            let parts: Vec<&str> = url.split(':').collect();
-            if parts.len() >= 2 {
-                if let Ok(port) = parts[1].parse::<u16>() {
-                    if port == 443 {
-                        return format!("https://{}", parts[0]);
-                    } else {
-                        return format!("http://{}", url);
-                    }
-                }
-            }
-        }
-
-        if Self::is_local_url(&url) {
-            format!("http://{}", url)
-        } else {
-            format!("https://{}", url)
-        }
+        normalize_zebra_rpc_url(&url)
     }
 
     pub async fn get_block(&self, height: u32) -> NozyResult<HashMap<String, Value>> {
@@ -1040,6 +1069,39 @@ pub struct OrchardTreeState {
     pub height: u32,
     pub anchor: [u8; 32],
     pub commitment_count: u64,
+}
+
+#[cfg(test)]
+mod connection_policy_tests {
+    use super::*;
+    use crate::config::{PrivacyNetworkConfig, WalletConfig};
+
+    #[test]
+    fn trusted_remote_url_bypasses_privacy_block() {
+        let mut config = WalletConfig::default();
+        config.zebra_url = "http://vps.example.com:8232".to_string();
+        config.trusted_zebra_urls = vec!["http://vps.example.com:8232".to_string()];
+        config.privacy_network = PrivacyNetworkConfig {
+            require_privacy_network: true,
+            tor_enabled: true,
+            ..PrivacyNetworkConfig::default()
+        };
+        let client = ZebraClient::from_config(&config);
+        assert_eq!(client.connection_mode(), ZebraConnectionMode::DirectTrusted);
+    }
+
+    #[test]
+    fn untrusted_remote_with_privacy_required_is_blocked() {
+        let mut config = WalletConfig::default();
+        config.zebra_url = "http://public.example.com:8232".to_string();
+        config.privacy_network = PrivacyNetworkConfig {
+            require_privacy_network: true,
+            tor_enabled: false,
+            ..PrivacyNetworkConfig::default()
+        };
+        let client = ZebraClient::from_config(&config);
+        assert_eq!(client.connection_mode(), ZebraConnectionMode::Blocked);
+    }
 }
 
 #[cfg(test)]

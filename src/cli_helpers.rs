@@ -31,6 +31,25 @@ pub fn is_zebra_unavailable_error(err: &str) -> bool {
     err.contains("Failed to connect to Zebra")
         || err.contains("Connection failed to")
         || err.contains("Is Zebra running")
+        || err.contains("Remote Zebra RPC blocked")
+        || err.contains("privacy proxy configuration is invalid")
+}
+
+/// Structured connect-phase code for API clients (sync, test-zebra, send).
+pub fn zebra_connect_api_code(err: &str) -> &'static str {
+    let m = err.to_ascii_lowercase();
+    if m.contains("remote zebra rpc blocked") || m.contains("privacy policy active") {
+        "PRIVACY_POLICY_BLOCKED"
+    } else if m.contains("privacy proxy") || m.contains("invalid privacy proxy") {
+        "TOR_PROXY_UNREACHABLE"
+    } else if m.contains("failed to connect to zebra")
+        || m.contains("connection failed to")
+        || m.contains("is zebra running")
+    {
+        "ZEBRA_RPC_UNREACHABLE"
+    } else {
+        "ZEBRA_RPC_ERROR"
+    }
 }
 
 /// ZIP-317 client-side fee for an Orchard send (Zebrad does not implement `estimatefee`).
