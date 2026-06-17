@@ -2,7 +2,7 @@
 
 **Orchard-first Zcash wallet** — **CLI production release** today; desktop app, browser extension, and companion API in active development. This repository is a **wallet and companion services**, not a consensus node.
 
-**Latest release:** [v2.3.6.1 — Teriyaki Hot (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.6.1) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
+**Latest release:** [v2.3.6.2 — Teriyaki Hot (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.6.2) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
 
 ## What NozyWallet is
 

@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+## [2.3.6.2] — Teriyaki Hot (CLI) (2026-06-17)
+
+Patch on **v2.3.6.1**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.2 (Teriyaki Hot (CLI))**.
+
 ### Added
 
+- **`nozy::wallet_sync`:** unified note scan → merge → persist orchestrator; api-server and background sync use shared path.
 - **Desktop History:** Speed up button on expired transactions (rebuild at priority ×4 fee via Tauri `speed_up_transaction`).
 - **Extension:** Pilot speed-up rebuilds a new priority transaction in WASM (replaces wrong rebroadcast retry for expired txs); optional companion API path when `companionPassword` is supplied.
 - **Dynamic-fee pilot speed-up:** `POST /api/transaction/speed-up` rebuilds a new priority transaction after expiry (not a rebroadcast). Core logic in `nozy::tx_lifecycle`.
@@ -12,9 +17,6 @@
 ### Changed
 
 - **Extension:** `wallet_retry_broadcast` kept for failed pre-broadcast retries only; expired txs use `wallet_speed_up`.
-
-### Changed
-
 - **`/api/sync` errors:** structured JSON (`phase`, `block_height`, `scan_start`/`scan_end`, `code`) instead of opaque HTTP 500; Zebra outages return **503** `ZEBRA_UNAVAILABLE`.
 - **Orchard scan logging:** per-action decrypt chatter is quiet by default; set `NOZY_VERBOSE_SCAN=1` or `RUST_LOG=nozy::notes=debug` for detail. API/non-TTY builds skip indicatif progress spam.
 
@@ -22,20 +24,9 @@
 
 - **Zebra RPC during scan:** retry transient `getblock` transport failures (`error decoding response body`, truncated reads) instead of failing the whole `/api/sync` on first glitch.
 - **`/api/sync` repeat calls:** when already caught up to chain tip, return cached balance without rescanning; serialize concurrent syncs; richer sync response (`balance_zatoshis`, `already_synced`, `total_notes`).
+- **api-server `/api/sync` + `/api/balance` mismatch:** sync merges scan results into cached `notes.json` (instead of overwriting), fails if save fails, updates `last_scan_height` to the scanned range, and returns the same unspent balance that `/api/balance` reads.
 - **api-server send:** mark notes spent in `notes.json` after broadcast (match CLI).
 - **Transaction history note marking:** use v2 `notes.json` index format when marking spent notes.
-
-## [2.3.6.2] — Teriyaki Hot (CLI) (2026-06-16)
-
-Patch on **v2.3.6.1**. Crate SemVer remains **2.3.6** until next release bump.
-
-### Added
-
-- **`nozy::wallet_sync`:** unified note scan → merge → persist orchestrator; api-server and background sync use shared path.
-
-### Fixed
-
-- **api-server `/api/sync` + `/api/balance` mismatch:** sync merges scan results into cached `notes.json` (instead of overwriting), fails if save fails, updates `last_scan_height` to the scanned range, and returns the same unspent balance that `/api/balance` reads. Balance and wallet-status endpoints use shared note loading (array + v2 index format).
 
 ## [2.3.6.1] — Teriyaki Hot (CLI) (2026-06-15)
 
