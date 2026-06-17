@@ -524,6 +524,31 @@ impl SentTransactionStorage {
             .unwrap_or_default()
     }
 
+    /// Pending and wrongly-expired broadcasts that may still need chain reconciliation.
+    fn get_transactions_needing_confirmation(&self) -> Vec<SentTransactionRecord> {
+        self.transactions
+            .lock()
+            .map_err(|e| {
+                eprintln!(
+                    "Warning: Mutex poisoned in get_transactions_needing_confirmation: {}",
+                    e
+                );
+            })
+            .ok()
+            .map(|transactions| {
+                transactions
+                    .values()
+                    .filter(|tx| {
+                        tx.status == TransactionStatus::Pending
+                            || (tx.status == TransactionStatus::Expired
+                                && tx.broadcast_at.is_some())
+                    })
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     pub fn update_transaction_status(
         &self,
         txid: &str,
@@ -595,7 +620,7 @@ impl SentTransactionStorage {
         &self,
         zebra_client: &crate::zebra_integration::ZebraClient,
     ) -> NozyResult<usize> {
-        let pending = self.get_pending_transactions();
+        let pending = self.get_transactions_needing_confirmation();
         let mut updated_count = 0;
 
         for tx in pending {
@@ -641,12 +666,26 @@ impl SentTransactionStorage {
 
         let mut expired_count = 0usize;
         for (txid, spent_note_ids) in expired_candidates {
-            if zebra_client
-                .check_transaction_exists(&txid)
-                .await
-                .unwrap_or(false)
-            {
-                continue;
+            match zebra_client.get_transaction_info(&txid).await {
+                Ok(info) => {
+                    if info.block_height.is_some() {
+                        let _ = self
+                            .check_transaction_confirmation(zebra_client, &txid)
+                            .await?;
+                        continue;
+                    }
+                    // Node still reports the tx (e.g. mempool); do not expire.
+                    continue;
+                }
+                Err(crate::error::NozyError::InvalidOperation(msg))
+                    if msg.contains("No transaction") =>
+                {
+                    // Fall through to mark expired.
+                }
+                Err(_) => {
+                    // RPC error: skip rather than falsely expiring a mined tx.
+                    continue;
+                }
             }
 
             let marked = self.mark_transaction_expired(&txid)?;

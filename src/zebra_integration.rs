@@ -961,7 +961,7 @@ This blocks remote RPC only; localhost RPC remains allowed.",
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "getrawtransaction",
-            "params": [txid, true],
+            "params": [txid, 1],
             "id": 1
         });
 
@@ -978,22 +978,18 @@ This blocks remote RPC only; localhost RPC remains allowed.",
             NozyError::InvalidOperation("No transaction data in response".to_string())
         })?;
 
-        let block_height = tx_data
-            .get("blockheight")
-            .and_then(|v| v.as_u64())
-            .map(|h| h as u32);
+        let block_height = parse_tx_block_height(&tx_data);
+        let block_hash = parse_tx_block_hash(&tx_data);
 
-        let block_hash = tx_data
-            .get("blockhash")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string());
-
-        let confirmations = if let Some(height) = block_height {
-            let current_height = self.get_block_count().await.unwrap_or(0);
-            current_height.saturating_sub(height) + 1
-        } else {
-            0
-        };
+        let confirmations =
+            if let Some(conf) = tx_data.get("confirmations").and_then(|v| v.as_u64()) {
+                conf as u32
+            } else if let Some(height) = block_height {
+                let current_height = self.get_block_count().await.unwrap_or(0);
+                current_height.saturating_sub(height) + 1
+            } else {
+                0
+            };
 
         Ok(TransactionInfo {
             txid: txid.to_string(),
@@ -1013,6 +1009,23 @@ This blocks remote RPC only; localhost RPC remains allowed.",
     }
 }
 
+/// Zebra `getrawtransaction` uses `height`; some stacks use `blockheight`.
+fn parse_tx_block_height(tx_data: &serde_json::Value) -> Option<u32> {
+    tx_data
+        .get("height")
+        .or_else(|| tx_data.get("blockheight"))
+        .and_then(|v| v.as_u64())
+        .map(|h| h as u32)
+}
+
+fn parse_tx_block_hash(tx_data: &serde_json::Value) -> Option<String> {
+    tx_data
+        .get("blockhash")
+        .or_else(|| tx_data.get("block_hash"))
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string())
+}
+
 #[derive(Debug, Clone)]
 pub struct TransactionInfo {
     pub txid: String,
@@ -1027,6 +1040,29 @@ pub struct OrchardTreeState {
     pub height: u32,
     pub anchor: [u8; 32],
     pub commitment_count: u64,
+}
+
+#[cfg(test)]
+mod tx_field_parsing_tests {
+    use super::{parse_tx_block_hash, parse_tx_block_height};
+
+    #[test]
+    fn parses_zebra_height_field() {
+        let tx = serde_json::json!({
+            "height": 3381141,
+            "blockhash": "abc123",
+            "confirmations": 11
+        });
+        assert_eq!(parse_tx_block_height(&tx), Some(3381141));
+        assert_eq!(parse_tx_block_hash(&tx).as_deref(), Some("abc123"));
+    }
+
+    #[test]
+    fn falls_back_to_blockheight_field() {
+        let tx = serde_json::json!({ "blockheight": 100, "block_hash": "deadbeef" });
+        assert_eq!(parse_tx_block_height(&tx), Some(100));
+        assert_eq!(parse_tx_block_hash(&tx).as_deref(), Some("deadbeef"));
+    }
 }
 
 #[cfg(test)]
