@@ -540,7 +540,8 @@ impl SentTransactionStorage {
                     .values()
                     .filter(|tx| {
                         tx.status == TransactionStatus::Pending
-                            || (tx.status == TransactionStatus::Expired && tx.broadcast_at.is_some())
+                            || (tx.status == TransactionStatus::Expired
+                                && tx.broadcast_at.is_some())
                     })
                     .cloned()
                     .collect()

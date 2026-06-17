@@ -981,14 +981,15 @@ This blocks remote RPC only; localhost RPC remains allowed.",
         let block_height = parse_tx_block_height(&tx_data);
         let block_hash = parse_tx_block_hash(&tx_data);
 
-        let confirmations = if let Some(conf) = tx_data.get("confirmations").and_then(|v| v.as_u64()) {
-            conf as u32
-        } else if let Some(height) = block_height {
-            let current_height = self.get_block_count().await.unwrap_or(0);
-            current_height.saturating_sub(height) + 1
-        } else {
-            0
-        };
+        let confirmations =
+            if let Some(conf) = tx_data.get("confirmations").and_then(|v| v.as_u64()) {
+                conf as u32
+            } else if let Some(height) = block_height {
+                let current_height = self.get_block_count().await.unwrap_or(0);
+                current_height.saturating_sub(height) + 1
+            } else {
+                0
+            };
 
         Ok(TransactionInfo {
             txid: txid.to_string(),
