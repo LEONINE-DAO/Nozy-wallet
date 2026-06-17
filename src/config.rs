@@ -28,6 +28,12 @@ pub struct WalletConfig {
     #[serde(default)]
     pub zebra_fallback_urls: Vec<String>,
 
+    /// Operator-controlled Zebra RPC endpoints allowed to connect directly (no Tor) when
+    /// `privacy_network.require_privacy_network` is true. Public/community nodes should not
+    /// be listed here; use Tor/onion for those.
+    #[serde(default)]
+    pub trusted_zebra_urls: Vec<String>,
+
     #[serde(default = "default_crosslink_url")]
     pub crosslink_url: String,
 
@@ -179,6 +185,7 @@ impl Default for WalletConfig {
         Self {
             zebra_url: default_zebra_url(),
             zebra_fallback_urls: Vec::new(),
+            trusted_zebra_urls: Vec::new(),
             crosslink_url: default_crosslink_url(),
             network: default_network(),
             last_scan_height: None,
@@ -238,6 +245,78 @@ pub fn load_config() -> WalletConfig {
     }
 
     config
+}
+
+/// Normalize Zebra RPC URLs for comparison (config trust list, overrides).
+pub fn normalize_zebra_rpc_url(url: &str) -> String {
+    let mut url = url.trim().to_string();
+    url = url.replace("..", ".");
+    url = url.replace(":///", "://");
+    if url.starts_with("http://") {
+        url = url.replace("http:///", "http://");
+    } else if url.starts_with("https://") {
+        url = url.replace("https:///", "https://");
+    }
+
+    if url.starts_with("http://") || url.starts_with("https://") {
+        return url;
+    }
+
+    if let Some((host, port_str)) = url.split_once(':') {
+        if let Ok(port) = port_str.parse::<u16>() {
+            if port == 443 {
+                return format!("https://{host}");
+            }
+            return format!("http://{url}");
+        }
+        let _ = host;
+    }
+
+    if url.starts_with("127.0.0.1")
+        || url.starts_with("localhost")
+        || url.starts_with("172.")
+        || url.starts_with("10.")
+        || url.starts_with("192.168.")
+    {
+        format!("http://{url}")
+    } else {
+        format!("https://{url}")
+    }
+}
+
+impl WalletConfig {
+    /// Config with an optional runtime Zebra URL override (API/CLI).
+    pub fn with_zebra_url_override(mut self, zebra_url: Option<String>) -> Self {
+        if let Some(url) = zebra_url {
+            let trimmed = url.trim();
+            if !trimmed.is_empty() {
+                self.zebra_url = trimmed.to_string();
+            }
+        }
+        self
+    }
+
+    pub fn is_trusted_zebra_url(&self, url: &str) -> bool {
+        let normalized = normalize_zebra_rpc_url(url);
+        self.trusted_zebra_urls
+            .iter()
+            .any(|trusted| normalize_zebra_rpc_url(trusted) == normalized)
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn trusted_url_matches_normalized_forms() {
+        let mut config = WalletConfig::default();
+        config
+            .trusted_zebra_urls
+            .push("http://node.example.com:8232".to_string());
+        assert!(config.is_trusted_zebra_url("http://node.example.com:8232"));
+        assert!(config.is_trusted_zebra_url("node.example.com:8232"));
+    }
 }
 
 pub fn save_config(config: &WalletConfig) -> NozyResult<()> {

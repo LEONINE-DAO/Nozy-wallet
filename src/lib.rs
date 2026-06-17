@@ -125,7 +125,7 @@ pub use bridge::{
 pub use cli_helpers::{
     cached_unspent_balance_zatoshis, estimate_transaction_fee, estimate_transaction_fee_for_send,
     format_insufficient_funds_message, is_insufficient_funds_error, is_zebra_unavailable_error,
-    scan_notes_for_sending,
+    scan_notes_for_sending, zebra_connect_api_code,
 };
 #[cfg(feature = "native")]
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
@@ -193,4 +193,4 @@ pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
 #[cfg(feature = "native")]
 pub use zeaking_adapter::{ZebraBlockParser, ZebraBlockSource};
 #[cfg(feature = "native")]
-pub use zebra_integration::ZebraClient;
+pub use zebra_integration::{ZebraClient, ZebraConnectionMode};

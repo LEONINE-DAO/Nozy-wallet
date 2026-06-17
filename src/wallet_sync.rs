@@ -77,7 +77,9 @@ impl WalletSyncError {
     }
 
     pub fn api_code(&self) -> &str {
-        if self.is_zebra_unavailable() {
+        if self.phase == WalletSyncPhase::Connect {
+            crate::cli_helpers::zebra_connect_api_code(&self.message)
+        } else if self.is_zebra_unavailable() {
             "ZEBRA_UNAVAILABLE"
         } else {
             self.phase.error_code()

@@ -1,6 +1,7 @@
 //! Dynamic-fee pilot lifecycle: expiry detection, balance release, and speed-up rebuild.
 
 use crate::cli_helpers::scan_notes_for_sending;
+use crate::config::load_config;
 use crate::error::{NozyError, NozyResult};
 use crate::fee_policy::{
     estimate_orchard_send_fee_zatoshis, PilotSendOptions, PILOT_EXPIRY_DELTA_BLOCKS,
@@ -29,7 +30,11 @@ pub async fn speed_up_transaction(
     original_txid: &str,
 ) -> NozyResult<String> {
     let tx_storage = SentTransactionStorage::new()?;
-    let zebra_client = ZebraClient::new(zebra_url.to_string());
+    let mut config = load_config();
+    if config.zebra_url != zebra_url {
+        config.zebra_url = zebra_url.to_string();
+    }
+    let zebra_client = ZebraClient::from_config(&config);
 
     tx_storage
         .check_expired_pending_transactions(&zebra_client)

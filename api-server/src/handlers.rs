@@ -569,7 +569,7 @@ pub async fn send_transaction(
             }
         })?;
 
-    let zebra_client = ZebraClient::new(zebra_url.clone());
+    let zebra_client = ZebraClient::from_config_with_url(&config, Some(&zebra_url));
 
     let tip_height = zebra_client.get_best_block_height().await.map_err(|e| {
         let msg = e.to_string();
@@ -764,25 +764,46 @@ pub async fn set_theme(
 
 pub async fn test_zebra_connection(
     Json(payload): Json<TestZebraRequest>,
-) -> Result<ResponseJson<String>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_config, ZebraClient};
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    use nozy::{load_config, zebra_connect_api_code, ZebraClient};
 
     let config = load_config();
     let url = payload
         .zebra_url
+        .clone()
         .unwrap_or_else(|| config.zebra_url.clone());
 
-    let client = ZebraClient::new(url.clone());
+    let client = ZebraClient::from_config_with_url(&config, payload.zebra_url.as_deref());
+    let connection_mode = client.connection_mode().as_str().to_string();
+
     match client.get_block_count().await {
-        Ok(block_count) => Ok(ResponseJson(format!(
-            "✅ Connected to Zebra node at {url}\nBlock height: {block_count}"
-        ))),
-        Err(e) => Err((
-            StatusCode::BAD_REQUEST,
-            ResponseJson(serde_json::json!({
-                "error": format!("❌ Failed to connect: {}", e)
-            })),
-        )),
+        Ok(block_count) => Ok(ResponseJson(serde_json::json!({
+            "ok": true,
+            "zebra_url": url,
+            "connection_mode": connection_mode,
+            "block_height": block_count,
+            "message": format!("Connected to Zebra at {url}. Block height: {block_count}"),
+        }))),
+        Err(e) => {
+            let msg = e.to_string();
+            let code = zebra_connect_api_code(&msg);
+            let status = if code == "PRIVACY_POLICY_BLOCKED" || code == "TOR_PROXY_UNREACHABLE" {
+                StatusCode::SERVICE_UNAVAILABLE
+            } else {
+                StatusCode::BAD_GATEWAY
+            };
+            Err((
+                status,
+                ResponseJson(serde_json::json!({
+                    "ok": false,
+                    "zebra_url": url,
+                    "connection_mode": connection_mode,
+                    "error": msg,
+                    "code": code,
+                    "message": format!("Failed to connect to Zebra at {url}: {msg}"),
+                })),
+            ))
+        }
     }
 }
 
@@ -1066,7 +1087,7 @@ pub async fn check_transaction_confirmations(
     use nozy::{load_config, transaction_history::SentTransactionStorage, ZebraClient};
 
     let config = load_config();
-    let zebra_client = ZebraClient::new(config.zebra_url);
+    let zebra_client = ZebraClient::from_config(&config);
     let tx_storage = SentTransactionStorage::new().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -1321,7 +1342,7 @@ pub async fn get_wallet_status(
     };
 
     let config = load_config();
-    let zebra_client = ZebraClient::new(config.zebra_url.clone());
+    let zebra_client = ZebraClient::from_config(&config);
 
     let balance_zatoshis = load_wallet_notes()
         .map(|notes| wallet_unspent_balance_zatoshis(&notes))
