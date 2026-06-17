@@ -110,7 +110,15 @@ impl WalletSyncError {
         scan_end: Option<u32>,
         chain_tip: Option<u32>,
     ) -> Self {
-        Self::with_context(phase, source, block_height, scan_start, scan_end, chain_tip, None)
+        Self::with_context(
+            phase,
+            source,
+            block_height,
+            scan_start,
+            scan_end,
+            chain_tip,
+            None,
+        )
     }
 
     fn with_connect(source: NozyError, connection_mode: &str) -> Self {
@@ -286,12 +294,12 @@ pub async fn sync_wallet_notes(
     options: WalletSyncOptions,
 ) -> Result<WalletSyncResult, WalletSyncError> {
     let config = load_config();
-    let zebra_client =
-        ZebraClient::from_config_with_url(&config, options.zebra_url.as_deref());
+    let zebra_client = ZebraClient::from_config_with_url(&config, options.zebra_url.as_deref());
     let connection_mode = zebra_client.connection_mode().as_str();
-    let chain_tip = zebra_client.get_block_count().await.map_err(|e| {
-        WalletSyncError::with_connect(e, connection_mode)
-    })?;
+    let chain_tip = zebra_client
+        .get_block_count()
+        .await
+        .map_err(|e| WalletSyncError::with_connect(e, connection_mode))?;
     let range = resolve_scan_range(&config, &options, chain_tip).map_err(|e| {
         WalletSyncError::with_range(
             WalletSyncPhase::ResolveRange,
