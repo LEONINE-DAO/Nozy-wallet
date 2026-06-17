@@ -1077,6 +1077,19 @@ mod connection_policy_tests {
     use crate::config::{PrivacyNetworkConfig, WalletConfig};
 
     #[test]
+    fn configured_zebra_url_connects_direct_without_trusted_list() {
+        let mut config = WalletConfig::default();
+        config.zebra_url = "http://vps.example.com:8232".to_string();
+        config.privacy_network = PrivacyNetworkConfig {
+            require_privacy_network: true,
+            tor_enabled: true,
+            ..PrivacyNetworkConfig::default()
+        };
+        let client = ZebraClient::from_config(&config);
+        assert_eq!(client.connection_mode(), ZebraConnectionMode::DirectTrusted);
+    }
+
+    #[test]
     fn trusted_remote_url_bypasses_privacy_block() {
         let mut config = WalletConfig::default();
         config.zebra_url = "http://vps.example.com:8232".to_string();
@@ -1091,16 +1104,10 @@ mod connection_policy_tests {
     }
 
     #[test]
-    fn untrusted_remote_with_privacy_required_is_blocked() {
+    fn unrelated_remote_url_is_not_auto_trusted() {
         let mut config = WalletConfig::default();
-        config.zebra_url = "http://public.example.com:8232".to_string();
-        config.privacy_network = PrivacyNetworkConfig {
-            require_privacy_network: true,
-            tor_enabled: false,
-            ..PrivacyNetworkConfig::default()
-        };
-        let client = ZebraClient::from_config(&config);
-        assert_eq!(client.connection_mode(), ZebraConnectionMode::Blocked);
+        config.zebra_url = "http://vps.example.com:8232".to_string();
+        assert!(!config.is_trusted_zebra_url("http://public.example.com:8232"));
     }
 }
 

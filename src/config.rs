@@ -296,11 +296,50 @@ impl WalletConfig {
         self
     }
 
+    /// True when `url` is the configured primary endpoint, listed in `trusted_zebra_urls`,
+    /// or matches either on host:port (http/https scheme ignored for RPC ports).
     pub fn is_trusted_zebra_url(&self, url: &str) -> bool {
-        let normalized = normalize_zebra_rpc_url(url);
+        if zebra_rpc_endpoints_match(url, &self.zebra_url) {
+            return true;
+        }
         self.trusted_zebra_urls
             .iter()
-            .any(|trusted| normalize_zebra_rpc_url(trusted) == normalized)
+            .any(|trusted| zebra_rpc_endpoints_match(url, trusted))
+    }
+
+    /// Ensure a remote operator URL is allowlisted for direct RPC when privacy mode is on.
+    pub fn ensure_trusted_zebra_url(&mut self, url: &str) {
+        let normalized = normalize_zebra_rpc_url(url);
+        if normalized.is_empty() {
+            return;
+        }
+        if self
+            .trusted_zebra_urls
+            .iter()
+            .any(|trusted| zebra_rpc_endpoints_match(trusted, &normalized))
+        {
+            return;
+        }
+        self.trusted_zebra_urls.push(normalized);
+    }
+}
+
+/// Host:port identity for Zebra RPC URLs (scheme ignored so http/https forms match).
+pub fn zebra_rpc_endpoint_key(url: &str) -> Option<String> {
+    let normalized = normalize_zebra_rpc_url(url);
+    let parsed = reqwest::Url::parse(&normalized).ok()?;
+    let host = parsed.host_str()?.to_ascii_lowercase();
+    let port = parsed.port_or_known_default()?;
+    Some(format!("{host}:{port}"))
+}
+
+pub fn zebra_rpc_endpoints_match(a: &str, b: &str) -> bool {
+    if normalize_zebra_rpc_url(a) == normalize_zebra_rpc_url(b) {
+        return true;
+    }
+    match (zebra_rpc_endpoint_key(a), zebra_rpc_endpoint_key(b)) {
+        (Some(ka), Some(kb)) => ka == kb,
+        _ => false,
     }
 }
 
@@ -316,6 +355,23 @@ mod config_tests {
             .push("http://node.example.com:8232".to_string());
         assert!(config.is_trusted_zebra_url("http://node.example.com:8232"));
         assert!(config.is_trusted_zebra_url("node.example.com:8232"));
+    }
+
+    #[test]
+    fn configured_zebra_url_is_trusted_without_allowlist_entry() {
+        let mut config = WalletConfig::default();
+        config.zebra_url = "http://vps.example.com:8232".to_string();
+        config.privacy_network.require_privacy_network = true;
+        assert!(config.is_trusted_zebra_url("http://vps.example.com:8232"));
+        assert!(config.is_trusted_zebra_url("https://vps.example.com:8232"));
+    }
+
+    #[test]
+    fn ensure_trusted_dedupes_by_host_port() {
+        let mut config = WalletConfig::default();
+        config.ensure_trusted_zebra_url("http://vps.example.com:8232");
+        config.ensure_trusted_zebra_url("https://vps.example.com:8232");
+        assert_eq!(config.trusted_zebra_urls.len(), 1);
     }
 }
 

@@ -722,7 +722,8 @@ pub async fn set_zebra_url(
     }
 
     let mut config = load_config();
-    config.zebra_url = payload.url;
+    config.zebra_url = payload.url.clone();
+    config.ensure_trusted_zebra_url(&payload.url);
     save_config(&config).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,

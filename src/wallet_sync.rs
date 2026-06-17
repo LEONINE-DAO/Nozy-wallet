@@ -61,6 +61,9 @@ pub struct WalletSyncError {
     pub scan_end: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub chain_tip: Option<u32>,
+    /// How the Zebra client reached (or attempted) the node — useful when connect fails.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_mode: Option<String>,
 }
 
 impl WalletSyncError {
@@ -91,6 +94,7 @@ impl WalletSyncError {
             "error": self.message,
             "code": self.api_code(),
             "phase": self.phase.as_str(),
+            "connection_mode": self.connection_mode,
             "block_height": self.block_height,
             "scan_start": self.scan_start,
             "scan_end": self.scan_end,
@@ -106,6 +110,30 @@ impl WalletSyncError {
         scan_end: Option<u32>,
         chain_tip: Option<u32>,
     ) -> Self {
+        Self::with_context(phase, source, block_height, scan_start, scan_end, chain_tip, None)
+    }
+
+    fn with_connect(source: NozyError, connection_mode: &str) -> Self {
+        Self::with_context(
+            WalletSyncPhase::Connect,
+            source,
+            None,
+            None,
+            None,
+            None,
+            Some(connection_mode.to_string()),
+        )
+    }
+
+    fn with_context(
+        phase: WalletSyncPhase,
+        source: NozyError,
+        block_height: Option<u32>,
+        scan_start: Option<u32>,
+        scan_end: Option<u32>,
+        chain_tip: Option<u32>,
+        connection_mode: Option<String>,
+    ) -> Self {
         Self {
             phase,
             message: source.to_string(),
@@ -113,6 +141,7 @@ impl WalletSyncError {
             scan_start,
             scan_end,
             chain_tip,
+            connection_mode,
         }
     }
 }
@@ -256,14 +285,12 @@ pub async fn sync_wallet_notes(
     wallet: HDWallet,
     options: WalletSyncOptions,
 ) -> Result<WalletSyncResult, WalletSyncError> {
-    let mut config = load_config();
-    if let Some(url) = options.zebra_url.clone() {
-        config.zebra_url = url;
-    }
-
-    let zebra_client = ZebraClient::from_config(&config);
+    let config = load_config();
+    let zebra_client =
+        ZebraClient::from_config_with_url(&config, options.zebra_url.as_deref());
+    let connection_mode = zebra_client.connection_mode().as_str();
     let chain_tip = zebra_client.get_block_count().await.map_err(|e| {
-        WalletSyncError::with_range(WalletSyncPhase::Connect, e, None, None, None, None)
+        WalletSyncError::with_connect(e, connection_mode)
     })?;
     let range = resolve_scan_range(&config, &options, chain_tip).map_err(|e| {
         WalletSyncError::with_range(

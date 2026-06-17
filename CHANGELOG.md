@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [2.3.6.4] — Teriyaki Hot (CLI) (2026-06-17)
+
+Patch on **v2.3.6.3**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.4 (Teriyaki Hot (CLI))**.
+
+### Fixed
+
+- **Remote VPS Zebra connect (`ZEBRA_RPC_UNREACHABLE`):** the configured `zebra_url` is now treated as a trusted operator endpoint (direct RPC, no Tor hop). Fixes sync failing at `phase: connect` when `require_privacy_network` is true and Tor is not running — even without duplicating the URL in `trusted_zebra_urls`. URL matching ignores `http` vs `https` on the same host:port. `/api/sync` errors include `connection_mode` for diagnosis. `POST /api/config/set-zebra-url` auto-adds remote URLs to `trusted_zebra_urls`.
+
 ## [2.3.6.3] — Teriyaki Hot (CLI) (2026-06-17)
 
 Patch on **v2.3.6.2**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.3 (Teriyaki Hot (CLI))**.
