@@ -2,6 +2,25 @@
 
 ## [Unreleased]
 
+## [2.3.6.3] — Teriyaki Hot (CLI) (2026-06-17)
+
+Patch on **v2.3.6.2**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.3 (Teriyaki Hot (CLI))**.
+
+### Added
+
+- **`trusted_zebra_urls`:** operator-controlled allowlist for direct Zebra RPC when `require_privacy_network` is true (VPS/infra nodes without disabling privacy globally).
+- **Structured Zebra connect errors:** `PRIVACY_POLICY_BLOCKED`, `TOR_PROXY_UNREACHABLE`, `ZEBRA_RPC_UNREACHABLE` on sync connect phase and test-zebra failures.
+- **`POST /api/config/test-zebra`:** returns JSON with `connection_mode`, `block_height`, and error `code` (same RPC path as sync).
+
+### Changed
+
+- **Unified Zebra client:** test-zebra, sync, send, confirmations, and wallet status all use `ZebraClient::from_config_with_url()` — privacy/Tor policy matches real operations (no more false-green test endpoint).
+
+### Fixed
+
+- **Wallet history confirmations:** Zebra `getrawtransaction` expects numeric verbosity `1` (not boolean `true`) and returns block height as `height` (not `blockheight`). Confirmed txs no longer stay Pending/Expired in history.
+- **Wrong expiry on mined txs:** reconcile wrongly-expired broadcasts during check-confirmations; skip expiry when RPC errors (don't treat errors as "not on chain").
+
 ## [2.3.6.2] — Teriyaki Hot (CLI) (2026-06-17)
 
 Patch on **v2.3.6.1**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.2 (Teriyaki Hot (CLI))**.
