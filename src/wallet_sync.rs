@@ -189,6 +189,32 @@ impl SyncRangeContext {
 /// Default Orchard-heavy mainnet scan floor when no `last_scan_height` exists.
 pub const MAINNET_DEFAULT_SCAN_START: u32 = 3_050_000;
 
+fn default_first_scan_start(config: &WalletConfig) -> u32 {
+    if config.network == "testnet" {
+        1
+    } else {
+        MAINNET_DEFAULT_SCAN_START
+    }
+}
+
+/// When `notes.json` is empty, scan full history to tip instead of trusting
+/// `last_scan_height` (avoids "already synced" with zero balance).
+pub(crate) fn apply_empty_cache_backfill(
+    range: &mut ScanRange,
+    config: &WalletConfig,
+    options: &WalletSyncOptions,
+    notes_before: &[crate::notes::SerializableOrchardNote],
+) {
+    if !notes_before.is_empty() {
+        return;
+    }
+    if options.start_height.is_some() || options.end_height.is_some() || options.scan_to_tip {
+        return;
+    }
+    range.scan_start = default_first_scan_start(config);
+    range.scan_end = range.chain_tip;
+}
+
 /// Default incremental scan window when not scanning to tip.
 pub const DEFAULT_INCREMENTAL_BATCH: u32 = 1_000;
 
@@ -258,17 +284,11 @@ pub fn resolve_scan_range(
     options: &WalletSyncOptions,
     chain_tip: u32,
 ) -> Result<ScanRange, NozyError> {
-    let default_first_scan_start = if config.network == "testnet" {
-        1
-    } else {
-        MAINNET_DEFAULT_SCAN_START
-    };
-
     let effective_start = options
         .start_height
         .or_else(|| config.last_scan_height.map(|h| h.saturating_add(1)));
 
-    let scan_start = effective_start.unwrap_or(default_first_scan_start);
+    let scan_start = effective_start.unwrap_or_else(|| default_first_scan_start(config));
 
     let batch = options.incremental_batch.max(1);
     let requested_end = if let Some(end) = options.end_height {
@@ -300,7 +320,7 @@ pub async fn sync_wallet_notes(
         .get_block_count()
         .await
         .map_err(|e| WalletSyncError::with_connect(e, connection_mode))?;
-    let range = resolve_scan_range(&config, &options, chain_tip).map_err(|e| {
+    let mut range = resolve_scan_range(&config, &options, chain_tip).map_err(|e| {
         WalletSyncError::with_range(
             WalletSyncPhase::ResolveRange,
             e,
@@ -310,19 +330,21 @@ pub async fn sync_wallet_notes(
             Some(chain_tip),
         )
     })?;
-    let ctx = SyncRangeContext::from_range(&range);
-    let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
 
     let notes_before = load_wallet_notes().map_err(|e| {
         WalletSyncError::with_range(
             WalletSyncPhase::LoadNotes,
             e,
             None,
-            scan_start,
-            scan_end,
-            chain_tip_opt,
+            None,
+            None,
+            Some(chain_tip),
         )
     })?;
+    apply_empty_cache_backfill(&mut range, &config, &options, &notes_before);
+
+    let ctx = SyncRangeContext::from_range(&range);
+    let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
     let total_before = notes_before.len();
     let balance_before = wallet_unspent_balance_zatoshis(&notes_before);
 
@@ -468,6 +490,42 @@ mod tests {
         assert_eq!(json["block_height"], 3_050_123);
         assert_eq!(json["code"], "SYNC_SCAN_FAILED");
         assert_eq!(json["scan_start"], 3_050_000);
+    }
+
+    #[test]
+    fn empty_cache_backfills_when_checkpoint_at_tip() {
+        let config = test_config(Some(3_380_000), "mainnet");
+        let opts = WalletSyncOptions::default();
+        let mut range = resolve_scan_range(&config, &opts, 3_380_000).unwrap();
+        assert!(range.scan_start > range.scan_end);
+        apply_empty_cache_backfill(&mut range, &config, &opts, &[]);
+        assert_eq!(range.scan_start, MAINNET_DEFAULT_SCAN_START);
+        assert_eq!(range.scan_end, 3_380_000);
+    }
+
+    #[test]
+    fn empty_cache_backfill_skipped_when_notes_exist() {
+        use crate::notes::SerializableOrchardNote;
+
+        let config = test_config(Some(3_380_000), "mainnet");
+        let opts = WalletSyncOptions::default();
+        let mut range = resolve_scan_range(&config, &opts, 3_380_000).unwrap();
+        let cached = vec![SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            block_height: 3_100_000,
+            nullifier_bytes: vec![2; 32],
+            txid: "abc".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            rho_bytes: None,
+            rseed_bytes: None,
+        }];
+        apply_empty_cache_backfill(&mut range, &config, &opts, &cached);
+        assert!(range.scan_start > range.scan_end);
     }
 
     #[test]
