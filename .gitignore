@@ -89,8 +89,8 @@ push_url_update.ps1
 !browser-extension/COMPANION.md
 !browser-extension/RELEASES.md
 !mobile/README.md
-
-# Grant / internal planning — local only (never push to GitHub)
+!docs/PILOT_MAINNET_EVIDENCE.md
+!docs/assets/README.md
 docs/grant/
 docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
 
