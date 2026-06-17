@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## [2.3.6.5] — Teriyaki Hot (CLI) (2026-06-17)
+
+Patch on **v2.3.6.4**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.5 (Teriyaki Hot (CLI))**.
+
 ### Fixed
 
 - **`/api/balance` zero after successful sync:** when `notes.json` is empty but `last_scan_height` already equals chain tip, sync skipped scanning ("already synced") and balance stayed 0. Empty cache now triggers a full historical rescan to tip so on-chain funds are discovered and persisted.
