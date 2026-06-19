@@ -1,10 +1,110 @@
 use crate::error::{NozyError, NozyResult};
 use crate::notes::SerializableOrchardNote;
 use hex;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::PathBuf;
+
+/// JSON object keys must be strings; encode byte/nullifier and height map keys for v2 persistence.
+mod json_index_keys {
+    use super::*;
+
+    pub mod nullifier_index {
+        use super::*;
+
+        pub fn serialize<S>(map: &HashMap<Vec<u8>, usize>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let string_map: HashMap<String, usize> = map
+                .iter()
+                .map(|(k, v)| (hex::encode(k), *v))
+                .collect();
+            string_map.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<HashMap<Vec<u8>, usize>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let string_map: HashMap<String, usize> = HashMap::deserialize(deserializer)?;
+            string_map
+                .into_iter()
+                .map(|(k, v)| {
+                    hex::decode(&k)
+                        .map(|bytes| (bytes, v))
+                        .map_err(serde::de::Error::custom)
+                })
+                .collect()
+        }
+    }
+
+    pub mod height_index {
+        use super::*;
+
+        pub fn serialize<S>(map: &BTreeMap<u32, Vec<usize>>, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let string_map: BTreeMap<String, Vec<usize>> = map
+                .iter()
+                .map(|(k, v)| (k.to_string(), v.clone()))
+                .collect();
+            string_map.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(deserializer: D) -> Result<BTreeMap<u32, Vec<usize>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let string_map: BTreeMap<String, Vec<usize>> = BTreeMap::deserialize(deserializer)?;
+            string_map
+                .into_iter()
+                .map(|(k, v)| {
+                    k.parse::<u32>()
+                        .map(|height| (height, v))
+                        .map_err(serde::de::Error::custom)
+                })
+                .collect()
+        }
+    }
+
+    pub mod address_index {
+        use super::*;
+
+        pub fn serialize<S>(
+            map: &HashMap<Vec<u8>, Vec<usize>>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            let string_map: HashMap<String, Vec<usize>> = map
+                .iter()
+                .map(|(k, v)| (hex::encode(k), v.clone()))
+                .collect();
+            string_map.serialize(serializer)
+        }
+
+        pub fn deserialize<'de, D>(
+            deserializer: D,
+        ) -> Result<HashMap<Vec<u8>, Vec<usize>>, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            let string_map: HashMap<String, Vec<usize>> = HashMap::deserialize(deserializer)?;
+            string_map
+                .into_iter()
+                .map(|(k, v)| {
+                    hex::decode(&k)
+                        .map(|bytes| (bytes, v))
+                        .map_err(serde::de::Error::custom)
+                })
+                .collect()
+        }
+    }
+}
 
 /// Complete index structure for fast note lookups.
 ///
@@ -16,8 +116,11 @@ pub struct NoteIndex {
     #[serde(default = "default_index_version")]
     version: u32,
     notes: Vec<SerializableOrchardNote>,
+    #[serde(with = "json_index_keys::nullifier_index")]
     nullifier_index: HashMap<Vec<u8>, usize>,
+    #[serde(with = "json_index_keys::height_index")]
     height_index: BTreeMap<u32, Vec<usize>>,
+    #[serde(with = "json_index_keys::address_index")]
     address_index: HashMap<Vec<u8>, Vec<usize>>,
 }
 
@@ -381,5 +484,87 @@ impl NoteIndex {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sample_note(value: u64, height: u32, nullifier_byte: u8) -> SerializableOrchardNote {
+        SerializableOrchardNote {
+            note_bytes: vec![0u8; 180],
+            value,
+            address_bytes: vec![2u8; 43],
+            nullifier_bytes: vec![nullifier_byte; 32],
+            block_height: height,
+            txid: "abc".into(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            rho_bytes: None,
+            rseed_bytes: None,
+        }
+    }
+
+    #[test]
+    fn note_index_v2_json_roundtrip_with_notes() {
+        let index = NoteIndex::from_notes(vec![
+            sample_note(250_000, 3_379_045, 1),
+            sample_note(100_000, 3_379_050, 2),
+        ]);
+
+        let json = serde_json::to_string_pretty(&index).expect("serialize v2 index");
+        assert!(
+            json.contains("\"3379045\""),
+            "height keys must serialize as JSON strings"
+        );
+
+        let loaded: NoteIndex =
+            serde_json::from_str(&json).expect("deserialize v2 index with string map keys");
+        loaded.validate_indexes().expect("loaded indexes valid");
+        assert_eq!(loaded.count(), 2);
+        assert_eq!(loaded.total_balance(), 350_000);
+    }
+
+    #[test]
+    fn note_index_save_and_load_file_roundtrip() {
+        let path = std::env::temp_dir().join(format!(
+            "nozy_note_index_test_{}.json",
+            std::process::id()
+        ));
+        let index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 9)]);
+
+        index
+            .save_to_file(&path.to_path_buf())
+            .expect("save index");
+
+        let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("load index");
+        assert_eq!(loaded.unspent_count(), 1);
+        assert_eq!(loaded.total_balance(), 250_000);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn note_index_migrates_legacy_array_format() {
+        let path = std::env::temp_dir().join(format!(
+            "nozy_note_index_legacy_test_{}.json",
+            std::process::id()
+        ));
+        let notes = vec![sample_note(250_000, 3_379_045, 7)];
+        let legacy = serde_json::to_string_pretty(&notes).expect("legacy array json");
+        std::fs::write(&path, legacy).expect("write legacy file");
+
+        let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("load legacy");
+        assert_eq!(loaded.total_balance(), 250_000);
+        let migrated = std::fs::read_to_string(&path).expect("read migrated file");
+        assert!(
+            migrated.contains("nullifier_index"),
+            "migration should rewrite as v2 index"
+        );
+
+        let _ = std::fs::remove_file(&path);
     }
 }
