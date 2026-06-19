@@ -49,6 +49,21 @@ cargo watch -x run
 ### Sync Endpoints
 - `POST /api/sync` - Sync wallet with blockchain
 
+  **Body (JSON):**
+
+  | Field | Required | Description |
+  |-------|----------|-------------|
+  | `password` | If wallet encrypted | Unlock wallet for scan |
+  | `start_height` | No | Start block for this sync (overrides checkpoint) |
+  | `end_height` | No | End block; if omitted with `start_height`, scans to chain tip |
+  | `zebra_url` | No | Override Zebra RPC URL for this sync |
+
+  **Default** (password only): incremental from `last_scan_height + 1`, up to **1000 blocks** per call. Repeat until `already_synced: true`.
+
+  **Read checkpoint:** `GET /api/config` → `last_scan_height`. There is no API to set checkpoint; use `start_height`/`end_height` for rescans, or edit config when the API is stopped.
+
+  See [`docs/issues/api-sync-scan-height-response.md`](../docs/issues/api-sync-scan-height-response.md) for rescan patterns and config paths.
+
 ### lightwalletd (zeaking — canonical; Chrome/Edge companion)
 These routes call **`zeaking::lwd`** in-process (same as Tauri and [`zeaking-ffi`](../zeaking-ffi) on mobile). Chromium MV3 extensions should **not** run gRPC/SQLite in the service worker; use this server on `127.0.0.1` from the extension ([`browser-extension/COMPANION.md`](../browser-extension/COMPANION.md)).
 
@@ -81,6 +96,23 @@ curl -X POST http://localhost:3000/api/wallet/create \
 ### Get Balance
 ```bash
 curl http://localhost:3000/api/balance
+```
+
+### Sync Wallet
+```bash
+# Incremental (up to 1000 blocks per call)
+curl -X POST http://localhost:3000/api/sync \
+  -H "Content-Type: application/json" \
+  -d '{"password": "wallet_password"}'
+
+# Rescan a block range
+curl -X POST http://localhost:3000/api/sync \
+  -H "Content-Type: application/json" \
+  -d '{
+    "password": "wallet_password",
+    "start_height": 3050000,
+    "end_height": 3051000
+  }'
 ```
 
 ### Send Transaction

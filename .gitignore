@@ -91,6 +91,7 @@ push_url_update.ps1
 !mobile/README.md
 !docs/PILOT_MAINNET_EVIDENCE.md
 !docs/assets/README.md
+!docs/issues/*.md
 docs/grant/
 docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
 
