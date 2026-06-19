@@ -17,10 +17,8 @@ mod json_index_keys {
         where
             S: Serializer,
         {
-            let string_map: HashMap<String, usize> = map
-                .iter()
-                .map(|(k, v)| (hex::encode(k), *v))
-                .collect();
+            let string_map: HashMap<String, usize> =
+                map.iter().map(|(k, v)| (hex::encode(k), *v)).collect();
             string_map.serialize(serializer)
         }
 
@@ -43,7 +41,10 @@ mod json_index_keys {
     pub mod height_index {
         use super::*;
 
-        pub fn serialize<S>(map: &BTreeMap<u32, Vec<usize>>, serializer: S) -> Result<S::Ok, S::Error>
+        pub fn serialize<S>(
+            map: &BTreeMap<u32, Vec<usize>>,
+            serializer: S,
+        ) -> Result<S::Ok, S::Error>
         where
             S: Serializer,
         {
@@ -530,15 +531,11 @@ mod tests {
 
     #[test]
     fn note_index_save_and_load_file_roundtrip() {
-        let path = std::env::temp_dir().join(format!(
-            "nozy_note_index_test_{}.json",
-            std::process::id()
-        ));
+        let path =
+            std::env::temp_dir().join(format!("nozy_note_index_test_{}.json", std::process::id()));
         let index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 9)]);
 
-        index
-            .save_to_file(&path.to_path_buf())
-            .expect("save index");
+        index.save_to_file(&path.to_path_buf()).expect("save index");
 
         let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("load index");
         assert_eq!(loaded.unspent_count(), 1);
