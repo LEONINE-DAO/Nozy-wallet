@@ -2,6 +2,20 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Bug 1 — Send rescanned ~50k blocks despite a synced wallet (Gilmore, post note-persistence fix):**
+  - **Symptom:** After sync showed healthy state (`balance_zec: 0.0025`, `last_sync_height` ~25 blocks behind tip), `POST /api/transaction/send` immediately logged `Scanning blocks 3333582 → 3383606` (~50,025 blocks) instead of reusing the known spendable note.
+  - **Root cause:** `scan_notes_for_sending()` always rewound **50,000 blocks** from `last_scan_height` before building a transaction — a pre-persistence safety net that ignored cached `notes.json` and persisted Orchard witnesses.
+  - **Fix:** Send now loads spendable notes directly from `notes.json` via `load_spendable_notes_from_wallet()`. Witness catch-up to chain tip still happens at spend-build time (only the blocks behind tip, not a historical rescan). Fallback scan runs only when the cache is empty or notes lack witnesses, and uses incremental bounds (100-block reorg rewind) instead of 50k.
+  - **Expected after fix:** Send reuses existing wallet state / spendable notes; at most a small incremental scan when cache is missing.
+
+- **Bug 2 — Transaction history empty despite persisted balance (Gilmore, post note-persistence fix):**
+  - **Symptom:** `/api/sync` and `/api/wallet/status` showed correct balance and sync height, but `GET /api/transaction/history` returned `{ "transactions": [], "total": 0 }` — no received deposit entry.
+  - **Root cause:** History endpoints read only `SentTransactionStorage` (outgoing txs recorded at broadcast). Received deposits live in persisted `notes.json` and were never merged into history views.
+  - **Fix:** Added `collect_wallet_transaction_views()` to merge sent records with received deposits grouped by txid from `notes.json`. `/api/transaction/history`, `/api/transaction/{txid}`, `/api/wallet/status` (`total_transactions`), and `web_read_state` now use this merged view. Responses include `transaction_type: "Received"` or `"Sent"`.
+  - **Expected after fix:** At least the detected deposit appears in history (txid, amount, block height, confirmations).
+
 ## [2.3.6.5] — Teriyaki Hot (CLI) (2026-06-17)
 
 Patch on **v2.3.6.4**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.5 (Teriyaki Hot (CLI))**.
