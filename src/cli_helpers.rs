@@ -105,27 +105,56 @@ pub async fn scan_notes_for_sending(
     wallet: HDWallet,
     zebra_url: &str,
 ) -> NozyResult<Vec<crate::SpendableNote>> {
+    use crate::notes::load_spendable_notes_from_wallet;
+    use crate::paths::get_wallet_data_dir;
+    use crate::wallet_sync::MAINNET_DEFAULT_SCAN_START;
+
+    // Fast path: reuse persisted notes + witnesses from sync (witness catch-up at spend time).
+    if let Ok(cached) = load_spendable_notes_from_wallet(&wallet) {
+        if !cached.is_empty() {
+            return Ok(cached);
+        }
+    }
+
     let mut config = load_config();
     config.zebra_url = zebra_url.to_string();
     let zebra_client = ZebraClient::from_config(&config);
     let tip_height = zebra_client.get_block_count().await?;
 
-    // Sending should bias for reliability over speed:
-    // - If we have a last scan height, rewind enough to recover from stale/incomplete local state.
-    // - Otherwise use a wide fallback that still avoids scanning from genesis.
-    const SEND_SCAN_REWIND_BLOCKS: u32 = 50_000;
+    // Fallback scan only when cache is empty or notes lack witnesses.
+    const SEND_SCAN_REWIND_BLOCKS: u32 = 100;
     const SEND_SCAN_WIDE_FALLBACK_BLOCKS: u32 = 500_000;
     const SEND_SCAN_MAINNET_FLOOR: u32 = 3_276_000;
-    let start_height = if let Some(last) = config.last_scan_height {
-        last.saturating_sub(SEND_SCAN_REWIND_BLOCKS)
+
+    let cached_notes = crate::notes::load_wallet_notes().unwrap_or_default();
+    let start_height = if let Some(earliest) = cached_notes
+        .iter()
+        .filter(|n| !n.spent)
+        .map(|n| n.block_height)
+        .min()
+    {
+        earliest.saturating_sub(SEND_SCAN_REWIND_BLOCKS)
+    } else if let Some(last) = config.last_scan_height {
+        last.saturating_add(1)
+            .saturating_sub(SEND_SCAN_REWIND_BLOCKS)
     } else {
         tip_height
             .saturating_sub(SEND_SCAN_WIDE_FALLBACK_BLOCKS)
+            .max(if config.network == "testnet" {
+                1
+            } else {
+                MAINNET_DEFAULT_SCAN_START
+            })
             .min(SEND_SCAN_MAINNET_FLOOR)
     }
     .min(tip_height);
 
-    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
+    let notes_path = get_wallet_data_dir().join("notes.json");
+    let mut note_scanner = if notes_path.exists() {
+        NoteScanner::with_index_file(wallet, zebra_client.clone(), &notes_path)?
+    } else {
+        NoteScanner::new(wallet, zebra_client.clone())
+    };
     let (_result, spendable) = note_scanner
         .scan_notes(Some(start_height), Some(tip_height))
         .await?;

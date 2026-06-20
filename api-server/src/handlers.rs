@@ -979,20 +979,27 @@ pub async fn get_transaction_history(
     Query(params): Query<TransactionQueryParams>,
 ) -> Result<ResponseJson<TransactionHistoryResponse>, (StatusCode, ResponseJson<serde_json::Value>)>
 {
-    use nozy::transaction_history::SentTransactionStorage;
+    use nozy::transaction_history::{
+        collect_wallet_transaction_views, transaction_view_to_history_json, TransactionType,
+    };
+    use nozy::{load_config, ZebraClient};
 
-    let tx_storage = SentTransactionStorage::new().map_err(|e| {
+    let config = load_config();
+    let current_height = ZebraClient::from_config(&config)
+        .get_block_count()
+        .await
+        .unwrap_or(0);
+
+    let views = collect_wallet_transaction_views(current_height).map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({
-                "error": format!("Failed to initialize transaction storage: {}", e)
+                "error": format!("Failed to load transaction history: {}", e)
             })),
         )
     })?;
 
-    let all_txs = tx_storage.get_all_transactions();
-
-    let filtered: Vec<_> = all_txs
+    let filtered: Vec<_> = views
         .iter()
         .filter(|tx| {
             if let Some(ref status) = params.status {
@@ -1001,51 +1008,58 @@ pub async fn get_transaction_history(
                 }
             }
             if let Some(min) = params.min_amount {
-                let amount_zec = tx.amount_zatoshis as f64 / 100_000_000.0;
-                if amount_zec < min {
+                if tx.amount_zec() < min {
                     return false;
                 }
             }
             if let Some(max) = params.max_amount {
-                let amount_zec = tx.amount_zatoshis as f64 / 100_000_000.0;
-                if amount_zec > max {
+                if tx.amount_zec() > max {
                     return false;
                 }
             }
             if let Some(ref recipient) = params.recipient {
-                if !tx.recipient_address.contains(recipient) {
+                if tx.transaction_type == TransactionType::Received {
+                    return false;
+                }
+                if tx
+                    .recipient_address
+                    .as_deref()
+                    .is_none_or(|addr| !addr.contains(recipient))
+                {
                     return false;
                 }
             }
             true
         })
-        .map(|tx| {
-            serde_json::json!({
-                "txid": tx.txid,
-                "status": format!("{:?}", tx.status),
-                "amount_zatoshis": tx.amount_zatoshis,
-                "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
-                "fee_zatoshis": tx.fee_zatoshis,
-                "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
-                "recipient": tx.recipient_address,
-                "block_height": tx.block_height,
-                "confirmations": tx.confirmations,
-                "broadcast_at": tx.broadcast_at.map(|d| d.to_rfc3339()),
-                "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok())
-            })
-        })
+        .map(transaction_view_to_history_json)
         .collect();
 
     Ok(ResponseJson(TransactionHistoryResponse {
-        transactions: filtered.clone(),
         total: filtered.len(),
+        transactions: filtered,
     }))
 }
 
 pub async fn get_transaction(
     Path(txid): Path<String>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::transaction_history::SentTransactionStorage;
+    use nozy::transaction_history::{
+        collect_wallet_transaction_views, transaction_view_to_history_json,
+        SentTransactionStorage,
+    };
+    use nozy::{load_config, ZebraClient};
+
+    let config = load_config();
+    let current_height = ZebraClient::from_config(&config)
+        .get_block_count()
+        .await
+        .unwrap_or(0);
+
+    if let Ok(views) = collect_wallet_transaction_views(current_height) {
+        if let Some(view) = views.iter().find(|v| v.txid == txid) {
+            return Ok(ResponseJson(transaction_view_to_history_json(view)));
+        }
+    }
 
     let tx_storage = SentTransactionStorage::new().map_err(|e| {
         (
@@ -1062,6 +1076,7 @@ pub async fn get_transaction(
     match tx {
         Some(t) => Ok(ResponseJson(serde_json::json!({
             "txid": t.txid,
+            "transaction_type": "Sent",
             "status": format!("{:?}", t.status),
             "amount_zatoshis": t.amount_zatoshis,
             "amount_zec": t.amount_zatoshis as f64 / 100_000_000.0,
@@ -1349,15 +1364,19 @@ pub async fn get_wallet_status(
         .map(|notes| wallet_unspent_balance_zatoshis(&notes))
         .unwrap_or(0);
 
+    let current_height = zebra_client.get_block_count().await.ok();
+
     let (pending_count, total_count) = if let Ok(tx_storage) = SentTransactionStorage::new() {
         let pending = tx_storage.get_pending_transactions();
-        let all = tx_storage.get_all_transactions();
-        (pending.len(), all.len())
+        let sent_count = tx_storage.get_all_transactions().len();
+        let tip = current_height.unwrap_or(0);
+        let history_count = nozy::transaction_history::collect_wallet_transaction_views(tip)
+            .map(|views| views.len())
+            .unwrap_or(sent_count);
+        (pending.len(), history_count)
     } else {
         (0, 0)
     };
-
-    let current_height = zebra_client.get_block_count().await.ok();
     let blocks_behind =
         if let (Some(current), Some(last)) = (current_height, config.last_scan_height) {
             Some(current.saturating_sub(last))
@@ -1430,10 +1449,7 @@ pub struct WebReadStateResponse {
 
 pub async fn web_read_state(
 ) -> Result<ResponseJson<WebReadStateResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{
-        load_config, load_wallet_notes, transaction_history::SentTransactionStorage,
-        wallet_unspent_balance_zatoshis, ZebraClient,
-    };
+    use nozy::{load_config, load_wallet_notes, wallet_unspent_balance_zatoshis, ZebraClient};
 
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);
@@ -1442,27 +1458,21 @@ pub async fn web_read_state(
         .map(|notes| wallet_unspent_balance_zatoshis(&notes))
         .unwrap_or(0);
 
-    let txs: Vec<serde_json::Value> = if let Ok(tx_storage) = SentTransactionStorage::new() {
-        let all = tx_storage.get_all_transactions();
-        all.iter()
-            .take(10)
-            .map(|t| {
-                serde_json::json!({
-                    "txid": t.txid,
-                    "status": format!("{:?}", t.status),
-                    "amount_zatoshis": t.amount_zatoshis,
-                    "amount_zec": t.amount_zatoshis as f64 / 100_000_000.0,
-                    "recipient": t.recipient_address,
-                    "confirmations": t.confirmations,
-                    "broadcast_at": t.broadcast_at.map(|d| d.to_rfc3339())
-                })
+    let current_height = zebra_client.get_block_count().await.ok();
+    let txs: Vec<serde_json::Value> = {
+        let tip = current_height.unwrap_or(0);
+        nozy::transaction_history::collect_wallet_transaction_views(tip)
+            .ok()
+            .map(|views| {
+                views
+                    .iter()
+                    .take(10)
+                    .map(nozy::transaction_history::transaction_view_to_history_json)
+                    .collect()
             })
-            .collect()
-    } else {
-        Vec::new()
+            .unwrap_or_default()
     };
 
-    let current_height = zebra_client.get_block_count().await.ok();
     let blocks_behind =
         if let (Some(current), Some(last)) = (current_height, config.last_scan_height) {
             Some(current.saturating_sub(last))

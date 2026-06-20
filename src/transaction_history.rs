@@ -325,6 +325,78 @@ impl TransactionView {
     }
 }
 
+/// Merge sent transaction records with received deposits from persisted `notes.json`.
+pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<TransactionView>> {
+    use std::collections::HashMap;
+
+    let mut views = Vec::new();
+
+    let tx_storage = SentTransactionStorage::new()?;
+    for record in tx_storage.get_all_transactions() {
+        views.push(TransactionView::from_sent_record(&record));
+    }
+
+    #[cfg(feature = "native")]
+    {
+        use crate::notes::load_wallet_notes;
+
+        let notes = load_wallet_notes().unwrap_or_default();
+        let mut by_txid: HashMap<String, Vec<NoteForHistory>> = HashMap::new();
+
+        for sn in notes {
+            let Some(orchard_note) = sn.to_wallet_orchard_note() else {
+                continue;
+            };
+            let id = hex::encode(&sn.nullifier_bytes);
+            by_txid
+                .entry(sn.txid.clone())
+                .or_default()
+                .push(NoteForHistory {
+                    id,
+                    note: orchard_note,
+                    created_at: Utc::now(),
+                });
+        }
+
+        for notes in by_txid.into_values() {
+            let note_refs: Vec<&NoteForHistory> = notes.iter().collect();
+            if let Some(view) = TransactionView::from_received_notes(&note_refs, current_height) {
+                if !views.iter().any(|v| v.txid == view.txid) {
+                    views.push(view);
+                }
+            }
+        }
+    }
+
+    views.sort_by(|a, b| {
+        let a_key = (a.block_height.unwrap_or(0), a.created_at, a.txid.clone());
+        let b_key = (b.block_height.unwrap_or(0), b.created_at, b.txid.clone());
+        b_key.cmp(&a_key)
+    });
+
+    Ok(views)
+}
+
+/// JSON shape returned by `/api/transaction/history` and desktop clients.
+pub fn transaction_view_to_history_json(view: &TransactionView) -> serde_json::Value {
+    let amount_zatoshis = view.net_amount_zatoshis.unsigned_abs();
+    let fee_zatoshis = view.fee_zatoshis.unwrap_or(0);
+    serde_json::json!({
+        "txid": view.txid,
+        "transaction_type": view.transaction_type.label(),
+        "status": format!("{:?}", view.status),
+        "amount_zatoshis": amount_zatoshis,
+        "amount_zec": view.amount_zec(),
+        "fee_zatoshis": fee_zatoshis,
+        "fee_zec": view.fee_zec().unwrap_or(0.0),
+        "recipient": view.recipient_address,
+        "block_height": view.block_height,
+        "confirmations": view.confirmations,
+        "broadcast_at": view.block_time.map(|d| d.to_rfc3339()),
+        "memo": view.memo,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +458,84 @@ mod tests {
         assert_eq!(view.amount_zec(), 1.0);
         assert_eq!(view.fee_zec(), Some(0.0001));
         assert_eq!(view.net_amount_zatoshis, -100_000_000);
+    }
+
+    #[test]
+    fn test_received_history_json_includes_type() {
+        use crate::notes::{OrchardNote, SerializableOrchardNote};
+
+        let sn = SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            nullifier_bytes: vec![9; 32],
+            block_height: 3_383_500,
+            txid: "deadbeef".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            rho_bytes: None,
+            rseed_bytes: None,
+        };
+
+        // Without rho/rseed, note is skipped — ensure helper still serializes sent views.
+        let record = SentTransactionRecord::new(
+            "sent123".to_string(),
+            "u1test".to_string(),
+            50_000,
+            5_000,
+            None,
+            vec![],
+        );
+        let view = TransactionView::from_sent_record(&record);
+        let json = transaction_view_to_history_json(&view);
+        assert_eq!(json["transaction_type"], "Sent");
+        assert_eq!(json["txid"], "sent123");
+
+        // Direct received view round-trip
+        let orchard_note = OrchardNote {
+            note: {
+                use orchard::note::{RandomSeed, Rho};
+                let rho = Rho::from_bytes(&[1u8; 32]).into_option().unwrap();
+                let rseed = RandomSeed::from_bytes([2u8; 32], &rho)
+                    .into_option()
+                    .unwrap();
+                let addr = orchard::Address::from_raw_address_bytes(&[0u8; 43])
+                    .into_option()
+                    .unwrap();
+                orchard::note::Note::from_parts(
+                    addr,
+                    orchard::value::NoteValue::from_raw(250_000),
+                    rho,
+                    rseed,
+                )
+                .into_option()
+                .unwrap()
+            },
+            value: 250_000,
+            address: orchard::Address::from_raw_address_bytes(&[0u8; 43])
+                .into_option()
+                .unwrap(),
+            nullifier: orchard::note::Nullifier::from_bytes(&[9u8; 32])
+                .into_option()
+                .unwrap(),
+            block_height: 3_383_500,
+            txid: "deadbeef".to_string(),
+            spent: false,
+            memo: vec![],
+        };
+        let note_for_history = NoteForHistory {
+            id: "note1".to_string(),
+            note: orchard_note,
+            created_at: Utc::now(),
+        };
+        let received = TransactionView::from_received_notes(&[&note_for_history], 3_383_520)
+            .expect("received view");
+        let received_json = transaction_view_to_history_json(&received);
+        assert_eq!(received_json["transaction_type"], "Received");
+        assert_eq!(received_json["amount_zatoshis"], 250_000);
+        let _ = sn;
     }
 }
 

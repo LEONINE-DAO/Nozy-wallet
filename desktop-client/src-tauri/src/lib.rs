@@ -574,30 +574,16 @@ async fn estimate_fee(zebra_url: Option<String>, priority: Option<bool>) -> Resu
 
 #[tauri::command]
 fn get_transaction_history() -> Result<Vec<serde_json::Value>, String> {
-    let tx_storage = nozy::transaction_history::SentTransactionStorage::new()
-        .map_err(|e| format!("Failed to initialize transaction storage: {}", e))?;
+    let current_height = nozy::load_config()
+        .last_scan_height
+        .unwrap_or(0);
+    let views = nozy::transaction_history::collect_wallet_transaction_views(current_height)
+        .map_err(|e| format!("Failed to load transaction history: {}", e))?;
 
-    let items = tx_storage
-        .get_all_transactions()
+    Ok(views
         .iter()
-        .map(|tx| {
-            serde_json::json!({
-                "txid": tx.txid,
-                "status": format!("{:?}", tx.status),
-                "amount_zatoshis": tx.amount_zatoshis,
-                "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
-                "fee_zatoshis": tx.fee_zatoshis,
-                "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
-                "recipient": tx.recipient_address,
-                "block_height": tx.block_height,
-                "confirmations": tx.confirmations,
-                "broadcast_at": tx.broadcast_at.map(|d| d.to_rfc3339()),
-                "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok())
-            })
-        })
-        .collect();
-
-    Ok(items)
+        .map(nozy::transaction_history::transaction_view_to_history_json)
+        .collect())
 }
 
 #[tauri::command]
