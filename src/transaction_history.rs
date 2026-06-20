@@ -462,24 +462,6 @@ mod tests {
 
     #[test]
     fn test_received_history_json_includes_type() {
-        use crate::notes::{OrchardNote, SerializableOrchardNote};
-
-        let sn = SerializableOrchardNote {
-            note_bytes: vec![1],
-            value: 250_000,
-            address_bytes: vec![0; 43],
-            nullifier_bytes: vec![9; 32],
-            block_height: 3_383_500,
-            txid: "deadbeef".to_string(),
-            spent: false,
-            memo: vec![],
-            orchard_incremental_witness_hex: None,
-            orchard_witness_tip_height: None,
-            rho_bytes: None,
-            rseed_bytes: None,
-        };
-
-        // Without rho/rseed, note is skipped — ensure helper still serializes sent views.
         let record = SentTransactionRecord::new(
             "sent123".to_string(),
             "u1test".to_string(),
@@ -488,54 +470,29 @@ mod tests {
             None,
             vec![],
         );
-        let view = TransactionView::from_sent_record(&record);
-        let json = transaction_view_to_history_json(&view);
-        assert_eq!(json["transaction_type"], "Sent");
-        assert_eq!(json["txid"], "sent123");
+        let sent = TransactionView::from_sent_record(&record);
+        let sent_json = transaction_view_to_history_json(&sent);
+        assert_eq!(sent_json["transaction_type"], "Sent");
+        assert_eq!(sent_json["txid"], "sent123");
 
-        // Direct received view round-trip
-        let orchard_note = OrchardNote {
-            note: {
-                use orchard::note::{RandomSeed, Rho};
-                let rho = Rho::from_bytes(&[1u8; 32]).into_option().unwrap();
-                let rseed = RandomSeed::from_bytes([2u8; 32], &rho)
-                    .into_option()
-                    .unwrap();
-                let addr = orchard::Address::from_raw_address_bytes(&[0u8; 43])
-                    .into_option()
-                    .unwrap();
-                orchard::note::Note::from_parts(
-                    addr,
-                    orchard::value::NoteValue::from_raw(250_000),
-                    rho,
-                    rseed,
-                )
-                .into_option()
-                .unwrap()
-            },
-            value: 250_000,
-            address: orchard::Address::from_raw_address_bytes(&[0u8; 43])
-                .into_option()
-                .unwrap(),
-            nullifier: orchard::note::Nullifier::from_bytes(&[9u8; 32])
-                .into_option()
-                .unwrap(),
-            block_height: 3_383_500,
+        let received = TransactionView {
             txid: "deadbeef".to_string(),
-            spent: false,
-            memo: vec![],
-        };
-        let note_for_history = NoteForHistory {
-            id: "note1".to_string(),
-            note: orchard_note,
+            transaction_type: TransactionType::Received,
+            net_amount_zatoshis: 250_000,
+            fee_zatoshis: None,
+            recipient_address: None,
+            my_addresses: vec![],
+            block_height: Some(3_383_500),
+            block_time: Some(Utc::now()),
+            confirmations: 21,
+            status: TransactionStatus::Confirmed,
+            memo: None,
+            notes_involved: vec!["note1".to_string()],
             created_at: Utc::now(),
         };
-        let received = TransactionView::from_received_notes(&[&note_for_history], 3_383_520)
-            .expect("received view");
         let received_json = transaction_view_to_history_json(&received);
         assert_eq!(received_json["transaction_type"], "Received");
         assert_eq!(received_json["amount_zatoshis"], 250_000);
-        let _ = sn;
     }
 }
 

@@ -1044,8 +1044,7 @@ pub async fn get_transaction(
     Path(txid): Path<String>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::transaction_history::{
-        collect_wallet_transaction_views, transaction_view_to_history_json,
-        SentTransactionStorage,
+        collect_wallet_transaction_views, transaction_view_to_history_json, SentTransactionStorage,
     };
     use nozy::{load_config, ZebraClient};
 
