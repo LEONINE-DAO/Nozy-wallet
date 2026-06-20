@@ -144,9 +144,10 @@ pub use note_index::NoteIndex;
 pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
 pub use notes::{
-    load_wallet_notes, mark_wallet_notes_spent_from_spendables, merge_scanned_notes,
-    release_wallet_notes_by_nullifier_hex, save_wallet_notes, wallet_unspent_balance_zatoshis,
-    NoteScanResult, NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote,
+    load_spendable_notes_from_wallet, load_wallet_notes, mark_wallet_notes_spent_from_spendables,
+    merge_scanned_notes, release_wallet_notes_by_nullifier_hex, save_wallet_notes,
+    wallet_unspent_balance_zatoshis, NoteScanResult, NoteScanner, OrchardNote,
+    SerializableOrchardNote, SpendableNote,
 };
 #[cfg(feature = "native")]
 pub use orchard_tx::{
@@ -179,7 +180,8 @@ pub use sync_status::{gather_sync_status, print_sync_status, resolve_lightwallet
 pub use transaction_builder::ZcashTransactionBuilder;
 #[cfg(feature = "native")]
 pub use transaction_history::{
-    SentTransactionRecord, TransactionStatus, TransactionType, TransactionView,
+    collect_wallet_transaction_views, transaction_view_to_history_json, SentTransactionRecord,
+    TransactionStatus, TransactionType, TransactionView,
 };
 #[cfg(feature = "native")]
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};

@@ -208,18 +208,15 @@ pub async fn estimate_fee(
 
 #[command]
 pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriError> {
-    use nozy::transaction_history::SentTransactionStorage;
+    use nozy::transaction_history::{
+        collect_wallet_transaction_views, transaction_view_to_history_json,
+    };
 
-    let tx_storage = SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
-
-    let transactions = tx_storage.get_all_transactions();
-
-    let json_transactions: Vec<serde_json::Value> = transactions
+    let views = collect_wallet_transaction_views(0).map_err(|e| TauriError::from(e.to_string()))?;
+    Ok(views
         .iter()
-        .map(tx_record_json)
-        .collect();
-
-    Ok(json_transactions)
+        .map(transaction_view_to_history_json)
+        .collect())
 }
 
 #[command]

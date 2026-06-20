@@ -325,6 +325,78 @@ impl TransactionView {
     }
 }
 
+/// Merge sent transaction records with received deposits from persisted `notes.json`.
+pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<TransactionView>> {
+    use std::collections::HashMap;
+
+    let mut views = Vec::new();
+
+    let tx_storage = SentTransactionStorage::new()?;
+    for record in tx_storage.get_all_transactions() {
+        views.push(TransactionView::from_sent_record(&record));
+    }
+
+    #[cfg(feature = "native")]
+    {
+        use crate::notes::load_wallet_notes;
+
+        let notes = load_wallet_notes().unwrap_or_default();
+        let mut by_txid: HashMap<String, Vec<NoteForHistory>> = HashMap::new();
+
+        for sn in notes {
+            let Some(orchard_note) = sn.to_wallet_orchard_note() else {
+                continue;
+            };
+            let id = hex::encode(&sn.nullifier_bytes);
+            by_txid
+                .entry(sn.txid.clone())
+                .or_default()
+                .push(NoteForHistory {
+                    id,
+                    note: orchard_note,
+                    created_at: Utc::now(),
+                });
+        }
+
+        for notes in by_txid.into_values() {
+            let note_refs: Vec<&NoteForHistory> = notes.iter().collect();
+            if let Some(view) = TransactionView::from_received_notes(&note_refs, current_height) {
+                if !views.iter().any(|v| v.txid == view.txid) {
+                    views.push(view);
+                }
+            }
+        }
+    }
+
+    views.sort_by(|a, b| {
+        let a_key = (a.block_height.unwrap_or(0), a.created_at, a.txid.clone());
+        let b_key = (b.block_height.unwrap_or(0), b.created_at, b.txid.clone());
+        b_key.cmp(&a_key)
+    });
+
+    Ok(views)
+}
+
+/// JSON shape returned by `/api/transaction/history` and desktop clients.
+pub fn transaction_view_to_history_json(view: &TransactionView) -> serde_json::Value {
+    let amount_zatoshis = view.net_amount_zatoshis.unsigned_abs();
+    let fee_zatoshis = view.fee_zatoshis.unwrap_or(0);
+    serde_json::json!({
+        "txid": view.txid,
+        "transaction_type": view.transaction_type.label(),
+        "status": format!("{:?}", view.status),
+        "amount_zatoshis": amount_zatoshis,
+        "amount_zec": view.amount_zec(),
+        "fee_zatoshis": fee_zatoshis,
+        "fee_zec": view.fee_zec().unwrap_or(0.0),
+        "recipient": view.recipient_address,
+        "block_height": view.block_height,
+        "confirmations": view.confirmations,
+        "broadcast_at": view.block_time.map(|d| d.to_rfc3339()),
+        "memo": view.memo,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -386,6 +458,41 @@ mod tests {
         assert_eq!(view.amount_zec(), 1.0);
         assert_eq!(view.fee_zec(), Some(0.0001));
         assert_eq!(view.net_amount_zatoshis, -100_000_000);
+    }
+
+    #[test]
+    fn test_received_history_json_includes_type() {
+        let record = SentTransactionRecord::new(
+            "sent123".to_string(),
+            "u1test".to_string(),
+            50_000,
+            5_000,
+            None,
+            vec![],
+        );
+        let sent = TransactionView::from_sent_record(&record);
+        let sent_json = transaction_view_to_history_json(&sent);
+        assert_eq!(sent_json["transaction_type"], "Sent");
+        assert_eq!(sent_json["txid"], "sent123");
+
+        let received = TransactionView {
+            txid: "deadbeef".to_string(),
+            transaction_type: TransactionType::Received,
+            net_amount_zatoshis: 250_000,
+            fee_zatoshis: None,
+            recipient_address: None,
+            my_addresses: vec![],
+            block_height: Some(3_383_500),
+            block_time: Some(Utc::now()),
+            confirmations: 21,
+            status: TransactionStatus::Confirmed,
+            memo: None,
+            notes_involved: vec!["note1".to_string()],
+            created_at: Utc::now(),
+        };
+        let received_json = transaction_view_to_history_json(&received);
+        assert_eq!(received_json["transaction_type"], "Received");
+        assert_eq!(received_json["amount_zatoshis"], 250_000);
     }
 }
 

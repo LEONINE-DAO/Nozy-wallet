@@ -89,6 +89,81 @@ impl SerializableOrchardNote {
         let note = self.to_orchard_note()?;
         Some(note.nullifier(fvk).to_bytes())
     }
+
+    /// Reconstruct a wallet [`OrchardNote`] from persisted fields (history, display).
+    pub fn to_wallet_orchard_note(&self) -> Option<OrchardNote> {
+        use orchard::note::Nullifier;
+
+        let note = self.to_orchard_note()?;
+        let addr_bytes: [u8; 43] = self.address_bytes.as_slice().try_into().ok()?;
+        let address = OrchardAddress::from_raw_address_bytes(&addr_bytes).into_option()?;
+        let nullifier_bytes: [u8; 32] = self.nullifier_bytes.as_slice().try_into().ok()?;
+        let nullifier = Nullifier::from_bytes(&nullifier_bytes).into_option()?;
+        Some(OrchardNote {
+            note,
+            value: self.value,
+            address,
+            nullifier,
+            block_height: self.block_height,
+            txid: self.txid.clone(),
+            spent: self.spent,
+            memo: self.memo.clone(),
+        })
+    }
+}
+
+/// Build spendable notes from cached `notes.json` (no block scan).
+///
+/// Notes must have persisted Orchard witnesses; witness catch-up to chain tip happens at spend
+/// build time via [`crate::orchard_tx::ZebraJsonRpcOrchardWitnessProvider`].
+#[cfg(feature = "native")]
+pub fn load_spendable_notes_from_wallet(wallet: &HDWallet) -> NozyResult<Vec<SpendableNote>> {
+    use crate::key_management::{zeroize_bytes, SecureSeed};
+    use zip32::AccountId;
+
+    let cached = load_wallet_notes()?;
+    let unspent: Vec<&SerializableOrchardNote> = cached
+        .iter()
+        .filter(|n| {
+            !n.spent
+                && n.orchard_incremental_witness_hex
+                    .as_ref()
+                    .is_some_and(|w| !w.is_empty())
+        })
+        .collect();
+    if unspent.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let account_id = AccountId::try_from(0)
+        .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
+    let mnemonic = wallet.get_mnemonic_object();
+    let mut seed_bytes = mnemonic.to_seed("").to_vec();
+    let secure_seed = SecureSeed::new(seed_bytes.clone());
+    let orchard_sk = SpendingKey::from_zip32_seed(secure_seed.as_bytes(), 133, account_id)
+        .map_err(|e| {
+            NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e))
+        })?;
+    zeroize_bytes(&mut seed_bytes);
+
+    let mut spendable = Vec::with_capacity(unspent.len());
+    for sn in unspent {
+        let orchard_note = sn.to_wallet_orchard_note().ok_or_else(|| {
+            NozyError::InvalidOperation(format!(
+                "Cached note in tx {} is missing rho/rseed; run sync before sending",
+                sn.txid
+            ))
+        })?;
+        spendable.push(SpendableNote {
+            orchard_note,
+            spending_key: orchard_sk.clone(),
+            derivation_path: "m/32'/133'/0'".to_string(),
+            orchard_incremental_witness_hex: sn.orchard_incremental_witness_hex.clone(),
+            orchard_witness_tip_height: sn.orchard_witness_tip_height,
+        });
+    }
+
+    Ok(spendable)
 }
 
 impl From<&OrchardNote> for SerializableOrchardNote {
