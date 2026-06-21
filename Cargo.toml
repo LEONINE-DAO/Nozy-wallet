@@ -54,7 +54,7 @@ zcash_note_encryption = "0.4.1"
 zip32 = "0.2.1"
 
 # Serialization for Zcash types
-ark-serialize = "0.4"
+ark-serialize = "0.6"
 
 # Browser-compatible randomness (WASM)
 getrandom = { version = "0.2", optional = true }
