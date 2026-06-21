@@ -92,6 +92,14 @@ push_url_update.ps1
 !docs/PILOT_MAINNET_EVIDENCE.md
 !docs/assets/README.md
 !docs/issues/*.md
+# Local-only: lecture / research journal (never commit — source material for talks & papers)
+docs/journal/
+!ENHANCEMENT_ROADMAP.md
+!web-app/
+!web-app/**/*.md
+!nozy-mobile/
+!nozy-mobile/**/*.md
+!landing/README.md
 docs/grant/
 docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
 

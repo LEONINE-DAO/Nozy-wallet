@@ -7,4 +7,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   // GitHub Pages base path
   base: "/Nozy-wallet/",
+  resolve: {
+    dedupe: ["react", "react-dom"],
+  },
 });
