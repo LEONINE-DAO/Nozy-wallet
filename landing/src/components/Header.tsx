@@ -40,14 +40,12 @@ const Header = () => {
       }`}
     >
       <div className="max-w-7xl mx-auto px-4 sm:px-6 h-28 flex items-center justify-between relative z-50">
-        <Link to="/" className="flex items-center shrink-0 -ml-1 sm:ml-0">
-          <span className="relative block h-24 w-24 sm:h-[6.75rem] sm:w-[6.75rem] overflow-hidden rounded-lg bg-black shadow-sm">
-            <img
-              src={logoUrl}
-              alt="NozyWallet"
-              className="absolute inset-0 h-full w-full scale-[1.9] object-contain"
-            />
-          </span>
+        <Link to="/" className="flex items-center shrink-0">
+          <img
+            src={logoUrl}
+            alt="NozyWallet"
+            className="h-24 sm:h-[6.75rem] w-auto rounded-lg"
+          />
         </Link>
 
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-500">
