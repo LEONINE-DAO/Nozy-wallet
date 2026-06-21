@@ -52,6 +52,13 @@ const Header = () => {
 
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-500">
           <a
+            href="#products"
+            onClick={(e) => handleNavClick(e, "products")}
+            className="hover:text-yellow-600 transition-colors cursor-pointer"
+          >
+            Products
+          </a>
+          <a
             href="#features"
             onClick={(e) => handleNavClick(e, "features")}
             className="hover:text-yellow-600 transition-colors cursor-pointer"
@@ -106,6 +113,13 @@ const Header = () => {
       >
         <nav className="flex flex-col h-full px-6 py-8">
           <div className="flex flex-col gap-6">
+            <a
+              href="#products"
+              onClick={(e) => handleNavClick(e, "products")}
+              className="text-lg font-semibold text-zinc-800 hover:text-yellow-600 transition-colors py-3 border-b border-zinc-100"
+            >
+              Products
+            </a>
             <a
               href="#features"
               onClick={(e) => handleNavClick(e, "features")}

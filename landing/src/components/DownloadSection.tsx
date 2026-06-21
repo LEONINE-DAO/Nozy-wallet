@@ -1,4 +1,5 @@
 import { DOWNLOAD_URLS, REPO_RELEASES_LATEST } from "../lib/downloads";
+import { PATHS } from "../lib/links";
 
 const card =
   "rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm hover:border-yellow-300/70 transition-colors text-left";
@@ -127,12 +128,12 @@ const DownloadSection = () => {
                 Google Play — soon
               </span>
               <a
-                href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md"
+                href={PATHS.enhancementRoadmap}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-sm font-medium text-yellow-700 hover:underline text-center sm:text-right"
               >
-                Mobile roadmap on GitHub →
+                Product roadmap on GitHub →
               </a>
             </div>
           </div>

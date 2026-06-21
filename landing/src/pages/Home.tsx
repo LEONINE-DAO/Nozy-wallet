@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import Hero from "../components/Hero";
+import ProductSurfaces from "../components/ProductSurfaces";
 import DownloadSection from "../components/DownloadSection";
 import Features from "../components/Features";
 import FAQ from "../components/FAQ";
@@ -32,6 +33,7 @@ const Home = () => {
   return (
     <>
       <Hero />
+      <ProductSurfaces />
       <DownloadSection />
       <Features />
       <FAQ />

@@ -6,11 +6,14 @@ import Privacy from "./pages/Privacy";
 import Security from "./pages/Security";
 import { Analytics } from "@vercel/analytics/react";
 
+/** Matches vite.config.ts `base` (GitHub Pages: /Nozy-wallet/) */
+const routerBasename = import.meta.env.BASE_URL.replace(/\/$/, "") || "/";
+
 function App() {
   return (
     <>
       <Analytics />
-      <Router basename="/Nozy-wallet">
+      <Router basename={routerBasename}>
         <div className="min-h-screen bg-white text-zinc-900 selection:bg-yellow-200 selection:text-yellow-900">
           <Header />
           <main>
