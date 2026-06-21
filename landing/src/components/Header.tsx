@@ -39,15 +39,15 @@ const Header = () => {
         isMenuOpen ? "bg-white" : "backdrop-blur-md bg-white/70"
       }`}
     >
-      <div className="max-w-7xl mx-auto px-6 h-24 flex items-center justify-between relative z-50">
-        <Link to="/" className="flex items-center gap-3">
-          <img
-            src={logoUrl}
-            alt="NozyWallet"
-            className="h-11 w-auto rounded-lg"
-            width={132}
-            height={44}
-          />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-28 flex items-center justify-between relative z-50">
+        <Link to="/" className="flex items-center shrink-0 -ml-1 sm:ml-0">
+          <span className="relative block h-24 w-24 sm:h-[6.75rem] sm:w-[6.75rem] overflow-hidden rounded-lg bg-black shadow-sm">
+            <img
+              src={logoUrl}
+              alt="NozyWallet"
+              className="absolute inset-0 h-full w-full scale-[1.9] object-contain"
+            />
+          </span>
         </Link>
 
         <nav className="hidden md:flex items-center gap-8 text-sm font-medium text-zinc-500">
@@ -105,7 +105,7 @@ const Header = () => {
       </div>
 
       <div
-        className={`fixed left-0 right-0 top-20 bottom-0 bg-white z-40 transition-all duration-300 md:hidden ${
+        className={`fixed left-0 right-0 top-28 bottom-0 bg-white z-40 transition-all duration-300 md:hidden ${
           isMenuOpen
             ? "opacity-100 visible"
             : "opacity-0 invisible pointer-events-none"
