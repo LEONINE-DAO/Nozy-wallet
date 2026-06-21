@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { HamburgerMenu, CloseSquare } from "@solar-icons/react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import logoUrl from "../assets/logo.png";
 
 const Header = () => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -39,14 +40,13 @@ const Header = () => {
       }`}
     >
       <div className="max-w-7xl mx-auto px-6 h-24 flex items-center justify-between relative z-50">
-        <Link
-          to="/"
-          className="flex items-center gap-3"
-        >
+        <Link to="/" className="flex items-center gap-3">
           <img
-            src={`${import.meta.env.BASE_URL}logo.png`}
-            alt="NozyWallet Logo"
-            className="h-auto w-32"
+            src={logoUrl}
+            alt="NozyWallet"
+            className="h-11 w-auto rounded-lg"
+            width={132}
+            height={44}
           />
         </Link>
 
