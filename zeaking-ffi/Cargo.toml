@@ -14,4 +14,4 @@ name = "zeaking_ffi"
 zeaking = { path = "../zeaking", features = ["lightwalletd"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
 thiserror = "1.0"
-uniffi = { version = "0.28", features = ["tokio"] }
+uniffi = { version = "0.31", features = ["tokio"] }
