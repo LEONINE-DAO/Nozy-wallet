@@ -187,11 +187,8 @@ pub async fn build_and_broadcast_transaction(
         tx_builder.enable_mainnet_broadcast();
     }
 
-    let tip_height = zebra_client.get_best_block_height().await?;
-    let expiry_height = tip_height.saturating_add(pilot.expiry_delta_blocks);
-
     let transaction = tx_builder
-        .build_send_transaction(
+        .build_and_broadcast_send_transaction(
             zebra_client,
             spendable_notes,
             recipient,
@@ -206,51 +203,41 @@ pub async fn build_and_broadcast_transaction(
     show_transaction_privacy_summary();
 
     if enable_broadcast {
-        match tx_builder
-            .broadcast_transaction(zebra_client, &transaction)
-            .await
-        {
-            Ok(network_txid) => {
-                use crate::privacy_ui::show_privacy_badge;
-                show_privacy_badge();
-                println!("✅ Transaction broadcast successfully!");
-                println!("🆔 Network TXID: {}", network_txid);
+        use crate::privacy_ui::show_privacy_badge;
+        show_privacy_badge();
+        println!("✅ Transaction broadcast successfully!");
+        println!("🆔 Network TXID: {}", transaction.txid);
 
-                let tx_storage = SentTransactionStorage::new()?;
-                use orchard::keys::FullViewingKey;
-                let spent_note_ids: Vec<String> = spendable_notes
-                    .iter()
-                    .map(|note| {
-                        let fvk = FullViewingKey::from(&note.spending_key);
-                        hex::encode(note.orchard_note.note.nullifier(&fvk).to_bytes())
-                    })
-                    .collect();
+        let tx_storage = SentTransactionStorage::new()?;
+        use orchard::keys::FullViewingKey;
+        let spent_note_ids: Vec<String> = spendable_notes
+            .iter()
+            .map(|note| {
+                let fvk = FullViewingKey::from(&note.spending_key);
+                hex::encode(note.orchard_note.note.nullifier(&fvk).to_bytes())
+            })
+            .collect();
 
-                if let Err(e) =
-                    crate::notes::mark_wallet_notes_spent_from_spendables(spendable_notes)
-                {
-                    eprintln!("Warning: could not mark spent notes locally: {e}");
-                }
-
-                let mut tx_record = SentTransactionRecord::new_pilot(
-                    network_txid.clone(),
-                    recipient.to_string(),
-                    amount_zatoshis,
-                    fee_zatoshis,
-                    memo.map(|m| m.to_vec()),
-                    spent_note_ids,
-                    pilot.priority,
-                    expiry_height,
-                );
-                tx_record.mark_broadcast();
-                tx_storage.save_transaction(tx_record)?;
-
-                println!("📝 Transaction saved to history - will track confirmations");
-
-                Ok(network_txid)
-            }
-            Err(e) => Err(e),
+        if let Err(e) = crate::notes::mark_wallet_notes_spent_from_spendables(spendable_notes) {
+            eprintln!("Warning: could not mark spent notes locally: {e}");
         }
+
+        let mut tx_record = SentTransactionRecord::new_pilot(
+            transaction.txid.clone(),
+            recipient.to_string(),
+            amount_zatoshis,
+            fee_zatoshis,
+            memo.map(|m| m.to_vec()),
+            spent_note_ids,
+            pilot.priority,
+            transaction.expiry_height,
+        );
+        tx_record.mark_broadcast();
+        tx_storage.save_transaction(tx_record)?;
+
+        println!("📝 Transaction saved to history - will track confirmations");
+
+        Ok(transaction.txid)
     } else {
         Err(NozyError::InvalidOperation(
             "Broadcasting disabled".to_string(),

@@ -1,5 +1,8 @@
 use crate::error::{NozyError, NozyResult};
-use crate::fee_policy::{OrchardSendFeeShape, PilotSendOptions};
+use crate::fee_policy::{
+    is_expiry_consensus_error, OrchardSendFeeShape, PilotSendOptions,
+    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS,
+};
 use crate::notes::SpendableNote;
 use crate::orchard_tx::{
     select_single_spend_note, OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider,
@@ -11,6 +14,8 @@ use zcash_address::unified::{Container, Encoding};
 pub struct SignedTransaction {
     pub raw_transaction: Vec<u8>,
     pub txid: String,
+    /// On-chain expiry height encoded in the transaction (for history / speed-up).
+    pub expiry_height: u32,
 }
 
 pub struct ZcashTransactionBuilder {
@@ -113,7 +118,69 @@ impl ZcashTransactionBuilder {
         Ok(SignedTransaction {
             raw_transaction: built.raw_transaction,
             txid: built.txid,
+            expiry_height: built.expiry_height,
         })
+    }
+
+    /// Build, then broadcast with automatic rebuild when the pilot expiry window is exceeded.
+    pub async fn build_and_broadcast_send_transaction(
+        &self,
+        zebra_client: &ZebraClient,
+        spendable_notes: &[SpendableNote],
+        recipient_address: &str,
+        amount_zatoshis: u64,
+        fee_zatoshis: u64,
+        memo: Option<&[u8]>,
+        pilot: PilotSendOptions,
+    ) -> NozyResult<SignedTransaction> {
+        if !self.allow_mainnet_broadcast {
+            return Err(NozyError::InvalidOperation(
+                "Broadcasting disabled".to_string(),
+            ));
+        }
+
+        let mut last_err: Option<NozyError> = None;
+
+        for attempt in 1..=PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS {
+            if attempt > 1 {
+                eprintln!(
+                    "⚠️  Broadcast hit pilot expiry; rebuilding send ({attempt}/{})",
+                    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS
+                );
+            }
+
+            let transaction = self
+                .build_send_transaction(
+                    zebra_client,
+                    spendable_notes,
+                    recipient_address,
+                    amount_zatoshis,
+                    fee_zatoshis,
+                    memo,
+                    pilot,
+                )
+                .await?;
+
+            match self.broadcast_transaction(zebra_client, &transaction).await {
+                Ok(_network_txid) => return Ok(transaction),
+                Err(e) => {
+                    let msg = e.to_string();
+                    if is_expiry_consensus_error(&msg)
+                        && attempt < PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS
+                    {
+                        last_err = Some(e);
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        Err(last_err.unwrap_or_else(|| {
+            NozyError::InvalidOperation(
+                "Failed to broadcast within pilot expiry window after rebuild attempts".to_string(),
+            )
+        }))
     }
 
     pub async fn broadcast_transaction(

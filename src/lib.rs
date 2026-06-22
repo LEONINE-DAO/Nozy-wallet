@@ -102,8 +102,9 @@ pub mod zebra_tree_rpc;
 // ============================================================
 pub use error::{NozyError, NozyResult};
 pub use fee_policy::{
-    estimate_orchard_send_fee_zatoshis, OrchardSendFeeShape, PilotSendOptions,
-    PILOT_EXPIRY_DELTA_BLOCKS, PRIORITY_MULTIPLIER,
+    estimate_orchard_send_fee_zatoshis, is_expiry_consensus_error, pilot_expiry_height,
+    pilot_transaction_expired, OrchardSendFeeShape, PilotSendOptions, PILOT_EXPIRY_DELTA_BLOCKS,
+    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS, PRIORITY_MULTIPLIER,
 };
 pub use hd_wallet::HDWallet;
 pub use transactions::{SignedTransaction, TransactionBuilder, TransactionDetails};

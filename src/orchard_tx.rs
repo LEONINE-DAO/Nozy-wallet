@@ -1,4 +1,5 @@
 use crate::error::{NozyError, NozyResult};
+use crate::fee_policy::{pilot_expiry_height, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS};
 use crate::notes::{NoteScanner, SpendableNote};
 use crate::orchard_tree_codec::{
     orchard_incremental_witness_from_bytes, OrchardIncrementalWitness,
@@ -35,6 +36,8 @@ fn orchard_proving_key() -> &'static Arc<ProvingKey> {
 pub struct OrchardBuiltSpend {
     pub raw_transaction: Vec<u8>,
     pub txid: String,
+    /// Encoded on-chain expiry height (mempool build context + pilot delta).
+    pub expiry_height: u32,
 }
 
 /// Supplies Orchard anchor + Merkle path for a spend (local witness + `z_gettreestate` verification).
@@ -200,28 +203,15 @@ impl OrchardTransactionBuilder {
             flags: Flags::ENABLED,
             bundle_required: true,
         };
-        let tip_height = zebra_client.get_best_block_height().await?;
-        // Mempool consensus checks use the next block context, not the current tip block.
-        let tx_build_height = tip_height.saturating_add(1);
 
-        println!(
-            "Adding spend action for {} zatoshis",
-            spendable_note.orchard_note.value
-        );
+        let status = self.proving_manager.get_status();
+        if !status.can_prove {
+            return Err(NozyError::InvalidOperation(
+                "Cannot create proofs: proving parameters not available. Run 'nozy proving --download' first.".to_string()
+            ));
+        }
 
-        let fvk = FullViewingKey::from(&spendable_note.spending_key);
-
-        let (anchor, merkle_path) = witness_provider
-            .prepare_spend_anchor_and_path(zebra_client, spendable_note, tip_height)
-            .await?;
-
-        let mut builder = OrchardBuilder::new(bundle_type, anchor);
-
-        builder
-            .add_spend(fvk, spendable_note.orchard_note.note.clone(), merkle_path)
-            .map_err(|e| {
-                NozyError::InvalidOperation(format!("Failed to add spend action: {}", e))
-            })?;
+        println!("🔧 Proving Status: {}", status.status_message());
 
         let recipient_orchard_address = {
             let mut orchard_receiver = None;
@@ -264,149 +254,199 @@ impl OrchardTransactionBuilder {
             })
             .unwrap_or([0u8; 512]);
 
-        builder
-            .add_output(
-                None,
-                recipient_orchard_address,
-                recipient_note_value,
-                recipient_memo,
-            )
-            .map_err(|e| {
-                NozyError::InvalidOperation(format!("Failed to add recipient output: {}", e))
-            })?;
+        let mut rng = OsRng;
 
-        if change_amount > 0 {
-            let change_orchard_address = spendable_note.orchard_note.address;
-            let change_note_value = NoteValue::from_raw(change_amount);
-            let change_memo = [0u8; 512];
+        for attempt in 1..=PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS {
+            if attempt > 1 {
+                println!(
+                    "⚠️  Orchard proof outran pilot expiry; rebuilding ({attempt}/{})",
+                    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS
+                );
+            }
+
+            let tip_height = zebra_client.get_best_block_height().await?;
+
+            println!(
+                "Adding spend action for {} zatoshis",
+                spendable_note.orchard_note.value
+            );
+
+            let fvk = FullViewingKey::from(&spendable_note.spending_key);
+
+            let (anchor, merkle_path) = witness_provider
+                .prepare_spend_anchor_and_path(zebra_client, spendable_note, tip_height)
+                .await?;
+
+            let mut builder = OrchardBuilder::new(bundle_type, anchor);
 
             builder
-                .add_output(None, change_orchard_address, change_note_value, change_memo)
+                .add_spend(fvk, spendable_note.orchard_note.note.clone(), merkle_path)
                 .map_err(|e| {
-                    NozyError::InvalidOperation(format!("Failed to add change output: {}", e))
+                    NozyError::InvalidOperation(format!("Failed to add spend action: {}", e))
                 })?;
-        }
 
-        let mut rng = OsRng;
-        let bundle_result = builder.build::<i64>(&mut rng);
+            builder
+                .add_output(
+                    None,
+                    recipient_orchard_address.clone(),
+                    recipient_note_value,
+                    recipient_memo,
+                )
+                .map_err(|e| {
+                    NozyError::InvalidOperation(format!("Failed to add recipient output: {}", e))
+                })?;
 
-        let (unauthorized, _metadata) = match bundle_result {
-            Ok(Some((bundle, metadata))) => (bundle, metadata),
-            Ok(None) => {
-                return Err(NozyError::InvalidOperation(
-                    "Failed to build Orchard bundle - no bundle returned".to_string(),
-                ))
+            if change_amount > 0 {
+                let change_orchard_address = spendable_note.orchard_note.address;
+                let change_note_value = NoteValue::from_raw(change_amount);
+                let change_memo = [0u8; 512];
+
+                builder
+                    .add_output(None, change_orchard_address, change_note_value, change_memo)
+                    .map_err(|e| {
+                        NozyError::InvalidOperation(format!("Failed to add change output: {}", e))
+                    })?;
             }
-            Err(e) => {
+
+            let bundle_result = builder.build::<i64>(&mut rng);
+
+            let (unauthorized, _metadata) = match bundle_result {
+                Ok(Some((bundle, metadata))) => (bundle, metadata),
+                Ok(None) => {
+                    return Err(NozyError::InvalidOperation(
+                        "Failed to build Orchard bundle - no bundle returned".to_string(),
+                    ))
+                }
+                Err(e) => {
+                    return Err(NozyError::InvalidOperation(format!(
+                        "Failed to build Orchard bundle: {}",
+                        e
+                    )))
+                }
+            };
+
+            println!("✅ Orchard bundle built successfully!");
+
+            // Refresh tip immediately before encoding expiry — witness fetch + bundle build can
+            // span multiple blocks on slow hosts (VPS/WSL proving stacks).
+            let expiry_tip = zebra_client.get_best_block_height().await?;
+            let tx_build_height = expiry_tip.saturating_add(1);
+            let expiry_height_u32 = pilot_expiry_height(expiry_tip, expiry_delta_blocks);
+            let expiry_height = BlockHeight::from_u32(expiry_height_u32);
+
+            let branch_id = match network_type {
+                NetworkType::Main => {
+                    BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(tx_build_height))
+                }
+                NetworkType::Test | NetworkType::Regtest => {
+                    BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(tx_build_height))
+                }
+            };
+
+            let unauthorized_zat = unauthorized.clone().try_map_value_balance(|vb| {
+                ZatBalance::from_i64(vb).map_err(|e| {
+                    NozyError::InvalidOperation(format!(
+                        "Orchard unauthorized value balance out of range: {:?}",
+                        e
+                    ))
+                })
+            })?;
+            let unauthed_tx_data = TransactionData::<Unauthorized>::from_parts(
+                TxVersion::V5,
+                branch_id,
+                0,
+                expiry_height,
+                None,
+                None,
+                None,
+                Some(unauthorized_zat),
+            );
+            let txid_parts = unauthed_tx_data.digest(TxIdDigester);
+            let zip244_shielded_sighash =
+                signature_hash(&unauthed_tx_data, &SignableInput::Shielded, &txid_parts);
+            let zip244_sighash_arr = *zip244_shielded_sighash.as_ref();
+
+            let sighash: [u8; 32] = zip244_sighash_arr;
+            let pk = orchard_proving_key();
+            let proven = unauthorized
+                .create_proof(pk.as_ref(), &mut rng)
+                .map_err(|e| {
+                    NozyError::InvalidOperation(format!("Orchard proof generation failed: {:?}", e))
+                })?;
+
+            let authorized_bundle = proven
+                .apply_signatures(
+                    &mut rng,
+                    sighash,
+                    &[SpendAuthorizingKey::from(&spendable_note.spending_key)],
+                )
+                .map_err(|e| {
+                    NozyError::InvalidOperation(format!(
+                        "Orchard spend authorization failed: {}",
+                        e
+                    ))
+                })?;
+
+            let bundle_zat = authorized_bundle.try_map_value_balance(|vb| {
+                ZatBalance::from_i64(vb).map_err(|e| {
+                    NozyError::InvalidOperation(format!(
+                        "Orchard value balance out of range: {:?}",
+                        e
+                    ))
+                })
+            })?;
+
+            let bundle_actions_count = bundle_zat.actions().len();
+
+            let tx_data = TransactionData::<Authorized>::from_parts(
+                TxVersion::V5,
+                branch_id,
+                0,
+                expiry_height,
+                None,
+                None,
+                None,
+                Some(bundle_zat),
+            );
+
+            let tx = tx_data
+                .freeze()
+                .map_err(|e| NozyError::InvalidOperation(format!("transaction freeze: {}", e)))?;
+
+            let txid = tx.txid().to_string();
+
+            let mut raw_transaction = Vec::new();
+            tx.write(&mut raw_transaction).map_err(|e| {
+                NozyError::InvalidOperation(format!("transaction serialization: {}", e))
+            })?;
+
+            println!("🔐 Bundle authorized (Orchard proof + binding + spend signatures)");
+            println!("✅ Transaction signed and serialized (ZIP-225 v5)");
+            println!("   Bundle contains {} actions", bundle_actions_count);
+            println!("   TXID: {}", txid);
+            println!("   Transaction size: {} bytes", raw_transaction.len());
+            println!("   Expiry height: {}", expiry_height_u32);
+
+            let tip_now = zebra_client.get_best_block_height().await?;
+            if !crate::fee_policy::pilot_transaction_expired(tip_now, expiry_height_u32) {
+                return Ok(OrchardBuiltSpend {
+                    raw_transaction,
+                    txid,
+                    expiry_height: expiry_height_u32,
+                });
+            }
+
+            if attempt >= PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS {
                 return Err(NozyError::InvalidOperation(format!(
-                    "Failed to build Orchard bundle: {}",
-                    e
-                )))
+                    "Orchard proof outran pilot expiry after {} rebuild attempts (tip {tip_now}, expiry {expiry_height_u32}). Retry send or use --priority.",
+                    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS
+                )));
             }
-        };
-
-        println!("✅ Orchard bundle built successfully!");
-
-        let status = self.proving_manager.get_status();
-        if !status.can_prove {
-            return Err(NozyError::InvalidOperation(
-                "Cannot create proofs: proving parameters not available. Run 'nozy proving --download' first.".to_string()
-            ));
         }
 
-        println!("🔧 Proving Status: {}", status.status_message());
-
-        let branch_id = match network_type {
-            NetworkType::Main => {
-                BranchId::for_height(&MAIN_NETWORK, BlockHeight::from_u32(tx_build_height))
-            }
-            NetworkType::Test | NetworkType::Regtest => {
-                BranchId::for_height(&TEST_NETWORK, BlockHeight::from_u32(tx_build_height))
-            }
-        };
-        let expiry_height =
-            BlockHeight::from_u32(tx_build_height.saturating_add(expiry_delta_blocks));
-        let unauthorized_zat = unauthorized.clone().try_map_value_balance(|vb| {
-            ZatBalance::from_i64(vb).map_err(|e| {
-                NozyError::InvalidOperation(format!(
-                    "Orchard unauthorized value balance out of range: {:?}",
-                    e
-                ))
-            })
-        })?;
-        let unauthed_tx_data = TransactionData::<Unauthorized>::from_parts(
-            TxVersion::V5,
-            branch_id,
-            0,
-            expiry_height,
-            None,
-            None,
-            None,
-            Some(unauthorized_zat),
-        );
-        let txid_parts = unauthed_tx_data.digest(TxIdDigester);
-        let zip244_shielded_sighash =
-            signature_hash(&unauthed_tx_data, &SignableInput::Shielded, &txid_parts);
-        let zip244_sighash_arr = *zip244_shielded_sighash.as_ref();
-
-        let sighash: [u8; 32] = zip244_sighash_arr;
-        let pk = orchard_proving_key();
-        let proven = unauthorized
-            .create_proof(pk.as_ref(), &mut rng)
-            .map_err(|e| {
-                NozyError::InvalidOperation(format!("Orchard proof generation failed: {:?}", e))
-            })?;
-
-        let authorized_bundle = proven
-            .apply_signatures(
-                &mut rng,
-                sighash,
-                &[SpendAuthorizingKey::from(&spendable_note.spending_key)],
-            )
-            .map_err(|e| {
-                NozyError::InvalidOperation(format!("Orchard spend authorization failed: {}", e))
-            })?;
-
-        let bundle_zat = authorized_bundle.try_map_value_balance(|vb| {
-            ZatBalance::from_i64(vb).map_err(|e| {
-                NozyError::InvalidOperation(format!("Orchard value balance out of range: {:?}", e))
-            })
-        })?;
-
-        let bundle_actions_count = bundle_zat.actions().len();
-
-        let tx_data = TransactionData::<Authorized>::from_parts(
-            TxVersion::V5,
-            branch_id,
-            0,
-            expiry_height,
-            None,
-            None,
-            None,
-            Some(bundle_zat),
-        );
-
-        let tx = tx_data
-            .freeze()
-            .map_err(|e| NozyError::InvalidOperation(format!("transaction freeze: {}", e)))?;
-
-        let txid = tx.txid().to_string();
-
-        let mut raw_transaction = Vec::new();
-        tx.write(&mut raw_transaction).map_err(|e| {
-            NozyError::InvalidOperation(format!("transaction serialization: {}", e))
-        })?;
-
-        println!("🔐 Bundle authorized (Orchard proof + binding + spend signatures)");
-        println!("✅ Transaction signed and serialized (ZIP-225 v5)");
-        println!("   Bundle contains {} actions", bundle_actions_count);
-        println!("   TXID: {}", txid);
-        println!("   Transaction size: {} bytes", raw_transaction.len());
-
-        Ok(OrchardBuiltSpend {
-            raw_transaction,
-            txid,
-        })
+        Err(NozyError::InvalidOperation(
+            "Failed to build Orchard transaction within pilot expiry window".to_string(),
+        ))
     }
 
     pub fn get_proving_status(&self) -> ProvingStatus {

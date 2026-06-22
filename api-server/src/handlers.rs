@@ -571,31 +571,12 @@ pub async fn send_transaction(
 
     let zebra_client = ZebraClient::from_config_with_url(&config, Some(&zebra_url));
 
-    let tip_height = zebra_client.get_best_block_height().await.map_err(|e| {
-        let msg = e.to_string();
-        if is_zebra_unavailable_error(&msg) {
-            error_response_with_code(
-                StatusCode::SERVICE_UNAVAILABLE,
-                format!("Zebra node unavailable: {msg}"),
-                "ZEBRA_UNAVAILABLE",
-            )
-        } else {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to read chain tip: {msg}")
-                })),
-            )
-        }
-    })?;
-    let expiry_height = tip_height.saturating_add(pilot.expiry_delta_blocks);
-
     let mut tx_builder = ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(&zebra_url);
     tx_builder.enable_mainnet_broadcast();
 
     let transaction = match tx_builder
-        .build_send_transaction(
+        .build_and_broadcast_send_transaction(
             &zebra_client,
             &spendable_notes,
             &payload.request.recipient,
@@ -619,52 +600,40 @@ pub async fn send_transaction(
             return Err((
                 StatusCode::INTERNAL_SERVER_ERROR,
                 ResponseJson(serde_json::json!({
-                    "error": format!("Failed to build transaction: {msg}")
+                    "error": format!("Failed to send transaction: {msg}")
                 })),
             ));
         }
     };
 
-    match tx_builder
-        .broadcast_transaction(&zebra_client, &transaction)
-        .await
-    {
-        Ok(network_txid) => {
-            use nozy::transaction_history::{SentTransactionRecord, SentTransactionStorage};
-            if let Ok(tx_storage) = SentTransactionStorage::new() {
-                let spent_note_ids: Vec<String> = spendable_notes
-                    .iter()
-                    .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
-                    .collect();
+    use nozy::transaction_history::{SentTransactionRecord, SentTransactionStorage};
+    if let Ok(tx_storage) = SentTransactionStorage::new() {
+        let spent_note_ids: Vec<String> = spendable_notes
+            .iter()
+            .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
+            .collect();
 
-                let _ = nozy::mark_wallet_notes_spent_from_spendables(&spendable_notes);
+        let _ = nozy::mark_wallet_notes_spent_from_spendables(&spendable_notes);
 
-                let mut tx_record = SentTransactionRecord::new_pilot(
-                    network_txid.clone(),
-                    payload.request.recipient.clone(),
-                    amount_zatoshis,
-                    fee_zatoshis,
-                    memo_bytes_opt.clone(),
-                    spent_note_ids,
-                    pilot.priority,
-                    expiry_height,
-                );
-                tx_record.mark_broadcast();
-                let _ = tx_storage.save_transaction(tx_record);
-            }
-
-            Ok(ResponseJson(SendTransactionResponse {
-                success: true,
-                txid: Some(network_txid.clone()),
-                message: format!("Transaction sent successfully! TXID: {network_txid}"),
-            }))
-        }
-        Err(e) => Ok(ResponseJson(SendTransactionResponse {
-            success: false,
-            txid: Some(transaction.txid.clone()),
-            message: format!("Failed to broadcast transaction: {e}"),
-        })),
+        let mut tx_record = SentTransactionRecord::new_pilot(
+            transaction.txid.clone(),
+            payload.request.recipient.clone(),
+            amount_zatoshis,
+            fee_zatoshis,
+            memo_bytes_opt.clone(),
+            spent_note_ids,
+            pilot.priority,
+            transaction.expiry_height,
+        );
+        tx_record.mark_broadcast();
+        let _ = tx_storage.save_transaction(tx_record);
     }
+
+    Ok(ResponseJson(SendTransactionResponse {
+        success: true,
+        txid: Some(transaction.txid.clone()),
+        message: format!("Transaction sent successfully! TXID: {}", transaction.txid),
+    }))
 }
 
 pub async fn estimate_fee(

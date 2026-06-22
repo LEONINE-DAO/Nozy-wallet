@@ -8,8 +8,10 @@ pub const MARGINAL_FEE_ZATOSHIS: u64 = 5_000;
 pub const GRACE_ACTIONS: u32 = 2;
 /// Pilot priority multiplier when the user opts in.
 pub const PRIORITY_MULTIPLIER: u64 = 4;
-/// Default transaction expiry delta (~6 minutes at 75s/block).
-pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 5;
+/// Default transaction expiry delta after the mempool build height (~19 minutes at 75s/block).
+pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 15;
+/// Max full rebuild attempts when proving outruns the pilot expiry window.
+pub const PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS: u32 = 3;
 /// Last-resort fee if shape computation overflows (should not happen in practice).
 pub const FALLBACK_FEE_ZATOSHIS: u64 = 10_000;
 
@@ -18,8 +20,29 @@ pub const FALLBACK_FEE_ZATOSHIS: u64 = 10_000;
 pub struct PilotSendOptions {
     /// When true, fee is [`conventional_fee_zatoshis`] × [`PRIORITY_MULTIPLIER`].
     pub priority: bool,
-    /// Blocks after chain tip at build time when the tx expires (`expiry_height = tip + delta`).
+    /// Blocks after the mempool build height when the tx expires (see [`pilot_expiry_height`]).
     pub expiry_delta_blocks: u32,
+}
+
+/// On-chain expiry height for a pilot send given the current chain tip and delta.
+///
+/// Zebrad validates against the next-block context, so the build height is `tip + 1` and
+/// `expiry_height = build_height + expiry_delta_blocks`.
+pub fn pilot_expiry_height(tip_height: u32, expiry_delta_blocks: u32) -> u32 {
+    tip_height
+        .saturating_add(1)
+        .saturating_add(expiry_delta_blocks)
+}
+
+/// True when the chain tip has moved past a transaction's encoded expiry height.
+pub fn pilot_transaction_expired(tip_height: u32, expiry_height: u32) -> bool {
+    tip_height > expiry_height
+}
+
+/// Detect Zebrad `-25` mempool rejections caused by an expired pilot transaction.
+pub fn is_expiry_consensus_error(message: &str) -> bool {
+    message.contains("greater than its expiry Height")
+        || (message.contains("expiry Height") && message.contains("code: -25"))
 }
 
 impl Default for PilotSendOptions {
@@ -136,6 +159,24 @@ mod tests {
         let shape = OrchardSendFeeShape::estimate_preview(None);
         assert_eq!(fee_zatoshis(&shape, false), 10_000);
         assert_eq!(fee_zatoshis(&shape, true), 40_000);
+    }
+
+    #[test]
+    fn pilot_expiry_height_uses_next_block_context() {
+        assert_eq!(pilot_expiry_height(100, 5), 106);
+        assert_eq!(pilot_expiry_height(3385374, 5), 3385380);
+    }
+
+    #[test]
+    fn pilot_transaction_expired_when_tip_passes_expiry() {
+        assert!(!pilot_transaction_expired(3385380, 3385380));
+        assert!(pilot_transaction_expired(3385384, 3385380));
+    }
+
+    #[test]
+    fn detects_expiry_consensus_error_from_zebra_message() {
+        let msg = r#"failed to validate tx: transaction must not be mined at a block Height(3385384) greater than its expiry Height(3385380) (code: -25)"#;
+        assert!(is_expiry_consensus_error(msg));
     }
 
     #[test]

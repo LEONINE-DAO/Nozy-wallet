@@ -500,18 +500,13 @@ async fn send_transaction(
         pilot.priority,
     )
     .await;
-    let expiry_height = zebra_client
-        .get_best_block_height()
-        .await
-        .map_err(|e| format!("Failed to read chain tip: {}", e))?
-        .saturating_add(pilot.expiry_delta_blocks);
 
     let mut tx_builder = nozy::ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(&zebra_url);
     tx_builder.enable_mainnet_broadcast();
 
-    let transaction = tx_builder
-        .build_send_transaction(
+    match tx_builder
+        .build_and_broadcast_send_transaction(
             &zebra_client,
             &spendable_notes,
             &request.recipient,
@@ -521,13 +516,8 @@ async fn send_transaction(
             pilot,
         )
         .await
-        .map_err(|e| format!("Failed to build transaction: {}", e))?;
-
-    match tx_builder
-        .broadcast_transaction(&zebra_client, &transaction)
-        .await
     {
-        Ok(network_txid) => {
+        Ok(transaction) => {
             if let Ok(tx_storage) = nozy::transaction_history::SentTransactionStorage::new() {
                 let spent_note_ids: Vec<String> = spendable_notes
                     .iter()
@@ -535,14 +525,14 @@ async fn send_transaction(
                     .collect();
 
                 let mut tx_record = nozy::transaction_history::SentTransactionRecord::new_pilot(
-                    network_txid.clone(),
+                    transaction.txid.clone(),
                     request.recipient,
                     amount_zatoshis,
                     fee_zatoshis,
                     memo_bytes_opt,
                     spent_note_ids,
                     pilot.priority,
-                    expiry_height,
+                    transaction.expiry_height,
                 );
                 tx_record.mark_broadcast();
                 let _ = tx_storage.save_transaction(tx_record);
@@ -550,14 +540,14 @@ async fn send_transaction(
 
             Ok(SendTransactionResponse {
                 success: true,
-                txid: Some(network_txid.clone()),
-                message: format!("Transaction sent successfully! TXID: {}", network_txid),
+                txid: Some(transaction.txid.clone()),
+                message: format!("Transaction sent successfully! TXID: {}", transaction.txid),
             })
         }
         Err(e) => Ok(SendTransactionResponse {
             success: false,
-            txid: Some(transaction.txid),
-            message: format!("Failed to broadcast transaction: {}", e),
+            txid: None,
+            message: format!("Failed to send transaction: {}", e),
         }),
     }
 }

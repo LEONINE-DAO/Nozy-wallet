@@ -118,11 +118,6 @@ pub async fn send_transaction(
         .filter(|b| !b.is_empty());
     let fee_zatoshis =
         estimate_transaction_fee_for_send(&zebra_client, memo_preview, pilot.priority).await;
-    let expiry_height = zebra_client
-        .get_best_block_height()
-        .await
-        .map_err(|e| TauriError::from(e.to_string()))?
-        .saturating_add(pilot.expiry_delta_blocks);
 
     let memo_bytes = request
         .memo
@@ -134,8 +129,8 @@ pub async fn send_transaction(
     tx_builder.set_zebra_url(&zebra_url);
     tx_builder.enable_mainnet_broadcast();
 
-    let transaction = tx_builder
-        .build_send_transaction(
+    match tx_builder
+        .build_and_broadcast_send_transaction(
             &zebra_client,
             &spendable_notes,
             &request.recipient,
@@ -145,13 +140,8 @@ pub async fn send_transaction(
             pilot,
         )
         .await
-        .map_err(|e| TauriError::from(e.to_string()))?;
-
-    match tx_builder
-        .broadcast_transaction(&zebra_client, &transaction)
-        .await
     {
-        Ok(network_txid) => {
+        Ok(transaction) => {
             let tx_storage =
                 SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
 
@@ -161,14 +151,14 @@ pub async fn send_transaction(
                 .collect();
 
             let mut tx_record = SentTransactionRecord::new_pilot(
-                network_txid.clone(),
+                transaction.txid.clone(),
                 request.recipient.clone(),
                 amount_zatoshis,
                 fee_zatoshis,
                 memo_bytes.clone(),
                 spent_note_ids,
                 pilot.priority,
-                expiry_height,
+                transaction.expiry_height,
             );
             tx_record.mark_broadcast();
 
@@ -178,14 +168,17 @@ pub async fn send_transaction(
 
             Ok(SendTransactionResponse {
                 success: true,
-                txid: Some(network_txid.clone()),
-                message: format!("Transaction broadcast successfully! TXID: {}", network_txid),
+                txid: Some(transaction.txid.clone()),
+                message: format!(
+                    "Transaction broadcast successfully! TXID: {}",
+                    transaction.txid
+                ),
             })
         }
         Err(e) => Ok(SendTransactionResponse {
             success: false,
             txid: None,
-            message: format!("Failed to broadcast transaction: {}", e),
+            message: format!("Failed to send transaction: {}", e),
         }),
     }
 }

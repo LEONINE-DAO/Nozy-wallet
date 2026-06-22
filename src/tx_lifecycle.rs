@@ -114,15 +114,12 @@ pub async fn speed_up_transaction(
         )));
     }
 
-    let tip_height = zebra_client.get_best_block_height().await?;
-    let expiry_height = tip_height.saturating_add(pilot.expiry_delta_blocks);
-
     let mut tx_builder = ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(zebra_url);
     tx_builder.enable_mainnet_broadcast();
 
     let transaction = tx_builder
-        .build_send_transaction(
+        .build_and_broadcast_send_transaction(
             &zebra_client,
             &spendable_notes,
             &refreshed.recipient_address,
@@ -133,9 +130,7 @@ pub async fn speed_up_transaction(
         )
         .await?;
 
-    let network_txid = tx_builder
-        .broadcast_transaction(&zebra_client, &transaction)
-        .await?;
+    let network_txid = transaction.txid.clone();
 
     let spent_note_ids: Vec<String> = spendable_notes
         .iter()
@@ -153,7 +148,7 @@ pub async fn speed_up_transaction(
         network_txid.clone(),
         &refreshed,
         fee_zatoshis,
-        expiry_height,
+        transaction.expiry_height,
         spent_note_ids,
     );
     tx_record.mark_broadcast();
