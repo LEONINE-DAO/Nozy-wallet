@@ -24,7 +24,7 @@ Balance was unchanged (tx never entered mempool). This is distinct from the **sp
 | Encoded expiry | 3385380 |
 | Chain tip at reject | 3385384 (+4 blocks past expiry) |
 | Pilot delta (before fix) | 5 blocks after mempool build height |
-| Pilot delta (after fix) | **15 blocks** after mempool build height |
+| Pilot delta (unchanged) | **5 blocks** after mempool build height (~6 min expire feedback) |
 | Environment | VPS Zebrad + api-server, WSL-style stack |
 
 ---
@@ -69,9 +69,9 @@ After the Orchard bundle is built (before sighash / prove / sign):
 
 All surfaces persist `transaction.expiry_height` from the signed transaction instead of a pre-build estimate.
 
-### 5. Raised default pilot expiry delta
+### 5. Pilot expiry delta unchanged (5 blocks)
 
-`PILOT_EXPIRY_DELTA_BLOCKS` increased from **5 → 15** (~19 minutes at 75 s/block after mempool `+1` context) so slow VPS/WSL proving stacks have headroom beyond auto-rebuild alone.
+`PILOT_EXPIRY_DELTA_BLOCKS` stays at **5** (~6 minutes at 75 s/block). A longer window (e.g. 15 blocks) would delay expire/fail feedback and hurt speed-up UX. Slow VPS/WSL reliability is handled by late tip refresh + auto-rebuild + broadcast retry, not by stretching the pilot window.
 
 ---
 
@@ -116,7 +116,7 @@ All surfaces persist `transaction.expiry_height` from the signed transaction ins
 >
 > **Solution.** We decouple witness anchor height (still tied to tip at spend preparation) from expiry encoding (refreshed immediately before sighash and proving), add an automatic rebuild loop when proving outruns expiry, and retry broadcast on Zebrad expiry consensus errors. Expiry metadata in wallet history now uses the same formula as on-chain encoding: `expiry_height = chain_tip + 1 + PILOT_EXPIRY_DELTA_BLOCKS`.
 >
-> **Trade-off.** Rebuild retries increase CPU time on slow hosts. Default `PILOT_EXPIRY_DELTA_BLOCKS` was raised from 5 to 15 so operator VPS stacks get ~19 minutes of validity after late tip refresh, while speed-up / expire-replace pilot flows remain available for txs that still miss the window.
+> **Trade-off.** Rebuild retries add CPU time on slow hosts but keep the pilot's **5-block** expire/replace cycle (~6 minutes) so users are not left waiting ~20 minutes to learn a send failed. Slow-host broadcast reliability comes from late tip refresh and automatic rebuild/retry, not a longer `nExpiryHeight`.
 
 ---
 

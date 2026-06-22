@@ -6,7 +6,7 @@ Add new rows at the top. Link GitHub issue when filed. Detailed writeups live in
 
 | ID | Status | Sev | Surface | Summary | Reporter | GitHub | Fixed in | Detail |
 |----|--------|-----|---------|---------|----------|--------|----------|--------|
-| BUG-2026-011 | Fixed (master) | P1 | core + api-server | Send broadcast fails when proving outruns pilot expiry (5→15 block delta) | Gilmore | — | unreleased | [`bugs/2026-06-send-expiry-before-broadcast.md`](bugs/2026-06-send-expiry-before-broadcast.md) |
+| BUG-2026-011 | Fixed (master) | P1 | core + api-server | Send broadcast fails when proving outruns pilot expiry (rebuild/retry; 5-block delta kept) | Gilmore | — | unreleased | [`bugs/2026-06-send-expiry-before-broadcast.md`](bugs/2026-06-send-expiry-before-broadcast.md) |
 | BUG-2026-002 | Fixed (master) | P1 | api-server | History empty despite balance | Gilmore | — | unreleased | [`bugs/2026-06-history-empty-despite-balance.md`](bugs/2026-06-history-empty-despite-balance.md) |
 | BUG-2026-001 | Fixed (master) | P1 | api-server | Send rescans ~50k blocks when synced | Gilmore | — | unreleased | [`bugs/2026-06-send-50k-rescan.md`](bugs/2026-06-send-50k-rescan.md) |
 | BUG-2026-003 | Fixed | P1 | api-server | Balance 0 when cache empty but “already synced” | — | — | v2.3.6.5 | CHANGELOG |

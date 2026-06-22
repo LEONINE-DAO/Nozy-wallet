@@ -8,8 +8,8 @@ pub const MARGINAL_FEE_ZATOSHIS: u64 = 5_000;
 pub const GRACE_ACTIONS: u32 = 2;
 /// Pilot priority multiplier when the user opts in.
 pub const PRIORITY_MULTIPLIER: u64 = 4;
-/// Default transaction expiry delta after the mempool build height (~19 minutes at 75s/block).
-pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 15;
+/// Default transaction expiry delta after the mempool build height (~6 minutes at 75s/block).
+pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 5;
 /// Max full rebuild attempts when proving outruns the pilot expiry window.
 pub const PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS: u32 = 3;
 /// Last-resort fee if shape computation overflows (should not happen in practice).

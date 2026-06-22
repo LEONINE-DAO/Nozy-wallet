@@ -427,7 +427,7 @@ cargo run --bin nozy send --recipient "u1..." --amount 0.1
 cargo run --bin nozy send --recipient "u1..." --amount 0.1 --priority
 ```
 
-Fees are computed **client-side** (ZIP-317): `5,000` zats per logical action, minimum **2** grace actions (typical 1-in / 1-out send ≈ **0.0001 ZEC**). Zebrad does not implement `estimatefee`. Use `--priority` for ×4 pilot fees. Transactions expire **15 blocks** after the mempool build height by default (~19 minutes at 75 s/block).
+Fees are computed **client-side** (ZIP-317): `5,000` zats per logical action, minimum **2** grace actions (typical 1-in / 1-out send ≈ **0.0001 ZEC**). Zebrad does not implement `estimatefee`. Use `--priority` for ×4 pilot fees. Transactions expire **5 blocks** after the mempool build height by default (~6 minutes at 75 s/block).
 
 **Complete Transaction Flow Example:**
 

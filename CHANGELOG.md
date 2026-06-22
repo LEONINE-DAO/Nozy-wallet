@@ -19,8 +19,7 @@
 - **Bug 3 — Send broadcast fails when Orchard proving outruns pilot expiry (Gilmore, VPS):**
   - **Symptom:** Orchard bundle built, proof generated, and tx signed, but `sendrawtransaction` rejected with Zebrad `-25`: chain tip past `expiry_height` (e.g. tip 3385384, expiry 3385380). Balance unchanged — tx never entered mempool.
   - **Root cause:** Expiry clock started at the beginning of `build_single_spend` (before witness fetch + Halo2 proving). The 5-block pilot window is shorter than proving latency on slow VPS/WSL hosts. History also recorded `tip + 5` while the tx encoded `(tip + 1) + 5`.
-  - **Fix:** Late tip refresh before encoding expiry; auto-rebuild when proving outruns expiry (up to 3 attempts); broadcast retry on expiry `-25`; unified `build_and_broadcast_send_transaction()` across CLI, api-server, and desktop; history uses on-chain `expiry_height` from the signed tx.
-  - **Changed:** Default `PILOT_EXPIRY_DELTA_BLOCKS` raised from **5 → 15** (~19 minutes at 75 s/block after mempool context).
+  - **Fix:** Late tip refresh before encoding expiry; auto-rebuild when proving outruns expiry (up to 3 attempts); broadcast retry on expiry `-25`; unified `build_and_broadcast_send_transaction()` across CLI, api-server, and desktop; history uses on-chain `expiry_height` from the signed tx. **Pilot expiry stays at 5 blocks** (~6 min) so users get fast expire/fail feedback for speed-up UX — slow-host reliability comes from rebuild/retry, not a longer window.
   - **Detail:** [`docs/issues/bugs/2026-06-send-expiry-before-broadcast.md`](docs/issues/bugs/2026-06-send-expiry-before-broadcast.md) (BUG-2026-011).
 
 ## [2.3.6.5] — Teriyaki Hot (CLI) (2026-06-17)
