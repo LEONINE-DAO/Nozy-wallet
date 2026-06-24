@@ -1088,64 +1088,39 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
         Commands::Balance => {
             use nozy::paths::get_wallet_data_dir;
-            use nozy::transaction_history::SentTransactionStorage;
-            use std::fs;
+            use nozy::wallet_balance_snapshot;
 
             let notes_path = get_wallet_data_dir().join("notes.json");
-
-            let confirmed_balance = if notes_path.exists() {
-                match fs::read_to_string(&notes_path) {
-                    Ok(content) => {
-                        let parsed: serde_json::Value = match serde_json::from_str(&content) {
-                            Ok(v) => v,
-                            Err(_) => serde_json::json!([]),
-                        };
-                        parsed
-                            .as_array()
-                            .unwrap_or(&vec![])
-                            .iter()
-                            .filter_map(|n| n.get("value").and_then(|v| v.as_u64()))
-                            .sum::<u64>()
-                    }
-                    Err(_) => 0,
+            let snapshot = match wallet_balance_snapshot() {
+                Ok(snapshot) => snapshot,
+                Err(e) => {
+                    eprintln!("❌ Failed to read wallet balance: {}", e);
+                    return Ok(());
                 }
-            } else {
-                0
             };
-
-            let pending_amount = if let Ok(tx_storage) = SentTransactionStorage::new() {
-                let pending = tx_storage.get_pending_transactions();
-                pending
-                    .iter()
-                    .map(|tx| tx.amount_zatoshis + tx.fee_zatoshis)
-                    .sum::<u64>()
-            } else {
-                0
-            };
-
-            let available_balance = confirmed_balance.saturating_sub(pending_amount);
 
             println!("💰 Balance Information");
             println!("{}", "=".repeat(50));
             println!(
-                "   Confirmed: {:.8} ZEC",
-                confirmed_balance as f64 / 100_000_000.0
+                "   Confirmed: {:.8} ZEC ({} unspent notes)",
+                snapshot.confirmed_zatoshis as f64 / 100_000_000.0,
+                snapshot.unspent_note_count
             );
 
-            if pending_amount > 0 {
+            if snapshot.pending_zatoshis > 0 {
                 println!(
                     "   Pending:   -{:.8} ZEC",
-                    pending_amount as f64 / 100_000_000.0
+                    snapshot.pending_zatoshis as f64 / 100_000_000.0
                 );
                 println!(
-                    "   Shielded ZEC: {:.8} ZEC",
-                    available_balance as f64 / 100_000_000.0
+                    "   Available: {:.8} ZEC",
+                    snapshot.available_zatoshis as f64 / 100_000_000.0
                 );
-                println!("\n   💡 Pending transactions reduce shielded balance until confirmed");
+                println!("\n   💡 Pending transactions reduce available balance until confirmed");
             } else {
                 println!(
-                    "   Shielded ZEC: {:.8} ZEC",
-                    available_balance as f64 / 100_000_000.0
+                    "   Available: {:.8} ZEC",
+                    snapshot.available_zatoshis as f64 / 100_000_000.0
                 );
             }
 
@@ -1668,7 +1643,6 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             use nozy::nu6_1_check;
             use nozy::paths::get_wallet_data_dir;
             use nozy::transaction_history::SentTransactionStorage;
-            use std::fs;
 
             println!("🔍 Checking system status...");
             println!();
@@ -1746,22 +1720,27 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             }
 
             println!("\n💰 Balance:");
-            let notes_path = get_wallet_data_dir().join("notes.json");
-            if notes_path.exists() {
-                if let Ok(content) = fs::read_to_string(&notes_path) {
-                    if let Ok(notes) =
-                        serde_json::from_str::<Vec<nozy::SerializableOrchardNote>>(&content)
-                    {
-                        let total_balance: u64 =
-                            notes.iter().filter(|n| !n.spent).map(|n| n.value).sum();
-                        let balance_zec = total_balance as f64 / 100_000_000.0;
-                        let unspent_count = notes.iter().filter(|n| !n.spent).count();
-                        println!("   Total: {:.8} ZEC", balance_zec);
-                        println!("   Notes: {} unspent notes", unspent_count);
+            match nozy::wallet_balance_snapshot() {
+                Ok(snapshot) => {
+                    println!(
+                        "   Confirmed: {:.8} ZEC ({} unspent notes)",
+                        snapshot.confirmed_zatoshis as f64 / 100_000_000.0,
+                        snapshot.unspent_note_count
+                    );
+                    if snapshot.pending_zatoshis > 0 {
+                        println!(
+                            "   Available: {:.8} ZEC (pending: -{:.8} ZEC)",
+                            snapshot.available_zatoshis as f64 / 100_000_000.0,
+                            snapshot.pending_zatoshis as f64 / 100_000_000.0
+                        );
                     }
                 }
-            } else {
-                println!("   Total: 0.00000000 ZEC");
+                Err(e) => {
+                    println!("   ❌ Failed to read balance: {}", e);
+                }
+            }
+            let notes_path = get_wallet_data_dir().join("notes.json");
+            if !notes_path.exists() {
                 println!("   Run 'sync' to update balance");
             }
 

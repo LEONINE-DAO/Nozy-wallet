@@ -1625,6 +1625,7 @@ export function App() {
       )}
       {view === "send" && <SendView />}
       {view === "receive" && <ReceiveView status={status} />}
+      {view === "companion" && <CompanionView />}
       {view === "settings" && (
         <SettingsView
           endpoint={endpoint}

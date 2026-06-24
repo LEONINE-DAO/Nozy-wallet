@@ -73,6 +73,8 @@ pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
 #[cfg(feature = "native")]
+pub mod send_readiness;
+#[cfg(feature = "native")]
 pub mod storage;
 #[cfg(feature = "native")]
 pub mod swap;
@@ -126,7 +128,7 @@ pub use bridge::{
 pub use cli_helpers::{
     cached_unspent_balance_zatoshis, estimate_transaction_fee, estimate_transaction_fee_for_send,
     format_insufficient_funds_message, is_insufficient_funds_error, is_zebra_unavailable_error,
-    scan_notes_for_sending, zebra_connect_api_code,
+    scan_notes_for_sending, wallet_balance_snapshot, zebra_connect_api_code, WalletBalanceSnapshot,
 };
 #[cfg(feature = "native")]
 pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
@@ -152,8 +154,8 @@ pub use notes::{
 };
 #[cfg(feature = "native")]
 pub use orchard_tx::{
-    select_single_spend_note, OrchardBuiltSpend, OrchardTransactionBuilder, OrchardWitnessProvider,
-    ZebraJsonRpcOrchardWitnessProvider,
+    select_single_spend_note, warm_orchard_proving_key, OrchardBuiltSpend,
+    OrchardTransactionBuilder, OrchardWitnessProvider, ZebraJsonRpcOrchardWitnessProvider,
 };
 #[cfg(feature = "native")]
 pub use paths::{
@@ -170,6 +172,13 @@ pub use secret::{
 pub use secret_keys::{
     SecretDerivationPath, SecretKeyDerivation, SecretKeyPair, SECRET_ADDRESS_PREFIX,
     SECRET_COIN_TYPE,
+};
+#[cfg(feature = "native")]
+pub use send_readiness::{
+    ensure_cached_witness_fresh_for_send, ensure_witness_fresh_for_send,
+    is_witness_stale_for_send_error, max_serialized_witness_lag_blocks, max_witness_lag_blocks,
+    orchard_witness_lag_blocks, witness_lag_from_stored_tip, MAX_SEND_WITNESS_LAG_BLOCKS,
+    WITNESS_CATCHUP_PARALLEL_BLOCKS,
 };
 #[cfg(feature = "native")]
 pub use storage::{WalletData, WalletStorage};

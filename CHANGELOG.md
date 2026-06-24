@@ -20,7 +20,34 @@
   - **Symptom:** Orchard bundle built, proof generated, and tx signed, but `sendrawtransaction` rejected with Zebrad `-25`: chain tip past `expiry_height` (e.g. tip 3385384, expiry 3385380). Balance unchanged — tx never entered mempool.
   - **Root cause:** Expiry clock started at the beginning of `build_single_spend` (before witness fetch + Halo2 proving). The 5-block pilot window is shorter than proving latency on slow VPS/WSL hosts. History also recorded `tip + 5` while the tx encoded `(tip + 1) + 5`.
   - **Fix:** Late tip refresh before encoding expiry; auto-rebuild when proving outruns expiry (up to 3 attempts); broadcast retry on expiry `-25`; unified `build_and_broadcast_send_transaction()` across CLI, api-server, and desktop; history uses on-chain `expiry_height` from the signed tx. **Pilot expiry stays at 5 blocks** (~6 min) so users get fast expire/fail feedback for speed-up UX — slow-host reliability comes from rebuild/retry, not a longer window.
-  - **Detail:** [`docs/issues/bugs/2026-06-send-expiry-before-broadcast.md`](docs/issues/bugs/2026-06-send-expiry-before-broadcast.md) (BUG-2026-011).
+  - **Detail:** [`docs/issues/bugs/2026-06-send-expiry-before-broadcast.md`](docs/issues/bugs/2026-06-send-expiry-before-broadcast.md) (BUG-2026-011). Mainnet test: [`docs/MAINNET_SEND_EXPIRY_TEST.md`](docs/MAINNET_SEND_EXPIRY_TEST.md). Paper: [`docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md`](docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md).
+
+- **CLI balance shows 0 on v2 `notes.json` (BUG-2026-012):**
+  - **Symptom:** `nozy balance` and `nozy status` reported **0 ZEC** after sync while api-server `/api/balance` was correct.
+  - **Root cause:** CLI hand-parsed `notes.json` as a top-level JSON array; v2 `NoteIndex` is a JSON object, so the sum was empty. Legacy arrays also ignored `spent`.
+  - **Fix:** `wallet_balance_snapshot()` — confirmed / pending / available zatoshis via `load_wallet_notes()` + `wallet_unspent_balance_zatoshis()`. Wired into `nozy balance` and `nozy status`.
+  - **Detail:** [`docs/issues/bugs/2026-06-cli-balance-v2-noteindex.md`](docs/issues/bugs/2026-06-cli-balance-v2-noteindex.md). Paper: [`docs/reference/CLI_BALANCE_NOTEINDEX.md`](docs/reference/CLI_BALANCE_NOTEINDEX.md).
+
+### Added
+
+- **`wallet_balance_snapshot()` / `WalletBalanceSnapshot`:** Canonical shielded balance (confirmed, pending, available) for CLI; exported for future api-server/desktop reuse.
+- **Send-time witness freshness guard:** Reject sends when Orchard witness lag exceeds 50 blocks with a clear “sync to tip first” message (CLI, api-server, desktop). Prevents multi-minute witness catch-up during send on stale wallets.
+- **Parallel witness catch-up:** Up to 10 concurrent `getblock` fetches per batch when witness must advance at spend time.
+- **Orchard proving warm-up:** Pre-build cached Halo2 proving key on CLI send start, api-server startup, wallet unlock, and before api-server send — reduces cold-start proving latency on first send.
+
+### Changed
+
+- **api-server send errors:** Witness-stale rejections return `{ success: false, message: ... }` (HTTP 200) instead of HTTP 500, matching insufficient-funds handling.
+- **`mark_wallet_notes_spent_from_spendables`:** Uses v2 `NoteIndex` load/save so post-broadcast spent marking no longer corrupts `notes.json`.
+
+### Documentation
+
+- **Mainnet evidence (paper/lecture):** [`docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md`](docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md) — sync/send timings, TXIDs, witness guard, lecture outline.
+- **CLI balance / NoteIndex v2 (paper/lecture):** [`docs/reference/CLI_BALANCE_NOTEINDEX.md`](docs/reference/CLI_BALANCE_NOTEINDEX.md) — BUG-2026-012, dual-parser RCA, `wallet_balance_snapshot()`.
+- **Paper generator:** `scripts/generate-nozy-paper.py` §6.3.2 send readiness evidence.
+- **BUG-2026-011 docs:** [`docs/issues/bugs/2026-06-send-expiry-before-broadcast.md`](docs/issues/bugs/2026-06-send-expiry-before-broadcast.md) — RCA, fix, Gilmore session, paper draft.
+- **Paper reference:** [`docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md`](docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md) — two clocks, 5 vs 15, Zodl FAQ, design principles, copy-paste paragraph.
+- **Mainnet test guide:** [`docs/MAINNET_SEND_EXPIRY_TEST.md`](docs/MAINNET_SEND_EXPIRY_TEST.md) — api-server + CLI verification, evidence template.
 
 ## [2.3.6.5] — Teriyaki Hot (CLI) (2026-06-17)
 

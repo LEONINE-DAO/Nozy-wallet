@@ -232,6 +232,53 @@ impl NoteIndex {
         false
     }
 
+    /// Match spent note by on-chain identity when nullifier index lookup fails.
+    pub fn mark_note_spent_by_spend_metadata(
+        &mut self,
+        txid: &str,
+        block_height: u32,
+        value: u64,
+        fvk: &orchard::keys::FullViewingKey,
+        rho_bytes: Option<&[u8]>,
+        rseed_bytes: Option<&[u8]>,
+    ) -> bool {
+        let mut found_idx = None;
+        for (idx, note) in self.notes.iter().enumerate() {
+            if note.spent {
+                continue;
+            }
+            if note.txid == txid && note.block_height == block_height && note.value == value {
+                found_idx = Some(idx);
+                break;
+            }
+        }
+
+        let Some(idx) = found_idx else {
+            return false;
+        };
+
+        let note = &mut self.notes[idx];
+        if note.rho_bytes.is_none() {
+            if let Some(rho) = rho_bytes {
+                note.rho_bytes = Some(rho.to_vec());
+            }
+            if let Some(rseed) = rseed_bytes {
+                note.rseed_bytes = Some(rseed.to_vec());
+            }
+        }
+        note.spent = true;
+        if let Some(canonical) = note.canonical_nullifier_bytes(fvk) {
+            let old = note.nullifier_bytes.clone();
+            if old != canonical.to_vec() {
+                self.nullifier_index.remove(&old);
+                note.nullifier_bytes = canonical.to_vec();
+                self.nullifier_index
+                    .insert(note.nullifier_bytes.clone(), idx);
+            }
+        }
+        true
+    }
+
     /// Match an on-chain action nullifier against held notes (direct index or canonical recompute).
     pub fn mark_note_spent_on_chain(
         &mut self,
@@ -563,5 +610,39 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn mark_note_spent_preserves_v2_index_on_save() {
+        let path =
+            std::env::temp_dir().join(format!("nozy_mark_spent_test_{}.json", std::process::id()));
+        let mut index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 42)]);
+        index.save_to_file(&path.to_path_buf()).expect("save");
+
+        assert!(index.mark_note_spent(&[42u8; 32]));
+        index
+            .save_to_file(&path.to_path_buf())
+            .expect("save after mark");
+
+        let content = std::fs::read_to_string(&path).expect("read saved");
+        assert!(
+            content.contains("nullifier_index"),
+            "must stay v2 index format, not legacy array"
+        );
+        let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("reload");
+        assert_eq!(loaded.unspent_count(), 0);
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn mark_note_spent_by_spend_metadata_matches_tx_identity() {
+        let mut index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 55)]);
+        let sk = orchard::keys::SpendingKey::from_bytes([7u8; 32]).expect("sk");
+        let fvk = orchard::keys::FullViewingKey::from(&sk);
+        assert!(
+            index.mark_note_spent_by_spend_metadata("abc", 3_379_045, 250_000, &fvk, None, None,)
+        );
+        assert_eq!(index.unspent_count(), 0);
     }
 }

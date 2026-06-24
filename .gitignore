@@ -90,8 +90,15 @@ push_url_update.ps1
 !browser-extension/RELEASES.md
 !mobile/README.md
 !docs/PILOT_MAINNET_EVIDENCE.md
+!docs/MAINNET_SEND_EXPIRY_TEST.md
+!docs/reference/
+!docs/reference/**/*.md
 !docs/assets/README.md
 !docs/issues/*.md
+!docs/issues/bugs/*.md
+# Generated Word papers — keep local until ready to publish
+docs/*.docx
+docs/~$*
 # Local-only: lecture / research journal (never commit — source material for talks & papers)
 docs/journal/
 !ENHANCEMENT_ROADMAP.md

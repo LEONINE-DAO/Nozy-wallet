@@ -201,8 +201,6 @@ impl From<&OrchardNote> for SerializableOrchardNote {
 #[cfg(feature = "native")]
 pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyResult<usize> {
     use crate::paths::get_wallet_data_dir;
-    use std::collections::HashSet;
-    use std::fs;
 
     if spent.is_empty() {
         return Ok(0);
@@ -213,61 +211,32 @@ pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyR
         return Ok(0);
     }
 
-    let content = fs::read_to_string(&notes_path)
-        .map_err(|e| NozyError::Storage(format!("Failed to read notes: {}", e)))?;
-    let mut notes: Vec<SerializableOrchardNote> = serde_json::from_str(&content)
-        .map_err(|e| NozyError::Storage(format!("Failed to parse notes: {}", e)))?;
+    let mut index = NoteIndex::load_from_file(&notes_path)?;
+    let mut marked = 0usize;
 
-    let mut canonical: HashSet<[u8; 32]> = HashSet::new();
     for sn in spent {
         let fvk = FullViewingKey::from(&sn.spending_key);
-        canonical.insert(sn.orchard_note.note.nullifier(&fvk).to_bytes());
-    }
+        let nf = sn.orchard_note.note.nullifier(&fvk).to_bytes();
 
-    let mut marked = 0usize;
-    for note in &mut notes {
-        if note.spent {
+        if index.mark_note_spent_on_chain(&nf, &fvk) {
+            marked += 1;
             continue;
         }
 
-        let mut matched = false;
-        if note.nullifier_bytes.len() == 32 {
-            let mut nf = [0u8; 32];
-            nf.copy_from_slice(&note.nullifier_bytes);
-            if canonical.contains(&nf) {
-                matched = true;
-            }
-        }
-
-        if !matched {
-            for sn in spent {
-                if note.txid == sn.orchard_note.txid
-                    && note.block_height == sn.orchard_note.block_height
-                    && note.value == sn.orchard_note.value
-                {
-                    matched = true;
-                    let fvk = FullViewingKey::from(&sn.spending_key);
-                    note.nullifier_bytes = sn.orchard_note.note.nullifier(&fvk).to_bytes().to_vec();
-                    if note.rho_bytes.is_none() {
-                        note.rho_bytes = Some(sn.orchard_note.note.rho().to_bytes().to_vec());
-                        note.rseed_bytes = Some(sn.orchard_note.note.rseed().as_bytes().to_vec());
-                    }
-                    break;
-                }
-            }
-        }
-
-        if matched {
-            note.spent = true;
+        if index.mark_note_spent_by_spend_metadata(
+            &sn.orchard_note.txid,
+            sn.orchard_note.block_height,
+            sn.orchard_note.value,
+            &fvk,
+            Some(sn.orchard_note.note.rho().to_bytes().as_slice()),
+            Some(sn.orchard_note.note.rseed().as_bytes()),
+        ) {
             marked += 1;
         }
     }
 
     if marked > 0 {
-        let serialized = serde_json::to_string_pretty(&notes)
-            .map_err(|e| NozyError::Storage(format!("Failed to serialize notes: {}", e)))?;
-        fs::write(&notes_path, serialized)
-            .map_err(|e| NozyError::Storage(format!("Failed to write notes: {}", e)))?;
+        index.save_to_file(&notes_path)?;
     }
 
     Ok(marked)

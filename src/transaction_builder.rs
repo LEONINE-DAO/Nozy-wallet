@@ -90,6 +90,8 @@ impl ZcashTransactionBuilder {
         }
 
         let spend_note = select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
+        let chain_tip = zebra_client.get_best_block_height().await?;
+        crate::send_readiness::ensure_witness_fresh_for_send(spend_note, chain_tip)?;
         let has_change =
             spend_note.orchard_note.value > amount_zatoshis.saturating_add(fee_zatoshis);
         let shape = OrchardSendFeeShape::single_spend_send(has_change, memo);

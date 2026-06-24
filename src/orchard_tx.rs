@@ -9,8 +9,10 @@ use crate::orchard_witness::{
     witness_root_matches_anchor,
 };
 use crate::proving::{OrchardProvingManager, ProvingStatus};
+use crate::send_readiness::WITNESS_CATCHUP_PARALLEL_BLOCKS;
 use crate::zebra_integration::ZebraClient;
 use async_trait::async_trait;
+use futures::future::join_all;
 use orchard::{
     builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags, circuit::ProvingKey,
     keys::FullViewingKey, keys::SpendAuthorizingKey, tree::Anchor, tree::MerklePath,
@@ -29,6 +31,13 @@ static ORCHARD_PROVING_KEY: OnceLock<Arc<ProvingKey>> = OnceLock::new();
 
 fn orchard_proving_key() -> &'static Arc<ProvingKey> {
     ORCHARD_PROVING_KEY.get_or_init(|| Arc::new(ProvingKey::build()))
+}
+
+/// Eagerly build the global Orchard Halo2 proving key (CPU-heavy; cached after first call).
+///
+/// Call on wallet unlock or api-server startup so the first send skips cold-start proving setup.
+pub fn warm_orchard_proving_key() {
+    let _ = orchard_proving_key();
 }
 
 /// Result of building a single Orchard spend: canonical v5 raw bytes and ZIP-244 txid hex.
@@ -54,6 +63,24 @@ pub trait OrchardWitnessProvider: Send + Sync {
 /// Default: deserialize incremental witness from the note, catch up to `anchor_height` via Zebra blocks, verify root.
 pub struct ZebraJsonRpcOrchardWitnessProvider;
 
+async fn fetch_orchard_cmx_nodes_for_height(
+    zebra: &ZebraClient,
+    height: u32,
+) -> NozyResult<Vec<orchard::tree::MerkleHashOrchard>> {
+    let hash = zebra.get_block_hash(height).await?;
+    let block_data = zebra.get_block_by_hash(&hash, 2).await?;
+    let v = serde_json::to_value(&block_data)
+        .map_err(|e| NozyError::InvalidOperation(format!("block JSON: {}", e)))?;
+    let txs = NoteScanner::parse_block_data(&v, height)?;
+    let mut nodes = Vec::new();
+    for tx in &txs {
+        for action in &tx.orchard_actions {
+            nodes.push(merkle_hash_from_cmx_bytes(&action.cmx)?);
+        }
+    }
+    Ok(nodes)
+}
+
 async fn advance_orchard_witness_from_zebra_blocks(
     witness: &mut OrchardIncrementalWitness,
     zebra: &ZebraClient,
@@ -63,15 +90,16 @@ async fn advance_orchard_witness_from_zebra_blocks(
     if from_height_exclusive >= to_height_inclusive {
         return Ok(());
     }
-    for h in (from_height_exclusive + 1)..=to_height_inclusive {
-        let hash = zebra.get_block_hash(h).await?;
-        let block_data = zebra.get_block_by_hash(&hash, 2).await?;
-        let v = serde_json::to_value(&block_data)
-            .map_err(|e| NozyError::InvalidOperation(format!("block JSON: {}", e)))?;
-        let txs = NoteScanner::parse_block_data(&v, h)?;
-        for tx in &txs {
-            for action in &tx.orchard_actions {
-                let node = merkle_hash_from_cmx_bytes(&action.cmx)?;
+    let heights: Vec<u32> = (from_height_exclusive + 1..=to_height_inclusive).collect();
+    let parallel = WITNESS_CATCHUP_PARALLEL_BLOCKS.max(1);
+    for chunk in heights.chunks(parallel) {
+        let fetch_futures: Vec<_> = chunk
+            .iter()
+            .map(|&h| fetch_orchard_cmx_nodes_for_height(zebra, h))
+            .collect();
+        let batch = join_all(fetch_futures).await;
+        for nodes in batch {
+            for node in nodes? {
                 advance_witness_with_cmxs(witness, std::iter::once(node))?;
             }
         }

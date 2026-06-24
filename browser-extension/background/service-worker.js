@@ -1065,7 +1065,11 @@ async function walletUnlock(password) {
   session.rpcEndpoint = state.rpcEndpoint || session.rpcEndpoint;
   touchSession();
 
-  void resumeBackgroundScanAfterUnlock();
+  try {
+    await resumeBackgroundScanAfterUnlock();
+  } catch {
+    // Auto-sync may fail if RPC is unreachable; unlock still succeeds.
+  }
 
   const scanSt = await loadScanState();
   if (scanSt?.status === "scanning") {

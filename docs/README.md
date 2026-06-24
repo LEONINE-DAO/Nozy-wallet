@@ -19,4 +19,12 @@
 | [`journal/research/2026-06-21-cipherpay-nozywallet-integration.md`](journal/research/2026-06-21-cipherpay-nozywallet-integration.md) | **Research:** CipherPay merchant gateway vs native Sell mode — complement, defer impl |
 | [`issues/README.md`](issues/README.md) | **Bugs & features** — registry, templates, RCA writeups |
 | [`issues/BUG_REGISTRY.md`](issues/BUG_REGISTRY.md) | Master bug list (ID, status, fix version) |
+| [`MAINNET_SEND_EXPIRY_TEST.md`](MAINNET_SEND_EXPIRY_TEST.md) | **Mainnet test** — BUG-2026-011 send/expiry verification (api-server + CLI) |
+| [`reference/PILOT_EXPIRY_PROVING_LATENCY.md`](reference/PILOT_EXPIRY_PROVING_LATENCY.md) | **Paper reference** — pilot expiry vs proving latency, 5 vs 15, Zodl FAQ |
+| [`reference/MAINNET_SEND_READINESS_EVIDENCE.md`](reference/MAINNET_SEND_READINESS_EVIDENCE.md) | **Paper / lecture** — recorded mainnet sync+send timings, TXIDs, witness guard |
+| [`reference/CLI_BALANCE_NOTEINDEX.md`](reference/CLI_BALANCE_NOTEINDEX.md) | **Paper / lecture** — CLI balance bug (v2 NoteIndex), `wallet_balance_snapshot()`, dual-parser lesson |
+| [`reference/WHITEPAPER_OUTLINE.md`](reference/WHITEPAPER_OUTLINE.md) | **White paper blueprint** — architecture decisions, phases, trade-offs, lessons learned |
+| [`NozyWallet_Whitepaper.docx`](NozyWallet_Whitepaper.docx) | **White paper** (Word) — run `python scripts/generate-nozy-whitepaper.py` |
+| [`reference/NozyWallet_Whitepaper.md`](reference/NozyWallet_Whitepaper.md) | Same white paper as **Markdown** (readable in Cursor) |
+| [`PILOT_MAINNET_EVIDENCE.md`](PILOT_MAINNET_EVIDENCE.md) | Dynamic-fee pilot mainnet evidence (expire + speed-up) |
 | [`issues/FEATURE_REGISTRY.md`](issues/FEATURE_REGISTRY.md) | Feature / enhancement tracker |

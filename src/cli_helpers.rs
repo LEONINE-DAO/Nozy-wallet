@@ -10,6 +10,48 @@ pub fn cached_unspent_balance_zatoshis() -> NozyResult<u64> {
     Ok(wallet_unspent_balance_zatoshis(&load_wallet_notes()?))
 }
 
+/// Orchard shielded balance from cache, with pending outbound sends subtracted for spendable amount.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WalletBalanceSnapshot {
+    pub confirmed_zatoshis: u64,
+    pub pending_zatoshis: u64,
+    pub available_zatoshis: u64,
+    pub unspent_note_count: usize,
+}
+
+/// Load confirmed, pending, and available shielded balance from local wallet state.
+pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
+    use crate::notes::{load_wallet_notes, wallet_unspent_balance_zatoshis};
+    use crate::paths::get_wallet_data_dir;
+    use crate::transaction_history::SentTransactionStorage;
+
+    let notes_path = get_wallet_data_dir().join("notes.json");
+    let notes = if notes_path.exists() {
+        load_wallet_notes()?
+    } else {
+        Vec::new()
+    };
+
+    let confirmed_zatoshis = wallet_unspent_balance_zatoshis(&notes);
+    let unspent_note_count = notes.iter().filter(|note| !note.spent).count();
+    let pending_zatoshis = SentTransactionStorage::new()
+        .map(|storage| {
+            storage
+                .get_pending_transactions()
+                .iter()
+                .map(|tx| tx.amount_zatoshis.saturating_add(tx.fee_zatoshis))
+                .sum::<u64>()
+        })
+        .unwrap_or(0);
+
+    Ok(WalletBalanceSnapshot {
+        confirmed_zatoshis,
+        pending_zatoshis,
+        available_zatoshis: confirmed_zatoshis.saturating_sub(pending_zatoshis),
+        unspent_note_count,
+    })
+}
+
 pub fn format_insufficient_funds_message(
     available_zat: u64,
     amount_zat: u64,
@@ -107,7 +149,15 @@ pub async fn scan_notes_for_sending(
 ) -> NozyResult<Vec<crate::SpendableNote>> {
     use crate::notes::load_spendable_notes_from_wallet;
     use crate::paths::get_wallet_data_dir;
+    use crate::send_readiness::ensure_cached_witness_fresh_for_send;
     use crate::wallet_sync::MAINNET_DEFAULT_SCAN_START;
+
+    let mut config = load_config();
+    config.zebra_url = zebra_url.to_string();
+    let zebra_client = ZebraClient::from_config(&config);
+    let chain_tip = zebra_client.get_best_block_height().await?;
+    let cached_notes = crate::notes::load_wallet_notes().unwrap_or_default();
+    ensure_cached_witness_fresh_for_send(&cached_notes, chain_tip)?;
 
     // Fast path: reuse persisted notes + witnesses from sync (witness catch-up at spend time).
     if let Ok(cached) = load_spendable_notes_from_wallet(&wallet) {
@@ -186,6 +236,8 @@ pub async fn build_and_broadcast_transaction(
     if enable_broadcast {
         tx_builder.enable_mainnet_broadcast();
     }
+
+    crate::orchard_tx::warm_orchard_proving_key();
 
     let transaction = tx_builder
         .build_and_broadcast_send_transaction(

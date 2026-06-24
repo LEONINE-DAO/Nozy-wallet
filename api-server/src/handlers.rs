@@ -339,6 +339,8 @@ pub async fn unlock_wallet(
             )
         })?;
 
+    tokio::task::spawn_blocking(nozy::warm_orchard_proving_key);
+
     // SECURITY: Never return full mnemonic in API responses
     // Only return masked version for security
     // Note: Consider removing mnemonic endpoints entirely for production
@@ -549,31 +551,40 @@ pub async fn send_transaction(
         }));
     }
 
-    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
-        .await
-        .map_err(|e| {
+    let spendable_notes = match scan_notes_for_sending(wallet, &zebra_url).await {
+        Ok(notes) => notes,
+        Err(e) => {
             let msg = e.to_string();
             if is_zebra_unavailable_error(&msg) {
-                error_response_with_code(
+                return Err(error_response_with_code(
                     StatusCode::SERVICE_UNAVAILABLE,
                     format!("Zebra node unavailable during note scan: {msg}"),
                     "ZEBRA_UNAVAILABLE",
-                )
-            } else {
-                (
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    ResponseJson(serde_json::json!({
-                        "error": format!("Failed to scan notes: {msg}")
-                    })),
-                )
+                ));
             }
-        })?;
+            if nozy::is_witness_stale_for_send_error(&msg) {
+                return Ok(ResponseJson(SendTransactionResponse {
+                    success: false,
+                    txid: None,
+                    message: msg,
+                }));
+            }
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                ResponseJson(serde_json::json!({
+                    "error": format!("Failed to scan notes: {msg}")
+                })),
+            ));
+        }
+    };
 
     let zebra_client = ZebraClient::from_config_with_url(&config, Some(&zebra_url));
 
     let mut tx_builder = ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(&zebra_url);
     tx_builder.enable_mainnet_broadcast();
+
+    nozy::warm_orchard_proving_key();
 
     let transaction = match tx_builder
         .build_and_broadcast_send_transaction(
@@ -591,6 +602,13 @@ pub async fn send_transaction(
         Err(e) => {
             let msg = e.to_string();
             if is_insufficient_funds_error(&msg) {
+                return Ok(ResponseJson(SendTransactionResponse {
+                    success: false,
+                    txid: None,
+                    message: msg,
+                }));
+            }
+            if nozy::is_witness_stale_for_send_error(&msg) {
                 return Ok(ResponseJson(SendTransactionResponse {
                     success: false,
                     txid: None,

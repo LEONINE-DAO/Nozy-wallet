@@ -50,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
         }
     );
 
+    tokio::task::spawn_blocking(nozy::warm_orchard_proving_key);
+    info!("Orchard proving warm-up started in background");
+
     // HTTPS configuration
     let https_enabled = std::env::var("NOZY_HTTPS_ENABLED").is_ok();
     let https_port: u16 = std::env::var("NOZY_HTTPS_PORT")
