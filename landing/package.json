@@ -22,6 +22,10 @@
   "overrides": {
     "react-dom": "19.2.6"
   },
+  "optionalDependencies": {
+    "@emnapi/core": "1.11.1",
+    "@emnapi/runtime": "1.11.1"
+  },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
     "@types/node": "^25.6.0",
