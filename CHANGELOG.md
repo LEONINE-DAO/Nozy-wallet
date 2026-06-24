@@ -2,52 +2,31 @@
 
 ## [Unreleased]
 
+## [2.3.6.6] — Teriyaki Hot (CLI) (2026-06-24)
+
+Patch on **v2.3.6.5**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.6 (Teriyaki Hot (CLI))**.
+
 ### Fixed
 
-- **Bug 1 — Send rescanned ~50k blocks despite a synced wallet (Gilmore, post note-persistence fix):**
-  - **Symptom:** After sync showed healthy state (`balance_zec: 0.0025`, `last_sync_height` ~25 blocks behind tip), `POST /api/transaction/send` immediately logged `Scanning blocks 3333582 → 3383606` (~50,025 blocks) instead of reusing the known spendable note.
-  - **Root cause:** `scan_notes_for_sending()` always rewound **50,000 blocks** from `last_scan_height` before building a transaction — a pre-persistence safety net that ignored cached `notes.json` and persisted Orchard witnesses.
-  - **Fix:** Send now loads spendable notes directly from `notes.json` via `load_spendable_notes_from_wallet()`. Witness catch-up to chain tip still happens at spend-build time (only the blocks behind tip, not a historical rescan). Fallback scan runs only when the cache is empty or notes lack witnesses, and uses incremental bounds (100-block reorg rewind) instead of 50k.
-  - **Expected after fix:** Send reuses existing wallet state / spendable notes; at most a small incremental scan when cache is missing.
-
-- **Bug 2 — Transaction history empty despite persisted balance (Gilmore, post note-persistence fix):**
-  - **Symptom:** `/api/sync` and `/api/wallet/status` showed correct balance and sync height, but `GET /api/transaction/history` returned `{ "transactions": [], "total": 0 }` — no received deposit entry.
-  - **Root cause:** History endpoints read only `SentTransactionStorage` (outgoing txs recorded at broadcast). Received deposits live in persisted `notes.json` and were never merged into history views.
-  - **Fix:** Added `collect_wallet_transaction_views()` to merge sent records with received deposits grouped by txid from `notes.json`. `/api/transaction/history`, `/api/transaction/{txid}`, `/api/wallet/status` (`total_transactions`), and `web_read_state` now use this merged view. Responses include `transaction_type: "Received"` or `"Sent"`.
-  - **Expected after fix:** At least the detected deposit appears in history (txid, amount, block height, confirmations).
-
-- **Bug 3 — Send broadcast fails when Orchard proving outruns pilot expiry (Gilmore, VPS):**
-  - **Symptom:** Orchard bundle built, proof generated, and tx signed, but `sendrawtransaction` rejected with Zebrad `-25`: chain tip past `expiry_height` (e.g. tip 3385384, expiry 3385380). Balance unchanged — tx never entered mempool.
-  - **Root cause:** Expiry clock started at the beginning of `build_single_spend` (before witness fetch + Halo2 proving). The 5-block pilot window is shorter than proving latency on slow VPS/WSL hosts. History also recorded `tip + 5` while the tx encoded `(tip + 1) + 5`.
-  - **Fix:** Late tip refresh before encoding expiry; auto-rebuild when proving outruns expiry (up to 3 attempts); broadcast retry on expiry `-25`; unified `build_and_broadcast_send_transaction()` across CLI, api-server, and desktop; history uses on-chain `expiry_height` from the signed tx. **Pilot expiry stays at 5 blocks** (~6 min) so users get fast expire/fail feedback for speed-up UX — slow-host reliability comes from rebuild/retry, not a longer window.
-  - **Detail:** [`docs/issues/bugs/2026-06-send-expiry-before-broadcast.md`](docs/issues/bugs/2026-06-send-expiry-before-broadcast.md) (BUG-2026-011). Mainnet test: [`docs/MAINNET_SEND_EXPIRY_TEST.md`](docs/MAINNET_SEND_EXPIRY_TEST.md). Paper: [`docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md`](docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md).
-
-- **CLI balance shows 0 on v2 `notes.json` (BUG-2026-012):**
-  - **Symptom:** `nozy balance` and `nozy status` reported **0 ZEC** after sync while api-server `/api/balance` was correct.
-  - **Root cause:** CLI hand-parsed `notes.json` as a top-level JSON array; v2 `NoteIndex` is a JSON object, so the sum was empty. Legacy arrays also ignored `spent`.
-  - **Fix:** `wallet_balance_snapshot()` — confirmed / pending / available zatoshis via `load_wallet_notes()` + `wallet_unspent_balance_zatoshis()`. Wired into `nozy balance` and `nozy status`.
-  - **Detail:** [`docs/issues/bugs/2026-06-cli-balance-v2-noteindex.md`](docs/issues/bugs/2026-06-cli-balance-v2-noteindex.md). Paper: [`docs/reference/CLI_BALANCE_NOTEINDEX.md`](docs/reference/CLI_BALANCE_NOTEINDEX.md).
+- **Send rescans ~50k blocks when wallet already synced (BUG-2026-001):** send path reuses cached `notes.json` spendables; incremental witness catch-up only when needed.
+- **Transaction history empty despite balance (BUG-2026-002):** merged received deposits from `notes.json` into history views.
+- **Pre-broadcast expiry `-25` when proving outruns pilot window (BUG-2026-011):** late tip refresh, rebuild loop, broadcast retry; **5-block** pilot expiry unchanged.
+- **CLI balance 0 on v2 `notes.json` (BUG-2026-012):** `wallet_balance_snapshot()` via `NoteIndex` load path; `nozy balance` and `nozy status` show confirmed / pending / available.
+- **`mark_wallet_notes_spent` on v2 index:** post-broadcast spent marking uses `NoteIndex` load/save.
 
 ### Added
 
-- **`wallet_balance_snapshot()` / `WalletBalanceSnapshot`:** Canonical shielded balance (confirmed, pending, available) for CLI; exported for future api-server/desktop reuse.
-- **Send-time witness freshness guard:** Reject sends when Orchard witness lag exceeds 50 blocks with a clear “sync to tip first” message (CLI, api-server, desktop). Prevents multi-minute witness catch-up during send on stale wallets.
-- **Parallel witness catch-up:** Up to 10 concurrent `getblock` fetches per batch when witness must advance at spend time.
-- **Orchard proving warm-up:** Pre-build cached Halo2 proving key on CLI send start, api-server startup, wallet unlock, and before api-server send — reduces cold-start proving latency on first send.
+- **Send-readiness:** witness lag guard (50 blocks), Orchard proving warm-up, parallel witness catch-up (10 blocks/batch).
+- **`wallet_balance_snapshot()`:** canonical shielded balance for CLI (api-server/desktop reuse planned).
+- **`test_send_readiness` binary:** live witness lag and proving warm-up diagnostic.
 
 ### Changed
 
-- **api-server send errors:** Witness-stale rejections return `{ success: false, message: ... }` (HTTP 200) instead of HTTP 500, matching insufficient-funds handling.
-- **`mark_wallet_notes_spent_from_spendables`:** Uses v2 `NoteIndex` load/save so post-broadcast spent marking no longer corrupts `notes.json`.
+- **api-server:** witness-stale sends return `{ success: false }` (HTTP 200), not 500.
 
 ### Documentation
 
-- **Mainnet evidence (paper/lecture):** [`docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md`](docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md) — sync/send timings, TXIDs, witness guard, lecture outline.
-- **CLI balance / NoteIndex v2 (paper/lecture):** [`docs/reference/CLI_BALANCE_NOTEINDEX.md`](docs/reference/CLI_BALANCE_NOTEINDEX.md) — BUG-2026-012, dual-parser RCA, `wallet_balance_snapshot()`.
-- **Paper generator:** `scripts/generate-nozy-paper.py` §6.3.2 send readiness evidence.
-- **BUG-2026-011 docs:** [`docs/issues/bugs/2026-06-send-expiry-before-broadcast.md`](docs/issues/bugs/2026-06-send-expiry-before-broadcast.md) — RCA, fix, Gilmore session, paper draft.
-- **Paper reference:** [`docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md`](docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md) — two clocks, 5 vs 15, Zodl FAQ, design principles, copy-paste paragraph.
-- **Mainnet test guide:** [`docs/MAINNET_SEND_EXPIRY_TEST.md`](docs/MAINNET_SEND_EXPIRY_TEST.md) — api-server + CLI verification, evidence template.
+- Mainnet send-readiness evidence, pilot expiry reference, CLI balance paper notes, issue registry, paper generator scripts.
 
 ## [2.3.6.5] — Teriyaki Hot (CLI) (2026-06-17)
 
