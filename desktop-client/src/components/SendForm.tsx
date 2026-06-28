@@ -15,6 +15,7 @@ import {
 import { useWalletStore } from "../store/walletStore";
 import { useTokenStore } from "../store/tokenStore";
 import { walletApi } from "../lib/api";
+import { isWalletReadyForSend } from "../lib/syncHelpers";
 import type { AddressBookEntry } from "../lib/types";
 
 interface SendFormProps {
@@ -102,6 +103,21 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const handleMax = () => {
     const maxAmount = Math.max(0, balance - feeZec);
     setAmount(maxAmount >= 0 ? maxAmount.toString() : "0");
+  };
+
+  const handleProceedToReview = async () => {
+    try {
+      const statusRes = await walletApi.getSyncStatus();
+      const { ready, reason } = isWalletReadyForSend(statusRes.data);
+      if (!ready) {
+        toast.error(reason ?? "Wallet not ready for send. Sync to tip first.");
+        return;
+      }
+    } catch (e) {
+      toast.error(formatErrorForDisplay(e, "Could not verify wallet sync status."));
+      return;
+    }
+    setShowReview(true);
   };
 
   const handleSend = async () => {
@@ -416,7 +432,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           <Button
             size="lg"
             disabled={!isValid}
-            onClick={() => setShowReview(true)}
+            onClick={handleProceedToReview}
             className="flex-1 rounded-xl py-4 text-lg shadow-xl bg-black text-white shadow-primary/30 -hover:translate-y-[2px] transition-all duration-300 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
           >
             Review

@@ -32,6 +32,25 @@ export interface GenerateAddressResponse {
 export interface BalanceResponse {
   balance: number;
   verified_balance: number;
+  confirmed_zec?: number;
+  pending_zec?: number;
+  available_zec?: number;
+  unspent_note_count?: number;
+}
+
+export interface SyncStatusResponse {
+  zebra_tip: number | null;
+  last_scan_height: number | null;
+  scan_gap_blocks: number | null;
+  witness_lag_blocks: number;
+  witness_fresh_for_send: boolean;
+  max_send_witness_lag_blocks: number;
+  lightwalletd_url: string;
+  lwd_tip: number | null;
+  lwd_error: string | null;
+  compact_max_height: number | null;
+  compact_db_exists: boolean;
+  message: string;
 }
 
 export interface SendTransactionRequest {

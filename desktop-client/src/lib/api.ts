@@ -19,6 +19,7 @@ import {
   AddAddressBookRequest,
   BackupPathRequest,
   BackupActionResponse,
+  SyncStatusResponse,
 } from "./types";
 
 const invoke = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
@@ -76,6 +77,11 @@ export const walletApi = {
 
   getBalance: async (): Promise<{ data: BalanceResponse }> => {
     const result = await invoke<BalanceResponse>("get_balance");
+    return { data: result };
+  },
+
+  getSyncStatus: async (): Promise<{ data: SyncStatusResponse }> => {
+    const result = await invoke<SyncStatusResponse>("get_sync_status");
     return { data: result };
   },
 

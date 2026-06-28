@@ -7,6 +7,7 @@ interface WalletState {
   isLoading: boolean;
   isSyncing: boolean;
   setBalance: (balance: number) => void;
+  setBalanceFromAvailable: (available: number) => void;
   setAddress: (address: string) => void;
   setHasWallet: (hasWallet: boolean) => void;
   setIsLoading: (isLoading: boolean) => void;
@@ -20,6 +21,7 @@ export const useWalletStore = create<WalletState>((set) => ({
   isLoading: false,
   isSyncing: false,
   setBalance: (balance) => set({ balance }),
+  setBalanceFromAvailable: (available) => set({ balance: available }),
   setAddress: (address) => set({ address }),
   setHasWallet: (hasWallet) => set({ hasWallet }),
   setIsLoading: (isLoading) => set({ isLoading }),

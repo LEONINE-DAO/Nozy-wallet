@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Header, TabId } from "../components/Header";
+import { SyncStatusBanner } from "../components/SyncStatusBanner";
 import { HomePage } from "../pages/Home";
 import { SendPage } from "../pages/Send";
 import { SettingsPage } from "../pages/Settings";
@@ -16,13 +17,16 @@ import { Button } from "../components/Button";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
 import { Refresh, CloseCircle, Download } from "@solar-icons/react";
+import { useWalletAutoSync } from "../hooks/useWalletAutoSync";
+import { balanceFromResponse, syncWalletAndRefresh } from "../lib/syncHelpers";
 
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const webWatchOnlyEnabled = import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
   const { hasNymSubscription } = useSubscriptionStore();
-  const { setBalance, setAddress, isSyncing, setIsSyncing } = useWalletStore();
+  const { setAddress, isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
+  const [syncBannerToken, setSyncBannerToken] = useState(0);
   const [provingDownloaded, setProvingDownloaded] = useState<boolean | null>(null);
   const [provingDownloading, setProvingDownloading] = useState(false);
   const [provingBannerDismissed, setProvingBannerDismissed] = useState(false);
@@ -45,14 +49,7 @@ export function AuthenticatedLayout() {
 
         try {
           const balanceRes = await walletApi.getBalance();
-          const balanceVal =
-            typeof balanceRes?.data === "number"
-              ? balanceRes.data
-              : balanceRes?.data?.balance;
-
-          if (typeof balanceVal === "number") {
-            setBalance(balanceVal);
-          }
+          setBalanceFromAvailable(balanceFromResponse(balanceRes.data).available);
         } catch (e) {
         }
       } catch (error) {
@@ -62,7 +59,7 @@ export function AuthenticatedLayout() {
     fetchData();
     const interval = setInterval(fetchData, 30000);
     return () => clearInterval(interval);
-  }, [setBalance, setAddress]);
+  }, [setBalanceFromAvailable, setAddress]);
 
   useEffect(() => {
     let cancelled = false;
@@ -94,25 +91,36 @@ export function AuthenticatedLayout() {
     }
   };
 
-  const handleFirstSync = async () => {
+  const runSyncToTip = async () => {
     setIsSyncing(true);
     const syncToast = toast.loading("Syncing wallet...");
     try {
-      await walletApi.syncWallet();
-      toast.success("Wallet synced. Your balance and history are up to date.", { id: syncToast });
-      setOnboardingFirstSyncDismissed(true);
-      try {
-        const balanceRes = await walletApi.getBalance();
-        const balanceVal = typeof balanceRes?.data === "number" ? balanceRes.data : balanceRes?.data?.balance;
-        if (typeof balanceVal === "number") setBalance(balanceVal);
-      } catch {
-        
-      }
+      await syncWalletAndRefresh();
+      const balanceRes = await walletApi.getBalance();
+      setBalanceFromAvailable(balanceFromResponse(balanceRes.data).available);
+      setSyncBannerToken((t) => t + 1);
+      toast.success("Wallet synced.", { id: syncToast });
     } catch (e) {
-      toast.error(formatErrorForDisplay(e, "Sync failed. You can try again from the header."), { id: syncToast });
+      toast.error(formatErrorForDisplay(e, "Sync failed. You can try again from the header."), {
+        id: syncToast,
+      });
     } finally {
       setIsSyncing(false);
     }
+  };
+
+  useWalletAutoSync({
+    onSyncComplete: () => {
+      setSyncBannerToken((t) => t + 1);
+      void walletApi.getBalance().then((res) => {
+        setBalanceFromAvailable(balanceFromResponse(res.data).available);
+      });
+    },
+  });
+
+  const handleFirstSync = async () => {
+    await runSyncToTip();
+    setOnboardingFirstSyncDismissed(true);
   };
 
   return (
@@ -121,6 +129,12 @@ export function AuthenticatedLayout() {
         activeTab={activeTab}
         onTabChange={setActiveTab}
         showLabels={showNavigationLabels}
+      />
+
+      <SyncStatusBanner
+        onSync={runSyncToTip}
+        isSyncing={isSyncing}
+        refreshToken={syncBannerToken}
       />
 
       {!onboardingFirstSyncDismissed && (

@@ -5,6 +5,7 @@ import { formatErrorForDisplay } from "../utils/errors";
 import { ProfileDropdown } from "./ProfileDropdown";
 import { Tooltip } from "./Tooltip";
 import { walletApi } from "../lib/api";
+import { syncWalletAndRefresh } from "../lib/syncHelpers";
 import { useWalletStore } from "../store/walletStore";
 
 export type TabId = "home" | "history" | "settings" | "send" | "browser" | "contacts" | "web";
@@ -20,7 +21,7 @@ function cn(...classes: (string | boolean | undefined)[]) {
 }
 
 export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
-  const { isSyncing, setIsSyncing } = useWalletStore();
+  const { isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
   const webWatchOnlyEnabled = import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
 
   const handleManualSync = async () => {
@@ -28,7 +29,9 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
     const syncToast = toast.loading("Syncing wallet...");
     try {
       setIsSyncing(true);
-      await walletApi.syncWallet();
+      await syncWalletAndRefresh();
+      const balanceRes = await walletApi.getBalance();
+      setBalanceFromAvailable(balanceRes.data.available_zec ?? balanceRes.data.balance);
       toast.success("Wallet synced successfully!", { id: syncToast });
     } catch (error) {
       toast.error(formatErrorForDisplay(error, "Sync failed. Please try again."), { id: syncToast });
