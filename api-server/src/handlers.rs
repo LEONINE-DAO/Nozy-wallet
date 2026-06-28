@@ -86,8 +86,36 @@ pub struct AddressResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BalanceResponse {
+    /// Legacy alias for confirmed shielded balance (`confirmed_zec`).
     pub balance_zec: f64,
+    /// Legacy alias for confirmed shielded balance in zatoshis.
     pub balance_zatoshis: u64,
+    pub confirmed_zec: f64,
+    pub confirmed_zatoshis: u64,
+    pub pending_zec: f64,
+    pub pending_zatoshis: u64,
+    /// Spendable balance (confirmed minus pending outbound sends).
+    pub available_zec: f64,
+    pub available_zatoshis: u64,
+    pub unspent_note_count: usize,
+}
+
+fn zats_to_zec(zat: u64) -> f64 {
+    zat as f64 / 100_000_000.0
+}
+
+fn balance_response_from_snapshot(snapshot: nozy::WalletBalanceSnapshot) -> BalanceResponse {
+    BalanceResponse {
+        balance_zec: zats_to_zec(snapshot.confirmed_zatoshis),
+        balance_zatoshis: snapshot.confirmed_zatoshis,
+        confirmed_zec: zats_to_zec(snapshot.confirmed_zatoshis),
+        confirmed_zatoshis: snapshot.confirmed_zatoshis,
+        pending_zec: zats_to_zec(snapshot.pending_zatoshis),
+        pending_zatoshis: snapshot.pending_zatoshis,
+        available_zec: zats_to_zec(snapshot.available_zatoshis),
+        available_zatoshis: snapshot.available_zatoshis,
+        unspent_note_count: snapshot.unspent_note_count,
+    }
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -384,23 +412,16 @@ pub async fn generate_address(
 
 pub async fn get_balance(
 ) -> Result<ResponseJson<BalanceResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::{load_wallet_notes, wallet_unspent_balance_zatoshis};
-
-    let notes = load_wallet_notes().map_err(|e| {
+    let snapshot = nozy::wallet_balance_snapshot().map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({
-                "error": format!("Failed to read notes: {}", e)
+                "error": format!("Failed to read wallet balance: {}", e)
             })),
         )
     })?;
 
-    let total_zat = wallet_unspent_balance_zatoshis(&notes);
-
-    Ok(ResponseJson(BalanceResponse {
-        balance_zec: total_zat as f64 / 100_000_000.0,
-        balance_zatoshis: total_zat,
-    }))
+    Ok(ResponseJson(balance_response_from_snapshot(snapshot)))
 }
 
 pub async fn sync_wallet(
@@ -421,17 +442,26 @@ pub async fn sync_wallet(
             )
         })?;
 
-    let mut options = WalletSyncOptions::api_default();
-    options.start_height = payload.start_height;
-    options.end_height = payload.end_height;
-    options.zebra_url = payload.zebra_url;
+    let scan_to_tip = payload.end_height.is_none();
+    let options = WalletSyncOptions {
+        start_height: payload.start_height,
+        end_height: payload.end_height,
+        scan_to_tip,
+        zebra_url: payload.zebra_url,
+        ..WalletSyncOptions::api_default()
+    };
 
     match sync_wallet_notes(wallet, options).await {
         Ok(result) => {
             let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
             let message = if result.already_synced {
                 format!(
-                    "Wallet already synced to tip (height {}). Cached balance: {balance_zec:.8} ZEC",
+                    "Wallet synced to tip (height {}). Cached balance: {balance_zec:.8} ZEC",
+                    result.chain_tip
+                )
+            } else if result.blocks_scanned == 0 {
+                format!(
+                    "Witness catch-up in progress or incomplete (height {}). Cached balance: {balance_zec:.8} ZEC — repeat sync until ready for send",
                     result.chain_tip
                 )
             } else {
@@ -1327,28 +1357,47 @@ pub async fn search_address_book(
 
 #[derive(Debug, Serialize)]
 pub struct WalletStatusResponse {
+    /// Legacy alias for confirmed shielded balance (`confirmed_zec`).
     pub balance_zec: f64,
+    /// Legacy alias for confirmed shielded balance in zatoshis.
     pub balance_zatoshis: u64,
+    pub confirmed_zec: f64,
+    pub confirmed_zatoshis: u64,
+    pub pending_zec: f64,
+    pub pending_zatoshis: u64,
+    pub available_zec: f64,
+    pub available_zatoshis: u64,
+    pub unspent_note_count: usize,
     pub pending_transactions: usize,
     pub total_transactions: usize,
     pub last_sync_height: Option<u32>,
     pub current_block_height: Option<u32>,
     pub blocks_behind: Option<u32>,
+    pub witness_lag_blocks: u32,
+    pub witness_fresh_for_send: bool,
+    pub max_send_witness_lag_blocks: u32,
+    pub ready_for_send: bool,
 }
 
 pub async fn get_wallet_status(
 ) -> Result<ResponseJson<WalletStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     use nozy::{
-        load_config, load_wallet_notes, transaction_history::SentTransactionStorage,
-        wallet_unspent_balance_zatoshis, ZebraClient,
+        load_config, load_wallet_notes, max_serialized_witness_lag_blocks,
+        transaction_history::SentTransactionStorage, wallet_balance_snapshot, ZebraClient,
+        MAX_SEND_WITNESS_LAG_BLOCKS,
     };
 
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);
 
-    let balance_zatoshis = load_wallet_notes()
-        .map(|notes| wallet_unspent_balance_zatoshis(&notes))
-        .unwrap_or(0);
+    let snapshot = wallet_balance_snapshot().map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to read wallet balance: {}", e)
+            })),
+        )
+    })?;
 
     let current_height = zebra_client.get_block_count().await.ok();
 
@@ -1370,14 +1419,36 @@ pub async fn get_wallet_status(
             None
         };
 
+    let witness_lag_blocks = current_height
+        .map(|tip| {
+            load_wallet_notes()
+                .map(|notes| max_serialized_witness_lag_blocks(&notes, tip))
+                .unwrap_or(0)
+        })
+        .unwrap_or(0);
+    let witness_fresh_for_send = witness_lag_blocks <= MAX_SEND_WITNESS_LAG_BLOCKS;
+    let scan_caught_up = blocks_behind == Some(0);
+    let ready_for_send = scan_caught_up && witness_fresh_for_send && current_height.is_some();
+
     Ok(ResponseJson(WalletStatusResponse {
-        balance_zec: balance_zatoshis as f64 / 100_000_000.0,
-        balance_zatoshis,
+        balance_zec: zats_to_zec(snapshot.confirmed_zatoshis),
+        balance_zatoshis: snapshot.confirmed_zatoshis,
+        confirmed_zec: zats_to_zec(snapshot.confirmed_zatoshis),
+        confirmed_zatoshis: snapshot.confirmed_zatoshis,
+        pending_zec: zats_to_zec(snapshot.pending_zatoshis),
+        pending_zatoshis: snapshot.pending_zatoshis,
+        available_zec: zats_to_zec(snapshot.available_zatoshis),
+        available_zatoshis: snapshot.available_zatoshis,
+        unspent_note_count: snapshot.unspent_note_count,
         pending_transactions: pending_count,
         total_transactions: total_count,
         last_sync_height: config.last_scan_height,
         current_block_height: current_height,
         blocks_behind,
+        witness_lag_blocks,
+        witness_fresh_for_send,
+        max_send_witness_lag_blocks: MAX_SEND_WITNESS_LAG_BLOCKS,
+        ready_for_send,
     }))
 }
 

@@ -3,12 +3,14 @@
 //! See [`docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md`](../docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md).
 
 use crate::config::{load_config, update_last_scan_height, WalletConfig};
-use crate::error::NozyError;
+use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use crate::notes::{
     load_wallet_notes, merge_scanned_notes, save_wallet_notes, wallet_unspent_balance_zatoshis,
     NoteScanner,
 };
+use crate::orchard_tx::refresh_cached_witnesses_to_tip;
+use crate::send_readiness::{max_serialized_witness_lag_blocks, MAX_SEND_WITNESS_LAG_BLOCKS};
 use crate::zebra_integration::ZebraClient;
 use serde::{Deserialize, Serialize};
 
@@ -208,7 +210,9 @@ pub(crate) fn apply_empty_cache_backfill(
     if !notes_before.is_empty() {
         return;
     }
-    if options.start_height.is_some() || options.end_height.is_some() || options.scan_to_tip {
+    // User-scoped windows must not expand; plain `sync --to-tip` with an empty cache still needs
+    // a full backfill (otherwise only the incremental tail is scanned and balance stays zero).
+    if options.start_height.is_some() || options.end_height.is_some() {
         return;
     }
     range.scan_start = default_first_scan_start(config);
@@ -348,24 +352,12 @@ pub async fn sync_wallet_notes(
     let total_before = notes_before.len();
     let balance_before = wallet_unspent_balance_zatoshis(&notes_before);
 
-    // Already caught up: return cached balance without re-scanning or rewriting notes.json.
+    // Block scan caught up but Orchard witnesses may still lag — refresh witnesses to tip.
     if range.scan_start > range.scan_end {
-        let last_scan_height = config.last_scan_height.unwrap_or(range.chain_tip);
-        return Ok(WalletSyncResult {
-            balance_zatoshis: balance_before,
-            unspent_notes: notes_before.iter().filter(|n| !n.spent).count(),
-            total_notes: notes_before.len(),
-            new_notes_in_scan: 0,
-            scan_start: range.scan_start,
-            scan_end: range.scan_end,
-            chain_tip: range.chain_tip,
-            blocks_scanned: 0,
-            last_scan_height,
-            already_synced: true,
-        });
+        return finish_caught_up_sync(&zebra_client, notes_before, &range, &config, 0).await;
     }
 
-    let mut note_scanner = NoteScanner::new(wallet, zebra_client);
+    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
     let (scan_result, _spendable) = note_scanner
         .scan_notes(Some(range.scan_start), Some(range.scan_end))
         .await
@@ -382,6 +374,33 @@ pub async fn sync_wallet_notes(
 
     let mut cached_notes = notes_before;
     merge_scanned_notes(&mut cached_notes, &scan_result.notes);
+    if cached_notes.is_empty() && total_before > 0 {
+        return Err(WalletSyncError::with_range(
+            WalletSyncPhase::Persist,
+            NozyError::Storage(
+                "sync would overwrite a non-empty note cache with zero notes; refusing to persist. \
+                 Re-run with `nozy sync --start-height 3050000 --to-tip` to rebuild the cache."
+                    .to_string(),
+            ),
+            None,
+            scan_start,
+            scan_end,
+            chain_tip_opt,
+        ));
+    }
+    refresh_and_persist_witnesses(&zebra_client, &mut cached_notes, range.scan_end)
+        .await
+        .map_err(|e| {
+            WalletSyncError::with_range(
+                WalletSyncPhase::Scan,
+                e,
+                None,
+                scan_start,
+                scan_end,
+                chain_tip_opt,
+            )
+        })?;
+
     save_wallet_notes(&cached_notes).map_err(|e| {
         WalletSyncError::with_range(
             WalletSyncPhase::Persist,
@@ -404,13 +423,16 @@ pub async fn sync_wallet_notes(
         )
     })?;
 
-    let balance_zatoshis = wallet_unspent_balance_zatoshis(&cached_notes);
-    let unspent_notes = cached_notes.iter().filter(|n| !n.spent).count();
     let new_notes_in_scan = cached_notes.len().saturating_sub(total_before);
     let blocks_scanned = range
         .scan_end
         .saturating_sub(range.scan_start)
         .saturating_add(1);
+
+    cached_notes = reload_wallet_notes()?;
+
+    let balance_zatoshis = wallet_unspent_balance_zatoshis(&cached_notes);
+    let unspent_notes = cached_notes.iter().filter(|n| !n.spent).count();
 
     Ok(WalletSyncResult {
         balance_zatoshis,
@@ -423,6 +445,107 @@ pub async fn sync_wallet_notes(
         blocks_scanned,
         last_scan_height: range.scan_end,
         already_synced: false,
+    })
+}
+
+async fn refresh_and_persist_witnesses(
+    zebra_client: &ZebraClient,
+    notes: &mut [crate::notes::SerializableOrchardNote],
+    target_height: u32,
+) -> NozyResult<u32> {
+    let refreshed = refresh_cached_witnesses_to_tip(zebra_client, notes, target_height).await?;
+    Ok(refreshed)
+}
+
+/// Target height for witness catch-up when RPC scan is already at tip.
+///
+/// Large witness lag is advanced in [`DEFAULT_INCREMENTAL_BATCH`] chunks so API sync
+/// calls stay bounded instead of fetching thousands of blocks in one request.
+fn witness_catchup_target_height(
+    notes: &[crate::notes::SerializableOrchardNote],
+    chain_tip: u32,
+) -> u32 {
+    let lag = max_serialized_witness_lag_blocks(notes, chain_tip);
+    if lag == 0 {
+        return chain_tip;
+    }
+    let batch = DEFAULT_INCREMENTAL_BATCH.max(1);
+    if lag <= batch {
+        return chain_tip;
+    }
+    let min_stored = notes
+        .iter()
+        .filter(|n| {
+            !n.spent
+                && n.orchard_incremental_witness_hex
+                    .as_ref()
+                    .is_some_and(|h| !h.is_empty())
+        })
+        .map(|n| n.orchard_witness_tip_height.unwrap_or(0))
+        .min()
+        .unwrap_or(0);
+    min_stored.saturating_add(batch).min(chain_tip)
+}
+
+/// When RPC scan is caught up, advance Orchard witnesses on cached notes and report send readiness.
+async fn finish_caught_up_sync(
+    zebra_client: &ZebraClient,
+    notes_before: Vec<crate::notes::SerializableOrchardNote>,
+    range: &ScanRange,
+    config: &WalletConfig,
+    blocks_scanned: u32,
+) -> Result<WalletSyncResult, WalletSyncError> {
+    let witness_lag_before = max_serialized_witness_lag_blocks(&notes_before, range.chain_tip);
+    let mut notes_mut = notes_before;
+    if witness_lag_before > 0 {
+        let witness_target = witness_catchup_target_height(&notes_mut, range.chain_tip);
+        refresh_and_persist_witnesses(zebra_client, &mut notes_mut, witness_target)
+            .await
+            .map_err(|e| {
+                WalletSyncError::with_range(
+                    WalletSyncPhase::Scan,
+                    e,
+                    None,
+                    None,
+                    None,
+                    Some(range.chain_tip),
+                )
+            })?;
+        save_wallet_notes(&notes_mut).map_err(|e| {
+            WalletSyncError::with_range(
+                WalletSyncPhase::Persist,
+                e,
+                None,
+                None,
+                None,
+                Some(range.chain_tip),
+            )
+        })?;
+    }
+
+    let notes_after_repair = reload_wallet_notes()?;
+    let last_scan_height = config.last_scan_height.unwrap_or(range.chain_tip);
+    let witness_lag_after = max_serialized_witness_lag_blocks(&notes_after_repair, range.chain_tip);
+    let scan_caught_up = last_scan_height >= range.chain_tip;
+    let already_synced = scan_caught_up && witness_lag_after <= MAX_SEND_WITNESS_LAG_BLOCKS;
+
+    Ok(WalletSyncResult {
+        balance_zatoshis: wallet_unspent_balance_zatoshis(&notes_after_repair),
+        unspent_notes: notes_after_repair.iter().filter(|n| !n.spent).count(),
+        total_notes: notes_after_repair.len(),
+        new_notes_in_scan: 0,
+        scan_start: range.scan_start,
+        scan_end: range.scan_end,
+        chain_tip: range.chain_tip,
+        blocks_scanned,
+        last_scan_height,
+        already_synced,
+    })
+}
+
+fn reload_wallet_notes() -> Result<Vec<crate::notes::SerializableOrchardNote>, WalletSyncError> {
+    load_wallet_notes().map_err(|e| {
+        WalletSyncError::with_range(WalletSyncPhase::LoadNotes, e, None, None, None, None)
     })
 }
 
@@ -493,11 +616,68 @@ mod tests {
     }
 
     #[test]
+    fn witness_catchup_batches_large_lag() {
+        use crate::notes::SerializableOrchardNote;
+
+        let notes = vec![SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            block_height: 3_379_050,
+            nullifier_bytes: vec![2; 32],
+            txid: "abc".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: Some("ab".to_string()),
+            orchard_witness_tip_height: Some(3_379_050),
+            rho_bytes: None,
+            rseed_bytes: None,
+        }];
+        let chain_tip = 3_389_822;
+        let target = witness_catchup_target_height(&notes, chain_tip);
+        assert_eq!(target, 3_379_050 + DEFAULT_INCREMENTAL_BATCH);
+        assert!(target < chain_tip);
+    }
+
+    #[test]
+    fn witness_catchup_reaches_tip_when_lag_within_batch() {
+        use crate::notes::SerializableOrchardNote;
+
+        let notes = vec![SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            block_height: 3_389_500,
+            nullifier_bytes: vec![2; 32],
+            txid: "abc".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: Some("ab".to_string()),
+            orchard_witness_tip_height: Some(3_389_500),
+            rho_bytes: None,
+            rseed_bytes: None,
+        }];
+        let chain_tip = 3_389_822;
+        assert_eq!(witness_catchup_target_height(&notes, chain_tip), chain_tip);
+    }
+
+    #[test]
     fn empty_cache_backfills_when_checkpoint_at_tip() {
         let config = test_config(Some(3_380_000), "mainnet");
         let opts = WalletSyncOptions::default();
         let mut range = resolve_scan_range(&config, &opts, 3_380_000).unwrap();
         assert!(range.scan_start > range.scan_end);
+        apply_empty_cache_backfill(&mut range, &config, &opts, &[]);
+        assert_eq!(range.scan_start, MAINNET_DEFAULT_SCAN_START);
+        assert_eq!(range.scan_end, 3_380_000);
+    }
+
+    #[test]
+    fn empty_cache_to_tip_backfills_from_mainnet_default() {
+        let config = test_config(Some(3_380_000), "mainnet");
+        let opts = WalletSyncOptions::to_tip();
+        let mut range = resolve_scan_range(&config, &opts, 3_380_000).unwrap();
+        assert_eq!(range.scan_end, 3_380_000);
         apply_empty_cache_backfill(&mut range, &config, &opts, &[]);
         assert_eq!(range.scan_start, MAINNET_DEFAULT_SCAN_START);
         assert_eq!(range.scan_end, 3_380_000);
