@@ -1,11 +1,12 @@
 # Bug registry
 
-**Last updated:** 2026-06-24
+**Last updated:** 2026-06-28
 
 Add new rows at the top. Link GitHub issue when filed. Detailed writeups live in [`bugs/`](bugs/).
 
 | ID | Status | Sev | Surface | Summary | Reporter | GitHub | Fixed in | Detail |
 |----|--------|-----|---------|---------|----------|--------|----------|--------|
+| BUG-2026-013 | Fixed | P1 | core + api-server | Status synced but send fails — Orchard witness lag not tracked | Gilmore | — | v2.3.6.7 | [`bugs/2026-06-witness-sync-status-mismatch.md`](bugs/2026-06-witness-sync-status-mismatch.md) |
 | BUG-2026-012 | Fixed | P1 | cli | `nozy balance` / status show 0 on v2 NoteIndex (legacy array parser) | Internal | — | v2.3.6.6 | [`bugs/2026-06-cli-balance-v2-noteindex.md`](bugs/2026-06-cli-balance-v2-noteindex.md) |
 | BUG-2026-011 | Fixed | P1 | core + api-server | Send broadcast fails when proving outruns pilot expiry (rebuild/retry; 5-block delta kept) | Gilmore | — | v2.3.6.6 | [`bugs/2026-06-send-expiry-before-broadcast.md`](bugs/2026-06-send-expiry-before-broadcast.md) |
 | BUG-2026-002 | Fixed | P1 | api-server | History empty despite balance | Gilmore | — | v2.3.6.6 | [`bugs/2026-06-history-empty-despite-balance.md`](bugs/2026-06-history-empty-despite-balance.md) |

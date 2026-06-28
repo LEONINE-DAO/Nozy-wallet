@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [2.3.6.7] — Teriyaki Hot (CLI) (2026-06-28)
+
+Patch on **v2.3.6.6**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.7 (Teriyaki Hot (CLI))**.
+
+### Fixed
+
+- **Orchard witness lag while `/api/wallet/status` reports synced (BUG-2026-013):** incremental RPC scan advanced `last_scan_height` without refreshing witnesses on existing cached notes; `/api/wallet/status` showed `blocks_behind: 0` while send failed with witness thousands of blocks behind. Sync now refreshes witnesses after each scan, batches witness catch-up when scan is at tip, and API sync uses `scan_to_tip` when `end_height` is omitted.
+
+### Added
+
+- **`/api/wallet/status`:** `witness_lag_blocks`, `witness_fresh_for_send`, `max_send_witness_lag_blocks`, and `ready_for_send` (use instead of `blocks_behind: 0` alone before send).
+
+### Changed
+
+- **`POST /api/sync`:** when scan is caught up but witnesses lag, returns `already_synced: false` until witness catch-up completes (repeat sync until `ready_for_send`).
+
 ## [2.3.6.6] — Teriyaki Hot (CLI) (2026-06-24)
 
 Patch on **v2.3.6.5**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.6 (Teriyaki Hot (CLI))**.
