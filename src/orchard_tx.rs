@@ -107,6 +107,40 @@ async fn advance_orchard_witness_from_zebra_blocks(
     Ok(())
 }
 
+/// Advance persisted note witnesses through chain tip (used when block scan is caught up but witnesses lag).
+pub async fn refresh_cached_witnesses_to_tip(
+    zebra: &ZebraClient,
+    notes: &mut [crate::notes::SerializableOrchardNote],
+    chain_tip: u32,
+) -> NozyResult<u32> {
+    use crate::orchard_tree_codec::orchard_incremental_witness_to_bytes;
+
+    let mut updated = 0u32;
+    for note in notes.iter_mut().filter(|n| !n.spent) {
+        let Some(ref witness_hex) = note.orchard_incremental_witness_hex else {
+            continue;
+        };
+        if witness_hex.is_empty() {
+            continue;
+        }
+        let stored_tip = note.orchard_witness_tip_height.unwrap_or(0);
+        if stored_tip >= chain_tip {
+            continue;
+        }
+        let bytes = hex::decode(witness_hex).map_err(|e| {
+            NozyError::InvalidOperation(format!("orchard_incremental_witness_hex decode: {e}"))
+        })?;
+        let mut witness = orchard_incremental_witness_from_bytes(&bytes)?;
+        advance_orchard_witness_from_zebra_blocks(&mut witness, zebra, stored_tip, chain_tip)
+            .await?;
+        note.orchard_incremental_witness_hex =
+            Some(hex::encode(orchard_incremental_witness_to_bytes(&witness)?));
+        note.orchard_witness_tip_height = Some(chain_tip);
+        updated += 1;
+    }
+    Ok(updated)
+}
+
 #[async_trait]
 impl OrchardWitnessProvider for ZebraJsonRpcOrchardWitnessProvider {
     async fn prepare_spend_anchor_and_path(
