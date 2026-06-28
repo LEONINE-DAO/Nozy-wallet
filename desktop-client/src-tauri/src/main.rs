@@ -25,6 +25,7 @@ fn main() {
             get_wallet_status,
             generate_address,
             get_balance,
+            get_sync_status,
             sync_wallet,
             send_transaction,
             estimate_fee,

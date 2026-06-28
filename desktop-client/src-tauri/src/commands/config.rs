@@ -45,14 +45,12 @@ pub async fn test_zebra_connection(
     request: TestZebraConnectionRequest,
 ) -> Result<String, TauriError> {
     let config = load_config();
-    let zebra_url = request
-        .zebra_url
+    let override_url = request.zebra_url.as_deref();
+    let zebra_url = override_url
+        .map(str::to_string)
         .unwrap_or_else(|| config.zebra_url.clone());
 
-    let zebra_client = ZebraClient::from_config_with_url(
-        &config,
-        request.zebra_url.as_deref(),
-    );
+    let zebra_client = ZebraClient::from_config_with_url(&config, override_url);
     let connection_mode = zebra_client.connection_mode().as_str();
 
     match zebra_client.get_block_count().await {

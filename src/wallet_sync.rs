@@ -350,7 +350,6 @@ pub async fn sync_wallet_notes(
     let ctx = SyncRangeContext::from_range(&range);
     let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
     let total_before = notes_before.len();
-    let balance_before = wallet_unspent_balance_zatoshis(&notes_before);
 
     // Block scan caught up but Orchard witnesses may still lag — refresh witnesses to tip.
     if range.scan_start > range.scan_end {

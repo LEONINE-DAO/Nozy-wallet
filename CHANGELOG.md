@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Desktop sync:** use shared `sync_wallet_notes` (same as CLI/API) with witness catch-up, scan-to-tip, and `get_sync_status` for witness lag before send.
+
 ## [2.3.6.7] — Teriyaki Hot (CLI) (2026-06-28)
 
 Patch on **v2.3.6.6**. Crate SemVer remains **2.3.6**; `nozy --version` reports **2.3.6.7 (Teriyaki Hot (CLI))**.
