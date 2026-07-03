@@ -1,11 +1,19 @@
 # Proving Parameters Endpoints
 
-This chapter is currently being developed.
+Orchard spends require downloaded proving parameters.
 
-## Coming Soon
+Routes vary by api-server version — typical patterns:
 
-Content for this chapter is being written. Check back soon!
+- **GET** status — params present / missing
+- **POST** download — trigger official parameter fetch
 
-## Overview
+CLI:
 
-This chapter will cover Proving Parameters Endpoints topics and provide comprehensive guidance.
+```bash
+nozy proving --status
+nozy proving --download
+```
+
+Tauri: `check_proving_status`, `download_proving_parameters`.
+
+See [Proving Parameters](../advanced/proving-parameters.md).

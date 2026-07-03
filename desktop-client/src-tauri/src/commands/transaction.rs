@@ -1,10 +1,12 @@
 use crate::error::TauriError;
+use crate::session::load_session_wallet;
 use nozy::{
-    estimate_transaction_fee_for_send, load_config, scan_notes_for_sending,
+    estimate_transaction_fee_for_send, load_config, mark_wallet_notes_spent_from_spendables,
+    scan_notes_for_sending, select_single_spend_note,
     transaction_history::{
         SentTransactionRecord, SentTransactionStorage, TransactionStatus,
     },
-    WalletStorage, ZcashTransactionBuilder, ZebraClient,
+    ZcashTransactionBuilder, ZebraClient,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -89,15 +91,11 @@ pub async fn send_transaction(
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
 
-    let storage = WalletStorage::with_xdg_dir();
-    let password = request.password.as_deref().unwrap_or("");
-
-    let wallet = storage
-        .load_wallet(password)
+    let wallet = load_session_wallet(request.password.as_deref())
         .await
         .map_err(|e| TauriError {
-            message: format!("Failed to load wallet: {}", e),
-            code: Some("WALLET_NOT_FOUND".to_string()),
+            message: e.message,
+            code: e.code,
         })?;
 
     let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
@@ -108,7 +106,7 @@ pub async fn send_transaction(
     let zebra_client = ZebraClient::new(zebra_url.clone());
 
     let pilot = nozy::PilotSendOptions {
-        priority: request.priority,
+        priority: request.priority | nozy::NOZY_WALLET_PRIORITY_FEE,
         expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
     };
     let memo_preview = request
@@ -145,10 +143,23 @@ pub async fn send_transaction(
             let tx_storage =
                 SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
 
-            let spent_note_ids: Vec<String> = spendable_notes
-                .iter()
-                .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
-                .collect();
+            let spent_note = select_single_spend_note(
+                &spendable_notes,
+                amount_zatoshis,
+                fee_zatoshis,
+            )
+            .map_err(|e| TauriError::from(e.to_string()))?;
+
+            if let Err(e) =
+                mark_wallet_notes_spent_from_spendables(
+                    std::slice::from_ref(spent_note),
+                    Some(&transaction.txid),
+                )
+            {
+                eprintln!("Warning: could not mark spent note locally: {e}");
+            }
+
+            let spent_note_ids = vec![hex::encode(spent_note.orchard_note.nullifier.to_bytes())];
 
             let mut tx_record = SentTransactionRecord::new_pilot(
                 transaction.txid.clone(),
@@ -191,9 +202,9 @@ pub async fn estimate_fee(
     let config = load_config();
     let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
     let zebra_client = ZebraClient::new(zebra_url);
-    let priority = priority.unwrap_or(false);
-
-    let fee_zatoshis = estimate_transaction_fee_for_send(&zebra_client, None, priority).await;
+    let use_priority = priority.unwrap_or(nozy::NOZY_WALLET_PRIORITY_FEE);
+    let fee_zatoshis =
+        estimate_transaction_fee_for_send(&zebra_client, None, use_priority).await;
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
 
     Ok(fee_zec)
@@ -202,10 +213,18 @@ pub async fn estimate_fee(
 #[command]
 pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriError> {
     use nozy::transaction_history::{
-        collect_wallet_transaction_views, transaction_view_to_history_json,
+        collect_wallet_transaction_views, enrich_block_times_for_views,
+        transaction_view_to_history_json,
     };
 
-    let views = collect_wallet_transaction_views(0).map_err(|e| TauriError::from(e.to_string()))?;
+    let config = load_config();
+    let current_height = config.last_scan_height.unwrap_or(0);
+    let mut views = collect_wallet_transaction_views(current_height)
+        .map_err(|e| TauriError::from(e.to_string()))?;
+
+    let zebra_client = ZebraClient::new(config.zebra_url);
+    enrich_block_times_for_views(&mut views, &zebra_client).await;
+
     Ok(views
         .iter()
         .map(transaction_view_to_history_json)
@@ -214,7 +233,18 @@ pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriEr
 
 #[command]
 pub async fn get_transaction(txid: String) -> Result<serde_json::Value, TauriError> {
-    use nozy::transaction_history::SentTransactionStorage;
+    use nozy::transaction_history::{
+        transaction_view_for_txid, transaction_view_to_history_json, SentTransactionStorage,
+    };
+
+    let config = load_config();
+    let current_height = config.last_scan_height.unwrap_or(0);
+
+    if let Some(view) = transaction_view_for_txid(&txid, current_height)
+        .map_err(|e| TauriError::from(e.to_string()))?
+    {
+        return Ok(transaction_view_to_history_json(&view));
+    }
 
     let tx_storage = SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
 
@@ -252,15 +282,11 @@ pub async fn speed_up_transaction(
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
 
-    let storage = WalletStorage::with_xdg_dir();
-    let password = request.password.as_deref().unwrap_or("");
-
-    let wallet = storage
-        .load_wallet(password)
+    let wallet = load_session_wallet(request.password.as_deref())
         .await
         .map_err(|e| TauriError {
-            message: format!("Failed to load wallet: {}", e),
-            code: Some("WALLET_NOT_FOUND".to_string()),
+            message: e.message,
+            code: e.code,
         })?;
 
     match nozy::speed_up_transaction(wallet, &zebra_url, &request.original_txid).await {

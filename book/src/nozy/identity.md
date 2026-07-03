@@ -8,7 +8,7 @@ NozyWallet is a privacy-first Zcash wallet that shows you what you need: your ba
 
 - **A wallet** — Create and restore wallets, manage Orchard addresses, send and receive ZEC.
 - **Privacy-first** — Shielded-only; no transparent addresses, no optional privacy.
-- **Zebra-first** — Designed to work with a Zebra RPC node as the chain backend.
+- **Zebra-first** — Designed to work with a **Zebrad** node you run or explicitly trust; local witness derivation for shielded spends.
 - **Self-custodial** — Your seed and keys stay on your device; the API server does not see them.
 - **Price-aware** — ZEC price is shown so you know the value of your holdings; trading features are planned.
 

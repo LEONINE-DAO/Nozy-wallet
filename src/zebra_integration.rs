@@ -613,6 +613,34 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
             .ok_or_else(|| NozyError::InvalidOperation("Invalid network info response".to_string()))
     }
 
+    /// Total Orchard shielded pool from `getblockchaininfo` → `valuePools` (JSON-RPC).
+    pub async fn get_orchard_pool_stats(&self) -> NozyResult<OrchardPoolStats> {
+        let info = self.get_blockchain_info().await?;
+        parse_orchard_pool_from_blockchain_info(&info)
+    }
+
+    pub async fn get_blockchain_info(&self) -> NozyResult<HashMap<String, Value>> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getblockchaininfo",
+            "params": [],
+            "id": 1
+        });
+
+        let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
+        }
+
+        response.result.ok_or_else(|| {
+            NozyError::InvalidOperation("Invalid getblockchaininfo response".to_string())
+        })
+    }
+
     pub async fn get_raw_transaction(&self, txid: &str) -> NozyResult<String> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -1036,6 +1064,53 @@ This blocks remote RPC only; localhost RPC remains allowed.",
             Err(e) => Err(e),
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrchardPoolStats {
+    pub chain_value_zec: f64,
+    pub chain_value_zat: u64,
+    pub monitored: bool,
+    pub block_height: u32,
+}
+
+fn parse_orchard_pool_from_blockchain_info(
+    info: &HashMap<String, Value>,
+) -> NozyResult<OrchardPoolStats> {
+    let block_height = info.get("blocks").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+    let pools = info
+        .get("valuePools")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| {
+            NozyError::InvalidOperation("getblockchaininfo: missing valuePools".to_string())
+        })?;
+
+    for pool in pools {
+        if pool.get("id").and_then(|v| v.as_str()) == Some("orchard") {
+            let chain_value_zec = pool
+                .get("chainValue")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            let chain_value_zat = pool
+                .get("chainValueZat")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(0);
+            let monitored = pool
+                .get("monitored")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false);
+            return Ok(OrchardPoolStats {
+                chain_value_zec,
+                chain_value_zat,
+                monitored,
+                block_height,
+            });
+        }
+    }
+
+    Err(NozyError::InvalidOperation(
+        "getblockchaininfo: orchard pool not found in valuePools".to_string(),
+    ))
 }
 
 /// Zebra `getrawtransaction` uses `height`; some stacks use `blockheight`.

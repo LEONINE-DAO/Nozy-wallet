@@ -1,12 +1,10 @@
 import React from "react";
 import { Home, History, Refresh, Shield } from "@solar-icons/react";
-import toast from "react-hot-toast";
-import { formatErrorForDisplay } from "../utils/errors";
 import { ProfileDropdown } from "./ProfileDropdown";
 import { Tooltip } from "./Tooltip";
-import { walletApi } from "../lib/api";
-import { syncWalletAndRefresh } from "../lib/syncHelpers";
+import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
 import { useWalletStore } from "../store/walletStore";
+import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
 
 export type TabId = "home" | "history" | "settings" | "send" | "browser" | "contacts" | "web";
 
@@ -22,22 +20,13 @@ function cn(...classes: (string | boolean | undefined)[]) {
 
 export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
   const { isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
-  const webWatchOnlyEnabled = import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
 
   const handleManualSync = async () => {
     if (isSyncing) return;
-    const syncToast = toast.loading("Syncing wallet...");
-    try {
-      setIsSyncing(true);
-      await syncWalletAndRefresh();
-      const balanceRes = await walletApi.getBalance();
-      setBalanceFromAvailable(balanceRes.data.available_zec ?? balanceRes.data.balance);
-      toast.success("Wallet synced successfully!", { id: syncToast });
-    } catch (error) {
-      toast.error(formatErrorForDisplay(error, "Sync failed. Please try again."), { id: syncToast });
-    } finally {
-      setIsSyncing(false);
-    }
+    await runWalletSyncWithFeedback({
+      setIsSyncing,
+      onBalance: (available) => setBalanceFromAvailable(available),
+    });
   };
 
   return (
@@ -77,17 +66,19 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
                 />
               </div>
             </Tooltip>
-            <Tooltip content="Browse Zcash dApps">
-              <div>
-                <HeaderItem
-                  icon={<Shield weight="Bold" />}
-                  label="Browser"
-                  showLabel={showLabels}
-                  active={activeTab === "browser"}
-                  onClick={() => onTabChange("browser")}
-                />
-              </div>
-            </Tooltip>
+            {dappBrowserEnabled && (
+              <Tooltip content="Browse Zcash dApps">
+                <div>
+                  <HeaderItem
+                    icon={<Shield weight="Bold" />}
+                    label="Browser"
+                    showLabel={showLabels}
+                    active={activeTab === "browser"}
+                    onClick={() => onTabChange("browser")}
+                  />
+                </div>
+              </Tooltip>
+            )}
             {webWatchOnlyEnabled && (
               <Tooltip content="Watch-only web wallet status">
                 <div>

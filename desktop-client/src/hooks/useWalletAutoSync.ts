@@ -5,7 +5,7 @@ import {
   isWalletCaughtUp,
   needsWalletSync,
   refreshBalanceSnapshot,
-  syncWalletAndRefresh,
+  syncWalletToTip,
 } from "../lib/syncHelpers";
 import { useWalletStore } from "../store/walletStore";
 
@@ -57,13 +57,13 @@ export function useWalletAutoSync(options: UseWalletAutoSyncOptions = {}) {
       lastSyncAttemptRef.current = now;
 
       try {
-        const status = await syncWalletAndRefresh();
+        const outcome = await syncWalletToTip();
         const snapshot = await refreshBalanceSnapshot();
         if (snapshot) {
           setBalanceFromAvailable(snapshot.available);
         }
         onSyncComplete?.();
-        if (status && isWalletCaughtUp(status)) {
+        if (outcome.status && isWalletCaughtUp(outcome.status)) {
           onCaughtUp?.();
         }
       } catch (error) {

@@ -98,24 +98,19 @@ pub fn zebra_connect_api_code(err: &str) -> &'static str {
 pub async fn estimate_transaction_fee_for_send(
     _zebra_client: &ZebraClient,
     memo: Option<&[u8]>,
-    priority: bool,
+    _priority: bool,
 ) -> u64 {
-    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, priority);
-    let label = if priority {
-        "priority (×4)"
-    } else {
-        "standard"
-    };
+    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, true);
     println!(
-        "💰 Estimated fee ({label}): {:.8} ZEC ({fee_zatoshis} zats, ZIP-317)",
+        "💰 Estimated fee (priority ×4): {:.8} ZEC ({fee_zatoshis} zats, ZIP-317)",
         fee_zatoshis as f64 / 100_000_000.0,
     );
     fee_zatoshis
 }
 
-/// Back-compat: standard (non-priority) ZIP-317 estimate.
+/// Back-compat alias; NozyWallet always uses the priority fee.
 pub async fn estimate_transaction_fee(zebra_client: &ZebraClient) -> u64 {
-    estimate_transaction_fee_for_send(zebra_client, None, false).await
+    estimate_transaction_fee_for_send(zebra_client, None, true).await
 }
 
 pub async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
@@ -262,15 +257,20 @@ pub async fn build_and_broadcast_transaction(
 
         let tx_storage = SentTransactionStorage::new()?;
         use orchard::keys::FullViewingKey;
-        let spent_note_ids: Vec<String> = spendable_notes
-            .iter()
-            .map(|note| {
-                let fvk = FullViewingKey::from(&note.spending_key);
-                hex::encode(note.orchard_note.note.nullifier(&fvk).to_bytes())
-            })
-            .collect();
+        let spent_note = crate::orchard_tx::select_single_spend_note(
+            spendable_notes,
+            amount_zatoshis,
+            fee_zatoshis,
+        )?;
+        let fvk = FullViewingKey::from(&spent_note.spending_key);
+        let spent_note_ids = vec![hex::encode(
+            spent_note.orchard_note.note.nullifier(&fvk).to_bytes(),
+        )];
 
-        if let Err(e) = crate::notes::mark_wallet_notes_spent_from_spendables(spendable_notes) {
+        if let Err(e) = crate::notes::mark_wallet_notes_spent_from_spendables(
+            std::slice::from_ref(spent_note),
+            Some(&transaction.txid),
+        ) {
             eprintln!("Warning: could not mark spent notes locally: {e}");
         }
 

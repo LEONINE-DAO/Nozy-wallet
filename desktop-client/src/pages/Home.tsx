@@ -12,46 +12,148 @@ import {
 } from "@solar-icons/react";
 import { TabId } from "../components/Header";
 import { Modal } from "../components/Modal";
-import { SendForm } from "../components/SendForm";
 import { ReceiveContent } from "../components/ReceiveContent";
 import { Tooltip } from "../components/Tooltip";
+import { RecentActivityPanel } from "../components/RecentActivityPanel";
+import { BlockSyncPanel } from "../components/BlockSyncPanel";
 import { walletApi } from "../lib/api";
+import {
+  formatHistoryDetailDate,
+  historyAmountPrefix,
+  historyTypeLabel,
+  normalizeHistoryTx,
+  sortHistoryNewestFirst,
+  type HistoryTx,
+} from "../lib/history";
+import { TransactionIdDetail } from "../components/TxExplorerLink";
 
 import { useSettingsStore } from "../store/settingsStore";
+import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
 import toast from "react-hot-toast";
 interface HomePageProps {
   onNavigate: (tab: TabId) => void;
 }
 
+function TxDetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs font-medium text-gray-500 uppercase tracking-wide">{label}</p>
+      <p className={`mt-0.5 text-gray-900 break-all ${mono ? "font-mono text-sm" : ""}`}>{value}</p>
+    </div>
+  );
+}
+
 export function HomePage({ onNavigate }: HomePageProps) {
   const { balance, address } = useWalletStore();
   const { tokens, activeTokenId, getToken } = useTokenStore();
-  const { hideBalance, accountLabels, activeAccountId } = useSettingsStore();
+  const {
+    hideBalance,
+    accountLabels,
+    activeAccountId,
+    fiatCurrency,
+    useLiveFiatPrice,
+    customFiatPerZec,
+  } = useSettingsStore();
   const activeAccountLabel = accountLabels[activeAccountId] ?? activeAccountId ?? "Default";
   const activeToken = activeTokenId ? getToken(activeTokenId) : tokens[0];
   const [showBalance, setShowBalance] = useState(!hideBalance);
-  const [activeModal, setActiveModal] = useState<"send" | "receive" | null>(
-    null
-  );
+  const [activeModal, setActiveModal] = useState<"receive" | null>(null);
   const [copied, setCopied] = useState(false);
-  const [recentHistory, setRecentHistory] = useState<any[]>([]);
+  const [recentHistory, setRecentHistory] = useState<HistoryTx[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(true);
+  const [historyError, setHistoryError] = useState<string | null>(null);
+  const [selectedTx, setSelectedTx] = useState<HistoryTx | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailExtra, setDetailExtra] = useState<{
+    confirmations?: number;
+    block_height?: number;
+    fee_zec?: number;
+    broadcast_at?: string;
+  } | null>(null);
+  const [fiatRate, setFiatRate] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!useLiveFiatPrice && customFiatPerZec != null) {
+      setFiatRate(customFiatPerZec);
+      return;
+    }
+    if (!useLiveFiatPrice) {
+      setFiatRate(null);
+      return;
+    }
+    getZecPriceInFiat(fiatCurrency).then((rate) => setFiatRate(rate));
+  }, [useLiveFiatPrice, customFiatPerZec, fiatCurrency]);
+
+  const effectiveFiatRate = useLiveFiatPrice ? fiatRate : customFiatPerZec;
+  const balanceFiatLine =
+    showBalance && effectiveFiatRate != null && effectiveFiatRate > 0
+      ? `≈ ${formatFiatAmount(balance * effectiveFiatRate, fiatCurrency)}`
+      : null;
 
   // Fetch transaction history
   useEffect(() => {
+    let cancelled = false;
     const fetchHistory = async () => {
+      setHistoryLoading(true);
+      setHistoryError(null);
       try {
+        await walletApi.checkTransactionConfirmations().catch(() => undefined);
         const res = await walletApi.getTransactionHistory();
+        if (cancelled) return;
         if (res?.data && Array.isArray(res.data)) {
-          // Get most recent 3 transactions
-          setRecentHistory(res.data.slice(0, 3));
+          setRecentHistory(
+            sortHistoryNewestFirst(
+              res.data
+                .map((row) => normalizeHistoryTx(row as Record<string, unknown>))
+                .filter((tx) => tx.id)
+            ).slice(0, 3)
+          );
+        } else {
+          setRecentHistory([]);
         }
-      } catch (e) {
-        // No transactions or error - show empty
-        setRecentHistory([]);
+      } catch {
+        if (!cancelled) {
+          setHistoryError("Could not load recent activity");
+          setRecentHistory([]);
+        }
+      } finally {
+        if (!cancelled) setHistoryLoading(false);
       }
     };
     fetchHistory();
+    return () => {
+      cancelled = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!selectedTx) {
+      setDetailExtra(null);
+      return;
+    }
+    setDetailLoading(true);
+    setDetailExtra(null);
+    walletApi
+      .getTransaction(selectedTx.id)
+      .then((res) => {
+        const d = res?.data;
+        if (d && typeof d === "object") {
+          setDetailExtra({
+            confirmations: typeof d.confirmations === "number" ? d.confirmations : undefined,
+            block_height: typeof d.block_height === "number" ? d.block_height : undefined,
+            fee_zec:
+              typeof d.fee_zec === "number"
+                ? d.fee_zec
+                : typeof d.fee_zatoshis === "number"
+                  ? d.fee_zatoshis / 100_000_000
+                  : undefined,
+            broadcast_at: typeof d.broadcast_at === "string" ? d.broadcast_at : undefined,
+          });
+        }
+      })
+      .catch(() => setDetailExtra(null))
+      .finally(() => setDetailLoading(false));
+  }, [selectedTx?.id]);
 
   const displayAddress = address || "No address available";
 
@@ -64,11 +166,13 @@ export function HomePage({ onNavigate }: HomePageProps) {
 
   return (
     <>
-      <div className="flex flex-col lg:flex-row gap-8 animate-fade-in h-full">
-        <div className="flex-1 space-y-8">
+      <div className="flex flex-col gap-8 animate-fade-in h-full w-full">
+        <div className="space-y-8">
           <header className="flex justify-between items-center">
             <div>
-              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Assets</h2>
+              <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+                Shielded Orchard Assets
+              </h2>
               <p className="text-gray-500 dark:text-gray-400">
                 {activeAccountLabel} · Your portfolio
               </p>
@@ -85,7 +189,7 @@ export function HomePage({ onNavigate }: HomePageProps) {
               </Tooltip>
               <Tooltip content="Send ZEC to another address">
                 <Button
-                  onClick={() => setActiveModal("send")}
+                  onClick={() => onNavigate("send")}
                   className="gap-2 shadow-lg shadow-primary/20"
                 >
                   <ArrowRightUp size={20} /> Send
@@ -117,6 +221,9 @@ export function HomePage({ onNavigate }: HomePageProps) {
                   {activeToken ? activeToken.symbol : "ZEC"}
                 </span>
               </div>
+              {balanceFiatLine && (
+                <p className="mt-1 text-lg font-medium text-black/70">{balanceFiatLine}</p>
+              )}
 
               <div className="mt-8 flex items-center justify-between text-sm">
                 <Tooltip content="Copy address">
@@ -152,8 +259,18 @@ export function HomePage({ onNavigate }: HomePageProps) {
                 className="p-4 rounded-2xl bg-white/60 backdrop-blur-sm border border-white/50 flex items-center justify-between hover:bg-white/80 transition-colors cursor-pointer group"
               >
                 <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 rounded-full bg-[#FA6800] flex items-center justify-center text-white shadow-md group-hover:scale-110 transition-transform">
-                    <span className="font-bold">{token.symbol[0]}</span>
+                  <div className="w-12 h-12 rounded-full overflow-hidden shadow-md group-hover:scale-110 transition-transform flex-shrink-0">
+                    {token.icon ? (
+                      <img
+                        src={token.icon}
+                        alt={`${token.name} logo`}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full bg-[#FA6800] flex items-center justify-center text-white">
+                        <span className="font-bold">{token.symbol[0]}</span>
+                      </div>
+                    )}
                   </div>
                   <div>
                     <p className="font-bold text-gray-900 uppercase">
@@ -177,78 +294,61 @@ export function HomePage({ onNavigate }: HomePageProps) {
               </div>
             ))}
           </div>
-        </div>
 
-        <div className="lg:w-96 flex flex-col h-full overflow-hidden">
-          <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xl font-bold text-gray-900">Recent Activity</h3>
-            <button
-              onClick={() => onNavigate("history")}
-              className="text-sm text-primary hover:text-primary-700 font-medium hover:underline"
-            >
-              View All
-            </button>
-          </div>
+          <RecentActivityPanel
+            transactions={recentHistory}
+            loading={historyLoading}
+            error={historyError}
+            tokenSymbol={activeToken?.symbol}
+            fiatRate={effectiveFiatRate}
+            fiatCurrency={fiatCurrency}
+            onViewAll={() => onNavigate("history")}
+            onSelect={setSelectedTx}
+          />
 
-          <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar">
-            {recentHistory.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                <p className="text-sm">No recent transactions</p>
-                <p className="text-xs mt-1">Your transaction history will appear here</p>
-              </div>
-            ) : (
-              recentHistory.map((tx) => (
-              <div
-                key={tx.id}
-                className="p-4 rounded-xl bg-white/60 backdrop-blur-sm border border-white/50 hover:bg-white transition-all cursor-pointer group"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <div
-                    className={`p-2 rounded-full ${
-                      tx.type === "received"
-                        ? "bg-green-100 text-green-600"
-                        : "bg-red-100 text-red-600"
-                    }`}
-                  >
-                    {tx.type === "received" ? (
-                      <ArrowLeftDown size={16} />
-                    ) : (
-                      <ArrowRightUp size={16} />
-                    )}
-                  </div>
-                  <span
-                    className={`font-bold uppercase ${
-                      tx.type === "received"
-                        ? "text-green-600"
-                        : "text-gray-900"
-                    }`}
-                  >
-                    {tx.type === "received" ? "+" : "-"}
-                    {tx.amount} {activeToken?.symbol}
-                  </span>
-                </div>
-                <div className="flex justify-between items-center text-xs text-gray-500">
-                  <span className="font-mono bg-gray-100 px-2 py-0.5 rounded text-gray-600">
-                    {tx.address || tx.txid || "Unknown"}
-                  </span>
-                  <span>{tx.date || new Date(tx.timestamp * 1000).toLocaleDateString()}</span>
-                </div>
-              </div>
-              ))
-            )}
-          </div>
+          <BlockSyncPanel />
         </div>
       </div>
 
       <Modal
-        isOpen={activeModal === "send"}
-        onClose={() => setActiveModal(null)}
-        title={`Send ${activeToken?.symbol}`}
+        isOpen={selectedTx !== null}
+        onClose={() => setSelectedTx(null)}
+        title="Transaction details"
       >
-        <SendForm
-          onSuccess={() => setActiveModal(null)}
-          onCancel={() => setActiveModal(null)}
-        />
+        {selectedTx && (
+          <div className="space-y-4">
+            <TransactionIdDetail txid={selectedTx.id} />
+            <TxDetailRow label="Type" value={historyTypeLabel(selectedTx)} />
+            <TxDetailRow
+              label="Amount"
+              value={`${historyAmountPrefix(selectedTx)}${selectedTx.amount.toFixed(8)} ZEC`}
+            />
+            <TxDetailRow label="Date" value={formatHistoryDetailDate(selectedTx)} />
+            <TxDetailRow label="Address" value={selectedTx.address} mono />
+            <TxDetailRow label="Status" value={selectedTx.status ? selectedTx.status.charAt(0).toUpperCase() + selectedTx.status.slice(1) : "—"} />
+            {selectedTx.memo && <TxDetailRow label="Memo" value={selectedTx.memo} />}
+            {detailLoading && <p className="text-sm text-gray-500">Loading extra details…</p>}
+            {!detailLoading && detailExtra && (
+              <div className="pt-3 mt-3 border-t border-gray-200 space-y-2">
+                {detailExtra.confirmations != null && (
+                  <TxDetailRow label="Confirmations" value={String(detailExtra.confirmations)} />
+                )}
+                {detailExtra.block_height != null && (
+                  <TxDetailRow label="Block height" value={String(detailExtra.block_height)} />
+                )}
+                {detailExtra.fee_zec != null && (
+                  <TxDetailRow label="Fee" value={`${detailExtra.fee_zec.toFixed(8)} ZEC`} />
+                )}
+                {detailExtra.broadcast_at && (
+                  <TxDetailRow
+                    label="Broadcast at"
+                    value={formatHistoryDetailDate({ date: detailExtra.broadcast_at.slice(0, 10) })}
+                  />
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </Modal>
 
       <Modal

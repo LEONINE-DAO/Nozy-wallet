@@ -40,12 +40,13 @@ export function SyncStatusBanner({ onSync, isSyncing, refreshToken = 0 }: SyncSt
       }
     };
     load();
-    const id = setInterval(load, 30_000);
+    const pollMs = isSyncing ? 5_000 : 30_000;
+    const id = setInterval(load, pollMs);
     return () => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [refreshToken]);
+  }, [refreshToken, isSyncing]);
 
   if (!status) return null;
 
@@ -62,7 +63,11 @@ export function SyncStatusBanner({ onSync, isSyncing, refreshToken = 0 }: SyncSt
     <div
       className={`shrink-0 px-4 py-2.5 border-b flex items-center justify-between gap-3 flex-wrap text-sm ${toneClasses[tone]}`}
     >
-      <p>{isSyncing ? "Catching up with the network…" : status.message}</p>
+      <p>
+        {isSyncing
+          ? status.message || "Catching up with the network…"
+          : status.message}
+      </p>
       {onSync && !isSyncing && (
         <Button size="sm" onClick={onSync} disabled={isSyncing} className="shrink-0">
           Sync to tip

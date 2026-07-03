@@ -1,6 +1,7 @@
 use crate::error::TauriError;
+use crate::session::load_session_wallet;
 use nozy::{
-    load_config, sync_wallet_notes, wallet_balance_snapshot, HDWallet, WalletStorage,
+    load_config, sync_wallet_notes, wallet_balance_snapshot, HDWallet,
     WalletSyncOptions,
 };
 use serde::{Deserialize, Serialize};
@@ -44,12 +45,7 @@ fn zats_to_zec(zat: u64) -> f64 {
 }
 
 async fn load_wallet(password: Option<&str>) -> Result<HDWallet, TauriError> {
-    let storage = WalletStorage::with_xdg_dir();
-    let password = password.unwrap_or("");
-    storage.load_wallet(password).await.map_err(|e| TauriError {
-        message: format!("Failed to load wallet: {e}"),
-        code: Some("WALLET_NOT_FOUND".to_string()),
-    })
+    load_session_wallet(password).await
 }
 
 #[command]

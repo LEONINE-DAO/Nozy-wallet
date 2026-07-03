@@ -6,6 +6,12 @@ Add new rows at the top. Link GitHub issue when filed. Detailed writeups live in
 
 | ID | Status | Sev | Surface | Summary | Reporter | GitHub | Fixed in | Detail |
 |----|--------|-----|---------|---------|----------|--------|----------|--------|
+| BUG-2026-014 | Fixed (ops) | P1 | desktop + operator | NET_001 — Zebra RPC unreachable (wrong config path, port 8232, RPC off) | Internal | — | ops doc | [`bugs/2026-06-desktop-pre-release-debug-session.md`](bugs/2026-06-desktop-pre-release-debug-session.md#issue-1--net_001-cannot-connect-to-node) |
+| BUG-2026-015 | Fixed (master) | P2 | desktop + core | Send stalls on sync-status when lightwalletd :9067 down (no timeout) | Internal | — | master | [session § Issue 2](bugs/2026-06-desktop-pre-release-debug-session.md#issue-2--send-appears-to-stall-on-checking-sync-status) |
+| BUG-2026-016 | Fixed (master) | P1 | desktop | Send allowed while `zebra_tip` < `last_scan_height` (node catching up) | Internal | — | master | [session § Issue 3](bugs/2026-06-desktop-pre-release-debug-session.md#issue-3--send-blocked-while-zebra-node-is-still-syncing) |
+| BUG-2026-017 | Fixed (master) | P1 | desktop + core | Post-send balance wrong — all notes marked spent | Internal | — | master | [session § Issue 4](bugs/2026-06-desktop-pre-release-debug-session.md#issue-4--balance-wrong-after-send) |
+| BUG-2026-018 | Fixed (master) | P2 | desktop + core | Recent Activity sort — receive above latest send | Internal | — | master | [session § Issue 5](bugs/2026-06-desktop-pre-release-debug-session.md#issue-5--recent-activity--history-sort-wrong) |
+| BUG-2026-019 | Fixed (master) | P3 | desktop + core | History shows 1969 for received txs (epoch timestamp) | Internal | — | master | [session § Issue 6](bugs/2026-06-desktop-pre-release-debug-session.md#issue-6--received-transactions-show-date-1969) |
 | BUG-2026-013 | Fixed | P1 | core + api-server | Status synced but send fails — Orchard witness lag not tracked | Gilmore | — | v2.3.6.7 | [`bugs/2026-06-witness-sync-status-mismatch.md`](bugs/2026-06-witness-sync-status-mismatch.md) |
 | BUG-2026-012 | Fixed | P1 | cli | `nozy balance` / status show 0 on v2 NoteIndex (legacy array parser) | Internal | — | v2.3.6.6 | [`bugs/2026-06-cli-balance-v2-noteindex.md`](bugs/2026-06-cli-balance-v2-noteindex.md) |
 | BUG-2026-011 | Fixed | P1 | core + api-server | Send broadcast fails when proving outruns pilot expiry (rebuild/retry; 5-block delta kept) | Gilmore | — | v2.3.6.6 | [`bugs/2026-06-send-expiry-before-broadcast.md`](bugs/2026-06-send-expiry-before-broadcast.md) |
@@ -36,4 +42,4 @@ Add new rows at the top. Link GitHub issue when filed. Detailed writeups live in
 
 ## Next ID
 
-**BUG-2026-013**
+**BUG-2026-020**

@@ -23,6 +23,7 @@ const DEFAULT_TOKENS: TokenDetail[] = [
     name: "Zcash",
     symbol: "ZEC",
     decimals: 8,
+    icon: "/zec.svg",
     isNative: true,
   },
 ];

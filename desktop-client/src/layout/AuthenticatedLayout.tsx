@@ -18,11 +18,13 @@ import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
 import { Refresh, CloseCircle, Download } from "@solar-icons/react";
 import { useWalletAutoSync } from "../hooks/useWalletAutoSync";
-import { balanceFromResponse, syncWalletAndRefresh } from "../lib/syncHelpers";
+import { balanceFromResponse } from "../lib/syncHelpers";
+import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
+import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
+import { OrchardPoolBanner } from "../components/OrchardPoolBanner";
 
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
-  const webWatchOnlyEnabled = import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
   const { hasNymSubscription } = useSubscriptionStore();
   const { setAddress, isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
@@ -92,21 +94,11 @@ export function AuthenticatedLayout() {
   };
 
   const runSyncToTip = async () => {
-    setIsSyncing(true);
-    const syncToast = toast.loading("Syncing wallet...");
-    try {
-      await syncWalletAndRefresh();
-      const balanceRes = await walletApi.getBalance();
-      setBalanceFromAvailable(balanceFromResponse(balanceRes.data).available);
-      setSyncBannerToken((t) => t + 1);
-      toast.success("Wallet synced.", { id: syncToast });
-    } catch (e) {
-      toast.error(formatErrorForDisplay(e, "Sync failed. You can try again from the header."), {
-        id: syncToast,
-      });
-    } finally {
-      setIsSyncing(false);
-    }
+    await runWalletSyncWithFeedback({
+      setIsSyncing,
+      onBalance: setBalanceFromAvailable,
+      onComplete: () => setSyncBannerToken((t) => t + 1),
+    });
   };
 
   useWalletAutoSync({
@@ -212,7 +204,7 @@ export function AuthenticatedLayout() {
       )}
 
       <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 relative">
-        {activeTab === "browser" ? (
+        {activeTab === "browser" && dappBrowserEnabled ? (
           hasNymSubscription ? (
             <BrowserPage />
           ) : (
@@ -221,6 +213,7 @@ export function AuthenticatedLayout() {
         ) : (
           <>
             <div className="absolute top-0 left-0 w-full h-64 bg-linear-to-b from-primary-50/70 to-transparent pointer-events-none" />
+            {activeTab === "home" && <OrchardPoolBanner />}
             <div className="container mx-auto px-10 py-10 relative z-10 overflow-y-auto h-full">
               {activeTab === "home" && <HomePage onNavigate={setActiveTab} />}
               {activeTab === "history" && <HistoryPage />}

@@ -4,6 +4,8 @@ Common issues and solutions for NozyWallet.
 
 ## Zebra Connection Issues
 
+See the full guide: **[Zebrad ↔ NozyWallet connectivity](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md)** (paper/lecture reference).
+
 ### Problem: "Zebra connection failed" or "Network error"
 
 **Solutions:**

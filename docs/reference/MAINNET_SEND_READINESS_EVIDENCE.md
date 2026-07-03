@@ -12,6 +12,7 @@
 | [`CLI_BALANCE_NOTEINDEX.md`](CLI_BALANCE_NOTEINDEX.md) | CLI balance 0 on v2 NoteIndex (BUG-2026-012), `wallet_balance_snapshot()` |
 | [`../issues/bugs/2026-06-cli-balance-v2-noteindex.md`](../issues/bugs/2026-06-cli-balance-v2-noteindex.md) | BUG-2026-012 formal writeup |
 | [`../MAINNET_SEND_EXPIRY_TEST.md`](../MAINNET_SEND_EXPIRY_TEST.md) | How to reproduce tests |
+| [`ZEBRAD_NOZYWALLET_CONNECTIVITY.md`](ZEBRAD_NOZYWALLET_CONNECTIVITY.md) | Verify Zebrad RPC before sync/send |
 | [`../issues/bugs/2026-06-send-expiry-before-broadcast.md`](../issues/bugs/2026-06-send-expiry-before-broadcast.md) | BUG-2026-011 |
 | [`../PILOT_MAINNET_EVIDENCE.md`](../PILOT_MAINNET_EVIDENCE.md) | Post-broadcast expiry + speed-up |
 

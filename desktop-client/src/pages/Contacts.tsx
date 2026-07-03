@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
-import { Modal } from "../components/Modal";
 import { walletApi } from "../lib/api";
 import type { AddressBookEntry } from "../lib/types";
 import toast from "react-hot-toast";
@@ -13,7 +12,7 @@ export function ContactsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [showAddForm, setShowAddForm] = useState(false);
   const [addName, setAddName] = useState("");
   const [addAddress, setAddAddress] = useState("");
   const [addNotes, setAddNotes] = useState("");
@@ -47,7 +46,14 @@ export function ContactsPage() {
       )
     : entries;
 
-  const handleAdd = async () => {
+  const resetAddForm = () => {
+    setAddName("");
+    setAddAddress("");
+    setAddNotes("");
+  };
+
+  const handleAdd = async (e: React.FormEvent) => {
+    e.preventDefault();
     const name = addName.trim();
     const address = addAddress.trim();
     if (!name || !address) {
@@ -66,13 +72,11 @@ export function ContactsPage() {
         notes: addNotes.trim() || undefined,
       });
       toast.success("Contact added");
-      setAddModalOpen(false);
-      setAddName("");
-      setAddAddress("");
-      setAddNotes("");
-      loadList();
-    } catch (e) {
-      toast.error(formatErrorForDisplay(e, "Failed to add contact"));
+      resetAddForm();
+      setShowAddForm(false);
+      await loadList();
+    } catch (err) {
+      toast.error(formatErrorForDisplay(err, "Failed to add contact"));
     } finally {
       setAddSaving(false);
     }
@@ -98,13 +102,76 @@ export function ContactsPage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
+    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto text-left">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <h2 className="text-3xl font-bold text-gray-900">Contacts</h2>
-        <Button onClick={() => setAddModalOpen(true)} className="gap-2">
-          Add contact
+        <Button
+          type="button"
+          onClick={() => {
+            if (showAddForm) {
+              resetAddForm();
+              setShowAddForm(false);
+            } else {
+              setShowAddForm(true);
+            }
+          }}
+          className="gap-2"
+        >
+          {showAddForm ? "Cancel" : "Add contact"}
         </Button>
       </div>
+
+      {showAddForm && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Add contact</h3>
+          <form className="space-y-4" onSubmit={handleAdd}>
+            <Input
+              label="Name"
+              placeholder="e.g. Exchange"
+              value={addName}
+              onChange={(e) => setAddName(e.target.value)}
+              autoComplete="off"
+              required
+            />
+            <Input
+              label="Address (u1 or zs1)"
+              placeholder="Shielded address"
+              value={addAddress}
+              onChange={(e) => setAddAddress(e.target.value)}
+              autoComplete="off"
+              spellCheck={false}
+              required
+            />
+            <Input
+              label="Notes (optional)"
+              placeholder="e.g. Withdrawal"
+              value={addNotes}
+              onChange={(e) => setAddNotes(e.target.value)}
+              autoComplete="off"
+            />
+            <p className="text-xs text-gray-500">
+              Paste a shielded Zcash address starting with <span className="font-mono">u1</span> or{" "}
+              <span className="font-mono">zs1</span>.
+            </p>
+            <div className="flex gap-2 justify-end pt-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  resetAddForm();
+                  setShowAddForm(false);
+                }}
+                disabled={addSaving}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={addSaving}>
+                {addSaving ? "Saving…" : "Save contact"}
+              </Button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {!loading && !error && entries.length > 0 && (
         <div className="max-w-md">
@@ -129,7 +196,7 @@ export function ContactsPage() {
           <div className="p-12 text-center">
             <p className="text-red-600 mb-2">{error}</p>
             <p className="text-sm text-gray-500">
-              Make sure the wallet backend exposes address book commands.
+              Restart the desktop app after updating so address book commands are available.
             </p>
             <Button variant="outline" onClick={loadList} className="mt-4">
               Retry
@@ -139,9 +206,11 @@ export function ContactsPage() {
           <div className="p-12 text-center text-gray-500">
             <p>No contacts yet</p>
             <p className="text-sm mt-1">Add addresses to quickly reuse when sending.</p>
-            <Button onClick={() => setAddModalOpen(true)} className="mt-4">
-              Add contact
-            </Button>
+            {!showAddForm && (
+              <Button type="button" onClick={() => setShowAddForm(true)} className="mt-4">
+                Add contact
+              </Button>
+            )}
           </div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
@@ -196,41 +265,6 @@ export function ContactsPage() {
           </ul>
         )}
       </div>
-
-      <Modal
-        isOpen={addModalOpen}
-        onClose={() => !addSaving && setAddModalOpen(false)}
-        title="Add contact"
-      >
-        <div className="space-y-4">
-          <Input
-            label="Name"
-            placeholder="e.g. Exchange"
-            value={addName}
-            onChange={(e) => setAddName(e.target.value)}
-          />
-          <Input
-            label="Address (u1 or zs1)"
-            placeholder="Shielded address"
-            value={addAddress}
-            onChange={(e) => setAddAddress(e.target.value)}
-          />
-          <Input
-            label="Notes (optional)"
-            placeholder="e.g. Withdrawal"
-            value={addNotes}
-            onChange={(e) => setAddNotes(e.target.value)}
-          />
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="outline" onClick={() => setAddModalOpen(false)} disabled={addSaving}>
-              Cancel
-            </Button>
-            <Button onClick={handleAdd} disabled={addSaving}>
-              {addSaving ? "Saving…" : "Add"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
     </div>
   );
 }

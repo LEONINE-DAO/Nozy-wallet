@@ -112,6 +112,17 @@ futures = { version = "0.3", optional = true }
 
 zcash_proofs = { version = "0.28", optional = true, default-features = false, features = ["bundled-prover"] }
 zcash_transparent = { version = "0.8", optional = true, default-features = false }
+zcash_keys = { version = "0.14", optional = true, default-features = false, features = ["orchard", "unstable"] }
+pczt = { version = "0.7", optional = true, default-features = false, features = [
+    "std",
+    "orchard",
+    "io-finalizer",
+    "prover",
+    "signer",
+    "tx-extractor",
+    "zcp-builder",
+] }
+ur = { version = "0.4.1", optional = true, default-features = false, features = ["std"] }
 
 [features]
 default = ["native"]
@@ -143,6 +154,9 @@ native = [
     "dep:futures",
     "dep:zcash_proofs",
     "dep:zcash_transparent",
+    "dep:zcash_keys",
+    "dep:pczt",
+    "dep:ur",
     # Re-enable multicore for native parallel proving performance
     "orchard/multicore",
     "zcash_primitives/multicore",

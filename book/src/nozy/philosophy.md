@@ -6,11 +6,15 @@ Nozy is built on a few principles that shape every feature and default.
 
 #### Privacy is not optional
 
-If the wallet can do something that leaks information, that path is removed. Transparent addresses are not supported. There is no “use shielded when you remember”—you always use shielded, because people be nozy that’s all the wallet does. The goal is to make the private path the only path.
+If the wallet can do something that leaks information, that path is removed. Transparent addresses are not supported. There is no “use shielded when you remember”—shielded is all the wallet does. The goal is to make the private path the only path.
 
 #### The server should learn as little as possible
 
-The API server is there to serve block data and broadcast signed transactions. It does not need your password, your keys, or your balance. The client does the decryption, the scanning, and the proving; the server stays dumb. That keeps the threat model small and keeps you in control.
+The wallet is designed so **keys and decryption stay on your device**. When you use a **remote** RPC or api-server, that operator can still see connection metadata—timestamps, IPs, broadcast timing—even if they cannot read your Orchard notes. Running **your own Zebrad** is how you align infrastructure with the same minimal-trust goal.
+
+For chain data and broadcast, the remote party should not need your password, your keys, or your balance. The client does decryption, scanning, and proving; a dumb RPC only serves blocks and accepts signed transactions you choose to submit. That keeps the threat model small and keeps you in control.
+
+See [Privacy model](privacy-model.md) for the full on-chain vs off-chain split.
 
 #### Complexity should stay under the hood
 

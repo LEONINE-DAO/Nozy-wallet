@@ -62,6 +62,9 @@ A privacy network that provides anonymous communication. NozyWallet can be confi
 
 ## K
 
+### Keystone
+Air-gapped hardware wallet supported by NozyWallet for **Zcash mainnet** Orchard signing. Nozy builds a PCZT; Keystone signs via QR; Nozy broadcasts. See [Keystone Hardware Wallet](../security/keystone-hardware-wallet.md).
+
 ### Key Derivation
 The process of generating cryptographic keys from a master seed or password. NozyWallet uses BIP32 for hierarchical key derivation.
 
@@ -93,6 +96,9 @@ The latest Zcash network upgrade, activated at block 3,146,400 (November 23, 202
 Zcash's newest and most efficient shielded pool. Orchard provides better performance and scalability than earlier shielded designs. NozyWallet uses exclusively Orchard addresses.
 
 ## P
+
+### PCZT (Partially Created Zcash Transaction)
+A portable transaction format used for hardware-wallet and multi-step signing. NozyWallet builds and proves a PCZT locally, Keystone adds spend signatures, then Nozy extracts and broadcasts the final v5 transaction.
 
 ### Privacy
 The ability to keep financial information confidential. NozyWallet enforces privacy by default by only supporting shielded transactions.

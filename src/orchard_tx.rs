@@ -500,7 +500,7 @@ impl OrchardTransactionBuilder {
 
             if attempt >= PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS {
                 return Err(NozyError::InvalidOperation(format!(
-                    "Orchard proof outran pilot expiry after {} rebuild attempts (tip {tip_now}, expiry {expiry_height_u32}). Retry send or use --priority.",
+                    "Orchard proof outran pilot expiry after {} rebuild attempts (tip {tip_now}, expiry {expiry_height_u32}). Retry send.",
                     PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS
                 )));
             }

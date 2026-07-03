@@ -5,7 +5,6 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug, Clone)]
@@ -252,7 +251,7 @@ impl TransactionView {
         let total_received: u64 = notes.iter().map(|n| n.note.value).sum();
 
         let block_height = Some(first_note.note.block_height);
-        let block_time = first_note.created_at;
+        let block_time = None;
 
         let memo = notes.iter().find_map(|n| {
             if !n.note.memo.is_empty() {
@@ -281,12 +280,12 @@ impl TransactionView {
             recipient_address: None,
             my_addresses,
             block_height,
-            block_time: Some(block_time),
+            block_time,
             confirmations,
             status: TransactionStatus::Confirmed,
             memo,
             notes_involved: notes.iter().map(|n| n.id.clone()).collect(),
-            created_at: first_note.created_at,
+            created_at: DateTime::UNIX_EPOCH,
         })
     }
 
@@ -329,6 +328,8 @@ impl TransactionView {
 pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<TransactionView>> {
     use std::collections::HashMap;
 
+    let _ = crate::wallet_profiles::migrate_orphaned_sent_transactions();
+
     let mut views = Vec::new();
 
     let tx_storage = SentTransactionStorage::new()?;
@@ -354,17 +355,26 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
                 .push(NoteForHistory {
                     id,
                     note: orchard_note,
-                    created_at: Utc::now(),
+                    created_at: DateTime::UNIX_EPOCH,
                 });
         }
 
         for notes in by_txid.into_values() {
             let note_refs: Vec<&NoteForHistory> = notes.iter().collect();
-            if let Some(view) = TransactionView::from_received_notes(&note_refs, current_height) {
-                if !views.iter().any(|v| v.txid == view.txid) {
-                    views.push(view);
-                }
+            let Some(mut received_view) =
+                TransactionView::from_received_notes(&note_refs, current_height)
+            else {
+                continue;
+            };
+            let txid = received_view.txid.clone();
+            if views.iter().any(|v| v.txid == txid) {
+                // Sent record already covers this tx (amount sent + fee); skip change duplicate.
+                continue;
             }
+            if is_change_output_tx(&txid, received_view.net_amount_zatoshis as u64, &notes) {
+                received_view.transaction_type = TransactionType::Change;
+            }
+            views.push(received_view);
         }
     }
 
@@ -377,23 +387,133 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
     Ok(views)
 }
 
+/// True when incoming notes on `txid` are change from our own spend, not an external deposit.
+#[cfg(feature = "native")]
+fn is_change_output_tx(txid: &str, received_zatoshis: u64, incoming: &[NoteForHistory]) -> bool {
+    use crate::notes::load_wallet_notes;
+
+    let all = load_wallet_notes().unwrap_or_default();
+    if all
+        .iter()
+        .any(|n| n.spent && n.spent_in_txid.as_deref() == Some(txid))
+    {
+        return true;
+    }
+    let recv_block = incoming.first().map(|n| n.note.block_height).or_else(|| {
+        all.iter()
+            .find(|n| n.txid == txid && !n.spent)
+            .map(|n| n.block_height)
+    });
+    let Some(recv_block) = recv_block else {
+        return false;
+    };
+    // Heuristic for wallets that spent before `spent_in_txid` was persisted.
+    all.iter()
+        .any(|n| n.spent && n.value > received_zatoshis && recv_block >= n.block_height)
+}
+
+#[cfg(not(feature = "native"))]
+fn is_change_output_tx(_txid: &str, _received_zatoshis: u64, _incoming: &[NoteForHistory]) -> bool {
+    false
+}
+
+/// Lookup a history row by txid (sent record or received/change from notes).
+pub fn transaction_view_for_txid(
+    txid: &str,
+    current_height: u32,
+) -> NozyResult<Option<TransactionView>> {
+    let views = collect_wallet_transaction_views(current_height)?;
+    Ok(views.into_iter().find(|v| v.txid == txid))
+}
+
+/// Minimum plausible Zcash mainnet block time (Oct 2016).
+const MIN_PLAUSIBLE_BLOCK_TIME_SECS: i64 = 1_477_000_000;
+
+fn is_plausible_block_time(dt: DateTime<Utc>) -> bool {
+    dt.timestamp() >= MIN_PLAUSIBLE_BLOCK_TIME_SECS
+}
+
+fn optional_history_timestamp(dt: DateTime<Utc>) -> Option<String> {
+    if is_plausible_block_time(dt) {
+        Some(dt.to_rfc3339())
+    } else {
+        None
+    }
+}
+
+async fn block_time_for_height(
+    zebra_client: &crate::zebra_integration::ZebraClient,
+    height: u32,
+    cache: &mut HashMap<u32, Option<DateTime<Utc>>>,
+) -> Option<DateTime<Utc>> {
+    if let Some(cached) = cache.get(&height) {
+        return *cached;
+    }
+    let resolved = match zebra_client.get_block(height).await {
+        Ok(block_data) => block_data
+            .get("time")
+            .and_then(|v| v.as_u64())
+            .and_then(|t| DateTime::from_timestamp(t as i64, 0))
+            .filter(|dt| is_plausible_block_time(*dt)),
+        Err(_) => None,
+    };
+    cache.insert(height, resolved);
+    resolved
+}
+
+/// Fill missing block times for received deposits using on-chain block header times.
+pub async fn enrich_block_times_for_views(
+    views: &mut [TransactionView],
+    zebra_client: &crate::zebra_integration::ZebraClient,
+) {
+    let mut cache = HashMap::new();
+    for view in views.iter_mut() {
+        if view.transaction_type != TransactionType::Received {
+            continue;
+        }
+        if view.block_time.is_some_and(is_plausible_block_time) {
+            continue;
+        }
+        let Some(height) = view.block_height else {
+            continue;
+        };
+        if let Some(t) = block_time_for_height(zebra_client, height, &mut cache).await {
+            view.block_time = Some(t);
+            view.created_at = t;
+        }
+    }
+}
+
 /// JSON shape returned by `/api/transaction/history` and desktop clients.
 pub fn transaction_view_to_history_json(view: &TransactionView) -> serde_json::Value {
     let amount_zatoshis = view.net_amount_zatoshis.unsigned_abs();
     let fee_zatoshis = view.fee_zatoshis.unwrap_or(0);
+    let type_label = view.transaction_type.label();
+    let status_label = match &view.status {
+        TransactionStatus::Pending => "pending",
+        TransactionStatus::Confirmed => "confirmed",
+        TransactionStatus::Failed => "failed",
+        TransactionStatus::Expired => "expired",
+    };
     serde_json::json!({
         "txid": view.txid,
-        "transaction_type": view.transaction_type.label(),
-        "status": format!("{:?}", view.status),
+        "transaction_type": type_label,
+        "type": type_label.to_lowercase(),
+        "status": status_label,
         "amount_zatoshis": amount_zatoshis,
         "amount_zec": view.amount_zec(),
         "fee_zatoshis": fee_zatoshis,
         "fee_zec": view.fee_zec().unwrap_or(0.0),
         "recipient": view.recipient_address,
+        "recipient_address": view.recipient_address,
+        "deposit_address": view.my_addresses.first(),
+        "my_addresses": view.my_addresses,
         "block_height": view.block_height,
         "confirmations": view.confirmations,
-        "broadcast_at": view.block_time.map(|d| d.to_rfc3339()),
+        "broadcast_at": view.block_time.and_then(optional_history_timestamp),
+        "created_at": optional_history_timestamp(view.created_at),
         "memo": view.memo,
+        "is_change": view.transaction_type == TransactionType::Change,
     })
 }
 
@@ -540,25 +660,79 @@ impl SentTransactionStorage {
         self.storage_path.join("sent_transactions.json")
     }
 
+    fn read_sent_transactions_file(
+        path: &std::path::Path,
+    ) -> HashMap<String, SentTransactionRecord> {
+        if !path.exists() {
+            return HashMap::new();
+        }
+        let content = match fs::read_to_string(path) {
+            Ok(content) => content,
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to read sent transactions at {}: {}",
+                    path.display(),
+                    e
+                );
+                return HashMap::new();
+            }
+        };
+        match serde_json::from_str::<HashMap<String, SentTransactionRecord>>(&content) {
+            Ok(records) => records,
+            Err(e) => {
+                eprintln!(
+                    "Warning: failed to parse sent transactions at {}: {}",
+                    path.display(),
+                    e
+                );
+                HashMap::new()
+            }
+        }
+    }
+
+    fn sent_transaction_source_paths(&self) -> Vec<std::path::PathBuf> {
+        let mut paths = vec![
+            self.get_transactions_path(),
+            crate::paths::get_wallet_base_dir().join("sent_transactions.json"),
+            std::path::PathBuf::from("wallet_data").join("sent_transactions.json"),
+        ];
+        let profiles_root = crate::paths::get_wallet_base_dir().join("profiles");
+        if let Ok(entries) = fs::read_dir(&profiles_root) {
+            for entry in entries.flatten() {
+                if entry.path().is_dir() {
+                    paths.push(entry.path().join("sent_transactions.json"));
+                }
+            }
+        }
+        let mut seen = std::collections::HashSet::new();
+        paths
+            .into_iter()
+            .filter(|path| seen.insert(path.clone()))
+            .collect()
+    }
+
     fn load_transactions(&self) -> NozyResult<()> {
-        let transactions_path = self.get_transactions_path();
-        let path = Path::new(&transactions_path);
+        let _ = crate::wallet_profiles::migrate_orphaned_sent_transactions();
 
-        if path.exists() {
-            let content = fs::read_to_string(path).map_err(|e| {
-                NozyError::Storage(format!("Failed to read sent transactions: {}", e))
-            })?;
-
-            let stored_transactions: HashMap<String, SentTransactionRecord> =
-                serde_json::from_str(&content).map_err(|e| {
-                    NozyError::Storage(format!("Failed to parse sent transactions: {}", e))
+        if let Some(parent) = self.storage_path.parent() {
+            if !parent.exists() {
+                fs::create_dir_all(parent).map_err(|e| {
+                    NozyError::Storage(format!("Failed to create storage directory: {}", e))
                 })?;
+            }
+        }
 
+        let mut merged: HashMap<String, SentTransactionRecord> = HashMap::new();
+        for path in self.sent_transaction_source_paths() {
+            merged.extend(Self::read_sent_transactions_file(&path));
+        }
+
+        if !merged.is_empty() {
             *self
                 .transactions
                 .lock()
-                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? =
-                stored_transactions;
+                .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = merged;
+            self.save_transactions()?;
         }
 
         Ok(())

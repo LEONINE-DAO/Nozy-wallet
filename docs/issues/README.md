@@ -24,6 +24,7 @@
 | [`TEMPLATE_BUG_REPORT.md`](TEMPLATE_BUG_REPORT.md) | Copy for new bug writeups |
 | [`TEMPLATE_FEATURE_ISSUE.md`](TEMPLATE_FEATURE_ISSUE.md) | Copy for new feature requests |
 | [`bugs/`](bugs/) | One file per significant bug (detailed RCA) |
+| [`bugs/2026-06-desktop-pre-release-debug-session.md`](bugs/2026-06-desktop-pre-release-debug-session.md) | Desktop pre-release debug (NET_001, send stall, history, Zebrad Windows setup) |
 | [`features/`](features/) | One file per major feature issue / RFC companion |
 | [`../MAINNET_SEND_EXPIRY_TEST.md`](../MAINNET_SEND_EXPIRY_TEST.md) | Mainnet verification for BUG-2026-011 |
 | [`../reference/PILOT_EXPIRY_PROVING_LATENCY.md`](../reference/PILOT_EXPIRY_PROVING_LATENCY.md) | Paper / design notes for pilot expiry |

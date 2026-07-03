@@ -232,6 +232,32 @@ impl NoteIndex {
         false
     }
 
+    pub fn tag_spent_in_txid(&mut self, nullifier: &[u8], broadcast_txid: &str) -> bool {
+        if let Some(&idx) = self.nullifier_index.get(nullifier) {
+            if let Some(note) = self.notes.get_mut(idx) {
+                note.spent_in_txid = Some(broadcast_txid.to_string());
+                return true;
+            }
+        }
+        false
+    }
+
+    pub fn tag_spent_in_txid_by_identity(
+        &mut self,
+        txid: &str,
+        block_height: u32,
+        value: u64,
+        broadcast_txid: &str,
+    ) -> bool {
+        for note in &mut self.notes {
+            if note.txid == txid && note.block_height == block_height && note.value == value {
+                note.spent_in_txid = Some(broadcast_txid.to_string());
+                return true;
+            }
+        }
+        false
+    }
+
     /// Match spent note by on-chain identity when nullifier index lookup fails.
     pub fn mark_note_spent_by_spend_metadata(
         &mut self,
@@ -553,6 +579,7 @@ mod tests {
             orchard_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
+            spent_in_txid: None,
         }
     }
 

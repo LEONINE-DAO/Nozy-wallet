@@ -1,6 +1,7 @@
 import { invoke as tauriInvokeRaw } from "@tauri-apps/api/core";
 import {
   WalletExistsResponse,
+  WalletProfileInfo,
   CreateWalletRequest,
   RestoreWalletRequest,
   UnlockWalletRequest,
@@ -20,6 +21,14 @@ import {
   BackupPathRequest,
   BackupActionResponse,
   SyncStatusResponse,
+  OrchardPoolStatsResponse,
+  PrepareCosignRequest,
+  PrepareCosignResponse,
+  SignCosignRequest,
+  CompleteCosignSendRequest,
+  KeystoneStatusResponse,
+  KeystonePrepareResponse,
+  SyncWalletResponse,
 } from "./types";
 
 const invoke = async <T>(command: string, args?: Record<string, unknown>): Promise<T> => {
@@ -43,6 +52,16 @@ export const walletApi = {
   checkWalletExists: async (): Promise<{ data: WalletExistsResponse }> => {
     const result = await invoke<WalletExistsResponse>("wallet_exists");
     return { data: result };
+  },
+
+  listWalletProfiles: async (): Promise<{ data: WalletProfileInfo[] }> => {
+    const result = await invoke<WalletProfileInfo[]>("list_wallet_profiles_cmd");
+    return { data: result };
+  },
+
+  switchWalletProfile: async (profileId: string) => {
+    await invoke("switch_wallet_profile", { request: { profile_id: profileId } });
+    return { data: null };
   },
 
   createWallet: async (data: CreateWalletRequest): Promise<{ data: string }> => {
@@ -85,8 +104,110 @@ export const walletApi = {
     return { data: result };
   },
 
-  syncWallet: async (data?: { start_height?: number; end_height?: number; zebra_url?: string; password?: string }) => {
-    const result = await invoke("sync_wallet", { request: data || {} });
+  getOrchardPoolStats: async (): Promise<{ data: OrchardPoolStatsResponse }> => {
+    const result = await invoke<OrchardPoolStatsResponse>("get_orchard_pool_stats");
+    return { data: result };
+  },
+
+  prepareCosignRequest: async (
+    data: PrepareCosignRequest
+  ): Promise<{ data: PrepareCosignResponse }> => {
+    const result = await invoke<PrepareCosignResponse>("prepare_cosign_request", { request: data });
+    return { data: result };
+  },
+
+  signCosignRequest: async (
+    data: SignCosignRequest
+  ): Promise<{ data: { pczt_hex: string } }> => {
+    const result = await invoke<{ pczt_hex: string }>("sign_cosign_request", { request: data });
+    return { data: result };
+  },
+
+  completeCosignSend: async (
+    data: CompleteCosignSendRequest
+  ): Promise<{ data: { success: boolean; txid?: string; message: string } }> => {
+    const result = await invoke<{ success: boolean; txid?: string; message: string }>(
+      "complete_cosign_send",
+      { request: data }
+    );
+    if (!result.success) {
+      throw new Error(result.message || "Co-sign broadcast failed");
+    }
+    return { data: result };
+  },
+
+  getKeystoneStatus: async (): Promise<{ data: KeystoneStatusResponse }> => {
+    const result = await invoke<KeystoneStatusResponse>("get_keystone_status");
+    return { data: result };
+  },
+
+  setKeystoneEnabled: async (
+    enabled: boolean,
+    deviceLabel?: string
+  ): Promise<{ data: { success: boolean; enabled: boolean } }> => {
+    const result = await invoke<{ success: boolean; enabled: boolean }>("set_keystone_enabled", {
+      request: { enabled, device_label: deviceLabel ?? null },
+    });
+    return { data: result };
+  },
+
+  exportKeystoneUfvk: async (
+    password?: string
+  ): Promise<{ data: { success: boolean; ufvk: string } }> => {
+    const result = await invoke<{ success: boolean; ufvk: string }>("export_keystone_ufvk", {
+      request: { password: password ?? null },
+    });
+    return { data: result };
+  },
+
+  keystonePrepareSend: async (params: {
+    recipient: string;
+    amount: number;
+    memo?: string;
+    priority?: boolean;
+    password?: string;
+    zebraUrl?: string;
+  }): Promise<{ data: KeystonePrepareResponse }> => {
+    const result = await invoke<KeystonePrepareResponse>("keystone_prepare_send", {
+      request: {
+        recipient: params.recipient,
+        amount: params.amount,
+        memo: params.memo ?? null,
+        priority: params.priority ?? true,
+        password: params.password ?? null,
+        zebra_url: params.zebraUrl ?? null,
+      },
+    });
+    return { data: result };
+  },
+
+  keystoneCompleteSend: async (params: {
+    pcztHex?: string;
+    urFrames?: string[];
+    broadcast?: boolean;
+    zebraUrl?: string;
+  }): Promise<{ data: { success: boolean; txid?: string; broadcast?: boolean } }> => {
+    const result = await invoke<{ success: boolean; txid?: string; broadcast?: boolean }>(
+      "keystone_complete_send",
+      {
+        request: {
+          pczt_hex: params.pcztHex ?? null,
+          ur_frames: params.urFrames ?? null,
+          broadcast: params.broadcast ?? true,
+          zebra_url: params.zebraUrl ?? null,
+        },
+      }
+    );
+    return { data: result };
+  },
+
+  syncWallet: async (data?: {
+    start_height?: number;
+    end_height?: number;
+    zebra_url?: string;
+    password?: string;
+  }): Promise<{ data: SyncWalletResponse }> => {
+    const result = await invoke<SyncWalletResponse>("sync_wallet", { request: data || {} });
     return { data: result };
   },
 
@@ -104,7 +225,7 @@ export const walletApi = {
   }): Promise<{ data: number }> => {
     const result = await invoke<number>("estimate_fee", {
       zebra_url: opts?.zebraUrl,
-      priority: opts?.priority ?? false,
+      priority: opts?.priority ?? true,
     });
     return { data: result };
   },

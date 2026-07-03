@@ -32,6 +32,9 @@ Tauri-based desktop application for NozyWallet.
 ### Production Build
 
 ```bash
+# Regenerate app icons from landing/src/assets/logo.png (Windows)
+npm run icons
+
 cargo tauri build
 ```
 
@@ -117,6 +120,16 @@ The Send screen uses the same path as the CLI: **scan spendable Orchard notes**,
 
 Run the app: from `desktop-client`, `npm install` then `cargo tauri dev`.
 
+## Keystone hardware wallet (mainnet)
+
+Air-gapped Orchard signing via **PCZT** + QR (`zcash-pczt` UR frames).
+
+**In the app:** **Settings → Keystone** (pair UFVK, enable) → **Send** (prepare → sign on device → broadcast).
+
+**Docs:** [Keystone Hardware Wallet](../book/src/security/keystone-hardware-wallet.md) in the Nozy book (also linked from FAQ).
+
+Requirements: Zcash **mainnet** wallet config, synced node, Keystone on mainnet with matching keys. Recipients must be `u1…` Orchard unified addresses.
+
 ## 📝 Available Tauri Commands
 
 All commands are exposed to the frontend via Tauri's invoke system.
@@ -140,6 +153,13 @@ All commands are exposed to the frontend via Tauri's invoke system.
 - `estimate_fee(zebra_url?)` - Estimate transaction fee
 - `get_transaction_history()` - Local sent txs (`status`, `confirmations`, `block_height`, etc.)
 - `get_transaction(txid)` - Same fields for one tx
+
+### Keystone (mainnet PCZT)
+- `get_keystone_status()` - Enabled, UFVK paired, network, pending send
+- `set_keystone_enabled(enabled, device_label?)` - Toggle Keystone signing
+- `export_keystone_ufvk(password?)` - Export Orchard UFVK for device pairing
+- `keystone_prepare_send(recipient, amount, ...)` - Build proved PCZT + UR frames
+- `keystone_complete_send(pczt_hex | ur_frames, broadcast?)` - Broadcast signed tx
 
 ### Configuration
 - `get_config()` - Get configuration
@@ -202,10 +222,28 @@ const result = await invoke<{success: boolean, txid?: string, message: string}>(
 - Create a wallet first using `create_wallet` or `restore_wallet`
 - Check wallet file exists in the default location
 
-**"Failed to connect to Zebra"**
-- Ensure Zebra node is running: `zebrad start --rpc.bind-addr 127.0.0.1:8232`
-- Check Zebra URL in configuration
-- Test connection using `test_zebra_connection`
+**"Cannot connect to node" / NET_001**
+- Use the **NozyWallet desktop window** (taskbar), not a browser tab at `http://localhost:5173`
+- Ensure Zebrad is running: `Get-Process zebrad`
+- Test RPC: `nozy test-zebra` from repo root (or Settings → Network → Test Connection)
+- **Windows:** Zebrad reads config from `%LOCALAPPDATA%\zebrad.toml` (not Roaming). RPC must be enabled:
+
+  ```toml
+  [rpc]
+  listen_addr = "127.0.0.1:18232"
+  enable_cookie_auth = false
+  ```
+
+- Port **8232** may be used by Windows IP Helper on some PCs — pick another port (e.g. **18232**) and set the same URL in wallet config
+- Full writeup: [`docs/issues/bugs/2026-06-desktop-pre-release-debug-session.md`](../docs/issues/bugs/2026-06-desktop-pre-release-debug-session.md)
+
+**Send stuck on "Checking sync status…"**
+- Often **lightwalletd not running** on `127.0.0.1:9067`; status probe can block until timeout
+- Ensure Zebra tip is **not behind** wallet `last_scan_height` (node still syncing after restart)
+- See session doc Issue 2 and Issue 3 in the link above
+
+**"Failed to connect to Zebra"** (legacy message)
+- Same as NET_001 — start `zebrad start` with Local config, verify with `nozy test-zebra`
 
 ##  Next Steps
 

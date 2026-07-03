@@ -68,6 +68,9 @@ pub struct SerializableOrchardNote {
     /// Note rseed (needed to derive the canonical Orchard nullifier).
     #[serde(default)]
     pub rseed_bytes: Option<Vec<u8>>,
+    /// When this note was spent, the broadcast txid of the spend (used to detect change outputs).
+    #[serde(default)]
+    pub spent_in_txid: Option<String>,
 }
 
 impl SerializableOrchardNote {
@@ -190,6 +193,7 @@ impl From<&OrchardNote> for SerializableOrchardNote {
             orchard_witness_tip_height: None,
             rho_bytes: Some(note.note.rho().to_bytes().to_vec()),
             rseed_bytes: Some(note.note.rseed().as_bytes().to_vec()),
+            spent_in_txid: None,
         }
     }
 }
@@ -199,7 +203,10 @@ impl From<&OrchardNote> for SerializableOrchardNote {
 /// Matches by canonical nullifier and, for legacy rows with a wrong stored nullifier,
 /// by `(txid, block_height, value)` from the notes that were actually spent.
 #[cfg(feature = "native")]
-pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyResult<usize> {
+pub fn mark_wallet_notes_spent_from_spendables(
+    spent: &[SpendableNote],
+    broadcast_txid: Option<&str>,
+) -> NozyResult<usize> {
     use crate::paths::get_wallet_data_dir;
 
     if spent.is_empty() {
@@ -219,6 +226,9 @@ pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyR
         let nf = sn.orchard_note.note.nullifier(&fvk).to_bytes();
 
         if index.mark_note_spent_on_chain(&nf, &fvk) {
+            if let Some(txid) = broadcast_txid {
+                index.tag_spent_in_txid(&nf, txid);
+            }
             marked += 1;
             continue;
         }
@@ -231,6 +241,14 @@ pub fn mark_wallet_notes_spent_from_spendables(spent: &[SpendableNote]) -> NozyR
             Some(sn.orchard_note.note.rho().to_bytes().as_slice()),
             Some(sn.orchard_note.note.rseed().as_bytes()),
         ) {
+            if let Some(txid) = broadcast_txid {
+                index.tag_spent_in_txid_by_identity(
+                    &sn.orchard_note.txid,
+                    sn.orchard_note.block_height,
+                    sn.orchard_note.value,
+                    txid,
+                );
+            }
             marked += 1;
         }
     }

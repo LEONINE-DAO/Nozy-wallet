@@ -128,15 +128,17 @@ export function KeystoneScreen({ navigation }: Props) {
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.subtitle}>
-          NozyWallet supports Keystone as the hardware wallet signer. Prepare on
-          phone, sign on device, then complete here.
+          NozyWallet Keystone signing on Zcash mainnet. Prepare on phone, sign on device, then
+          complete here.
         </Text>
 
         <View style={styles.card}>
           <Text style={styles.label}>Status</Text>
           <Text style={styles.value}>
             {status
-              ? `${status.enabled ? "Enabled" : "Disabled"} · UFVK ${status.has_ufvk ? "paired" : "not paired"}${status.pending_send ? " · pending send" : ""}`
+              ? `${status.enabled ? "Enabled" : "Disabled"} · ${
+                  status.network === "testnet" ? "testnet" : "mainnet"
+                } · UFVK ${status.has_ufvk ? "paired" : "not paired"}${status.pending_send ? " · pending send" : ""}`
               : "Loading..."}
           </Text>
           <Input label="Device label" value={deviceLabel} onChangeText={setDeviceLabel} />

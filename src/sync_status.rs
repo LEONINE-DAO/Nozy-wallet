@@ -20,6 +20,9 @@ pub fn resolve_lightwalletd_url() -> String {
     std::env::var("LIGHTWALLETD_GRPC").unwrap_or_else(|_| "http://127.0.0.1:9067".to_string())
 }
 
+/// lightwalletd is optional for RPC-only sync; do not block status on a dead gRPC port.
+const LWD_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
 pub async fn gather_sync_status(
     zebra_client: &ZebraClient,
     config: &WalletConfig,
@@ -27,12 +30,25 @@ pub async fn gather_sync_status(
     let zebra_tip = zebra_client.get_block_count().await.ok();
     let lightwalletd_url = resolve_lightwalletd_url();
 
-    let (lwd_tip, lwd_error) = match zeaking::lwd::connect_lightwalletd(&lightwalletd_url).await {
-        Ok(mut client) => match zeaking::lwd::chain_tip_height(&mut client).await {
+    let (lwd_tip, lwd_error) = match tokio::time::timeout(
+        LWD_CONNECT_TIMEOUT,
+        zeaking::lwd::connect_lightwalletd(&lightwalletd_url),
+    )
+    .await
+    {
+        Ok(Ok(mut client)) => match zeaking::lwd::chain_tip_height(&mut client).await {
             Ok(tip) => (Some(tip), None),
             Err(e) => (None, Some(e.to_string())),
         },
-        Err(e) => (None, Some(e.to_string())),
+        Ok(Err(e)) => (None, Some(e.to_string())),
+        Err(_) => (
+            None,
+            Some(format!(
+                "lightwalletd connection timed out after {}s (is it running on {}?)",
+                LWD_CONNECT_TIMEOUT.as_secs(),
+                lightwalletd_url
+            )),
+        ),
     };
 
     let compact_db = get_wallet_data_dir().join("lwd_compact.sqlite");

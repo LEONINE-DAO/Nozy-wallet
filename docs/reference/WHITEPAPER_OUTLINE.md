@@ -34,6 +34,7 @@
 | Product thesis | [`NOZYWALLET_PROPOSAL.md`](../NOZYWALLET_PROPOSAL.md) §Executive summary |
 | Pilot alignment | [`PILOT_EXPIRY_PROVING_LATENCY.md`](PILOT_EXPIRY_PROVING_LATENCY.md) executive summary |
 | Mainnet proof | [`MAINNET_SEND_READINESS_EVIDENCE.md`](MAINNET_SEND_READINESS_EVIDENCE.md) test matrix |
+| Node connectivity | [`ZEBRAD_NOZYWALLET_CONNECTIVITY.md`](ZEBRAD_NOZYWALLET_CONNECTIVITY.md) — verify RPC before recording evidence |
 
 **One paragraph to include:** Wallet ≠ node; Zebrad + lightwalletd + **local witness derivation**; shielded-first Orchard-only sends.
 
