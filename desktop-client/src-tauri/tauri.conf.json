@@ -31,7 +31,13 @@
       "icons/icon.png",
       "icons/icon.ico"
     ],
-    "active": true
+    "active": true,
+    "windows": {
+      "nsis": {
+        "startMenuFolder": "NozyWallet",
+        "installerHooks": "windows/hooks.nsh"
+      }
+    }
   },
   "plugins": {}
 }

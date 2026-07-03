@@ -18,10 +18,13 @@ The **CLI remains the production surface** for operators and mainnet workflows. 
 
 ## Install
 
-1. Download **`nozy-desktop-windows-x86_64-installer.exe`** (NSIS) or **`nozy-desktop-windows-x86_64-installer.msi`** from the assets below.
+1. Download **`nozy-desktop-windows-x86_64-installer.exe`** (NSIS) from the assets below.
 2. Run the installer on a clean or existing Windows profile.
-3. Launch **NozyWallet** from the Start menu / taskbar (use the desktop window — not a browser tab at `http://localhost:5173`).
-4. Create or restore a wallet, set network endpoints, then **Sync** before send.
+3. After install you get a **Start menu** shortcut under **NozyWallet** and a **desktop icon** with the NozyWallet logo.
+4. Launch **NozyWallet** from the desktop or Start menu (use the desktop window — not a browser tab at `http://localhost:5173`).
+5. Create or restore a wallet, set network endpoints, then **Sync** before send.
+
+**MSI:** not shipped for beta.1 — Windows Installer cannot use semver pre-release versions like `1.0.0-beta.1`. Use the NSIS `.exe`.
 
 ## What's included
 
@@ -49,6 +52,6 @@ Automated desktop smoke (**A1–A11**): **11/11 passed** via `.\scripts\desktop-
 | Asset | Description |
 |-------|-------------|
 | `nozy-desktop-windows-x86_64-installer.exe` | NSIS installer (recommended) |
-| `nozy-desktop-windows-x86_64-installer.msi` | MSI installer |
+| `nozy-desktop-windows-x86_64-installer.exe.sha256` | SHA256 checksum |
 
-Attach both artifacts built from `desktop-client` (`npm run tauri build`) under `src-tauri/target/release/bundle/`.
+Attach the NSIS installer built from `desktop-client` (`npm run tauri build -- --bundles nsis`) under `src-tauri/target/release/bundle/nsis/`.
