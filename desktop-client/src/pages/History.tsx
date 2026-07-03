@@ -9,55 +9,16 @@ import { useSettingsStore } from "../store/settingsStore";
 import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
 import { formatErrorForDisplay } from "../utils/errors";
 import toast from "react-hot-toast";
-
-export interface HistoryTx {
-  id: string;
-  type: "sent" | "received";
-  amount: number;
-  date: string;
-  address: string;
-  status: string;
-  memo?: string;
-}
-
-function normalizeTx(raw: any): HistoryTx {
-  const txid = raw.txid ?? raw.id ?? "";
-  const amountZec = typeof raw.amount_zec === "number"
-    ? raw.amount_zec
-    : (raw.amount_zatoshis != null ? raw.amount_zatoshis / 100_000_000 : 0);
-  const recipient = raw.recipient_address ?? raw.recipient ?? "";
-  const statusRaw = raw.status != null
-    ? String(raw.status).toLowerCase().replace(/\s/g, "_")
-    : "unknown";
-  const status =
-    statusRaw === "confirmed" ||
-    statusRaw === "pending" ||
-    statusRaw === "failed" ||
-    statusRaw === "expired"
-      ? statusRaw
-      : statusRaw;
-  const dateRaw = raw.broadcast_at ?? raw.created_at ?? raw.date ?? raw.block_time;
-  const date =
-    typeof dateRaw === "string"
-      ? dateRaw.slice(0, 10)
-      : dateRaw != null && typeof dateRaw === "object" && "secs_since_epoch" in dateRaw
-        ? new Date((dateRaw as { secs_since_epoch: number }).secs_since_epoch * 1000).toISOString().slice(0, 10)
-        : raw.timestamp != null
-          ? new Date(raw.timestamp * 1000).toISOString().slice(0, 10)
-          : "";
-  const type = (raw.transaction_type ?? raw.type ?? "sent").toString().toLowerCase();
-  const memo = typeof raw.memo === "string" ? raw.memo : undefined;
-
-  return {
-    id: txid,
-    type: type === "received" ? "received" : "sent",
-    amount: amountZec,
-    date,
-    address: recipient || (txid ? `${txid.slice(0, 8)}...${txid.slice(-4)}` : "—"),
-    status,
-    memo,
-  };
-}
+import {
+  formatHistoryDate,
+  formatHistoryDetailDate,
+  historyAmountPrefix,
+  historyTypeLabel,
+  normalizeHistoryTx,
+  sortHistoryNewestFirst,
+  type HistoryTx,
+} from "../lib/history";
+import { TransactionIdDetail, TxExplorerLink } from "../components/TxExplorerLink";
 
 type FilterType = "all" | "sent" | "received";
 type FilterStatus = "all" | "confirmed" | "pending" | "failed" | "expired";
@@ -79,7 +40,7 @@ function filterAndSortTxs(
     return d;
   })() : null;
 
-  return txs
+  const filtered = txs
     .filter((t) => filterType === "all" || t.type === filterType)
     .filter((t) => filterStatus === "all" || t.status === filterStatus)
     .filter((t) => {
@@ -94,12 +55,25 @@ function filterAndSortTxs(
         t.id.toLowerCase().includes(q) ||
         (t.memo ?? "").toLowerCase().includes(q)
       );
-    })
-    .sort((a, b) => {
-      const da = a.date ? new Date(a.date).getTime() : 0;
-      const db = b.date ? new Date(b.date).getTime() : 0;
-      return db - da;
     });
+  return sortHistoryNewestFirst(filtered);
+}
+
+function formatStatusLabel(status: string): string {
+  if (!status || status === "unknown") return "—";
+  return status.charAt(0).toUpperCase() + status.slice(1);
+}
+
+function txIconClass(tx: HistoryTx): string {
+  if (tx.type === "received") return "bg-green-100 text-green-600";
+  if (tx.type === "change") return "bg-blue-100 text-blue-600";
+  return "bg-red-100 text-red-600";
+}
+
+function amountClass(tx: HistoryTx): string {
+  if (tx.type === "received") return "text-green-600";
+  if (tx.type === "change") return "text-gray-900";
+  return "text-gray-900";
 }
 
 function escapeCsvField(value: string): string {
@@ -114,7 +88,7 @@ function downloadCsv(txs: HistoryTx[]): void {
   const rows = txs.map((tx) =>
     [
       tx.date || "",
-      tx.type,
+      historyTypeLabel(tx),
       tx.amount.toFixed(8),
       tx.address,
       tx.status,
@@ -151,12 +125,7 @@ export function HistoryPage() {
   const [speedUpPassword, setSpeedUpPassword] = useState("");
   const [speedUpBusy, setSpeedUpBusy] = useState(false);
 
-  const {
-    showFiatEquivalent,
-    fiatCurrency,
-    useLiveFiatPrice,
-    customFiatPerZec,
-  } = useSettingsStore();
+  const { fiatCurrency, useLiveFiatPrice, customFiatPerZec } = useSettingsStore();
 
   const loadHistory = () => {
     setLoading(true);
@@ -168,7 +137,9 @@ export function HistoryPage() {
       .then((res) => {
         const raw = res?.data;
         if (Array.isArray(raw)) {
-          const normalized = raw.map(normalizeTx).filter((t) => t.id);
+          const normalized = raw
+            .map((row) => normalizeHistoryTx(row as Record<string, unknown>))
+            .filter((t) => t.id);
           setTxs(normalized);
         } else {
           setTxs([]);
@@ -196,6 +167,9 @@ export function HistoryPage() {
     [txs, filterType, filterStatus, filterDateRange, searchQuery]
   );
 
+  const sentCount = useMemo(() => txs.filter((t) => t.type === "sent").length, [txs]);
+  const receivedCount = useMemo(() => txs.filter((t) => t.type === "received").length, [txs]);
+
   useEffect(() => {
     if (!selectedTx) {
       setDetailExtra(null);
@@ -222,10 +196,6 @@ export function HistoryPage() {
 
   // Fiat rate: live (CoinGecko) or custom
   useEffect(() => {
-    if (!showFiatEquivalent) {
-      setFiatRate(null);
-      return;
-    }
     if (!useLiveFiatPrice && customFiatPerZec != null) {
       setFiatRate(customFiatPerZec);
       return;
@@ -235,11 +205,9 @@ export function HistoryPage() {
       return;
     }
     getZecPriceInFiat(fiatCurrency).then((rate) => setFiatRate(rate));
-  }, [showFiatEquivalent, useLiveFiatPrice, customFiatPerZec, fiatCurrency]);
+  }, [useLiveFiatPrice, customFiatPerZec, fiatCurrency]);
 
-  const effectiveFiatRate = showFiatEquivalent
-    ? (useLiveFiatPrice ? fiatRate : customFiatPerZec)
-    : null;
+  const effectiveFiatRate = useLiveFiatPrice ? fiatRate : customFiatPerZec;
 
   function fiatLine(amountZec: number): string | null {
     if (effectiveFiatRate == null || effectiveFiatRate <= 0) return null;
@@ -305,11 +273,29 @@ export function HistoryPage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto">
-      <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold text-gray-900">
-          Transaction History
-        </h2>
+    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto text-left pb-10">
+      <div className="sticky top-0 z-10 -mx-2 px-2 py-3 bg-gray-50/95 dark:bg-gray-900/95 backdrop-blur-sm border-b border-gray-200/60 dark:border-gray-700/60">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div>
+            <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100">
+              Transaction History
+            </h2>
+            {!loading && !error && txs.length > 0 && (
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                {sentCount} sent · {receivedCount} received
+              </p>
+            )}
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => loadHistory()}
+            disabled={loading}
+            className="shrink-0 bg-white/80 dark:bg-gray-800/80"
+          >
+            {loading ? "Refreshing…" : "Refresh"}
+          </Button>
+        </div>
       </div>
 
       {!loading && !error && txs.length > 0 && (
@@ -388,7 +374,9 @@ export function HistoryPage() {
         ) : txs.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
             <p>No transactions found</p>
-            <p className="text-sm mt-1">Sent and received transactions will appear here.</p>
+            <p className="text-sm mt-1">
+              Received deposits appear after sync. Sent transactions appear after you send from this wallet.
+            </p>
           </div>
         ) : filteredTxs.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
@@ -414,11 +402,7 @@ export function HistoryPage() {
               >
                 <div className="flex items-center gap-4">
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
-                      tx.type === "received"
-                        ? "bg-green-100 text-green-600"
-                        : "bg-red-100 text-red-600"
-                    }`}
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${txIconClass(tx)}`}
                   >
                     {tx.type === "received" ? (
                       <ArrowLeftDown size={20} />
@@ -428,11 +412,11 @@ export function HistoryPage() {
                   </div>
                   <div>
                     <p className="font-semibold text-gray-900">
-                      {tx.type === "received" ? "Received" : "Sent"}
+                      {historyTypeLabel(tx)}
                     </p>
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Calendar size={12} />
-                      <span>{tx.date || "—"}</span>
+                      <span>{formatHistoryDate(tx)}</span>
                       <span className="w-1 h-1 rounded-full bg-gray-300" />
                       <span className="font-mono truncate max-w-[140px]" title={tx.address}>
                         {tx.address}
@@ -448,13 +432,9 @@ export function HistoryPage() {
 
                 <div className="text-right">
                   <p
-                    className={`font-bold uppercase ${
-                      tx.type === "received"
-                        ? "text-green-600"
-                        : "text-gray-900"
-                    }`}
+                    className={`font-bold uppercase ${amountClass(tx)}`}
                   >
-                    {tx.type === "received" ? "+" : "-"}
+                    {historyAmountPrefix(tx)}
                     {tx.amount.toFixed(4)} ZEC
                     {fiatLine(tx.amount) && (
                       <span className="block text-xs font-normal normal-case text-gray-500 mt-0.5">
@@ -477,6 +457,17 @@ export function HistoryPage() {
                   >
                     {tx.status}
                   </span>
+                  <span
+                    className="block mt-1.5"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <TxExplorerLink
+                      txid={tx.id}
+                      label="View on explorer"
+                      variant="pill"
+                    />
+                  </span>
                 </div>
               </div>
             ))}
@@ -492,16 +483,16 @@ export function HistoryPage() {
       >
         {selectedTx && (
           <div className="space-y-4">
-            <DetailRow label="Transaction ID" value={selectedTx.id} mono />
-            <DetailRow label="Type" value={selectedTx.type === "received" ? "Received" : "Sent"} />
+            <TransactionIdDetail txid={selectedTx.id} />
+            <DetailRow label="Type" value={historyTypeLabel(selectedTx)} />
             <DetailRow
               label="Amount"
               value={
-                `${selectedTx.type === "received" ? "+" : "-"}${selectedTx.amount.toFixed(8)} ZEC` +
+                `${historyAmountPrefix(selectedTx)}${selectedTx.amount.toFixed(8)} ZEC` +
                 (fiatLine(selectedTx.amount) ? ` (≈ ${fiatLine(selectedTx.amount)})` : "")
               }
             />
-            <DetailRow label="Date" value={selectedTx.date ? formatDetailDate(selectedTx.date) : "—"} />
+            <DetailRow label="Date" value={formatHistoryDetailDate(selectedTx)} />
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <DetailRow label="Address" value={selectedTx.address} mono />
@@ -517,7 +508,7 @@ export function HistoryPage() {
                 </Button>
               )}
             </div>
-            <DetailRow label="Status" value={selectedTx.status} />
+            <DetailRow label="Status" value={formatStatusLabel(selectedTx.status)} />
             {selectedTx.memo && <DetailRow label="Memo" value={selectedTx.memo} />}
             {detailLoading && (
               <p className="text-sm text-gray-500">Loading extra details…</p>
@@ -540,7 +531,10 @@ export function HistoryPage() {
                   />
                 )}
                 {detailExtra.broadcast_at && (
-                  <DetailRow label="Broadcast at" value={formatDetailDate(detailExtra.broadcast_at)} />
+                  <DetailRow
+                    label="Broadcast at"
+                    value={formatHistoryDetailDate({ date: detailExtra.broadcast_at })}
+                  />
                 )}
               </div>
             )}
@@ -608,11 +602,4 @@ function DetailRow({ label, value, mono }: { label: string; value: string; mono?
       <p className={`mt-0.5 text-gray-900 break-all ${mono ? "font-mono text-sm" : ""}`}>{value}</p>
     </div>
   );
-}
-
-function formatDetailDate(dateStr: string): string {
-  if (!dateStr) return "—";
-  const d = new Date(dateStr);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" });
 }

@@ -5,10 +5,20 @@ export interface ApiResponse<T> {
 
 export interface WalletExistsResponse {
   exists: boolean;
+  has_password: boolean;
 }
 
 export interface CreateWalletRequest {
   password?: string;
+  name?: string;
+}
+
+export interface WalletProfileInfo {
+  id: string;
+  name: string;
+  created_at: number;
+  has_wallet: boolean;
+  is_active: boolean;
 }
 
 export interface RestoreWalletRequest {
@@ -17,7 +27,7 @@ export interface RestoreWalletRequest {
 }
 
 export interface UnlockWalletRequest {
-  password: string;
+  password?: string;
 }
 
 export interface ChangePasswordRequest {
@@ -50,7 +60,24 @@ export interface SyncStatusResponse {
   lwd_error: string | null;
   compact_max_height: number | null;
   compact_db_exists: boolean;
+    message: string;
+}
+
+export interface OrchardPoolStatsResponse {
+  chain_value_zec: number;
+  chain_value_zat: number;
+  monitored: boolean;
+  block_height: number;
+}
+
+export interface SyncWalletResponse {
+  success: boolean;
+  balance_zec: number;
+  notes_found: number;
   message: string;
+  last_scan_height?: number;
+  chain_tip?: number;
+  already_synced: boolean;
 }
 
 export interface SendTransactionRequest {
@@ -58,7 +85,7 @@ export interface SendTransactionRequest {
   amount: number;
   memo?: string;
   password?: string;
-  /** Pilot: ZIP-317 standard fee × 4 when true (default false). */
+  /** NozyWallet always uses ZIP-317 × 4; kept for API compat, ignored by core. */
   priority?: boolean;
 }
 
@@ -116,4 +143,57 @@ export interface BackupActionResponse {
   success: boolean;
   path: string;
   message: string;
+}
+
+export interface CosignPreparedSend {
+  recipient: string;
+  amount_zatoshis: number;
+  fee_zatoshis: number;
+  summary: string;
+  action_count: number;
+  pczt_hex: string;
+  created_at: string;
+}
+
+export interface PrepareCosignRequest {
+  recipient: string;
+  amount: number;
+  memo?: string;
+  password?: string;
+}
+
+export interface PrepareCosignResponse {
+  request: CosignPreparedSend;
+  ur_frames: string[];
+}
+
+export interface SignCosignRequest {
+  pczt_hex: string;
+  password?: string;
+}
+
+export interface CompleteCosignSendRequest {
+  pczt_hex: string;
+  recipient: string;
+  amount: number;
+  memo?: string;
+  password?: string;
+}
+
+export interface KeystoneStatusResponse {
+  enabled: boolean;
+  device_label: string | null;
+  has_ufvk: boolean;
+  pending_send: boolean;
+  network: string;
+}
+
+export interface KeystonePrepareResponse {
+  success: boolean;
+  summary?: string;
+  action_count?: number;
+  pczt_hex?: string;
+  ur_frames?: string[];
+  ur_type?: string;
+  message?: string;
 }

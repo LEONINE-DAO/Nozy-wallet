@@ -1,11 +1,31 @@
 # Tor Integration
 
-This chapter is currently being developed.
+Route selected NozyWallet connections over **Tor** (experimental).
 
-## Coming Soon
+## Requirements
 
-Content for this chapter is being written. Check back soon!
+- Tor daemon or Tor Browser SOCKS proxy running locally
+- `nozy privacy-network` subcommands supported in your build
 
-## Overview
+## Typical SOCKS
 
-This chapter will cover Tor Integration topics and provide comprehensive guidance.
+Default Tor SOCKS: `127.0.0.1:9050`
+
+Configuration varies by platform — see CLI help output for current flags.
+
+## Zebrad over Tor
+
+Running Zebrad as a hidden service or connecting to `.onion` RPC is an **advanced operator** setup. Document your onion URL in `zebra_url` if used:
+
+```bash
+nozy config --set-zebra-url http://youronion.onion:8232
+```
+
+Latency and sync time increase significantly.
+
+## Limitations
+
+- Not all builds test Tor paths in CI
+- lightwalletd gRPC over Tor may need additional proxy configuration
+
+See [Setup Guide](setup.md).

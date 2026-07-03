@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
-  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -24,15 +23,9 @@ export function SendScreen({ navigation, route }: Props) {
   const [recipient, setRecipient] = useState(route.params?.recipient ?? "");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
-  const [priority, setPriority] = useState(false);
-  const [feeZec, setFeeZec] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
-
-  useEffect(() => {
-    void api.estimateFee(priority).then((f) => setFeeZec(f.fee_zec)).catch(() => {});
-  }, [priority]);
 
   useEffect(() => {
     if (route.params?.recipient) {
@@ -55,7 +48,6 @@ export function SendScreen({ navigation, route }: Props) {
         recipient: recipient.trim(),
         amount: parsed,
         memo: memo.trim() || undefined,
-        priority,
         password: password || undefined,
       });
       if (res.success) {
@@ -111,17 +103,7 @@ export function SendScreen({ navigation, route }: Props) {
             placeholder="Private memo"
           />
 
-          <Pressable
-            style={styles.toggleRow}
-            onPress={() => setPriority((p) => !p)}
-          >
-            <View style={[styles.checkbox, priority && styles.checkboxOn]} />
-            <Text style={styles.toggleLabel}>Priority fee (faster confirmation)</Text>
-          </Pressable>
-
-          {feeZec !== null ? (
-            <Text style={styles.fee}>Estimated fee: {feeZec.toFixed(8)} ZEC</Text>
-          ) : null}
+          <Text style={styles.fee}>Network fee (ZIP-317 × 4)</Text>
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {result ? <Text style={styles.ok}>{result}</Text> : null}
@@ -147,16 +129,6 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   container: { padding: spacing.lg, gap: spacing.md },
   subtitle: { color: colors.textMuted, fontSize: fontSize.md, lineHeight: 22 },
-  toggleRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  checkbox: {
-    width: 22,
-    height: 22,
-    borderRadius: 6,
-    borderWidth: 2,
-    borderColor: colors.border,
-  },
-  checkboxOn: { backgroundColor: colors.primary, borderColor: colors.primary },
-  toggleLabel: { color: colors.text, fontSize: fontSize.md },
   fee: { color: colors.textMuted, fontSize: fontSize.sm },
   error: { color: colors.error, fontSize: fontSize.sm },
   ok: { color: colors.success, fontSize: fontSize.sm },

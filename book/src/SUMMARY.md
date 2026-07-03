@@ -52,6 +52,7 @@
 
 - [Security Best Practices](security/best-practices.md)
 - [Private Key Management](security/key-management.md)
+- [Keystone Hardware Wallet](security/keystone-hardware-wallet.md)
 - [Backup Strategies](security/backup-strategies.md)
 - [Security Audits](security/audits.md)
 

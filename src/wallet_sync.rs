@@ -631,6 +631,7 @@ mod tests {
             orchard_witness_tip_height: Some(3_379_050),
             rho_bytes: None,
             rseed_bytes: None,
+            spent_in_txid: None,
         }];
         let chain_tip = 3_389_822;
         let target = witness_catchup_target_height(&notes, chain_tip);
@@ -655,6 +656,7 @@ mod tests {
             orchard_witness_tip_height: Some(3_389_500),
             rho_bytes: None,
             rseed_bytes: None,
+            spent_in_txid: None,
         }];
         let chain_tip = 3_389_822;
         assert_eq!(witness_catchup_target_height(&notes, chain_tip), chain_tip);
@@ -702,6 +704,7 @@ mod tests {
             orchard_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
+            spent_in_txid: None,
         }];
         apply_empty_cache_backfill(&mut range, &config, &opts, &cached);
         assert!(range.scan_start > range.scan_end);
@@ -724,6 +727,7 @@ mod tests {
             orchard_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
+            spent_in_txid: None,
         }];
 
         let scanned: Vec<SerializableOrchardNote> = vec![];

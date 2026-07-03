@@ -3,9 +3,7 @@
 use crate::cli_helpers::scan_notes_for_sending;
 use crate::config::load_config;
 use crate::error::{NozyError, NozyResult};
-use crate::fee_policy::{
-    estimate_orchard_send_fee_zatoshis, PilotSendOptions, PILOT_EXPIRY_DELTA_BLOCKS,
-};
+use crate::fee_policy::{estimate_orchard_send_fee_zatoshis, PilotSendOptions};
 use crate::hd_wallet::HDWallet;
 use crate::notes::mark_wallet_notes_spent_from_spendables;
 use crate::transaction_builder::ZcashTransactionBuilder;
@@ -99,11 +97,8 @@ pub async fn speed_up_transaction(
     }
 
     let memo = refreshed.memo.as_deref();
-    let pilot = PilotSendOptions {
-        priority: true,
-        expiry_delta_blocks: PILOT_EXPIRY_DELTA_BLOCKS,
-    };
-    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, true);
+    let pilot = PilotSendOptions::for_send();
+    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, pilot.priority);
     let total_needed = refreshed.amount_zatoshis.saturating_add(fee_zatoshis);
     let available: u64 = spendable_notes.iter().map(|n| n.orchard_note.value).sum();
     if available < total_needed {
@@ -132,15 +127,20 @@ pub async fn speed_up_transaction(
 
     let network_txid = transaction.txid.clone();
 
-    let spent_note_ids: Vec<String> = spendable_notes
-        .iter()
-        .map(|note| {
-            let fvk = FullViewingKey::from(&note.spending_key);
-            hex::encode(note.orchard_note.note.nullifier(&fvk).to_bytes())
-        })
-        .collect();
+    let spent_note = crate::orchard_tx::select_single_spend_note(
+        &spendable_notes,
+        refreshed.amount_zatoshis,
+        fee_zatoshis,
+    )?;
+    let fvk = FullViewingKey::from(&spent_note.spending_key);
+    let spent_note_ids = vec![hex::encode(
+        spent_note.orchard_note.note.nullifier(&fvk).to_bytes(),
+    )];
 
-    if let Err(e) = mark_wallet_notes_spent_from_spendables(&spendable_notes) {
+    if let Err(e) = mark_wallet_notes_spent_from_spendables(
+        std::slice::from_ref(spent_note),
+        Some(&network_txid),
+    ) {
         eprintln!("Warning: could not mark spent notes locally after speed-up: {e}");
     }
 

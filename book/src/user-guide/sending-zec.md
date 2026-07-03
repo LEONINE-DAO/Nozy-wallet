@@ -54,6 +54,16 @@ Before sending ZEC, ensure:
 
 4. **Wait for confirmation** - Transaction will be built and broadcast
 
+### Sending with Keystone (mainnet)
+
+For air-gapped hardware signing:
+
+1. **Settings → Keystone** — export UFVK, pair on Keystone (Zcash mainnet), enable Keystone.
+2. **Send** — enter `u1…` recipient and amount → **Review & prepare**.
+3. Scan PCZT QR on Keystone → sign → paste signed PCZT back → **Broadcast signed tx**.
+
+See [Keystone Hardware Wallet](../security/keystone-hardware-wallet.md) for full setup and troubleshooting.
+
 ## CLI (Command Line)
 
 ### Basic Send Command

@@ -6,8 +6,10 @@
 pub const MARGINAL_FEE_ZATOSHIS: u64 = 5_000;
 /// ZIP-317 grace logical actions (minimum billable action count).
 pub const GRACE_ACTIONS: u32 = 2;
-/// Pilot priority multiplier when the user opts in.
+/// NozyWallet standard fee multiplier (ZIP-317 × 4 on every send surface).
 pub const PRIORITY_MULTIPLIER: u64 = 4;
+/// All NozyWallet sends use the priority fee; not user-configurable.
+pub const NOZY_WALLET_PRIORITY_FEE: bool = true;
 /// Default transaction expiry delta after the mempool build height (~6 minutes at 75s/block).
 pub const PILOT_EXPIRY_DELTA_BLOCKS: u32 = 5;
 /// Max full rebuild attempts when proving outruns the pilot expiry window.
@@ -19,6 +21,7 @@ pub const FALLBACK_FEE_ZATOSHIS: u64 = 10_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PilotSendOptions {
     /// When true, fee is [`conventional_fee_zatoshis`] × [`PRIORITY_MULTIPLIER`].
+    /// NozyWallet always sets this to true via [`Self::for_send`].
     pub priority: bool,
     /// Blocks after the mempool build height when the tx expires (see [`pilot_expiry_height`]).
     pub expiry_delta_blocks: u32,
@@ -48,9 +51,16 @@ pub fn is_expiry_consensus_error(message: &str) -> bool {
 impl Default for PilotSendOptions {
     fn default() -> Self {
         Self {
-            priority: false,
+            priority: NOZY_WALLET_PRIORITY_FEE,
             expiry_delta_blocks: PILOT_EXPIRY_DELTA_BLOCKS,
         }
+    }
+}
+
+impl PilotSendOptions {
+    /// NozyWallet mandatory send policy (desktop, mobile, API, CLI).
+    pub fn for_send() -> Self {
+        Self::default()
     }
 }
 
@@ -105,14 +115,9 @@ pub fn conventional_fee_zatoshis(shape: &OrchardSendFeeShape) -> u64 {
         .max(MARGINAL_FEE_ZATOSHIS.saturating_mul(GRACE_ACTIONS as u64))
 }
 
-/// Final fee for a send, optionally multiplied for pilot priority.
-pub fn fee_zatoshis(shape: &OrchardSendFeeShape, priority: bool) -> u64 {
-    let base = conventional_fee_zatoshis(shape);
-    if priority {
-        base.saturating_mul(PRIORITY_MULTIPLIER)
-    } else {
-        base
-    }
+/// Final fee for a NozyWallet send (always ZIP-317 × [`PRIORITY_MULTIPLIER`]).
+pub fn fee_zatoshis(shape: &OrchardSendFeeShape, _priority: bool) -> u64 {
+    conventional_fee_zatoshis(shape).saturating_mul(PRIORITY_MULTIPLIER)
 }
 
 /// Fee estimate for UI / CLI preview (assumes change output exists).
@@ -155,9 +160,9 @@ mod tests {
     }
 
     #[test]
-    fn priority_multiplies_by_four() {
+    fn nozy_wallet_fee_is_always_priority_times_four() {
         let shape = OrchardSendFeeShape::estimate_preview(None);
-        assert_eq!(fee_zatoshis(&shape, false), 10_000);
+        assert_eq!(fee_zatoshis(&shape, false), 40_000);
         assert_eq!(fee_zatoshis(&shape, true), 40_000);
     }
 

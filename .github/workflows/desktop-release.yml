@@ -34,53 +34,9 @@ jobs:
         working-directory: desktop-client
         run: npm ci
 
-      - name: Ensure desktop icons for bundling
-        shell: bash
-        run: |
-          mkdir -p desktop-client/src-tauri/icons
-          python - <<'PY'
-          import struct
-          import zlib
-          from pathlib import Path
-          
-          out_dir = Path("desktop-client/src-tauri/icons")
-          png_path = out_dir / "icon.png"
-          ico_path = out_dir / "icon.ico"
-          
-          w, h = 256, 256
-          r, g, b = 28, 142, 216
-          
-          def chunk(ctype: bytes, data: bytes) -> bytes:
-              c = ctype + data
-              return struct.pack(">I", len(data)) + c + struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
-          
-          raw = b"".join(b"\x00" + bytes([r, g, b]) * w for _ in range(h))
-          png = (
-              b"\x89PNG\r\n\x1a\n"
-              + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-              + chunk(b"IDAT", zlib.compress(raw))
-              + chunk(b"IEND", b"")
-          )
-          
-          png_path.write_bytes(png)
-          
-          # ICO format with one 256x256 PNG image payload
-          icon_dir = struct.pack("<HHH", 0, 1, 1)
-          entry = struct.pack(
-              "<BBBBHHII",
-              0,      # width 256 encoded as 0
-              0,      # height 256 encoded as 0
-              0,      # color count
-              0,      # reserved
-              1,      # color planes
-              32,     # bits per pixel
-              len(png),
-              6 + 16, # offset to image data
-          )
-          ico_path.write_bytes(icon_dir + entry + png)
-          
-          print("icons generated:", png_path, ico_path)
-          PY
+      - name: Generate desktop icons from NozyWallet logo
+        shell: pwsh
+        run: .\scripts\generate-desktop-icons.ps1
 
       - name: Build desktop installers (NSIS and MSI)
         working-directory: desktop-client
@@ -164,6 +120,10 @@ jobs:
         working-directory: desktop-client
         run: npm ci
 
+      - name: Generate desktop icons from NozyWallet logo
+        shell: pwsh
+        run: .\scripts\generate-desktop-icons.ps1
+
       - name: Build desktop executable (no installer bundle)
         working-directory: desktop-client
         run: npm run tauri build -- --bundles none
@@ -233,6 +193,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: desktop-client
         run: npm ci
+
+      - name: Generate desktop icons from NozyWallet logo
+        shell: pwsh
+        run: .\scripts\generate-desktop-icons.ps1
 
       - name: Build desktop executable (no installer bundle)
         working-directory: desktop-client

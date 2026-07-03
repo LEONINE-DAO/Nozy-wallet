@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "../Button";
 import { Input } from "../Input";
+import { Modal } from "../Modal";
 import {
   ArrowLeft,
   Copy,
@@ -19,6 +20,35 @@ interface AccountSettingsProps {
   onBack: () => void;
 }
 
+function RevealControl({
+  revealed,
+  label,
+  loading,
+  onClick,
+}: {
+  revealed: boolean;
+  label: string;
+  loading: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      aria-label={revealed ? `Hide ${label}` : `Reveal ${label}`}
+      className="inline-flex shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:border-primary/40 hover:bg-primary-50 hover:text-primary-700 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:border-primary/50 dark:hover:bg-primary/10 dark:hover:text-primary-300"
+    >
+      {revealed ? (
+        <EyeClosed size={18} weight="Bold" className="text-current" />
+      ) : (
+        <Eye size={18} weight="Bold" className="text-current" />
+      )}
+      <span>{revealed ? "Hide" : "Reveal"}</span>
+    </button>
+  );
+}
+
 export function AccountSettings({ onBack }: AccountSettingsProps) {
   const { address } = useWalletStore();
   const [showSeed, setShowSeed] = useState(false);
@@ -27,8 +57,33 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
   const [seedPhrase, setSeedPhrase] = useState<string | null>(null);
   const [privateKey, setPrivateKey] = useState<string | null>(null);
   const [password, setPassword] = useState("");
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [showPasswordDialog, setShowPasswordDialog] = useState<"mnemonic" | "privateKey" | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    walletApi
+      .getWalletStatus()
+      .then((res) => setHasPassword(res.data.has_password))
+      .catch(() => setHasPassword(true));
+  }, []);
+
+  const revealMnemonic = useCallback(async (pwd: string) => {
+    const response = await walletApi.getMnemonic({ password: pwd });
+    setSeedPhrase(response.data);
+    setShowSeed(true);
+  }, []);
+
+  const revealPrivateKey = useCallback(async (pwd: string) => {
+    const response = await walletApi.getPrivateKey({ password: pwd });
+    setPrivateKey(response.data);
+    setShowPrivateKey(true);
+  }, []);
+
+  const revealHint =
+    hasPassword === false
+      ? "Click the eye icon to reveal"
+      : "Click the eye icon to reveal (password required)";
 
   const handleCopy = (text: string, type: string) => {
     navigator.clipboard.writeText(text);
@@ -37,24 +92,48 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
     setTimeout(() => setCopied(null), 2000);
   };
 
-  const handleShowMnemonic = () => {
+  const handleShowMnemonic = async () => {
     if (seedPhrase) {
       setShowSeed(!showSeed);
-    } else {
-      setShowPasswordDialog("mnemonic");
+      return;
     }
+    if (hasPassword === false) {
+      setIsLoading(true);
+      try {
+        await revealMnemonic("");
+        toast.success("Recovery phrase revealed");
+      } catch (error: unknown) {
+        toast.error(formatErrorForDisplay(error, "Failed to reveal recovery phrase"));
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+    setShowPasswordDialog("mnemonic");
   };
 
-  const handleShowPrivateKey = () => {
+  const handleShowPrivateKey = async () => {
     if (privateKey) {
       setShowPrivateKey(!showPrivateKey);
-    } else {
-      setShowPasswordDialog("privateKey");
+      return;
     }
+    if (hasPassword === false) {
+      setIsLoading(true);
+      try {
+        await revealPrivateKey("");
+        toast.success("Private key revealed");
+      } catch (error: unknown) {
+        toast.error(formatErrorForDisplay(error, "Failed to reveal private key"));
+      } finally {
+        setIsLoading(false);
+      }
+      return;
+    }
+    setShowPasswordDialog("privateKey");
   };
 
   const handlePasswordSubmit = async () => {
-    if (!password) {
+    if (hasPassword !== false && !password) {
       toast.error("Please enter your password");
       return;
     }
@@ -62,14 +141,10 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
     setIsLoading(true);
     try {
       if (showPasswordDialog === "mnemonic") {
-        const response = await walletApi.getMnemonic({ password });
-        setSeedPhrase(response.data);
-        setShowSeed(true);
-        toast.success("Mnemonic phrase revealed");
+        await revealMnemonic(password);
+        toast.success("Recovery phrase revealed");
       } else if (showPasswordDialog === "privateKey") {
-        const response = await walletApi.getPrivateKey({ password });
-        setPrivateKey(response.data);
-        setShowPrivateKey(true);
+        await revealPrivateKey(password);
         toast.success("Private key revealed");
       }
       setPassword("");
@@ -93,25 +168,25 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
     <div className="max-w-2xl mx-auto animate-fade-in">
       <button
         onClick={onBack}
-        className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 transition-colors"
+        className="mb-6 flex items-center gap-2 text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
       >
-        <ArrowLeft className="w-5 h-5" />
+        <ArrowLeft className="h-5 w-5" />
         <span className="font-medium">Back to Settings</span>
       </button>
 
-      <h2 className="text-3xl font-bold text-gray-900 mb-2">
+      <h2 className="mb-2 text-3xl font-bold text-gray-900 dark:text-gray-100">
         Account Information
       </h2>
-      <p className="text-gray-500 mb-8">
+      <p className="mb-8 text-gray-500 dark:text-gray-400">
         View and manage your wallet keys and recovery information.
       </p>
 
       <div className="space-y-6">
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-widest mb-3">
+        <div className="rounded-2xl border border-white/50 bg-white/60 p-6 shadow-sm backdrop-blur-sm dark:border-gray-700/50 dark:bg-gray-800/60">
+          <h3 className="mb-3 text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
             Wallet Address
           </h3>
-          <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 font-mono text-sm text-gray-700 break-all mb-3">
+          <div className="mb-3 break-all rounded-xl border border-gray-100 bg-gray-50 p-4 font-mono text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200">
             {address || "Loading..."}
           </div>
           <Button
@@ -140,22 +215,22 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
           </Button>
         </div>
 
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
+        <div className="rounded-2xl border border-white/50 bg-white/60 p-6 shadow-sm backdrop-blur-sm dark:border-gray-700/50 dark:bg-gray-800/60">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <h3 className="min-w-0 flex-1 text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
               Recovery Seed Phrase
             </h3>
-            <button
-              onClick={handleShowMnemonic}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              {showSeed ? <EyeClosed size={20} /> : <Eye size={20} />}
-            </button>
+            <RevealControl
+              revealed={showSeed}
+              label="recovery seed phrase"
+              loading={isLoading}
+              onClick={() => void handleShowMnemonic()}
+            />
           </div>
 
           {showSeed && seedPhrase ? (
             <>
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-3">
+              <div className="mb-3 rounded-xl border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-900/50">
                 <div className="grid grid-cols-3 gap-3">
                   {seedPhrase.split(" ").map((word, index) => (
                     <div
@@ -165,7 +240,7 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
                       <span className="text-xs text-gray-400 font-medium w-6">
                         {index + 1}.
                       </span>
-                      <span className="font-mono text-sm text-gray-700">
+                      <span className="font-mono text-sm text-gray-700 dark:text-gray-200">
                         {word}
                       </span>
                     </div>
@@ -204,30 +279,34 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
               </Button>
             </>
           ) : (
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center">
-              <p className="text-sm text-gray-500">
-                Click the eye icon to reveal (password required)
-              </p>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-center dark:border-gray-700 dark:bg-gray-900/50">
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{revealHint}</p>
+              <RevealControl
+                revealed={false}
+                label="recovery seed phrase"
+                loading={isLoading}
+                onClick={() => void handleShowMnemonic()}
+              />
             </div>
           )}
         </div>
 
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-widest">
+        <div className="rounded-2xl border border-white/50 bg-white/60 p-6 shadow-sm backdrop-blur-sm dark:border-gray-700/50 dark:bg-gray-800/60">
+          <div className="mb-3 flex items-start justify-between gap-3">
+            <h3 className="min-w-0 flex-1 text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
               Private Key
             </h3>
-            <button
-              onClick={handleShowPrivateKey}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
-            >
-              {showPrivateKey ? <EyeClosed size={20} /> : <Eye size={20} />}
-            </button>
+            <RevealControl
+              revealed={showPrivateKey}
+              label="private key"
+              loading={isLoading}
+              onClick={() => void handleShowPrivateKey()}
+            />
           </div>
 
           {showPrivateKey && privateKey ? (
             <>
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 font-mono text-sm text-gray-700 break-all mb-3">
+              <div className="mb-3 break-all rounded-xl border border-gray-100 bg-gray-50 p-4 font-mono text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-900/50 dark:text-gray-200">
                 {privateKey}
               </div>
               <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 mb-3">
@@ -262,73 +341,69 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
               </Button>
             </>
           ) : (
-            <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 text-center">
-              <p className="text-sm text-gray-500">
-                Click the eye icon to reveal (password required)
-              </p>
+            <div className="rounded-xl border border-gray-100 bg-gray-50 p-4 text-center dark:border-gray-700 dark:bg-gray-900/50">
+              <p className="mb-4 text-sm text-gray-500 dark:text-gray-400">{revealHint}</p>
+              <RevealControl
+                revealed={false}
+                label="private key"
+                loading={isLoading}
+                onClick={() => void handleShowPrivateKey()}
+              />
             </div>
           )}
         </div>
       </div>
 
-      {/* Password Dialog */}
-      {showPasswordDialog && (
-        <div className="fixed inset-0 bg-black/50 dark:bg-black/70 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 max-w-md w-full mx-4 shadow-xl">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-10 h-10 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">
-                <Lock size={20} className="text-amber-600 dark:text-amber-400" />
-              </div>
-              <div>
-                <h3 className="font-semibold text-gray-900 dark:text-gray-100">
-                  Enter Password
-                </h3>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  {showPasswordDialog === "mnemonic"
-                    ? "Enter your password to view the recovery seed phrase"
-                    : "Enter your password to view the private key"}
-                </p>
-              </div>
-            </div>
+      <Modal
+        isOpen={showPasswordDialog !== null}
+        onClose={handleCancelPassword}
+        title="Enter password"
+      >
+        <div className="flex items-center gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
+            <Lock size={20} className="text-amber-600" />
+          </div>
+          <p className="text-sm text-gray-500">
+            {showPasswordDialog === "mnemonic"
+              ? "Enter your wallet password to view the recovery seed phrase."
+              : "Enter your wallet password to view the private key."}
+          </p>
+        </div>
 
-            <div className="space-y-4">
-              <Input
-                type="password"
-                label="Password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Enter your wallet password"
-                autoFocus
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    handlePasswordSubmit();
-                  } else if (e.key === "Escape") {
-                    handleCancelPassword();
-                  }
-                }}
-              />
+        <div className="space-y-4">
+          <Input
+            type="password"
+            label="Password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="Enter your wallet password"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                void handlePasswordSubmit();
+              }
+            }}
+          />
 
-              <div className="flex gap-3">
-                <Button
-                  variant="secondary"
-                  onClick={handleCancelPassword}
-                  className="flex-1"
-                  disabled={isLoading}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handlePasswordSubmit}
-                  className="flex-1"
-                  disabled={!password || isLoading}
-                >
-                  {isLoading ? "Verifying..." : "Verify"}
-                </Button>
-              </div>
-            </div>
+          <div className="flex gap-3">
+            <Button
+              variant="secondary"
+              onClick={handleCancelPassword}
+              className="flex-1"
+              disabled={isLoading}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void handlePasswordSubmit()}
+              className="flex-1"
+              disabled={(hasPassword !== false && !password) || isLoading}
+            >
+              {isLoading ? "Verifying..." : "Verify"}
+            </Button>
           </div>
         </div>
-      )}
+      </Modal>
     </div>
   );
 }

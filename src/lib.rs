@@ -35,6 +35,8 @@ pub mod config;
 #[cfg(feature = "native")]
 pub mod grpc_client;
 #[cfg(feature = "native")]
+pub mod keystone;
+#[cfg(feature = "native")]
 pub mod local_analytics;
 #[cfg(feature = "native")]
 pub mod monero;
@@ -91,6 +93,8 @@ pub mod transaction_tracker;
 #[cfg(feature = "native")]
 pub mod tx_lifecycle;
 #[cfg(feature = "native")]
+pub mod wallet_profiles;
+#[cfg(feature = "native")]
 pub mod wallet_sync;
 #[cfg(feature = "native")]
 pub mod zeaking_adapter;
@@ -105,8 +109,8 @@ pub mod zebra_tree_rpc;
 pub use error::{NozyError, NozyResult};
 pub use fee_policy::{
     estimate_orchard_send_fee_zatoshis, is_expiry_consensus_error, pilot_expiry_height,
-    pilot_transaction_expired, OrchardSendFeeShape, PilotSendOptions, PILOT_EXPIRY_DELTA_BLOCKS,
-    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS, PRIORITY_MULTIPLIER,
+    pilot_transaction_expired, OrchardSendFeeShape, PilotSendOptions, NOZY_WALLET_PRIORITY_FEE,
+    PILOT_EXPIRY_DELTA_BLOCKS, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS, PRIORITY_MULTIPLIER,
 };
 pub use hd_wallet::HDWallet;
 pub use transactions::{SignedTransaction, TransactionBuilder, TransactionDetails};
@@ -135,6 +139,15 @@ pub use config::{load_config, save_config, update_last_scan_height, WalletConfig
 #[cfg(feature = "native")]
 pub use config::{BackendKind, Protocol};
 #[cfg(feature = "native")]
+pub use keystone::{
+    build_keystone_send_pczt, clear_pending_send, decode_pczt_ur_frames, encode_pczt_ur_frames,
+    export_ufvk_from_wallet, extract_signed_tx_from_pczt_bytes, load_pending_send,
+    orchard_spending_key_from_wallet, prepared_send_from_build, redact_pczt_for_signer,
+    save_pending_send, sign_pczt_orchard_spends, unwrap_pczt_cbor, validate_ufvk, wrap_pczt_cbor,
+    KeystoneExtractedTx, KeystonePcztBuild, KeystonePreparedSend, KeystoneWalletConfig,
+    DEFAULT_UR_FRAGMENT_SIZE, UR_TYPE_ZCASH_PCZT,
+};
+#[cfg(feature = "native")]
 pub use monero::{
     MoneroRpcClient, MoneroTransactionRecord, MoneroTransactionStatus, MoneroTransactionStorage,
     MoneroWallet,
@@ -159,7 +172,8 @@ pub use orchard_tx::{
 };
 #[cfg(feature = "native")]
 pub use paths::{
-    get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir, get_wallet_data_path,
+    get_wallet_base_dir, get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir,
+    get_wallet_data_path,
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;
@@ -190,11 +204,18 @@ pub use sync_status::{gather_sync_status, print_sync_status, resolve_lightwallet
 pub use transaction_builder::ZcashTransactionBuilder;
 #[cfg(feature = "native")]
 pub use transaction_history::{
-    collect_wallet_transaction_views, transaction_view_to_history_json, SentTransactionRecord,
-    TransactionStatus, TransactionType, TransactionView,
+    collect_wallet_transaction_views, enrich_block_times_for_views, transaction_view_for_txid,
+    transaction_view_to_history_json, SentTransactionRecord, TransactionStatus, TransactionType,
+    TransactionView,
 };
 #[cfg(feature = "native")]
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
+#[cfg(feature = "native")]
+pub use wallet_profiles::{
+    active_profile_id, active_wallet_exists, create_new_profile, list_wallet_profiles,
+    migrate_orphaned_sent_transactions, profile_has_wallet, set_active_wallet_profile,
+    WalletProfile,
+};
 #[cfg(feature = "native")]
 pub use wallet_sync::{
     resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncError, WalletSyncOptions,
@@ -205,4 +226,4 @@ pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
 #[cfg(feature = "native")]
 pub use zeaking_adapter::{ZebraBlockParser, ZebraBlockSource};
 #[cfg(feature = "native")]
-pub use zebra_integration::{ZebraClient, ZebraConnectionMode};
+pub use zebra_integration::{OrchardPoolStats, ZebraClient, ZebraConnectionMode};

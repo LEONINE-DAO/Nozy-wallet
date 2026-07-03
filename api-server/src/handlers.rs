@@ -56,7 +56,7 @@ pub fn error_response_with_details(
     )
 }
 
-fn validate_amount(amount: f64) -> bool {
+pub(crate) fn validate_amount(amount: f64) -> bool {
     amount > 0.0 && amount <= 21_000_000.0
 }
 
@@ -218,7 +218,7 @@ pub struct TestZebraRequest {
     pub zebra_url: Option<String>,
 }
 
-async fn load_wallet_with_password(
+pub(crate) async fn load_wallet_with_password(
     password: Option<String>,
 ) -> Result<(nozy::HDWallet, nozy::WalletStorage), String> {
     use nozy::paths::get_wallet_data_dir;
@@ -239,9 +239,7 @@ async fn load_wallet_with_password(
 }
 
 pub async fn check_wallet_exists() -> ResponseJson<WalletInfo> {
-    use nozy::paths::get_wallet_data_dir;
-    let wallet_path = get_wallet_data_dir().join("wallet.dat");
-    let exists = wallet_path.exists();
+    let exists = nozy::active_wallet_exists();
 
     let has_password = if exists {
         let storage = nozy::WalletStorage::with_xdg_dir();
@@ -259,15 +257,13 @@ pub async fn check_wallet_exists() -> ResponseJson<WalletInfo> {
 pub async fn create_wallet(
     Json(payload): Json<CreateWalletRequest>,
 ) -> Result<ResponseJson<String>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    use nozy::paths::get_wallet_data_dir;
-    let wallet_path = get_wallet_data_dir().join("wallet.dat");
-    if wallet_path.exists() {
-        return Err(error_response_with_code(
-            StatusCode::BAD_REQUEST,
-            "A wallet already exists! To create a new wallet, please delete the existing one first or restore from your seed phrase.",
-            "WALLET_EXISTS",
-        ));
-    }
+    nozy::create_new_profile(None).map_err(|e| {
+        error_response_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to create wallet profile: {e}"),
+            "WALLET_PROFILE_FAILED",
+        )
+    })?;
 
     let mut wallet = nozy::HDWallet::new().map_err(|e| {
         error_response_with_code(
@@ -333,6 +329,15 @@ pub async fn restore_wallet(
             StatusCode::BAD_REQUEST,
             ResponseJson(serde_json::json!({
                 "error": format!("Invalid mnemonic: {}", e)
+            })),
+        )
+    })?;
+
+    nozy::create_new_profile(None).map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to create wallet profile: {}", e)
             })),
         )
     })?;
@@ -552,10 +557,7 @@ pub async fn send_transaction(
 
     let amount_zatoshis = (payload.request.amount * 100_000_000.0) as u64;
 
-    let pilot = nozy::PilotSendOptions {
-        priority: payload.request.priority,
-        expiry_delta_blocks: nozy::PILOT_EXPIRY_DELTA_BLOCKS,
-    };
+    let pilot = nozy::PilotSendOptions::for_send();
     let fee_zatoshis =
         estimate_orchard_send_fee_zatoshis(memo_bytes_opt.as_deref(), pilot.priority);
 
@@ -656,12 +658,24 @@ pub async fn send_transaction(
 
     use nozy::transaction_history::{SentTransactionRecord, SentTransactionStorage};
     if let Ok(tx_storage) = SentTransactionStorage::new() {
-        let spent_note_ids: Vec<String> = spendable_notes
-            .iter()
-            .map(|note| hex::encode(note.orchard_note.nullifier.to_bytes()))
-            .collect();
+        let spent_note =
+            match nozy::select_single_spend_note(&spendable_notes, amount_zatoshis, fee_zatoshis) {
+                Ok(note) => note,
+                Err(e) => {
+                    return Err((
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        ResponseJson(serde_json::json!({
+                            "error": format!("Failed to record spent note: {e}")
+                        })),
+                    ));
+                }
+            };
+        let spent_note_ids = vec![hex::encode(spent_note.orchard_note.nullifier.to_bytes())];
 
-        let _ = nozy::mark_wallet_notes_spent_from_spendables(&spendable_notes);
+        let _ = nozy::mark_wallet_notes_spent_from_spendables(
+            std::slice::from_ref(spent_note),
+            Some(&transaction.txid),
+        );
 
         let mut tx_record = SentTransactionRecord::new_pilot(
             transaction.txid.clone(),
@@ -685,19 +699,14 @@ pub async fn send_transaction(
 }
 
 pub async fn estimate_fee(
-    axum::extract::Query(params): axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    let priority = params
-        .get("priority")
-        .map(|v| v == "true" || v == "1")
-        .unwrap_or(false);
-    let fee_zatoshis = nozy::estimate_orchard_send_fee_zatoshis(None, priority);
+    let fee_zatoshis = nozy::estimate_orchard_send_fee_zatoshis(None, true);
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
 
     Ok(ResponseJson(serde_json::json!({
         "fee_zatoshis": fee_zatoshis,
         "fee_zec": fee_zec,
-        "priority": priority,
+        "priority": true,
         "expiry_delta_blocks": nozy::PILOT_EXPIRY_DELTA_BLOCKS,
         "fee_source": "zip317_client",
         "estimated_at": chrono::Utc::now().to_rfc3339()
@@ -1015,6 +1024,10 @@ pub async fn get_transaction_history(
             })),
         )
     })?;
+
+    let zebra_client = ZebraClient::from_config(&config);
+    let mut views = views;
+    nozy::transaction_history::enrich_block_times_for_views(&mut views, &zebra_client).await;
 
     let filtered: Vec<_> = views
         .iter()

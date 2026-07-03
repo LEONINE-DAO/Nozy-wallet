@@ -1,11 +1,29 @@
 # Configuration Endpoints
 
-This chapter is currently being developed.
+## `GET /api/config`
 
-## Coming Soon
+Read wallet configuration including:
 
-Content for this chapter is being written. Check back soon!
+- `zebra_url`
+- `last_scan_height`
+- Theme / network fields (build-dependent)
 
-## Overview
+## `POST /api/config/zebra-url`
 
-This chapter will cover Configuration Endpoints topics and provide comprehensive guidance.
+Body: `{ "url": "http://host:8232" }`
+
+## `POST /api/config/theme`
+
+UI theme preference for companion frontends.
+
+## CLI equivalent
+
+```bash
+nozy config --set-zebra-url http://127.0.0.1:8232
+```
+
+## File location
+
+Same as [Network Configuration](../advanced/network-config.md) — `%APPDATA%\nozy\nozy\config\config.json` on Windows.
+
+No API to set `last_scan_height` while server running — use sync ranges or stop server and edit config for advanced rescans.

@@ -8,8 +8,9 @@ const ERROR_MAP: Array<{ pattern: RegExp | string; message: string; code?: strin
   // Wallet & auth
   { pattern: /wrong password|incorrect password|invalid password/i, message: "Incorrect password. Please try again.", code: "AUTH_001" },
   { pattern: /password.*required|missing password/i, message: "Please enter your password.", code: "AUTH_002" },
-  { pattern: /wallet.*locked|not unlocked/i, message: "Wallet is locked. Please unlock with your password.", code: "WALLET_001" },
-  { pattern: /wallet.*not found|wallet.*exist|no wallet/i, message: "No wallet found. Create or restore a wallet first.", code: "WALLET_002" },
+  { pattern: /wallet.*locked|WALLET_LOCKED|not unlocked/i, message: "Wallet is locked. Please unlock with your password.", code: "WALLET_001" },
+  { pattern: /wallet.*not found|no wallet found|WALLET_NOT_FOUND/i, message: "No wallet found. Create or restore a wallet first.", code: "WALLET_002" },
+  { pattern: /wallet.*exist|WALLET_EXISTS/i, message: "A wallet already exists on this device.", code: "WALLET_005" },
   { pattern: /invalid mnemonic|bad mnemonic|invalid seed/i, message: "Invalid recovery phrase. Check the words and try again.", code: "WALLET_003" },
   { pattern: /mnemonic.*required/i, message: "Please enter your recovery phrase.", code: "WALLET_004" },
   // Send & balance
@@ -25,8 +26,10 @@ const ERROR_MAP: Array<{ pattern: RegExp | string; message: string; code?: strin
   // Sync & proving
   { pattern: /sync.*fail|scan.*fail/i, message: "Sync failed. Check your node connection and try again.", code: "SYNC_001" },
   { pattern: /proving|proof.*fail/i, message: "Proving failed. You may need to download proving parameters.", code: "PROVE_001" },
+  // Backend / IPC
+  { pattern: /command.*not found|unknown command|not found.*command/i, message: "This feature is not available in the current app build. Restart the desktop app after updating.", code: "BACKEND_001" },
   // Address book
-  { pattern: /address.*book|contact.*exist|duplicate.*name/i, message: "A contact with this name may already exist. Use a different name.", code: "CONTACT_001" },
+  { pattern: /address.*already exists|duplicate.*name|contact.*already exist/i, message: "A contact with this name may already exist. Use a different name.", code: "CONTACT_001" },
   { pattern: /only shielded|must be.*shielded|shielded.*required/i, message: "Only shielded addresses (u1 or zs1) can be saved to contacts.", code: "CONTACT_002" },
   // Generic
   { pattern: /user denied|rejected|cancelled/i, message: "Action was cancelled.", code: "USER_001" },

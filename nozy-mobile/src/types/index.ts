@@ -79,6 +79,7 @@ export type KeystoneStatusResponse = {
   device_label: string | null;
   has_ufvk: boolean;
   pending_send: boolean;
+  network: string;
 };
 
 export type KeystonePrepareResponse = {

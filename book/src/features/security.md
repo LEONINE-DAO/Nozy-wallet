@@ -32,7 +32,7 @@ NozyWallet treats wallet software as **high-impact**: keys, addresses, and trans
 
 ## Viewing keys and disclosure
 
-- **UFVK export** (e.g. Keystone pairing) is **read-only** — can reveal shielded activity to whoever holds the viewing key; never equivalent to spending authority.
+- **UFVK export** (e.g. Keystone pairing) is **read-only** — can reveal shielded activity to whoever holds the viewing key; never equivalent to spending authority. Guide: [Keystone Hardware Wallet](../security/keystone-hardware-wallet.md).
 - Planned business **accountant disclosure** flows are documented separately in project RFCs; treat UFVK sharing as irreversible for privacy against that party.
 
 ## Open source and review

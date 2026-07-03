@@ -2,9 +2,33 @@
 
 ## [Unreleased]
 
-### Fixed
+### Added
 
-- **Desktop sync:** use shared `sync_wallet_notes` (same as CLI/API) with witness catch-up, scan-to-tip, and `get_sync_status` for witness lag before send.
+- **Keystone (mainnet):** air-gapped PCZT signing in desktop Send flow; Settings → Keystone pairing; API `/api/keystone/*`; book guide and FAQ.
+- **Desktop display:** international fiat equivalents (38 currencies) via CoinGecko; user-selectable in Settings → Display.
+
+### Changed
+
+- **Desktop co-signing:** file-based group co-sign UI deferred; Keystone is the supported hardware path for this beta.
+
+## [1.0.0-beta.1] — Hot Lemon Pepper Sprinkles (Desktop) (2026-07-01)
+
+First public **desktop beta** for **Windows** — a Tauri app that requires a running **Zebrad** node and **lightwalletd** (same stack as the CLI).
+
+### Added
+
+- **NozyWallet desktop (Windows):** first public beta build (`desktop-v1.0.0-beta.1`); Tauri shell over the shared Nozy core.
+- **Real logo icons** in the app bundle and installer.
+- **Witness-sync parity with CLI v2.3.6.7+:** shared `sync_wallet_notes` path with witness catch-up, scan-to-tip, and witness-lag checks before send.
+
+### Changed
+
+- **Browser tab disabled by default** for this beta (Nym subscription gate remains in tree for a later release).
+- **Content Security Policy (CSP) enabled** in `tauri.conf.json`.
+
+### Notes
+
+- **CLI remains the production surface** for operators and mainnet workflows; desktop is beta until a third-party security audit.
 
 ## [2.3.6.7] — Teriyaki Hot (CLI) (2026-06-28)
 

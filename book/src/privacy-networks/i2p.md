@@ -1,11 +1,24 @@
 # I2P Integration
 
-This chapter is currently being developed.
+**I2P** support for privacy-network routing in NozyWallet is experimental.
 
-## Coming Soon
+## CLI
 
-Content for this chapter is being written. Check back soon!
+```bash
+nozy privacy-network --help
+```
 
-## Overview
+Look for I2P-related subcommands in your version.
 
-This chapter will cover I2P Integration topics and provide comprehensive guidance.
+## Use case
+
+Similar to Tor — hide client IP when talking to RPC or swap services. Requires I2P router running locally.
+
+## Status
+
+Less tested than direct RPC and Tor paths. Treat as research / contributor feature until listed in release notes.
+
+## Related
+
+- [Privacy Networks Overview](overview.md)
+- [Setup Guide](setup.md)

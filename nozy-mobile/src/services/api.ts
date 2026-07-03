@@ -115,10 +115,8 @@ export const api = {
       }),
     }),
 
-  estimateFee: (priority = false) =>
-    request<FeeEstimateResponse>(
-      `/api/transaction/fee-estimate?priority=${priority ? "true" : "false"}`,
-    ),
+  estimateFee: () =>
+    request<FeeEstimateResponse>("/api/transaction/fee-estimate"),
 
   sendTransaction: (params: {
     recipient: string;
@@ -134,7 +132,7 @@ export const api = {
         recipient: params.recipient,
         amount: params.amount,
         memo: params.memo ?? null,
-        priority: params.priority ?? false,
+        priority: params.priority ?? true,
         zebra_url: params.zebraUrl ?? null,
         password: params.password ?? null,
       }),
@@ -213,7 +211,7 @@ export const api = {
         recipient: params.recipient,
         amount: params.amount,
         memo: params.memo ?? null,
-        priority: params.priority ?? false,
+        priority: params.priority ?? true,
         password: params.password ?? null,
         zebra_url: params.zebraUrl ?? null,
       }),

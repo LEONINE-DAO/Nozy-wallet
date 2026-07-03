@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Eye, EyeClosed, Shield, Lock, Copy, Refresh } from "@solar-icons/react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
@@ -6,6 +6,7 @@ import { useWalletStore } from "../store/walletStore";
 import { walletApi } from "../lib/api";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
+import type { WalletProfileInfo } from "../lib/types";
 
 type ViewState = "initial" | "create" | "restore" | "securityTips";
 
@@ -13,7 +14,9 @@ export function WelcomePage() {
   const [view, setView] = useState<ViewState>("initial");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const { setHasWallet } = useWalletStore();
+  const [walletExistsOnDisk, setWalletExistsOnDisk] = useState(false);
+  const [requiresPassword, setRequiresPassword] = useState(false);
+  const { setHasWallet, setAddress } = useWalletStore();
 
   const [createPassword, setCreatePassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -25,6 +28,78 @@ export function WelcomePage() {
   const [mnemonic, setMnemonic] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
   const [showRestorePass, setShowRestorePass] = useState(false);
+  const [unlockPassword, setUnlockPassword] = useState("");
+  const [showUnlockPass, setShowUnlockPass] = useState(false);
+  const [walletProfiles, setWalletProfiles] = useState<WalletProfileInfo[]>([]);
+  const [selectedProfileId, setSelectedProfileId] = useState<string | null>(null);
+
+  const refreshWalletProfiles = async () => {
+    try {
+      const res = await walletApi.listWalletProfiles();
+      const profiles = (res.data ?? []).filter((p) => p.has_wallet);
+      setWalletProfiles(profiles);
+      const active = profiles.find((p) => p.is_active) ?? profiles[0];
+      if (active) {
+        setSelectedProfileId(active.id);
+      }
+      if (profiles.length > 0) {
+        setWalletExistsOnDisk(true);
+      }
+    } catch {
+      // Profiles API may be unavailable during older builds.
+    }
+  };
+
+  useEffect(() => {
+    walletApi
+      .checkWalletExists()
+      .then((res) => {
+        if (res.data?.exists) {
+          setWalletExistsOnDisk(true);
+          setRequiresPassword(res.data.has_password ?? false);
+        }
+      })
+      .catch(() => undefined);
+    refreshWalletProfiles();
+  }, []);
+
+  const handleProfileChange = async (profileId: string) => {
+    setSelectedProfileId(profileId);
+    setError(null);
+    setUnlockPassword("");
+    try {
+      await walletApi.switchWalletProfile(profileId);
+      const res = await walletApi.checkWalletExists();
+      setRequiresPassword(res.data?.has_password ?? false);
+    } catch (err: unknown) {
+      const errMsg = formatErrorForDisplay(err, "Failed to switch wallet.");
+      setError(errMsg);
+      toast.error(errMsg);
+    }
+  };
+
+  const handleUnlockWallet = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const unlockToast = toast.loading("Unlocking wallet...");
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await walletApi.unlockWallet({
+        password: requiresPassword ? unlockPassword : "",
+      });
+      if (res.data.address) {
+        setAddress(res.data.address);
+      }
+      toast.success("Wallet unlocked", { id: unlockToast });
+      setHasWallet(true);
+    } catch (err: unknown) {
+      const errMsg = formatErrorForDisplay(err, "Failed to unlock wallet. Check your password.");
+      setError(errMsg);
+      toast.error(errMsg, { id: unlockToast });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleCreateWallet = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -43,6 +118,7 @@ export function WelcomePage() {
       if (mnemonic) {
         setGeneratedMnemonic(mnemonic);
         toast.success("Wallet created! Please save your recovery phrase.", { id: createToast });
+        await refreshWalletProfiles();
       } else {
         toast.success("Wallet created successfully!", { id: createToast });
         setHasWallet(true);
@@ -105,7 +181,15 @@ export function WelcomePage() {
     setView("securityTips");
   };
 
-  const handleGetStarted = () => {
+  const handleGetStarted = async () => {
+    try {
+      const statusRes = await walletApi.getWalletStatus();
+      if (statusRes.data.address) {
+        setAddress(statusRes.data.address);
+      }
+    } catch {
+      // Best-effort; wallet session should already be open after create/restore.
+    }
     setView("initial");
     setHasWallet(true);
   };
@@ -151,21 +235,90 @@ export function WelcomePage() {
 
           {view === "initial" && (
             <div className="space-y-8 animate-slide-up animation-delay-200">
-              <p className="text-xl text-gray-600 leading-relaxed max-w-2xl mx-auto">
-                Experience the future of private finance. Nozy Wallet combines
-                speed and anonymity in a beautiful, easy-to-use interface.
-              </p>
-              <div className="mt-8 flex flex-col sm:flex-row gap-4 justify-center">
+              {!walletExistsOnDisk && (
+                <p className="text-xl text-gray-600 leading-relaxed max-w-2xl mx-auto">
+                  Experience the future of private finance. Nozy Wallet combines
+                  speed and anonymity in a beautiful, easy-to-use interface.
+                </p>
+              )}
+
+              {walletExistsOnDisk && (
+                <form onSubmit={handleUnlockWallet} className="text-left space-y-6 max-w-md mx-auto">
+                  <div className="text-center mb-2">
+                    <h2 className="text-2xl font-bold text-gray-800">Welcome back</h2>
+                    <p className="text-gray-500">
+                      {requiresPassword
+                        ? "Enter your password to unlock your wallet"
+                        : "Nozy people will be Nozy shield up"}
+                    </p>
+                  </div>
+
+                  {walletProfiles.length > 1 && (
+                    <div className="space-y-2">
+                      <label className="text-sm font-medium text-gray-700">Wallet</label>
+                      <select
+                        className="w-full rounded-lg border border-gray-200/60 bg-white/60 px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                        value={selectedProfileId ?? ""}
+                        onChange={(e) => handleProfileChange(e.target.value)}
+                      >
+                        {walletProfiles.map((profile) => (
+                          <option key={profile.id} value={profile.id}>
+                            {profile.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {requiresPassword && (
+                    <Input
+                      type={showUnlockPass ? "text" : "password"}
+                      label="Password"
+                      placeholder="Enter your wallet password"
+                      value={unlockPassword}
+                      onChange={(e) => setUnlockPassword(e.target.value)}
+                      required
+                      error={error || undefined}
+                      suffix={
+                        <PasswordToggle
+                          show={showUnlockPass}
+                          onToggle={() => setShowUnlockPass(!showUnlockPass)}
+                        />
+                      }
+                    />
+                  )}
+
+                  {error && !requiresPassword && (
+                    <p className="text-sm text-red-600">{error}</p>
+                  )}
+
+                  <Button type="submit" disabled={isLoading} className="w-full py-6 text-lg">
+                    {isLoading ? "Unlocking..." : "Unlock Wallet"}
+                  </Button>
+                </form>
+              )}
+
+              {walletExistsOnDisk && (
+                <p className="text-sm text-gray-500 text-center">or set up a different wallet</p>
+              )}
+
+              <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <Button
                   size="md"
-                  onClick={() => setView("create")}
+                  onClick={() => {
+                    setError(null);
+                    setView("create");
+                  }}
                   className="rounded-xl px-10 py-4 text-lg bg-white hover:bg-primary shadow-lg hover:shadow-none transition-all duration-300 text-black"
                 >
                   Create New Wallet
                 </Button>
                 <Button
                   size="md"
-                  onClick={() => setView("restore")}
+                  onClick={() => {
+                    setError(null);
+                    setView("restore");
+                  }}
                   className="rounded-xl px-10 py-4 text-lg bg-white/60 hover:bg-white shadow-sm hover:shadow-md transition-all duration-300 text-black border border-transparent hover:border-gray-200"
                   variant="secondary"
                 >
@@ -185,7 +338,7 @@ export function WelcomePage() {
                   Create New Wallet
                 </h2>
                 <p className="text-gray-500">
-                  Set a password to secure your wallet
+                  Set a password to secure your wallet. You can create as many wallets as you need.
                 </p>
               </div>
 
@@ -313,7 +466,7 @@ export function WelcomePage() {
                   Save Your Recovery Phrase
                 </h2>
                 <p className="text-gray-600">
-                  Write down these 24 words in order. Store them in a safe place.
+                  Write down these 24 words in order. Store them in a safe place. Away from nozy people.
                   You'll need this to recover your wallet.
                 </p>
                 <div className="bg-yellow-50 border-2 border-yellow-200 rounded-xl p-4 text-left">

@@ -62,6 +62,9 @@ pub struct WalletConfig {
 
     #[serde(default)]
     pub swap: SwapConfig,
+
+    #[serde(default)]
+    pub keystone: crate::keystone::KeystoneWalletConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +199,7 @@ impl Default for WalletConfig {
             zk_verification: crate::monero_zk_verifier::types::ZkVerificationConfig::default(),
             secret_network: SecretNetworkConfig::default(),
             swap: SwapConfig::default(),
+            keystone: crate::keystone::KeystoneWalletConfig::default(),
         }
     }
 }
@@ -215,16 +219,20 @@ pub fn load_config() -> WalletConfig {
 
     let mut config = if config_path.exists() {
         match fs::read_to_string(&config_path) {
-            Ok(content) => match serde_json::from_str::<WalletConfig>(&content) {
-                Ok(config) => config,
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to parse config.json: {}. Using defaults.",
-                        e
-                    );
-                    WalletConfig::default()
+            Ok(content) => {
+                // PowerShell often writes UTF-8 BOM; serde_json rejects it at column 1.
+                let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
+                match serde_json::from_str::<WalletConfig>(content) {
+                    Ok(config) => config,
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to parse config.json: {}. Using defaults.",
+                            e
+                        );
+                        WalletConfig::default()
+                    }
                 }
-            },
+            }
             Err(e) => {
                 eprintln!(
                     "Warning: Failed to read config.json: {}. Using defaults.",

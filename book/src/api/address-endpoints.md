@@ -1,11 +1,19 @@
 # Address Endpoints
 
-This chapter is currently being developed.
+## `POST /api/address/generate`
 
-## Coming Soon
+Generate new Orchard receiving address.
 
-Content for this chapter is being written. Check back soon!
+Body may include `password` if wallet locked.
 
-## Overview
+Response: unified address string (`u1…`).
 
-This chapter will cover Address Endpoints topics and provide comprehensive guidance.
+CLI equivalent: `nozy receive`.
+
+Tauri: `generate_address`.
+
+## Validation
+
+Recipients for send must be unified addresses with Orchard receiver. Transparent addresses rejected.
+
+See [Address Management](../user-guide/address-management.md).

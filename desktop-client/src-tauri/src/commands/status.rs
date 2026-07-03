@@ -105,3 +105,28 @@ fn build_status_message(
 
     parts.join(" · ")
 }
+
+#[derive(Debug, Serialize)]
+pub struct OrchardPoolStatsResponse {
+    pub chain_value_zec: f64,
+    pub chain_value_zat: u64,
+    pub monitored: bool,
+    pub block_height: u32,
+}
+
+#[command]
+pub async fn get_orchard_pool_stats() -> Result<OrchardPoolStatsResponse, TauriError> {
+    let config = load_config();
+    let zebra_client = ZebraClient::from_config(&config);
+    let stats = zebra_client
+        .get_orchard_pool_stats()
+        .await
+        .map_err(TauriError::from)?;
+
+    Ok(OrchardPoolStatsResponse {
+        chain_value_zec: stats.chain_value_zec,
+        chain_value_zat: stats.chain_value_zat,
+        monitored: stats.monitored,
+        block_height: stats.block_height,
+    })
+}

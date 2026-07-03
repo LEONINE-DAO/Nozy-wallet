@@ -12,7 +12,7 @@ Its purpose is to give you a Zcash wallet where:
 
 - **Privacy is default** — You don’t have to “remember” to use shielded; it’s the only option.
 - **Mistakes are hard** — You can’t accidentally send to a transparent address or expose amounts.
-- **Trust is minimal** — You hold the keys; the server only helps with blocks and broadcasting, not with decrypting your wallet or seeing your balance.
+- **Trust is minimal** — You hold the keys. For **ledger** privacy, Orchard does the work. For **infrastructure** privacy, run your own Zebrad so sync and broadcast metadata are not logged by a stranger’s RPC.
 
 Nozy is built for people who want Zcash to behave like a privacy coin: fast, cheap, SOV and private every time.
 

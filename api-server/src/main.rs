@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 mod handlers;
+mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
 
@@ -130,6 +131,26 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/lwd/sync/compact-to-tip",
             post(lwd_handlers::lwd_sync_compact_to_tip),
+        )
+        .route(
+            "/api/keystone/status",
+            get(keystone_handlers::keystone_status),
+        )
+        .route(
+            "/api/keystone/enable",
+            post(keystone_handlers::keystone_enable),
+        )
+        .route(
+            "/api/keystone/export-ufvk",
+            post(keystone_handlers::keystone_export_ufvk),
+        )
+        .route(
+            "/api/keystone/prepare-send",
+            post(keystone_handlers::keystone_prepare_send),
+        )
+        .route(
+            "/api/keystone/complete-send",
+            post(keystone_handlers::keystone_complete_send),
         )
         .route("/health", get(health_check))
         .layer(axum::middleware::from_fn(

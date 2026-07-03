@@ -5,22 +5,16 @@ import { formatErrorForDisplay } from "../utils/errors";
 import {
   User,
   Shield,
-  Bell,
   BoltCircle,
   AltArrowRight,
   Sun,
-  Refresh,
-  Download,
 } from "@solar-icons/react";
 import { NetworkSettings } from "../components/settings/NetworkSettings";
 import { AccountSettings } from "../components/settings/AccountSettings";
 import { SecuritySettings } from "../components/settings/SecuritySettings";
-import { NotificationSettings } from "../components/settings/NotificationSettings";
 import { DisplaySettings } from "../components/settings/DisplaySettings";
-import { MultiSigSettings } from "../components/settings/MultiSigSettings";
+import { KeystoneSettings } from "../components/settings/KeystoneSettings";
 import { AccountListSettings } from "../components/settings/AccountListSettings";
-import { MultiDeviceSyncSettings } from "../components/settings/MultiDeviceSyncSettings";
-import { BackupRestoreSettings } from "../components/settings/BackupRestoreSettings";
 import { NetworkPrivacySettings } from "../components/settings/NetworkPrivacySettings";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
@@ -31,12 +25,9 @@ type SettingsSection =
   | "networkprivacy"
   | "account"
   | "security"
-  | "notifications"
   | "display"
-  | "multisig"
-  | "accounts"
-  | "multidevice"
-  | "backup";
+  | "keystone"
+  | "accounts";
 
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SettingsSection>("main");
@@ -75,24 +66,12 @@ export function SettingsPage() {
     return <SecuritySettings onBack={() => setActiveSection("main")} />;
   }
 
-  if (activeSection === "notifications") {
-    return <NotificationSettings onBack={() => setActiveSection("main")} />;
-  }
-
   if (activeSection === "display") {
     return <DisplaySettings onBack={() => setActiveSection("main")} />;
   }
 
-  if (activeSection === "multisig") {
-    return <MultiSigSettings onBack={() => setActiveSection("main")} />;
-  }
-
-  if (activeSection === "multidevice") {
-    return <MultiDeviceSyncSettings onBack={() => setActiveSection("main")} />;
-  }
-
-  if (activeSection === "backup") {
-    return <BackupRestoreSettings onBack={() => setActiveSection("main")} />;
+  if (activeSection === "keystone") {
+    return <KeystoneSettings onBack={() => setActiveSection("main")} />;
   }
 
   return (
@@ -101,64 +80,46 @@ export function SettingsPage() {
 
       <div className="space-y-4">
         <SettingsItem
-          icon={<User className="text-primary-600" />}
+          icon={<User />}
           title="Account Information"
           description="Manage your keys and seeds"
           onClick={() => setActiveSection("account")}
         />
         <SettingsItem
-          icon={<User className="text-primary-600" />}
+          icon={<User />}
           title="Accounts"
           description="Create, switch, and rename accounts"
           onClick={() => setActiveSection("accounts")}
         />
         <SettingsItem
-          icon={<BoltCircle className="text-primary-600" />}
+          icon={<BoltCircle />}
           title="Network & Node"
           description="Configure API backend connection"
           onClick={() => setActiveSection("network")}
         />
         <SettingsItem
-          icon={<Shield className="text-primary-600" />}
+          icon={<Shield />}
           title="Network privacy (Nym / NymVPN)"
           description="Route traffic through Nym for full metadata privacy"
           onClick={() => setActiveSection("networkprivacy")}
         />
         <SettingsItem
-          icon={<Shield className="text-primary-600" />}
+          icon={<Shield />}
           title="Security & Privacy"
           description="PIN, Password, and Privacy settings"
           onClick={() => setActiveSection("security")}
         />
         <SettingsItem
-          icon={<Bell className="text-primary-600" />}
-          title="Notifications"
-          description="Manage alerts and push notifications"
-          onClick={() => setActiveSection("notifications")}
-        />
-        <SettingsItem
-          icon={<Sun className="text-primary-600" />}
+          icon={<Sun />}
           title="Display"
           description="Fiat equivalent and display options"
           onClick={() => setActiveSection("display")}
         />
         <SettingsItem
-          icon={<Shield className="text-amber-500" />}
-          title="Multi-signature"
-          description="Co-signing flows (in design)"
-          onClick={() => setActiveSection("multisig")}
-        />
-        <SettingsItem
-          icon={<Refresh className="text-primary-600" />}
-          title="Sync across devices"
-          description="Encrypted state sync (in design)"
-          onClick={() => setActiveSection("multidevice")}
-        />
-        <SettingsItem
-          icon={<Download className="text-primary-600" />}
-          title="Backup & restore"
-          description="Export and restore encrypted wallet backups"
-          onClick={() => setActiveSection("backup")}
+          icon={<Shield />}
+          title="Keystone"
+          description="Pair and enable air-gapped hardware signing"
+          onClick={() => setActiveSection("keystone")}
         />
       </div>
 
@@ -192,16 +153,16 @@ function SettingsItem({
   return (
     <div
       onClick={onClick}
-      className="p-4 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-white/50 dark:border-gray-700/50 hover:border-primary/30 dark:hover:border-primary/40 hover:shadow-md hover:shadow-primary/5 cursor-pointer transition-all duration-200 flex items-center gap-4 group"
+      className="p-4 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-white/50 dark:border-gray-700/50 hover:border-amber-300/60 dark:hover:border-amber-500/40 hover:shadow-md hover:shadow-amber-500/10 cursor-pointer transition-all duration-200 flex items-center gap-4 group"
     >
-      <div className="w-10 h-10 rounded-full bg-primary-100/50 dark:bg-primary-900/30 flex items-center justify-center group-hover:bg-primary-50 dark:group-hover:bg-primary-900/50 transition-colors">
+      <div className="w-10 h-10 rounded-full bg-amber-100/60 dark:bg-amber-900/30 flex items-center justify-center text-amber-500 group-hover:bg-amber-100 dark:group-hover:bg-amber-900/50 transition-colors [&_svg]:text-amber-500">
         {icon}
       </div>
       <div className="flex-1">
         <h3 className="font-medium text-gray-900 dark:text-gray-100">{title}</h3>
         <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
       </div>
-      <div className="text-gray-400 dark:text-gray-500 group-hover:text-primary transition-colors">
+      <div className="text-gray-400 dark:text-gray-500 group-hover:text-amber-500 transition-colors">
         <AltArrowRight size={20} />
       </div>
     </div>

@@ -1,39 +1,57 @@
 /**
- * ZEC price from CoinGecko (no API key). Cached 5 minutes.
+ * ZEC price from CoinGecko (no API key). Cached 5 minutes for all supported fiats.
  */
 
+import {
+  type FiatCurrency,
+  allCoingeckoKeys,
+  coingeckoKeyFor,
+  fiatLocale,
+} from "../lib/fiatCurrencies";
+
+export type { FiatCurrency } from "../lib/fiatCurrencies";
+
 const CACHE_MS = 5 * 60 * 1000;
-let cache: { timestamp: number; usd: number; eur: number } | null = null;
+let cache: { timestamp: number; rates: Partial<Record<string, number>> } | null = null;
 
-export type FiatCurrency = "USD" | "EUR";
-
-const CURRENCY_KEY: Record<FiatCurrency, keyof { usd: number; eur: number }> = {
-  USD: "usd",
-  EUR: "eur",
-};
-
-export async function getZecPriceInFiat(currency: FiatCurrency): Promise<number | null> {
-  const key = CURRENCY_KEY[currency];
+async function fetchRates(): Promise<Partial<Record<string, number>> | null> {
   const now = Date.now();
-  if (cache && now - cache.timestamp < CACHE_MS && typeof cache[key] === "number") {
-    return cache[key];
+  if (cache && now - cache.timestamp < CACHE_MS) {
+    return cache.rates;
   }
   try {
     const res = await fetch(
-      "https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=usd,eur"
+      `https://api.coingecko.com/api/v3/simple/price?ids=zcash&vs_currencies=${allCoingeckoKeys()}`
     );
-    if (!res.ok) return null;
-    const data = (await res.json()) as { zcash?: { usd?: number; eur?: number } };
+    if (!res.ok) return cache?.rates ?? null;
+    const data = (await res.json()) as { zcash?: Record<string, number> };
     const zcash = data?.zcash;
-    if (!zcash || typeof zcash.usd !== "number" || typeof zcash.eur !== "number") return null;
-    cache = { timestamp: now, usd: zcash.usd, eur: zcash.eur };
-    return cache[key];
+    if (!zcash || typeof zcash !== "object") return cache?.rates ?? null;
+    cache = { timestamp: now, rates: zcash };
+    return zcash;
   } catch {
-    return null;
+    return cache?.rates ?? null;
   }
 }
 
+export async function getZecPriceInFiat(currency: FiatCurrency): Promise<number | null> {
+  const rates = await fetchRates();
+  if (!rates) return null;
+  const key = coingeckoKeyFor(currency);
+  const rate = rates[key];
+  return typeof rate === "number" && rate > 0 ? rate : null;
+}
+
 export function formatFiatAmount(amount: number, currency: FiatCurrency): string {
-  const symbol = currency === "USD" ? "$" : "€";
-  return `${symbol}${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  const fractionDigits = ["JPY", "KRW", "VND", "IDR", "CLP"].includes(currency) ? 0 : 2;
+  try {
+    return new Intl.NumberFormat(fiatLocale(currency), {
+      style: "currency",
+      currency,
+      minimumFractionDigits: fractionDigits,
+      maximumFractionDigits: fractionDigits,
+    }).format(amount);
+  } catch {
+    return `${currency} ${amount.toFixed(fractionDigits)}`;
+  }
 }

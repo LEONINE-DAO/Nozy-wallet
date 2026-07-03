@@ -1,5 +1,5 @@
 use crate::error::TauriError;
-use nozy::WalletStorage;
+use crate::session::load_session_wallet;
 use serde::{Deserialize, Serialize};
 use tauri::command;
 
@@ -19,15 +19,11 @@ pub struct GenerateAddressRequest {
 pub async fn generate_address(
     request: GenerateAddressRequest,
 ) -> Result<AddressResponse, TauriError> {
-    let storage = WalletStorage::with_xdg_dir();
-    let password = request.password.as_deref().unwrap_or("");
-
-    let wallet = storage
-        .load_wallet(password)
+    let wallet = load_session_wallet(request.password.as_deref())
         .await
         .map_err(|e| TauriError {
-            message: format!("Failed to load wallet: {}", e),
-            code: Some("WALLET_NOT_FOUND".to_string()),
+            message: e.message,
+            code: e.code,
         })?;
 
     let account = request.account.unwrap_or(0);

@@ -83,11 +83,11 @@ impl WalletStorage {
     }
 
     pub fn with_xdg_dir() -> Self {
-        use crate::paths::get_wallet_data_dir;
+        use crate::paths::{get_wallet_base_dir, get_wallet_data_dir};
+        let base_dir = get_wallet_base_dir();
+        Self::migrate_from_insecure_location(&base_dir);
+        let _ = crate::wallet_profiles::ensure_profiles_initialized();
         let secure_dir = get_wallet_data_dir();
-
-        Self::migrate_from_insecure_location(&secure_dir);
-
         Self::new(secure_dir)
     }
 

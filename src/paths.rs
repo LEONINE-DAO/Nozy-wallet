@@ -1,7 +1,8 @@
 use directories::ProjectDirs;
 use std::path::PathBuf;
 
-pub fn get_wallet_data_dir() -> PathBuf {
+/// Root Nozy data directory (profiles manifest and per-wallet subdirectories).
+pub fn get_wallet_base_dir() -> PathBuf {
     if let Some(proj_dirs) = ProjectDirs::from("com", "nozy", "nozy") {
         let data_dir = proj_dirs.data_dir();
         std::fs::create_dir_all(data_dir).ok();
@@ -15,6 +16,11 @@ pub fn get_wallet_data_dir() -> PathBuf {
         std::fs::create_dir_all(&fallback).ok();
         fallback
     }
+}
+
+/// Active wallet profile data directory (wallet.dat, notes, sync DB, etc.).
+pub fn get_wallet_data_dir() -> PathBuf {
+    crate::wallet_profiles::active_profile_data_dir()
 }
 
 pub fn get_wallet_config_dir() -> PathBuf {

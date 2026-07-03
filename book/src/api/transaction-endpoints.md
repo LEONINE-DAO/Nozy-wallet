@@ -1,11 +1,40 @@
 # Transaction Endpoints
 
-This chapter is currently being developed.
+## `POST /api/transaction/send`
 
-## Coming Soon
+Shielded Orchard send.
 
-Content for this chapter is being written. Check back soon!
+Body (typical):
 
-## Overview
+```json
+{
+  "recipient": "u1…",
+  "amount": 0.0001,
+  "memo": "optional",
+  "password": "…",
+  "zebra_url": "optional override"
+}
+```
 
-This chapter will cover Transaction Endpoints topics and provide comprehensive guidance.
+Response: `{ "success": true, "txid": "…" }` or error with message/code.
+
+## Send guards
+
+Same as CLI:
+
+- Witness lag limit
+- Sync-to-tip recommendations
+- Insufficient funds
+- Invalid unified address
+
+## Confirmations
+
+Use Zebrad `getrawtransaction` or explorer; optional CLI `check-confirmations`.
+
+## History
+
+Local sent tx list may be exposed in extended API builds — check handlers. Desktop uses Tauri `get_transaction_history`.
+
+CLI: `nozy history`.
+
+See [Transaction Commands](../cli/transaction-commands.md).

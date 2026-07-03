@@ -18,11 +18,14 @@
 | [`journal/research/2026-06-21-nozy-super-wallet-stack.md`](journal/research/2026-06-21-nozy-super-wallet-stack.md) | **Research:** Best stack for privacy super wallet (extension + api + future web-app) |
 | [`journal/research/2026-06-21-cipherpay-nozywallet-integration.md`](journal/research/2026-06-21-cipherpay-nozywallet-integration.md) | **Research:** CipherPay merchant gateway vs native Sell mode — complement, defer impl |
 | [`issues/README.md`](issues/README.md) | **Bugs & features** — registry, templates, RCA writeups |
+| [`ZCASH_RESIDENCY_FACILITATOR_DAYPACK.md`](ZCASH_RESIDENCY_FACILITATOR_DAYPACK.md) | **Zcash Developers Residency** — 20-day facilitator guide (NozyWallet build path) |
 | [`issues/BUG_REGISTRY.md`](issues/BUG_REGISTRY.md) | Master bug list (ID, status, fix version) |
 | [`MAINNET_SEND_EXPIRY_TEST.md`](MAINNET_SEND_EXPIRY_TEST.md) | **Mainnet test** — BUG-2026-011 send/expiry verification (api-server + CLI) |
 | [`reference/PILOT_EXPIRY_PROVING_LATENCY.md`](reference/PILOT_EXPIRY_PROVING_LATENCY.md) | **Paper reference** — pilot expiry vs proving latency, 5 vs 15, Zodl FAQ |
 | [`reference/MAINNET_SEND_READINESS_EVIDENCE.md`](reference/MAINNET_SEND_READINESS_EVIDENCE.md) | **Paper / lecture** — recorded mainnet sync+send timings, TXIDs, witness guard |
 | [`reference/CLI_BALANCE_NOTEINDEX.md`](reference/CLI_BALANCE_NOTEINDEX.md) | **Paper / lecture** — CLI balance bug (v2 NoteIndex), `wallet_balance_snapshot()`, dual-parser lesson |
+| [`reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md`](reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md) | **Paper / lecture** — verify Zebrad ↔ NozyWallet RPC, WSL/Windows, config, diagnostics |
+| [`../book/README.md`](../book/README.md) | **User book (mdBook)** — `SUMMARY.md` TOC; build with `mdbook build` |
 | [`reference/WHITEPAPER_OUTLINE.md`](reference/WHITEPAPER_OUTLINE.md) | **White paper blueprint** — architecture decisions, phases, trade-offs, lessons learned |
 | [`NozyWallet_Whitepaper.docx`](NozyWallet_Whitepaper.docx) | **White paper** (Word) — run `python scripts/generate-nozy-whitepaper.py` |
 | [`reference/NozyWallet_Whitepaper.md`](reference/NozyWallet_Whitepaper.md) | Same white paper as **Markdown** (readable in Cursor) |

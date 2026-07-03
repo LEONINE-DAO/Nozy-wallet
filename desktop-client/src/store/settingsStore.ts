@@ -1,25 +1,22 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
+import {
+  DEFAULT_FIAT_CURRENCY,
+  type FiatCurrency,
+  isFiatCurrency,
+} from "../lib/fiatCurrencies";
 
-export type FiatCurrency = "USD" | "EUR";
+export type { FiatCurrency } from "../lib/fiatCurrencies";
 
 interface SettingsState {
   showNavigationLabels: boolean;
   hideBalance: boolean;
   darkMode: boolean;
 
-  // Fiat display ( in History)
-  showFiatEquivalent: boolean;
+  // Fiat display (balance, history)
   fiatCurrency: FiatCurrency;
   useLiveFiatPrice: boolean;
   customFiatPerZec: number | null;
-
-  // Notification Settings so we know when people want to be nozy
-  transactionNotifs: boolean;
-  soundEnabled: boolean;
-  dndEnabled: boolean;
-  dndFrom: string;
-  dndTo: string;
 
   // Security Settings
   autoLockEnabled: boolean;
@@ -40,15 +37,9 @@ interface SettingsState {
   setShowNavigationLabels: (show: boolean) => void;
   setHideBalance: (hide: boolean) => void;
   setDarkMode: (enabled: boolean) => void;
-  setShowFiatEquivalent: (show: boolean) => void;
   setFiatCurrency: (currency: FiatCurrency) => void;
   setUseLiveFiatPrice: (use: boolean) => void;
   setCustomFiatPerZec: (rate: number | null) => void;
-  setTransactionNotifs: (show: boolean) => void;
-  setSoundEnabled: (enabled: boolean) => void;
-  setDndEnabled: (enabled: boolean) => void;
-  setDndFrom: (time: string) => void;
-  setDndTo: (time: string) => void;
   setAutoLockEnabled: (enabled: boolean) => void;
   setAutoLockMinutes: (minutes: string) => void;
   setBiometricsEnabled: (enabled: boolean) => void;
@@ -62,15 +53,9 @@ export const useSettingsStore = create<SettingsState>()(
       showNavigationLabels: false,
       hideBalance: false,
       darkMode: false,
-      showFiatEquivalent: false,
       fiatCurrency: "USD",
       useLiveFiatPrice: true,
       customFiatPerZec: null,
-      transactionNotifs: true,
-      soundEnabled: true,
-      dndEnabled: false,
-      dndFrom: "22:00",
-      dndTo: "08:00",
       autoLockEnabled: true,
       autoLockMinutes: "15",
       biometricsEnabled: false,
@@ -91,15 +76,9 @@ export const useSettingsStore = create<SettingsState>()(
       setShowNavigationLabels: (show) => set({ showNavigationLabels: show }),
       setHideBalance: (hide) => set({ hideBalance: hide }),
       setDarkMode: (enabled) => set({ darkMode: enabled }),
-      setShowFiatEquivalent: (show) => set({ showFiatEquivalent: show }),
       setFiatCurrency: (currency) => set({ fiatCurrency: currency }),
       setUseLiveFiatPrice: (use) => set({ useLiveFiatPrice: use }),
       setCustomFiatPerZec: (rate) => set({ customFiatPerZec: rate }),
-      setTransactionNotifs: (show) => set({ transactionNotifs: show }),
-      setSoundEnabled: (enabled) => set({ soundEnabled: enabled }),
-      setDndEnabled: (enabled) => set({ dndEnabled: enabled }),
-      setDndFrom: (time) => set({ dndFrom: time }),
-      setDndTo: (time) => set({ dndTo: time }),
       setAutoLockEnabled: (enabled) => set({ autoLockEnabled: enabled }),
       setAutoLockMinutes: (minutes) => set({ autoLockMinutes: minutes }),
       setBiometricsEnabled: (enabled) => set({ biometricsEnabled: enabled }),
@@ -108,6 +87,14 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: "nozy-settings-storage",
+      migrate: (persisted) => {
+        const state = persisted as Partial<SettingsState> | undefined;
+        if (!state) return persisted;
+        if (!isFiatCurrency(state.fiatCurrency)) {
+          return { ...state, fiatCurrency: DEFAULT_FIAT_CURRENCY };
+        }
+        return state;
+      },
     }
   )
 );
