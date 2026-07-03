@@ -19,6 +19,13 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || (github.event_name == 'workflow_dispatch' && inputs.tag) || github.ref }}
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -96,6 +103,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || (github.event_name == 'workflow_dispatch' && inputs.tag) || github.ref }}
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -114,7 +128,8 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libappindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            protobuf-compiler
 
       - name: Install frontend dependencies
         working-directory: desktop-client
@@ -126,7 +141,7 @@ jobs:
 
       - name: Build desktop executable (no installer bundle)
         working-directory: desktop-client
-        run: npm run tauri build -- --bundles none
+        run: npm run tauri build
 
       - name: Prepare release files and hashes
         run: |
@@ -179,6 +194,13 @@ jobs:
             arch: aarch64
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || (github.event_name == 'workflow_dispatch' && inputs.tag) || github.ref }}
+
+      - name: Install protoc
+        uses: arduino/setup-protoc@v3
+        with:
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -200,7 +222,7 @@ jobs:
 
       - name: Build desktop executable (no installer bundle)
         working-directory: desktop-client
-        run: npm run tauri build -- --bundles none
+        run: npm run tauri build
 
       - name: Prepare release files and hashes
         run: |
