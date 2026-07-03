@@ -85,8 +85,8 @@ directories = { version = "5.0", optional = true }
 
 # Secret Network / Cosmos SDK support
 secp256k1 = { version = "0.28", features = ["global-context", "rand"], optional = true }
-cosmrs = { version = "0.8", optional = true }
-tendermint = { version = "0.35", optional = true }
+cosmrs = { version = "0.22", optional = true }
+tendermint = { version = "0.40", optional = true }
 
 # Groth16 zkSNARK libraries
 groth16 = { version = "0.1", optional = true }
