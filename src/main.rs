@@ -3111,12 +3111,12 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
         Commands::Ironwood { command } => {
             use nozy::ironwood::{
-                display_ironwood_status,
-                execute_orchard_migration, execute_orchard_migration_broadcast,
-                execute_orchard_note_split, fetch_pool_balances, is_ironwood_active,
-                nu6_3_activation_height, plan_orchard_migration_at,
-                plan_orchard_note_split_outputs, refresh_orchard_migration_schedule_at,
-                save_orchard_migration_plan_at, IronwoodWalletStatus, MigrationReadinessState,
+                display_ironwood_status, execute_orchard_migration,
+                execute_orchard_migration_broadcast, execute_orchard_note_split,
+                fetch_pool_balances, is_ironwood_active, nu6_3_activation_height,
+                plan_orchard_migration_at, plan_orchard_note_split_outputs,
+                refresh_orchard_migration_schedule_at, save_orchard_migration_plan_at,
+                IronwoodWalletStatus, MigrationReadinessState,
             };
             use nozy::load_wallet_notes;
             use nozy::max_serialized_witness_lag_blocks;

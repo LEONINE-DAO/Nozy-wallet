@@ -153,7 +153,7 @@ mod tests {
     use bip39::Mnemonic;
     use nozy::hd_wallet::HDWallet;
     use orchard::keys::{DiversifierIndex, FullViewingKey, Scope, SpendingKey};
-    use orchard::note::{ExtractedNoteCommitment, Nullifier, Note, RandomSeed, Rho};
+    use orchard::note::{ExtractedNoteCommitment, NoteVersion, Nullifier, Note, RandomSeed, Rho};
     use orchard::note_encryption::{CompactAction, OrchardDomain, OrchardNoteEncryption};
     use orchard::value::NoteValue;
     use rand::rngs::StdRng;
@@ -198,7 +198,7 @@ mod tests {
                 break rs;
             }
         };
-        let note = Note::from_parts(recipient, value, rho, rseed).expect("valid note");
+        let note = Note::from_parts(recipient, value, rho, rseed, NoteVersion::V2).expect("valid note");
         let cmx = ExtractedNoteCommitment::from(note.commitment());
         let ne = OrchardNoteEncryption::new(
             Some(fvk.to_ovk(Scope::External)),

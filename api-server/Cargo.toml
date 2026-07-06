@@ -34,5 +34,5 @@ axum-server = { version = "0.8", features = ["tls-rustls"] }
 # Local wallet library
 nozy = { path = "../" }
 zeaking = { path = "../zeaking", features = ["lightwalletd"] }
-zcash_protocol = "0.9"
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 

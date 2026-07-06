@@ -352,8 +352,8 @@ pub fn prove_orchard_transaction_dummy(
     use orchard::{
         builder::Builder as OrchardBuilder,
         builder::BundleType,
-        bundle::Flags,
-        circuit::ProvingKey,
+        bundle::BundleVersion,
+        circuit::{OrchardCircuitVersion, ProvingKey},
         tree::Anchor,
         value::NoteValue,
     };
@@ -390,15 +390,21 @@ pub fn prove_orchard_transaction_dummy(
     };
 
     let bundle_type = BundleType::Transactional {
-        flags: Flags::ENABLED,
         bundle_required: true,
     };
+    let bundle_version = BundleVersion::orchard_v2();
 
     let anchor = Anchor::from_bytes([0u8; 32])
         .into_option()
         .ok_or_else(|| JsError::new("Invalid dummy anchor bytes"))?;
 
-    let mut builder = OrchardBuilder::new(bundle_type, anchor);
+    let mut builder = OrchardBuilder::new(
+        bundle_type,
+        bundle_version,
+        bundle_version.default_flags(),
+        anchor,
+    )
+    .map_err(|e| JsError::new(&format!("Failed to initialize Orchard builder: {e:?}")))?;
     builder
         .add_output(
             None,
@@ -416,7 +422,7 @@ pub fn prove_orchard_transaction_dummy(
         JsError::new("Orchard builder did not produce a bundle")
     })?;
 
-    let pk = ProvingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
     let proved = unauthorized_bundle
         .create_proof(&pk, &mut rng)
         .map_err(|e| JsError::new(&format!("Failed to create Orchard proof: {e}")))?;
@@ -462,10 +468,10 @@ pub fn prove_orchard_transaction_spend_from_note(
     use orchard::{
         builder::Builder as OrchardBuilder,
         builder::BundleType,
-        bundle::Flags,
-        circuit::ProvingKey,
+        bundle::BundleVersion,
+        circuit::{OrchardCircuitVersion, ProvingKey},
         keys::{FullViewingKey, SpendingKey},
-        note::{Note, RandomSeed, Rho},
+        note::{Note, NoteVersion, RandomSeed, Rho},
         value::NoteValue,
     };
     use rand::rngs::OsRng;
@@ -524,7 +530,7 @@ pub fn prove_orchard_transaction_spend_from_note(
         .ok_or_else(|| JsError::new("Invalid spend note rseed bytes"))?;
 
     let note_value = NoteValue::from_raw(spend_note.value);
-    let note = Note::from_parts(note_recipient, note_value, rho, rseed)
+    let note = Note::from_parts(note_recipient, note_value, rho, rseed, NoteVersion::V2)
         .into_option()
         .ok_or_else(|| JsError::new("Invalid spend note reconstruction"))?;
 
@@ -553,10 +559,16 @@ pub fn prove_orchard_transaction_spend_from_note(
     let change_amount = spend_note.value.saturating_sub(amount_zatoshis);
 
     let bundle_type = BundleType::Transactional {
-        flags: Flags::ENABLED,
         bundle_required: true,
     };
-    let mut builder = OrchardBuilder::new(bundle_type, anchor);
+    let bundle_version = BundleVersion::orchard_v2();
+    let mut builder = OrchardBuilder::new(
+        bundle_type,
+        bundle_version,
+        bundle_version.default_flags(),
+        anchor,
+    )
+    .map_err(|e| JsError::new(&format!("Failed to initialize Orchard builder: {e:?}")))?;
 
     builder
         .add_spend(fvk, note, merkle_path)
@@ -590,7 +602,7 @@ pub fn prove_orchard_transaction_spend_from_note(
         JsError::new("Orchard builder did not produce a bundle")
     })?;
 
-    let pk = ProvingKey::build();
+    let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
     let proved = unauthorized_bundle
         .create_proof(&pk, &mut rng)
         .map_err(|e| JsError::new(&format!("Failed to create Orchard proof: {e}")))?;
@@ -646,7 +658,7 @@ pub fn build_orchard_v5_tx_from_note(
     use nozy::hd_wallet::OrchardDecryptionResult;
     use orchard::{
         keys::SpendAuthorizingKey,
-        note::{Note, RandomSeed, Rho},
+        note::{Note, NoteVersion, RandomSeed, Rho},
         value::NoteValue,
         Address as OrchardAddress,
     };
@@ -682,6 +694,7 @@ pub fn build_orchard_v5_tx_from_note(
             _sapling_input_count: usize,
             _sapling_output_count: usize,
             _orchard_action_count: usize,
+            _ironwood_action_count: usize,
         ) -> Result<Zatoshis, Self::Error> {
             Ok(self.fee)
         }
@@ -830,6 +843,7 @@ pub fn build_orchard_v5_tx_from_note(
     let build_config = BuildConfig::Standard {
         sapling_anchor: None,
         orchard_anchor: Some(anchor),
+        ironwood_anchor: None,
     };
 
     let tx_builder = TxBuilder::new(MainNetwork, target_height_bh, build_config);
@@ -867,7 +881,13 @@ pub fn build_orchard_v5_tx_from_note(
             .into_option()
             .ok_or_else(|| JsError::new(&format!("Invalid spend note rseed bytes at index {idx}")))?;
         let note_value = NoteValue::from_raw(spend_note.value);
-        let note = Note::from_parts(spend_note_recipient, note_value, rho, rseed)
+        let note = Note::from_parts(
+            spend_note_recipient,
+            note_value,
+            rho,
+            rseed,
+            NoteVersion::V2,
+        )
             .into_option()
             .ok_or_else(|| JsError::new(&format!("Invalid spend note reconstruction at index {idx}")))?;
 
