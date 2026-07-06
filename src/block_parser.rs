@@ -16,6 +16,7 @@ pub struct ParsedTransaction {
     pub index: u32,
     pub raw_data: Vec<u8>,
     pub orchard_actions: Vec<crate::notes::OrchardActionData>,
+    pub ironwood_actions: Vec<crate::notes::OrchardActionData>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -111,6 +112,7 @@ impl BlockParser {
             index: 0,
             raw_data,
             orchard_actions: Vec::new(),
+            ironwood_actions: Vec::new(),
         })
     }
 

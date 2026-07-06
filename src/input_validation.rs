@@ -9,19 +9,19 @@ pub fn validate_zcash_address(address: &str) -> NozyResult<()> {
         ));
     }
 
-    if !address.starts_with("u1") {
+    if !address.starts_with("u1") && !address.starts_with("utest1") {
         return Err(NozyError::InvalidInput(
-            "Address must be a unified address starting with 'u1'".to_string(),
+            "Address must be a unified address starting with 'u1' or 'utest1'".to_string(),
         ));
     }
 
-    // Unified addresses (`u1…`) vary in length; 140 was too small for many real UAs.
+    // Unified addresses (`u1…` / `utest1…`) vary in length; 140 was too small for many real UAs.
     // See Zcash unified address encoding (ZIP 316); keep a generous upper bound.
     const UA_MIN_LEN: usize = 78;
     const UA_MAX_LEN: usize = 256;
     if address.len() < UA_MIN_LEN || address.len() > UA_MAX_LEN {
         return Err(NozyError::InvalidInput(format!(
-            "Invalid address length: {} (expected {}-{} characters for a unified u1 address)",
+            "Invalid address length: {} (expected {}-{} characters for a unified address)",
             address.len(),
             UA_MIN_LEN,
             UA_MAX_LEN
@@ -97,5 +97,11 @@ mod tests {
         let addr = "u13nkpl0xejf50y2l2nwq44jeg6u28ayey0k80htxspz6vqfa4zru4v45ez7n3qz9c3e6h29m89w4ket6wlmpgpq4ra4f7gd42uyp7c94e";
         assert_eq!(addr.len(), 106);
         validate_zcash_address(addr).expect("106-char Nozy UA should validate");
+    }
+
+    #[test]
+    fn accepts_testnet_unified_addresses_from_nozy() {
+        let addr = "utest1dt8gy9uhr638jrpjzlacn3m7jengue30p3g849xwu7kj29yvrkfeyczq694qsyjh2f9tzs2krccjq0mtpzelgkr2p8735teapcy88mrx";
+        validate_zcash_address(addr).expect("real testnet UA should validate");
     }
 }

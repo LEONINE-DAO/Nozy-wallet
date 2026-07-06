@@ -1,6 +1,6 @@
 [package]
 name = "nozy"
-version = "2.3.6"
+version = "2.4.0"
 edition = "2021"
 default-run = "nozy"
 description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
@@ -43,12 +43,11 @@ bip39 = "2.1"
 
 # Zcash crypto stack -- default-features off to disable multicore on WASM
 # Native builds re-enable multicore via the "native" feature for parallel proving
-# Aligned to the NU6.2 librustzcash release set (matches zebra 0a2b87f5 / zaino dev) so
-# BranchId::for_height returns NU6.2 (5437f330) and proofs/serialization match consensus.
-orchard = { version = "0.14", default-features = false, features = ["circuit", "std"] }
-zcash_primitives = { version = "0.28", default-features = false, features = ["std", "circuits"] }
-zcash_protocol = "0.9"
-zcash_address = "0.12"
+# Ironwood (NU6.3) pre-release support: match zcash/librustzcash mainline pins below.
+orchard = { version = "0.15.0-pre.1", default-features = false, features = ["circuit", "std"] }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", default-features = false, features = ["std", "circuits"] }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_note_encryption = "0.4.1"
 # zcash_primitives 0.28 dropped its zip32 re-export; depend on the standalone crate.
 zip32 = "0.2.1"
@@ -110,10 +109,10 @@ rayon = { version = "1.8", optional = true }
 # Futures utilities
 futures = { version = "0.3", optional = true }
 
-zcash_proofs = { version = "0.28", optional = true, default-features = false, features = ["bundled-prover"] }
-zcash_transparent = { version = "0.8", optional = true, default-features = false }
-zcash_keys = { version = "0.14", optional = true, default-features = false, features = ["orchard", "unstable"] }
-pczt = { version = "0.7", optional = true, default-features = false, features = [
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = ["bundled-prover"] }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = ["orchard", "unstable"] }
+pczt = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = [
     "std",
     "orchard",
     "io-finalizer",
@@ -173,6 +172,18 @@ members = ["zeaking", "api-server", "zeaking-ffi"]
 exclude = ["desktop-client/src-tauri", "wasm-poc", "browser-extension/wasm-core"]
 resolver = "2"
 
+# Ironwood (NU6.3) pre-release — keeps transitive deps on the same git revisions.
+# Requires `.cargo/config.toml` with `zcash_unstable="nu6.3"`.
+# See docs/reference/IRONWOOD_WALLET_READINESS.md
+[patch.crates-io]
+zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+pczt = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+
 [[bin]]
 name = "nozy"
 path = "src/main.rs"
@@ -196,6 +207,14 @@ path = "src/bin/test_password_variations.rs"
 [[bin]]
 name = "diagnose_wallet"
 path = "src/bin/diagnose_wallet.rs"
+
+[[bin]]
+name = "verify_lwd"
+path = "src/bin/verify_lwd.rs"
+
+[[bin]]
+name = "ironwood_lwd_smoke"
+path = "src/bin/ironwood_lwd_smoke.rs"
 
 [dev-dependencies]
 zeaking = { path = "zeaking", features = ["lightwalletd"] }

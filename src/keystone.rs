@@ -36,7 +36,9 @@ pub const DEFAULT_UR_FRAGMENT_SIZE: usize = 200;
 static ORCHARD_PROVING_KEY: OnceLock<orchard::circuit::ProvingKey> = OnceLock::new();
 
 fn orchard_proving_key() -> &'static orchard::circuit::ProvingKey {
-    ORCHARD_PROVING_KEY.get_or_init(orchard::circuit::ProvingKey::build)
+    ORCHARD_PROVING_KEY.get_or_init(|| {
+        orchard::circuit::ProvingKey::build(orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2)
+    })
 }
 
 /// Keystone pairing / custody settings persisted in `config.json`.
@@ -108,6 +110,7 @@ impl FeeRule for FixedFeeRule {
         _sapling_input_count: usize,
         _sapling_output_count: usize,
         _orchard_action_count: usize,
+        _ironwood_action_count: usize,
     ) -> Result<Zatoshis, Self::Error> {
         Ok(self.fee)
     }
@@ -221,6 +224,24 @@ pub async fn build_keystone_send_pczt(
     pilot: PilotSendOptions,
     network: NetworkType,
 ) -> NozyResult<KeystonePcztBuild> {
+    let tip_height = zebra.get_best_block_height().await?;
+    let orchard_zat: u64 = spendable_notes
+        .iter()
+        .filter(|n| !n.orchard_note.spent && n.pool == crate::shielded_pool::ShieldedPool::Orchard)
+        .map(|n| n.orchard_note.value)
+        .sum();
+    let ironwood_zat: u64 = spendable_notes
+        .iter()
+        .filter(|n| !n.orchard_note.spent && n.pool == crate::shielded_pool::ShieldedPool::Ironwood)
+        .map(|n| n.orchard_note.value)
+        .sum();
+    if let Some(reason) =
+        crate::ironwood::legacy_hardware_send_blocker(zebra, tip_height, orchard_zat, ironwood_zat)
+            .await?
+    {
+        return Err(NozyError::InvalidOperation(reason));
+    }
+
     let spendable = select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
     let fvk = orchard_fvk_for_send(wallet, keystone, spendable)?;
 
@@ -243,7 +264,6 @@ pub async fn build_keystone_send_pczt(
         .into_option()
         .ok_or_else(|| NozyError::AddressParsing("Invalid Orchard receiver bytes".to_string()))?;
 
-    let tip_height = zebra.get_best_block_height().await?;
     let target_height = BlockHeight::from_u32(tip_height.saturating_add(1));
     let (anchor, merkle_path) = witness_provider
         .prepare_spend_anchor_and_path(zebra, spendable, tip_height)
@@ -271,6 +291,7 @@ pub async fn build_keystone_send_pczt(
     let build_config = BuildConfig::Standard {
         sapling_anchor: None,
         orchard_anchor: Some(anchor),
+        ironwood_anchor: None,
     };
 
     let pczt = match network {
@@ -362,7 +383,9 @@ pub async fn build_keystone_send_pczt(
 
     let pczt = redact_pczt_for_signer(pczt);
     let action_count = pczt.orchard().actions().len() as u32;
-    let pczt_bytes = pczt.serialize();
+    let pczt_bytes = pczt
+        .serialize()
+        .map_err(|e| NozyError::InvalidOperation(format!("PCZT serialize failed: {e:?}")))?;
 
     let recipient_short = if recipient_address.len() > 24 {
         format!("{}…", &recipient_address[..24])
@@ -391,7 +414,11 @@ pub fn extract_signed_tx_from_pczt_bytes(pczt_bytes: &[u8]) -> NozyResult<Keysto
         .map_err(|e| NozyError::InvalidOperation(format!("PCZT parse failed: {e:?}")))?;
 
     static ORCHARD_VK: OnceLock<orchard::circuit::VerifyingKey> = OnceLock::new();
-    let vk = ORCHARD_VK.get_or_init(orchard::circuit::VerifyingKey::build);
+    let vk = ORCHARD_VK.get_or_init(|| {
+        orchard::circuit::VerifyingKey::build(
+            orchard::circuit::OrchardCircuitVersion::FixedPostNu6_2,
+        )
+    });
 
     let tx = TransactionExtractor::new(pczt)
         .with_orchard(vk)
@@ -453,7 +480,10 @@ pub fn sign_pczt_orchard_spends(
         ));
     }
 
-    Ok(signer.finish().serialize())
+    signer
+        .finish()
+        .serialize()
+        .map_err(|e| NozyError::InvalidOperation(format!("PCZT serialize failed: {e:?}")))
 }
 
 /// Build a portable co-sign request file payload from a PCZT build result.

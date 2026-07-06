@@ -222,14 +222,23 @@ pub fn load_config() -> WalletConfig {
             Ok(content) => {
                 // PowerShell often writes UTF-8 BOM; serde_json rejects it at column 1.
                 let content = content.strip_prefix('\u{feff}').unwrap_or(&content);
-                match serde_json::from_str::<WalletConfig>(content) {
-                    Ok(config) => config,
-                    Err(e) => {
-                        eprintln!(
-                            "Warning: Failed to parse config.json: {}. Using defaults.",
-                            e
-                        );
-                        WalletConfig::default()
+                if content.trim().is_empty() {
+                    WalletConfig::default()
+                } else {
+                    match serde_json::from_str::<WalletConfig>(content) {
+                        Ok(config) => config,
+                        Err(e) => {
+                            let msg = e.to_string();
+                            if msg.contains("EOF while parsing") {
+                                WalletConfig::default()
+                            } else {
+                                eprintln!(
+                                    "Warning: Failed to parse config.json: {}. Using defaults.",
+                                    e
+                                );
+                                WalletConfig::default()
+                            }
+                        }
                     }
                 }
             }

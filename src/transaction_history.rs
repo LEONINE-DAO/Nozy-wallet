@@ -677,9 +677,16 @@ impl SentTransactionStorage {
                 return HashMap::new();
             }
         };
+        if content.trim().is_empty() {
+            return HashMap::new();
+        }
         match serde_json::from_str::<HashMap<String, SentTransactionRecord>>(&content) {
             Ok(records) => records,
             Err(e) => {
+                let msg = e.to_string();
+                if msg.contains("EOF while parsing") {
+                    return HashMap::new();
+                }
                 eprintln!(
                     "Warning: failed to parse sent transactions at {}: {}",
                     path.display(),

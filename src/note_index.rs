@@ -357,7 +357,9 @@ impl NoteIndex {
         tip_height: u32,
     ) -> crate::error::NozyResult<()> {
         for note in &mut self.notes {
-            if note.nullifier_bytes.len() != 32 {
+            if note.pool != crate::shielded_pool::ShieldedPool::Orchard
+                || note.nullifier_bytes.len() != 32
+            {
                 continue;
             }
             let mut nf = [0u8; 32];
@@ -365,6 +367,28 @@ impl NoteIndex {
             if let Some(bytes) = tracker.serialized_witness_for_nullifier(&nf)? {
                 note.orchard_incremental_witness_hex = Some(hex::encode(bytes));
                 note.orchard_witness_tip_height = Some(tip_height);
+            }
+        }
+        Ok(())
+    }
+
+    /// Refresh serialized Ironwood incremental witnesses after sync.
+    pub fn apply_ironwood_witnesses_from_tracker(
+        &mut self,
+        tracker: &crate::ironwood_witness::IronwoodWitnessTracker,
+        tip_height: u32,
+    ) -> crate::error::NozyResult<()> {
+        for note in &mut self.notes {
+            if note.pool != crate::shielded_pool::ShieldedPool::Ironwood
+                || note.nullifier_bytes.len() != 32
+            {
+                continue;
+            }
+            let mut nf = [0u8; 32];
+            nf.copy_from_slice(&note.nullifier_bytes);
+            if let Some(bytes) = tracker.serialized_witness_for_nullifier(&nf)? {
+                note.ironwood_incremental_witness_hex = Some(hex::encode(bytes));
+                note.ironwood_witness_tip_height = Some(tip_height);
             }
         }
         Ok(())
@@ -577,9 +601,12 @@ mod tests {
             memo: vec![],
             orchard_incremental_witness_hex: None,
             orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
             spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
         }
     }
 

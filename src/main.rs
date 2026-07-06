@@ -6,9 +6,9 @@ use nozy::cli_helpers::{
 };
 use nozy::local_analytics::LocalAnalytics;
 use nozy::safe_display::display_mnemonic_safe;
-use nozy::{load_config, save_config, update_last_scan_height};
+use nozy::{load_config, save_config};
 use nozy::{
-    AddressBook, HDWallet, NoteScanner, NozyError, NozyResult, WalletStorage, ZebraBlockParser,
+    AddressBook, HDWallet, NozyError, NozyResult, WalletStorage, ZebraBlockParser,
     ZebraBlockSource, ZebraClient,
 };
 use zcash_address::unified::Encoding;
@@ -37,6 +37,68 @@ fn network_type_from_config(network: &str) -> NetworkType {
     } else {
         NetworkType::Main
     }
+}
+
+fn configure_ironwood_testnet(_config: &mut nozy::WalletConfig, rpc_url: &str) -> NozyResult<()> {
+    let profile_id = nozy::active_profile_id().ok_or_else(|| {
+        NozyError::InvalidOperation(
+            "No active wallet profile. Create or select a profile first.".to_string(),
+        )
+    })?;
+    nozy::configure_profile_network(&profile_id, "testnet", rpc_url, true)
+}
+
+fn print_profile_list() -> NozyResult<()> {
+    let profiles = nozy::list_wallet_profiles()?;
+    let active_id = nozy::active_profile_id();
+
+    if profiles.is_empty() {
+        println!("No wallet profiles found.");
+        return Ok(());
+    }
+
+    println!("Wallet profiles:");
+    for profile in profiles {
+        let active = if active_id.as_deref() == Some(profile.id.as_str()) {
+            "*"
+        } else {
+            " "
+        };
+        let wallet = if nozy::profile_has_wallet(&profile.id) {
+            "wallet"
+        } else {
+            "empty"
+        };
+        println!(" {active} {}  {}  ({wallet})", profile.id, profile.name);
+    }
+    Ok(())
+}
+
+async fn save_wallet_to_active_profile(wallet: &mut HDWallet) -> NozyResult<()> {
+    let use_password = Confirm::new()
+        .with_prompt("Do you want to set a password for this wallet?")
+        .default(true)
+        .interact()
+        .map_err(|e| NozyError::InvalidOperation(format!("Input error: {}", e)))?;
+
+    let password = if use_password {
+        let pwd = Password::new()
+            .with_prompt("Enter password for wallet encryption")
+            .with_confirmation("Confirm password", "Passwords don't match")
+            .interact()
+            .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
+
+        wallet.set_password(&pwd)?;
+        println!("✅ Password protection enabled");
+        pwd
+    } else {
+        println!("⚠️  Wallet will be stored without password protection");
+        String::new()
+    };
+
+    let storage = WalletStorage::with_xdg_dir();
+    storage.save_wallet(wallet, &password).await?;
+    Ok(())
 }
 
 #[derive(Parser)]
@@ -126,6 +188,18 @@ pub enum Commands {
 
     #[command(about = "Display the current shielded balance")]
     Balance,
+
+    #[command(about = "Manage local wallet profiles")]
+    Profile {
+        #[command(subcommand)]
+        command: ProfileCommand,
+    },
+
+    #[command(about = "Create, restore, or select a dedicated Ironwood testnet wallet")]
+    TestnetWallet {
+        #[command(subcommand)]
+        command: TestnetWalletCommand,
+    },
 
     #[command(about = "Configure wallet settings (network, Zebra URL, backend, etc.)")]
     Config {
@@ -233,6 +307,90 @@ pub enum Commands {
 
     #[command(about = "Display information about Zcash Network Upgrade 6.1 (NU 6.1)")]
     Nu61,
+
+    #[command(about = "Ironwood (NU6.3) pool status and Orchard → Ironwood migration")]
+    Ironwood {
+        #[command(subcommand)]
+        command: IronwoodCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum IronwoodCommand {
+    #[command(about = "Show Ironwood readiness, pool balances, and migration status")]
+    Status,
+    #[command(about = "List Orchard notes that would migrate through the turnstile")]
+    Plan {
+        #[arg(long, help = "Persist the draft ZIP 318 migration schedule")]
+        save: bool,
+    },
+    #[command(about = "Check Ironwood migration readiness without building transactions")]
+    Preflight,
+    #[command(about = "Migrate Orchard notes to Ironwood (requires NU6.3 active)")]
+    Migrate,
+    #[command(
+        about = "Broadcast a presigned ZIP 318 turnstile transaction in its anchor bucket window"
+    )]
+    Broadcast {
+        #[arg(
+            long,
+            help = "Validate the window and show the txid without broadcasting"
+        )]
+        dry_run: bool,
+        #[arg(
+            long,
+            help = "After broadcast, poll Zebrad until the transaction confirms on chain"
+        )]
+        wait_confirm: bool,
+    },
+    #[command(
+        about = "Split one Orchard note into canonical ZIP 318 denominations (send-to-self)"
+    )]
+    Split {
+        #[arg(
+            long,
+            help = "Plan the split and build the transaction without broadcasting"
+        )]
+        dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ProfileCommand {
+    #[command(about = "List local wallet profiles")]
+    List,
+    #[command(about = "Switch the active local wallet profile")]
+    Switch {
+        #[arg(long, help = "Wallet profile ID from `nozy profile list`")]
+        profile_id: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum TestnetWalletCommand {
+    #[command(about = "Create a new dedicated Ironwood testnet wallet profile")]
+    New {
+        #[arg(long, default_value = "Ironwood Testnet")]
+        name: String,
+        #[arg(long, default_value = "http://127.0.0.1:18232")]
+        rpc_url: String,
+    },
+    #[command(about = "Restore a dedicated Ironwood testnet wallet profile from mnemonic")]
+    Restore {
+        #[arg(long, default_value = "Ironwood Testnet")]
+        name: String,
+        #[arg(long, default_value = "http://127.0.0.1:18232")]
+        rpc_url: String,
+    },
+    #[command(about = "Use an existing profile as the Ironwood testnet wallet")]
+    Use {
+        #[arg(long, help = "Wallet profile ID from `nozy profile list`")]
+        profile_id: String,
+        #[arg(long, default_value = "http://127.0.0.1:18232")]
+        rpc_url: String,
+    },
+    #[command(about = "Show active testnet-wallet readiness")]
+    Status,
 }
 
 #[derive(Subcommand)]
@@ -581,180 +739,74 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             }
 
             let (wallet, _storage) = load_wallet().await?;
-            let zebra_client = ZebraClient::from_config(&config);
 
-            let effective_start = if let Some(start) = start_height {
-                Some(start)
-            } else if let Some(last_height) = config.last_scan_height {
-                Some(last_height + 1)
-            } else {
-                None
+            let options = nozy::WalletSyncOptions {
+                start_height,
+                end_height,
+                scan_to_tip: to_tip,
+                zebra_url: Some(config.zebra_url.clone()),
+                ..nozy::WalletSyncOptions::default()
             };
-            // Mainnet: Orchard-heavy range default. Testnet: chain height / resets differ — start from
-            // genesis unless user set last_scan or --start-height (first chunk is still capped below).
-            let default_first_scan_start: u32 = if config.network == "testnet" {
-                1
-            } else {
-                3_050_000
-            };
-            let scan_start = effective_start.unwrap_or(default_first_scan_start);
-            let chain_tip = zebra_client.get_block_count().await?;
-            let requested_end = if let Some(end) = end_height {
-                end.max(scan_start)
-            } else if to_tip || start_height.is_some() {
-                // --to-tip or explicit --start-height without end: scan through chain tip.
-                chain_tip
-            } else {
-                // Incremental default: bounded chunk when only last_scan / default start drives the window.
-                scan_start.saturating_add(1_000)
-            };
-            let scan_end = requested_end.min(chain_tip);
-
-            if scan_start > scan_end {
-                return Err(NozyError::InvalidOperation(format!(
-                    "start height ({}) is above the effective end height ({}, zebrad tip {}). \
-                     If zebrad is still catching up and your wallet birthday is ~{}, wait until \
-                     zebrad indexes past that height, use a mainnet snapshot, or pass a lower \
-                     --start-height for testing (e.g. 1).",
-                    scan_start, scan_end, chain_tip, scan_start
-                )));
-            }
 
             if to_tip {
-                println!(
-                    "🔄 Sync to chain tip: scanning blocks {} to {} ({} blocks)",
-                    scan_start,
-                    scan_end,
-                    scan_end.saturating_sub(scan_start).saturating_add(1)
-                );
-            } else if let Some(start) = effective_start {
-                if let Some(last) = config.last_scan_height {
+                let chain_tip = ZebraClient::from_config(&config).get_block_count().await?;
+                let scan_start = start_height
+                    .or_else(|| config.last_scan_height.map(|h| h.saturating_add(1)))
+                    .unwrap_or(if config.network == "testnet" {
+                        1
+                    } else {
+                        nozy::MAINNET_DEFAULT_SCAN_START
+                    });
+                let scan_end = end_height.unwrap_or(chain_tip).min(chain_tip);
+                if scan_start <= scan_end {
                     println!(
-                        "🔄 Incremental sync: scanning from block {} (last sync: {})",
-                        start, last
+                        "🔄 Sync to chain tip: scanning blocks {} to {} ({} blocks)",
+                        scan_start,
+                        scan_end,
+                        scan_end.saturating_sub(scan_start).saturating_add(1)
                     );
                 } else {
-                    println!("🔄 Full sync: scanning from block {}", start);
+                    println!("🔄 Sync to chain tip: advancing Orchard witnesses toward height {chain_tip}");
                 }
-            } else {
-                println!("🔄 Full sync: scanning from default starting point");
             }
 
-            let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
-
-            let total_blocks = (scan_end.saturating_sub(scan_start) + 1) as u64;
-
-            use nozy::progress::create_sync_progress_bar;
-            let pb = if total_blocks > 100 {
-                Some(create_sync_progress_bar(total_blocks))
-            } else {
-                None
-            };
-
-            if let Some(ref progress_bar) = pb {
-                progress_bar.set_message("Scanning blockchain for notes...");
-            }
-
-            match note_scanner
-                .scan_notes(Some(scan_start), Some(scan_end))
-                .await
-            {
-                Ok((result, _spendable_notes)) => {
-                    if let Some(ref progress_bar) = pb {
-                        progress_bar.finish_with_message("✅ Scan complete");
-                    }
-
-                    use nozy::paths::get_wallet_data_dir;
-                    use std::fs;
-                    let notes_dir = get_wallet_data_dir();
-                    let notes_path = notes_dir.join("notes.json");
-
-                    use nozy::SerializableOrchardNote;
-                    let mut existing_notes: Vec<SerializableOrchardNote> = if notes_path.exists() {
-                        if let Ok(content) = fs::read_to_string(&notes_path) {
-                            serde_json::from_str(&content).unwrap_or_default()
-                        } else {
-                            Vec::new()
-                        }
-                    } else {
-                        Vec::new()
-                    };
-
-                    let existing_nullifiers: std::collections::HashSet<Vec<u8>> = existing_notes
-                        .iter()
-                        .map(|n| n.nullifier_bytes.clone())
-                        .collect();
-
-                    for new_note in &result.notes {
-                        if let Some(existing) = existing_notes.iter_mut().find(|n| {
-                            n.txid == new_note.txid
-                                && n.block_height == new_note.block_height
-                                && n.value == new_note.value
-                        }) {
-                            existing.spent = existing.spent || new_note.spent;
-                            if new_note.rho_bytes.is_some() {
-                                existing.nullifier_bytes = new_note.nullifier_bytes.clone();
-                                existing.rho_bytes = new_note.rho_bytes.clone();
-                                existing.rseed_bytes = new_note.rseed_bytes.clone();
-                            }
-                            continue;
-                        }
-                        if !existing_nullifiers.contains(&new_note.nullifier_bytes) {
-                            existing_notes.push(new_note.clone());
-                        }
-                    }
-
-                    if let Ok(serialized) = serde_json::to_string_pretty(&existing_notes) {
-                        let _ = fs::write(&notes_path, serialized);
-                    }
-
-                    let final_height = scan_end;
-                    let _ = update_last_scan_height(final_height);
-
-                    let total_balance: u64 = existing_notes.iter().map(|n| n.value).sum();
-                    let balance_zec = total_balance as f64 / 100_000_000.0;
-
-                    if total_balance > 0 {
+            match nozy::sync_wallet_notes(wallet, options).await {
+                Ok(result) => {
+                    let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
+                    if result.already_synced {
+                        println!("✅ Already synced to chain tip (witnesses fresh)");
+                    } else if result.balance_zatoshis > 0 {
                         println!("✅ Sync complete! Balance: {:.8} ZEC", balance_zec);
                         println!(
                             "   Found {} new notes, {} total notes",
-                            result.notes.len(),
-                            existing_notes.len()
+                            result.new_notes_in_scan, result.total_notes
                         );
                     } else {
                         println!("✅ Sync complete! Balance: 0.00000000 ZEC");
-                        println!("   Found {} new notes", result.notes.len());
+                        if result.new_notes_in_scan > 0 {
+                            println!("   Found {} new notes", result.new_notes_in_scan);
+                        }
                     }
-                    println!("   Last scanned height: {}", final_height);
-                    if chain_tip > final_height {
-                        let behind = chain_tip - final_height;
+                    println!("   Last scanned height: {}", result.last_scan_height);
+                    if result.chain_tip > result.last_scan_height {
+                        let behind = result.chain_tip - result.last_scan_height;
                         println!(
                             "   ⚠️  Chain tip is {} ({} blocks ahead of this scan)",
-                            chain_tip, behind
+                            result.chain_tip, behind
                         );
                         println!(
                             "   💡 Recent deposits are often in newer blocks — run: nozy sync --to-tip"
                         );
-                        if behind > 1_000
-                            && end_height.is_none()
-                            && !to_tip
-                            && start_height.is_none()
-                        {
-                            println!(
-                                "   💡 Plain `sync` scans ~1000 blocks per run; use `nozy sync --to-tip` after receiving funds."
-                            );
-                        }
                     }
                 }
                 Err(e) => {
-                    if let Some(ref progress_bar) = pb {
-                        progress_bar.finish_with_message("❌ Scan failed");
+                    println!("❌ Error updating wallet: {}", e.message);
+                    if let (Some(start), Some(end), Some(tip)) =
+                        (e.scan_start, e.scan_end, e.chain_tip)
+                    {
+                        println!("   Scan range: {start}-{end} (tip {tip})");
                     }
-                    println!("❌ Error updating wallet: {}", e);
-                    println!("\n💡 Recovery suggestions:");
-                    for suggestion in e.recovery_suggestions() {
-                        println!("   • {}", suggestion);
-                    }
+                    return Err(NozyError::NoteScanning(e.message));
                 }
             }
         }
@@ -907,10 +959,17 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             let total_available = orchard_total;
 
             println!(
-                "  Shielded ZEC: {:.8} ZEC (Orchard: {} notes)",
+                "  Shielded ZEC: {:.8} ZEC ({} notes)",
                 total_available as f64 / 100_000_000.0,
                 spendable_notes.len(),
             );
+            let ironwood_count = spendable_notes
+                .iter()
+                .filter(|n| n.pool == nozy::shielded_pool::ShieldedPool::Ironwood)
+                .count();
+            if ironwood_count > 0 {
+                println!("  Pool:      Ironwood (NU6.3 post-activation send path)");
+            }
 
             if total_available < total_amount {
                 let error = NozyError::InsufficientFunds(format!(
@@ -1119,6 +1178,143 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 println!("\n   ⚠️  Run 'sync' to update your balance.");
             }
         }
+
+        Commands::Profile { command } => match command {
+            ProfileCommand::List => {
+                print_profile_list()?;
+            }
+            ProfileCommand::Switch { profile_id } => {
+                nozy::set_active_wallet_profile(&profile_id)?;
+                println!("✅ Active wallet profile set to: {profile_id}");
+                if !nozy::profile_has_wallet(&profile_id) {
+                    println!("⚠️  This profile does not have a wallet yet.");
+                }
+            }
+        },
+
+        Commands::TestnetWallet { command } => match command {
+            TestnetWalletCommand::New { name, rpc_url } => {
+                let profile = nozy::create_new_profile(Some(&name))?;
+                configure_ironwood_testnet(&mut config, &rpc_url)?;
+
+                println!("🔐 Creating dedicated Ironwood testnet wallet...");
+                println!("   Profile: {} ({})", profile.name, profile.id);
+                println!("   RPC:     {}", rpc_url);
+
+                let mut wallet = HDWallet::new()?;
+                save_wallet_to_active_profile(&mut wallet).await?;
+
+                println!("🎉 Testnet wallet created successfully!");
+                println!("📝 Mnemonic: {}", wallet.get_mnemonic());
+                println!();
+                println!("⚠️  This is a testnet wallet. Keep it separate from mainnet funds.");
+
+                match wallet.generate_orchard_address(0, 0, NetworkType::Test) {
+                    Ok(address) => {
+                        println!("📍 Testnet Orchard address:");
+                        println!("{}", address);
+                        println!("\nNext:");
+                        println!("  1. Fund this address with tZEC");
+                        println!("  2. nozy testnet-wallet status");
+                        println!("  3. nozy --testnet sync --to-tip");
+                        println!("  4. nozy --testnet ironwood plan");
+                    }
+                    Err(e) => println!("❌ Failed to generate testnet address: {}", e),
+                }
+            }
+            TestnetWalletCommand::Restore { name, rpc_url } => {
+                use dialoguer::Input;
+
+                let profile = nozy::create_new_profile(Some(&name))?;
+                configure_ironwood_testnet(&mut config, &rpc_url)?;
+
+                println!("🔐 Restoring dedicated Ironwood testnet wallet...");
+                println!("   Profile: {} ({})", profile.name, profile.id);
+                println!("   RPC:     {}", rpc_url);
+
+                let mnemonic: String = Input::new()
+                    .with_prompt("Enter your testnet wallet mnemonic")
+                    .with_initial_text("")
+                    .interact_text()
+                    .map_err(|e| {
+                        NozyError::InvalidOperation(format!("Mnemonic input error: {}", e))
+                    })?;
+
+                let mut wallet = HDWallet::from_mnemonic(&mnemonic)?;
+                save_wallet_to_active_profile(&mut wallet).await?;
+
+                println!("✅ Testnet wallet restored and saved.");
+                match wallet.generate_orchard_address(0, 0, NetworkType::Test) {
+                    Ok(address) => {
+                        println!("📍 Testnet Orchard address:");
+                        println!("{}", address);
+                        println!("\nNext:");
+                        println!("  1. nozy --testnet sync --to-tip");
+                        println!("  2. nozy --testnet ironwood plan");
+                        println!("  3. nozy --testnet ironwood migrate");
+                    }
+                    Err(e) => println!("❌ Failed to generate testnet address: {}", e),
+                }
+            }
+            TestnetWalletCommand::Use {
+                profile_id,
+                rpc_url,
+            } => {
+                nozy::set_active_wallet_profile(&profile_id)?;
+                configure_ironwood_testnet(&mut config, &rpc_url)?;
+
+                println!("✅ Active profile configured as Ironwood testnet wallet.");
+                println!("   Profile: {}", profile_id);
+                println!("   Network: testnet");
+                println!("   RPC:     {}", rpc_url);
+                if !nozy::profile_has_wallet(&profile_id) {
+                    println!("⚠️  This profile does not have a wallet yet.");
+                }
+                println!("\nNext:");
+                println!("  nozy --testnet receive");
+                println!("  nozy --testnet sync --to-tip");
+                println!("  nozy --testnet ironwood plan");
+            }
+            TestnetWalletCommand::Status => {
+                let active_id = nozy::active_profile_id();
+                let profiles = nozy::list_wallet_profiles()?;
+                let active_profile = active_id
+                    .as_deref()
+                    .and_then(|id| profiles.iter().find(|p| p.id == id));
+
+                println!("Ironwood testnet wallet status");
+                println!("{}", "=".repeat(50));
+                if let Some(profile) = active_profile {
+                    println!("  Active profile: {} ({})", profile.name, profile.id);
+                    println!(
+                        "  Wallet file:    {}",
+                        if nozy::profile_has_wallet(&profile.id) {
+                            "present"
+                        } else {
+                            "missing"
+                        }
+                    );
+                } else {
+                    println!("  Active profile: (none)");
+                }
+                println!("  Network:       {}", config.network);
+                println!("  Zebra RPC:     {}", config.zebra_url);
+                println!(
+                    "  Ready shape:   {}",
+                    if config.network == "testnet" && config.zebra_url.contains(":18232") {
+                        "testnet/local RPC configured"
+                    } else {
+                        "run `nozy testnet-wallet use --profile-id <id>`"
+                    }
+                );
+                println!("\nUseful commands:");
+                println!("  nozy profile list");
+                println!("  nozy --testnet receive");
+                println!("  nozy --testnet sync --to-tip");
+                println!("  nozy --testnet ironwood plan");
+                println!("  nozy --testnet ironwood migrate");
+            }
+        },
 
         Commands::Info => {
             let (wallet, _storage) = load_wallet().await?;
@@ -2907,6 +3103,573 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                                     conf_updated
                                 );
                             }
+                        }
+                    }
+                }
+            }
+        }
+
+        Commands::Ironwood { command } => {
+            use nozy::ironwood::{
+                display_ironwood_status,
+                execute_orchard_migration, execute_orchard_migration_broadcast,
+                execute_orchard_note_split, fetch_pool_balances, is_ironwood_active,
+                nu6_3_activation_height, plan_orchard_migration_at,
+                plan_orchard_note_split_outputs, refresh_orchard_migration_schedule_at,
+                save_orchard_migration_plan_at, IronwoodWalletStatus, MigrationReadinessState,
+            };
+            use nozy::load_wallet_notes;
+            use nozy::max_serialized_witness_lag_blocks;
+            use nozy::shielded_pool::ShieldedPool;
+            use nozy::ZebraClient;
+
+            let zebra_client = ZebraClient::from_config(&config);
+            let chain_tip = zebra_client.get_block_count().await.unwrap_or(0);
+            let testnet = config.network.eq_ignore_ascii_case("testnet");
+            let activation_height = nu6_3_activation_height(testnet);
+            let ironwood_active = is_ironwood_active(chain_tip, testnet);
+            let migration_schedule_tip = if ironwood_active {
+                chain_tip
+            } else {
+                activation_height
+                    .map(|height| height.saturating_sub(1))
+                    .unwrap_or(chain_tip)
+            };
+
+            match command {
+                IronwoodCommand::Status => {
+                    let pools = fetch_pool_balances(&zebra_client).await.unwrap_or_default();
+                    let notes = load_wallet_notes().unwrap_or_default();
+                    let orchard_zat: u64 = notes
+                        .iter()
+                        .filter(|n| !n.spent && n.pool == ShieldedPool::Orchard)
+                        .map(|n| n.value)
+                        .sum();
+                    let ironwood_zat: u64 = notes
+                        .iter()
+                        .filter(|n| !n.spent && n.pool == ShieldedPool::Ironwood)
+                        .map(|n| n.value)
+                        .sum();
+
+                    let mut blockers = Vec::new();
+                    if activation_height.is_none() {
+                        blockers.push(
+                            "NU6.3 activation height is not configured in zcash_protocol for this network yet"
+                                .to_string(),
+                        );
+                    } else if !ironwood_active {
+                        let remaining = activation_height
+                            .map(|height| height.saturating_sub(chain_tip))
+                            .unwrap_or(0);
+                        blockers.push(format!(
+                            "Planning only: Ironwood activates in {remaining} blocks"
+                        ));
+                    }
+                    if ironwood_active && orchard_zat > 0 {
+                        blockers.push(
+                            "Orchard notes remain — run `nozy ironwood migrate` for turnstile migration"
+                                .to_string(),
+                        );
+                    }
+                    if ironwood_active && ironwood_zat == 0 && orchard_zat == 0 {
+                        blockers.push(
+                            "No unspent shielded notes — receive ZEC or run `nozy sync --to-tip` to index Ironwood outputs"
+                                .to_string(),
+                        );
+                    }
+
+                    let wallet_ready = ironwood_active
+                        && ironwood_zat > 0
+                        && orchard_zat == 0
+                        && blockers.is_empty();
+
+                    let status = IronwoodWalletStatus {
+                        chain_tip,
+                        ironwood_active,
+                        nu6_3_activation_height: activation_height,
+                        pools,
+                        orchard_notes_unspent: orchard_zat,
+                        ironwood_notes_unspent: ironwood_zat,
+                        migration_recommended: ironwood_active && orchard_zat > 0,
+                        wallet_ready,
+                        blockers,
+                    };
+                    display_ironwood_status(&status);
+                }
+                IronwoodCommand::Plan { save } => {
+                    let plan = plan_orchard_migration_at(ironwood_active, migration_schedule_tip)?;
+                    println!("🌲 Ironwood migration plan");
+                    println!(
+                        "   Orchard notes to migrate: {}",
+                        plan.orchard_notes_to_migrate
+                    );
+                    println!("   Total: {} zatoshis", plan.total_zatoshis);
+                    if !ironwood_active {
+                        println!(
+                            "   Ironwood active: no (tip {}, activation {})",
+                            chain_tip,
+                            activation_height
+                                .map(|h| h.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        );
+                        println!("   Schedule starts at the first ZIP 318 bucket after activation");
+                    }
+                    println!("   ZIP 318 mode: scheduled background migration");
+                    println!(
+                        "   Anchor bucket interval: {} blocks",
+                        plan.zip318.anchor_bucket_interval_blocks
+                    );
+                    println!(
+                        "   Note split required: {}",
+                        if plan.zip318.note_split_required {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
+                    println!(
+                        "   Canonical transfer count: {}",
+                        plan.zip318.total_transfer_count
+                    );
+                    println!(
+                        "   Next anchor bucket: {}",
+                        plan.zip318
+                            .next_anchor_bucket_height
+                            .map(|h| h.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    );
+                    println!("   Same-denomination cap per bucket: {}", plan.zip318.k_max);
+                    for d in &plan.zip318.denomination_transfers {
+                        println!("     • {} × {} zat", d.count, d.value_zat);
+                    }
+                    if !plan.zip318.scheduled_transfers.is_empty() {
+                        println!();
+                        println!("   Draft schedule preview:");
+                        for transfer in plan.zip318.scheduled_transfers.iter().take(12) {
+                            println!(
+                                "     • #{} {} zat at bucket {} (slot {})",
+                                transfer.sequence,
+                                transfer.value_zat,
+                                transfer.anchor_bucket_height,
+                                transfer.bucket_slot
+                            );
+                        }
+                        if plan.zip318.scheduled_transfers.len() > 12 {
+                            println!(
+                                "     • ... {} more scheduled transfers",
+                                plan.zip318.scheduled_transfers.len() - 12
+                            );
+                        }
+                    }
+                    println!();
+                    println!("   Source notes:");
+                    for t in &plan.transfers {
+                        println!(
+                            "     • {} zat (note {}, height {})",
+                            t.value_zat, t.nullifier_hex, t.block_height
+                        );
+                    }
+                    if save {
+                        let (schedule, path) = save_orchard_migration_plan_at(
+                            ironwood_active,
+                            migration_schedule_tip,
+                        )?;
+                        println!();
+                        println!(
+                            "   ✅ Draft schedule saved: {} ({} transfers)",
+                            path.display(),
+                            schedule.transfers.len()
+                        );
+                    }
+                }
+                IronwoodCommand::Preflight => {
+                    let notes = load_wallet_notes().unwrap_or_default();
+                    let orchard_notes: Vec<_> = notes
+                        .iter()
+                        .filter(|n| !n.spent && n.pool == ShieldedPool::Orchard)
+                        .collect();
+                    let orchard_zat: u64 = orchard_notes.iter().map(|n| n.value).sum();
+                    let witness_lag = max_serialized_witness_lag_blocks(&notes, chain_tip);
+                    let plan = plan_orchard_migration_at(ironwood_active, migration_schedule_tip)?;
+                    let refreshed = refresh_orchard_migration_schedule_at(
+                        ironwood_active,
+                        migration_schedule_tip,
+                    )?;
+                    let orchard_values: Vec<u64> = orchard_notes.iter().map(|n| n.value).collect();
+                    let migration_fee = nozy::fee_policy::estimate_orchard_send_fee_zatoshis(
+                        None,
+                        nozy::fee_policy::NOZY_WALLET_PRIORITY_FEE,
+                    );
+                    let readiness = nozy::ironwood::migration::assess_orchard_migration_readiness_with_spendability(
+                        ironwood_active,
+                        chain_tip,
+                        &plan,
+                        refreshed.as_ref().map(|(schedule, _, _)| schedule),
+                        Some(witness_lag),
+                        Some(nozy::MAX_SEND_WITNESS_LAG_BLOCKS),
+                        Some(&orchard_values),
+                        Some(migration_fee),
+                    );
+
+                    println!("🌲 Ironwood migration preflight");
+                    println!("   Network: {}", config.network);
+                    println!("   Chain tip: {}", chain_tip);
+                    println!(
+                        "   Activation height: {}",
+                        activation_height
+                            .map(|h| h.to_string())
+                            .unwrap_or_else(|| "unknown".to_string())
+                    );
+                    if let Some(height) = activation_height {
+                        println!(
+                            "   Blocks until activation: {}",
+                            height.saturating_sub(chain_tip)
+                        );
+                    }
+                    println!(
+                        "   Ironwood active: {}",
+                        if ironwood_active { "yes" } else { "no" }
+                    );
+                    println!(
+                        "   Orchard migration balance: {} zat across {} notes",
+                        orchard_zat,
+                        orchard_notes.len()
+                    );
+                    println!("   Max witness lag: {} blocks", witness_lag);
+                    println!("   ZIP 318 transfers: {}", plan.zip318.total_transfer_count);
+                    println!(
+                        "   Next anchor bucket: {}",
+                        plan.zip318
+                            .next_anchor_bucket_height
+                            .map(|h| h.to_string())
+                            .unwrap_or_else(|| "none".to_string())
+                    );
+                    match refreshed {
+                        Some((schedule, path, expired)) if expired > 0 => {
+                            println!(
+                                "   Schedule refresh: rebuilt {} expired/missed transfers at {}",
+                                expired,
+                                path.display()
+                            );
+                            println!("   Schedule transfers: {}", schedule.transfers.len());
+                        }
+                        Some((schedule, path, _)) => {
+                            println!(
+                                "   Schedule refresh: current schedule OK at {} ({} transfers)",
+                                path.display(),
+                                schedule.transfers.len()
+                            );
+                        }
+                        None => {
+                            println!("   Schedule refresh: no saved schedule yet");
+                        }
+                    }
+                    println!("   Readiness state: {}", readiness.state.label());
+                    if let Some(transfer) = readiness.next_eligible_transfer.as_ref() {
+                        println!(
+                            "   Next eligible transfer: #{} {} zat at bucket {}",
+                            transfer.sequence, transfer.value_zat, transfer.anchor_bucket_height
+                        );
+                    } else if let Some(transfer) = readiness.next_waiting_transfer.as_ref() {
+                        println!(
+                            "   Next waiting transfer: #{} {} zat at bucket {}",
+                            transfer.sequence, transfer.value_zat, transfer.anchor_bucket_height
+                        );
+                    } else if let Some(transfer) = readiness.active_presigned_transfer.as_ref() {
+                        println!(
+                            "   Presigned transfer: #{} {} zat (txid {})",
+                            transfer.sequence,
+                            transfer.value_zat,
+                            transfer.prepared_txid.as_deref().unwrap_or("unknown")
+                        );
+                    }
+                    if let Some(validation) = readiness.validation.as_ref() {
+                        println!(
+                            "   Schedule validation: {}",
+                            if validation.valid {
+                                "ok"
+                            } else {
+                                "needs rebuild"
+                            }
+                        );
+                        if validation.expired_transfer_count > 0 {
+                            println!(
+                                "   Expired/missed windows: {}",
+                                validation.expired_transfer_count
+                            );
+                        }
+                        if validation.stale_presigned_count > 0 {
+                            println!(
+                                "   Stale presigned txs: {}",
+                                validation.stale_presigned_count
+                            );
+                        }
+                    }
+                    for blocker in &readiness.blockers {
+                        println!("   Blocker: {blocker}");
+                    }
+                    println!();
+                    match readiness.state {
+                        MigrationReadinessState::PlanningOnly => {
+                            println!("   Result: planning-only until NU6.3 activation");
+                        }
+                        MigrationReadinessState::NoOrchardNotes => {
+                            println!("   Result: no Orchard notes need migration");
+                        }
+                        MigrationReadinessState::SplitRequired => {
+                            println!(
+                                "   Result: ZIP 318 note-splitting phase required before prebuild"
+                            );
+                        }
+                        MigrationReadinessState::ReadyToPrebuild => {
+                            println!("   Result: ready to attempt locked V6 prebuild");
+                        }
+                        MigrationReadinessState::WaitingForWindow => {
+                            println!("   Result: waiting for next ZIP 318 anchor bucket");
+                        }
+                        MigrationReadinessState::PresignedWaitingForBroadcast => {
+                            println!("   Result: presigned turnstile transaction waiting for bucket/window");
+                        }
+                        MigrationReadinessState::ReadyToBroadcast => {
+                            println!(
+                                "   Result: ready to broadcast presigned turnstile transaction"
+                            );
+                        }
+                        MigrationReadinessState::Blocked => {
+                            println!("   Result: blocked; resolve blockers above");
+                        }
+                    }
+                }
+                IronwoodCommand::Migrate => {
+                    if !ironwood_active {
+                        return Err(NozyError::InvalidOperation(format!(
+                            "Ironwood (NU6.3) is not active on this network yet (tip {}, activation {}). \
+                             The V6 Orchard-to-Ironwood transaction builder is only valid after activation.",
+                            chain_tip,
+                            activation_height
+                                .map(|h| h.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        )));
+                    }
+
+                    if let Some((_schedule, path, expired)) =
+                        refresh_orchard_migration_schedule_at(ironwood_active, chain_tip)?
+                    {
+                        if expired > 0 {
+                            println!(
+                                "♻️  Rebuilt Ironwood schedule after {} expired/missed transfer windows",
+                                expired
+                            );
+                            println!("   Schedule: {}", path.display());
+                        }
+                    }
+
+                    println!("🔐 Unlocking wallet for Ironwood migration prebuild...");
+                    let (wallet, _storage) = load_wallet().await?;
+                    println!("🔍 Loading spendable Orchard notes for turnstile prebuild...");
+                    let spendable_notes = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+                    let result = execute_orchard_migration(
+                        &config.zebra_url,
+                        ironwood_active,
+                        &spendable_notes,
+                    )
+                    .await?;
+
+                    if let Some(prepared) = result.prepared {
+                        println!("✅ Prebuilt locked V6 turnstile transaction");
+                        println!("   Sequence: {}", prepared.sequence);
+                        println!("   Value:    {} zat", prepared.value_zat);
+                        println!("   TXID:     {}", prepared.txid);
+                        println!("   Source:   {}", prepared.source_nullifier_hex);
+                        println!("   Prepared at height: {}", prepared.prepared_at_height);
+                        println!("   Expires at height:  {}", prepared.expires_at_height);
+                        if let Some(path) = result.schedule_path {
+                            println!("   Schedule: {}", path.display());
+                        }
+                        println!(
+                            "   Next: run `nozy ironwood broadcast` when the ZIP 318 bucket window is open"
+                        );
+                    } else {
+                        match result.readiness_state {
+                            MigrationReadinessState::NoOrchardNotes => {
+                                println!("✅ No Orchard notes require Ironwood migration.");
+                            }
+                            MigrationReadinessState::SplitRequired => {
+                                println!("🧩 ZIP 318 note splitting is required before migration prebuild.");
+                                if let Some(path) = result.schedule_path {
+                                    println!("   Schedule: {}", path.display());
+                                }
+                                for blocker in &result.blockers {
+                                    println!("   Blocker: {blocker}");
+                                }
+                            }
+                            MigrationReadinessState::WaitingForWindow => {
+                                println!("⏳ Waiting for the next ZIP 318 anchor bucket before prebuild.");
+                                if let Some(path) = result.schedule_path {
+                                    println!("   Schedule: {}", path.display());
+                                }
+                            }
+                            MigrationReadinessState::PresignedWaitingForBroadcast => {
+                                println!(
+                                    "🔒 A locked V6 turnstile transaction is already presigned."
+                                );
+                                if let Some(path) = result.schedule_path {
+                                    println!("   Schedule: {}", path.display());
+                                }
+                                for blocker in &result.blockers {
+                                    println!("   Blocker: {blocker}");
+                                }
+                            }
+                            MigrationReadinessState::ReadyToBroadcast => {
+                                println!(
+                                    "📡 Presigned turnstile transaction is ready for broadcast."
+                                );
+                                if let Some(path) = result.schedule_path {
+                                    println!("   Schedule: {}", path.display());
+                                }
+                                println!("   Run: nozy ironwood broadcast");
+                            }
+                            MigrationReadinessState::PlanningOnly
+                            | MigrationReadinessState::ReadyToPrebuild
+                            | MigrationReadinessState::Blocked => {
+                                println!(
+                                    "⚠️  Migration did not prebuild a transaction ({})",
+                                    result.readiness_state.label()
+                                );
+                                for blocker in &result.blockers {
+                                    println!("   Blocker: {blocker}");
+                                }
+                            }
+                        }
+                    }
+                }
+                IronwoodCommand::Broadcast {
+                    dry_run,
+                    wait_confirm,
+                } => {
+                    if !ironwood_active {
+                        return Err(NozyError::InvalidOperation(format!(
+                            "Ironwood (NU6.3) is not active on this network yet (tip {}, activation {}).",
+                            chain_tip,
+                            activation_height
+                                .map(|h| h.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        )));
+                    }
+
+                    if let Some((_schedule, path, expired)) =
+                        refresh_orchard_migration_schedule_at(ironwood_active, chain_tip)?
+                    {
+                        if expired > 0 {
+                            println!(
+                                "♻️  Rebuilt Ironwood schedule after {} expired/missed transfer windows",
+                                expired
+                            );
+                            println!("   Schedule: {}", path.display());
+                        }
+                    }
+
+                    let result = execute_orchard_migration_broadcast(
+                        &config.zebra_url,
+                        ironwood_active,
+                        dry_run,
+                        wait_confirm,
+                    )
+                    .await?;
+
+                    if dry_run {
+                        println!("🧪 Dry run — presigned turnstile broadcast plan");
+                    } else if result.blockers.is_empty() || result.confirmed {
+                        println!("✅ Presigned turnstile transaction broadcast");
+                    } else {
+                        println!("⚠️  Turnstile broadcast did not complete");
+                    }
+                    println!("   Sequence: {}", result.sequence);
+                    println!("   TXID:     {}", result.txid);
+                    println!("   Height:   {}", result.broadcast_at_height);
+                    println!("   Schedule: {}", result.schedule_path.display());
+                    if result.confirmed {
+                        println!("   Confirmed: yes");
+                    } else if wait_confirm && !dry_run {
+                        println!("   Confirmed: pending (run sync and preflight again)");
+                    }
+                    for blocker in &result.blockers {
+                        println!("   Blocker: {blocker}");
+                    }
+                }
+                IronwoodCommand::Split { dry_run } => {
+                    if !ironwood_active {
+                        return Err(NozyError::InvalidOperation(format!(
+                            "Ironwood (NU6.3) is not active on this network yet (tip {}, activation {}). \
+                             ZIP 318 note splitting is only valid after activation.",
+                            chain_tip,
+                            activation_height
+                                .map(|h| h.to_string())
+                                .unwrap_or_else(|| "unknown".to_string())
+                        )));
+                    }
+
+                    println!("🔐 Unlocking wallet for ZIP 318 note split...");
+                    let (wallet, _storage) = load_wallet().await?;
+                    println!("🔍 Loading spendable Orchard notes...");
+                    let spendable_notes = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+
+                    if dry_run {
+                        let spend_note = spendable_notes
+                            .iter()
+                            .filter(|note| !note.orchard_note.spent)
+                            .filter(|note| {
+                                nozy::ironwood::note_requires_canonical_split(
+                                    note.orchard_note.value,
+                                )
+                            })
+                            .max_by_key(|note| note.orchard_note.value)
+                            .ok_or_else(|| {
+                                NozyError::InvalidOperation(
+                                    "No Orchard note requires canonical splitting.".to_string(),
+                                )
+                            })?;
+                        let (outputs, fee) =
+                            plan_orchard_note_split_outputs(spend_note.orchard_note.value)?;
+                        println!("🧪 Dry run — ZIP 318 note split plan");
+                        println!(
+                            "   Source note: {} zat ({})",
+                            spend_note.orchard_note.value,
+                            hex::encode(spend_note.orchard_note.nullifier.to_bytes())
+                        );
+                        println!("   Fee:         {fee} zat");
+                        println!("   Outputs:");
+                        for (index, value) in outputs.iter().enumerate() {
+                            println!("     • #{} {value} zat", index + 1);
+                        }
+                        println!("   Run without --dry-run to build, prove, and broadcast.");
+                    } else {
+                        let result = execute_orchard_note_split(
+                            &config.zebra_url,
+                            ironwood_active,
+                            &spendable_notes,
+                            true,
+                        )
+                        .await?;
+                        println!("✅ Orchard note split broadcast");
+                        println!(
+                            "   Source:  {} zat ({})",
+                            result.source_value_zat, result.source_nullifier_hex
+                        );
+                        println!("   Fee:     {} zat", result.fee_zat);
+                        println!("   TXID:    {}", result.txid);
+                        println!("   Outputs:");
+                        for (index, value) in result.output_values_zat.iter().enumerate() {
+                            println!("     • #{} {value} zat", index + 1);
+                        }
+                        if result.note_split_still_required {
+                            println!(
+                                "   Next: run `nozy sync --to-tip`, then `nozy ironwood split` again if preflight still reports split-required."
+                            );
+                        } else {
+                            println!(
+                                "   Next: run `nozy sync --to-tip`, `nozy ironwood plan --save`, then `nozy ironwood preflight`."
+                            );
                         }
                     }
                 }

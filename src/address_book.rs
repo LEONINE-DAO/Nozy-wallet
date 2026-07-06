@@ -108,9 +108,13 @@ impl AddressBook {
         address: String,
         notes: Option<String>,
     ) -> NozyResult<()> {
-        if !address.starts_with("u1") && !address.starts_with("zs1") {
+        if !address.starts_with("u1")
+            && !address.starts_with("utest1")
+            && !address.starts_with("zs1")
+        {
             return Err(NozyError::AddressParsing(
-                "Invalid address format. Must be a shielded address (u1 or zs1)".to_string(),
+                "Invalid address format. Must be a shielded address (u1, utest1, or zs1)"
+                    .to_string(),
             ));
         }
 
@@ -232,9 +236,12 @@ impl AddressBook {
                 .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             if let Some(entry) = addresses.get_mut(name) {
                 if let Some(addr) = new_address {
-                    if !addr.starts_with("u1") && !addr.starts_with("zs1") {
+                    if !addr.starts_with("u1")
+                        && !addr.starts_with("utest1")
+                        && !addr.starts_with("zs1")
+                    {
                         return Err(NozyError::AddressParsing(
-                            "Invalid address format. Must be a shielded address (u1 or zs1)"
+                            "Invalid address format. Must be a shielded address (u1, utest1, or zs1)"
                                 .to_string(),
                         ));
                     }

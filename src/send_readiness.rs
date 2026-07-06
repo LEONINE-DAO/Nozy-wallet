@@ -14,7 +14,7 @@ pub const WITNESS_CATCHUP_PARALLEL_BLOCKS: usize = 10;
 
 /// Blocks the spend note's witness is behind `chain_tip`.
 pub fn orchard_witness_lag_blocks(note: &SpendableNote, chain_tip: u32) -> u32 {
-    witness_lag_from_stored_tip(note.orchard_witness_tip_height, chain_tip)
+    witness_lag_from_stored_tip(note.witness_tip_height_for_pool(), chain_tip)
 }
 
 /// Lag from a stored witness tip height (None → treated as 0).
@@ -40,7 +40,7 @@ pub fn max_serialized_witness_lag_blocks(
     notes
         .iter()
         .filter(|n| !n.spent)
-        .map(|n| witness_lag_from_stored_tip(n.orchard_witness_tip_height, chain_tip))
+        .map(|n| witness_lag_from_stored_tip(n.witness_tip_height_for_pool(), chain_tip))
         .max()
         .unwrap_or(0)
 }
@@ -59,15 +59,15 @@ pub fn ensure_cached_witness_fresh_for_send(
         .filter(|n| !n.spent)
         .map(|n| {
             (
-                witness_lag_from_stored_tip(n.orchard_witness_tip_height, chain_tip),
+                witness_lag_from_stored_tip(n.witness_tip_height_for_pool(), chain_tip),
                 n,
             )
         })
         .max_by_key(|(lag, _)| *lag)
-        .map(|(_, n)| n.orchard_witness_tip_height.unwrap_or(0))
+        .map(|(_, n)| n.witness_tip_height_for_pool().unwrap_or(0))
         .unwrap_or(0);
     Err(NozyError::InvalidOperation(format!(
-        "Orchard witness is {lag} blocks behind chain tip (witness tip {stored}, chain tip {chain_tip}). \
+        "Shielded witness is {lag} blocks behind chain tip (witness tip {stored}, chain tip {chain_tip}). \
          Sync to tip before sending — otherwise witness catch-up can take many minutes. \
          Run `nozy sync --to-tip` or POST /api/sync until caught up (max lag {MAX_SEND_WITNESS_LAG_BLOCKS} blocks)."
     )))
@@ -83,9 +83,13 @@ pub fn ensure_witness_fresh_for_send(note: &SpendableNote, chain_tip: u32) -> No
     if lag <= MAX_SEND_WITNESS_LAG_BLOCKS {
         return Ok(());
     }
-    let stored = note.orchard_witness_tip_height.unwrap_or(0);
+    let stored = note.witness_tip_height_for_pool().unwrap_or(0);
+    let pool_label = match note.pool {
+        crate::shielded_pool::ShieldedPool::Orchard => "Orchard",
+        crate::shielded_pool::ShieldedPool::Ironwood => "Ironwood",
+    };
     Err(NozyError::InvalidOperation(format!(
-        "Orchard witness is {lag} blocks behind chain tip (witness tip {stored}, chain tip {chain_tip}). \
+        "{pool_label} witness is {lag} blocks behind chain tip (witness tip {stored}, chain tip {chain_tip}). \
          Sync to tip before sending — otherwise witness catch-up can take many minutes. \
          Run `nozy sync --to-tip` or POST /api/sync until caught up (max lag {MAX_SEND_WITNESS_LAG_BLOCKS} blocks)."
     )))

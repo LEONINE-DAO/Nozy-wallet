@@ -3,6 +3,10 @@ use crate::cache::SimpleCache;
 use crate::config::Protocol;
 use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
+use crate::ironwood_tree_codec::{
+    ironwood_commitment_tree_from_final_state, IronwoodCommitmentTree,
+};
+use crate::ironwood_witness::IronwoodWitnessTracker;
 use crate::key_management::{zeroize_bytes, SecureSeed};
 use crate::note_index::NoteIndex;
 use crate::orchard_tree_codec::orchard_commitment_tree_from_final_state;
@@ -10,6 +14,7 @@ use crate::orchard_tree_codec::OrchardCommitmentTree;
 use crate::orchard_witness::{merkle_hash_from_cmx_bytes, OrchardWitnessTracker};
 use crate::scan_log;
 use crate::scan_verbose;
+use crate::shielded_pool::ShieldedPool;
 use crate::zebra_integration::ZebraClient;
 use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
@@ -42,8 +47,70 @@ pub struct SpendableNote {
     pub orchard_note: OrchardNote,
     pub spending_key: SpendingKey,
     pub derivation_path: String,
+    pub pool: ShieldedPool,
     pub orchard_incremental_witness_hex: Option<String>,
     pub orchard_witness_tip_height: Option<u32>,
+    pub ironwood_incremental_witness_hex: Option<String>,
+    pub ironwood_witness_tip_height: Option<u32>,
+}
+
+impl SpendableNote {
+    pub fn witness_hex_for_pool(&self) -> Option<&String> {
+        match self.pool {
+            ShieldedPool::Orchard => self.orchard_incremental_witness_hex.as_ref(),
+            ShieldedPool::Ironwood => self.ironwood_incremental_witness_hex.as_ref(),
+        }
+    }
+
+    pub fn witness_tip_height_for_pool(&self) -> Option<u32> {
+        match self.pool {
+            ShieldedPool::Orchard => self.orchard_witness_tip_height,
+            ShieldedPool::Ironwood => self.ironwood_witness_tip_height,
+        }
+    }
+}
+
+trait ShieldedWitnessTrackerOps {
+    fn append_cmx(&mut self, cmx: orchard::tree::MerkleHashOrchard) -> NozyResult<()>;
+    fn register_discovered_note(&mut self, nullifier_bytes: [u8; 32]) -> NozyResult<()>;
+    fn serialized_witness_for_nullifier(
+        &self,
+        nullifier_bytes: &[u8; 32],
+    ) -> NozyResult<Option<Vec<u8>>>;
+}
+
+impl ShieldedWitnessTrackerOps for OrchardWitnessTracker {
+    fn append_cmx(&mut self, cmx: orchard::tree::MerkleHashOrchard) -> NozyResult<()> {
+        OrchardWitnessTracker::append_cmx(self, cmx)
+    }
+
+    fn register_discovered_note(&mut self, nullifier_bytes: [u8; 32]) -> NozyResult<()> {
+        OrchardWitnessTracker::register_discovered_note(self, nullifier_bytes)
+    }
+
+    fn serialized_witness_for_nullifier(
+        &self,
+        nullifier_bytes: &[u8; 32],
+    ) -> NozyResult<Option<Vec<u8>>> {
+        OrchardWitnessTracker::serialized_witness_for_nullifier(self, nullifier_bytes)
+    }
+}
+
+impl ShieldedWitnessTrackerOps for IronwoodWitnessTracker {
+    fn append_cmx(&mut self, cmx: orchard::tree::MerkleHashOrchard) -> NozyResult<()> {
+        IronwoodWitnessTracker::append_cmx(self, cmx)
+    }
+
+    fn register_discovered_note(&mut self, nullifier_bytes: [u8; 32]) -> NozyResult<()> {
+        IronwoodWitnessTracker::register_discovered_note(self, nullifier_bytes)
+    }
+
+    fn serialized_witness_for_nullifier(
+        &self,
+        nullifier_bytes: &[u8; 32],
+    ) -> NozyResult<Option<Vec<u8>>> {
+        IronwoodWitnessTracker::serialized_witness_for_nullifier(self, nullifier_bytes)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -62,6 +129,12 @@ pub struct SerializableOrchardNote {
     /// Block height through which the witness was advanced (matches chain order used during scan).
     #[serde(default)]
     pub orchard_witness_tip_height: Option<u32>,
+    /// Hex-encoded `IncrementalWitness` for the Ironwood pool (NU6.3+).
+    #[serde(default)]
+    pub ironwood_incremental_witness_hex: Option<String>,
+    /// Block height through which the Ironwood witness was advanced.
+    #[serde(default)]
+    pub ironwood_witness_tip_height: Option<u32>,
     /// Note rho (needed to derive the canonical Orchard nullifier; not present in compact actions).
     #[serde(default)]
     pub rho_bytes: Option<Vec<u8>>,
@@ -71,12 +144,42 @@ pub struct SerializableOrchardNote {
     /// When this note was spent, the broadcast txid of the spend (used to detect change outputs).
     #[serde(default)]
     pub spent_in_txid: Option<String>,
+    /// Shielded value pool (Orchard legacy vs Ironwood NU6.3+). Defaults to Orchard for v2 notes.
+    #[serde(default)]
+    pub pool: ShieldedPool,
 }
 
 impl SerializableOrchardNote {
+    pub fn witness_hex_for_pool(&self) -> Option<&String> {
+        match self.pool {
+            ShieldedPool::Orchard => self.orchard_incremental_witness_hex.as_ref(),
+            ShieldedPool::Ironwood => self.ironwood_incremental_witness_hex.as_ref(),
+        }
+    }
+
+    pub fn witness_tip_height_for_pool(&self) -> Option<u32> {
+        match self.pool {
+            ShieldedPool::Orchard => self.orchard_witness_tip_height,
+            ShieldedPool::Ironwood => self.ironwood_witness_tip_height,
+        }
+    }
+
+    pub fn set_witness_for_pool(&mut self, witness_hex: Option<String>, tip_height: Option<u32>) {
+        match self.pool {
+            ShieldedPool::Orchard => {
+                self.orchard_incremental_witness_hex = witness_hex;
+                self.orchard_witness_tip_height = tip_height;
+            }
+            ShieldedPool::Ironwood => {
+                self.ironwood_incremental_witness_hex = witness_hex;
+                self.ironwood_witness_tip_height = tip_height;
+            }
+        }
+    }
+
     /// Reconstruct the Orchard note when rho/rseed were persisted at discovery time.
     pub fn to_orchard_note(&self) -> Option<Note> {
-        use orchard::note::{RandomSeed, Rho};
+        use orchard::note::{NoteVersion, RandomSeed, Rho};
         let rho_bytes: [u8; 32] = self.rho_bytes.as_ref()?.as_slice().try_into().ok()?;
         let rho = Rho::from_bytes(&rho_bytes).into_option()?;
         let rseed_bytes: [u8; 32] = self.rseed_bytes.as_ref()?.as_slice().try_into().ok()?;
@@ -84,7 +187,11 @@ impl SerializableOrchardNote {
         let addr_bytes: [u8; 43] = self.address_bytes.as_slice().try_into().ok()?;
         let recipient = OrchardAddress::from_raw_address_bytes(&addr_bytes).into_option()?;
         let value = orchard::value::NoteValue::from_raw(self.value);
-        Note::from_parts(recipient, value, rho, rseed).into_option()
+        let note_version = match self.pool {
+            ShieldedPool::Orchard => NoteVersion::V2,
+            ShieldedPool::Ironwood => NoteVersion::V3,
+        };
+        Note::from_parts(recipient, value, rho, rseed, note_version).into_option()
     }
 
     /// Canonical nullifier for this note (matches spend builder / on-chain spends).
@@ -127,12 +234,7 @@ pub fn load_spendable_notes_from_wallet(wallet: &HDWallet) -> NozyResult<Vec<Spe
     let cached = load_wallet_notes()?;
     let unspent: Vec<&SerializableOrchardNote> = cached
         .iter()
-        .filter(|n| {
-            !n.spent
-                && n.orchard_incremental_witness_hex
-                    .as_ref()
-                    .is_some_and(|w| !w.is_empty())
-        })
+        .filter(|n| !n.spent && n.witness_hex_for_pool().is_some_and(|w| !w.is_empty()))
         .collect();
     if unspent.is_empty() {
         return Ok(Vec::new());
@@ -157,13 +259,29 @@ pub fn load_spendable_notes_from_wallet(wallet: &HDWallet) -> NozyResult<Vec<Spe
                 sn.txid
             ))
         })?;
-        spendable.push(SpendableNote {
+        let mut spendable_note = SpendableNote {
             orchard_note,
             spending_key: orchard_sk.clone(),
             derivation_path: "m/32'/133'/0'".to_string(),
-            orchard_incremental_witness_hex: sn.orchard_incremental_witness_hex.clone(),
-            orchard_witness_tip_height: sn.orchard_witness_tip_height,
-        });
+            pool: sn.pool,
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
+        };
+        match sn.pool {
+            ShieldedPool::Orchard => {
+                spendable_note.orchard_incremental_witness_hex =
+                    sn.orchard_incremental_witness_hex.clone();
+                spendable_note.orchard_witness_tip_height = sn.orchard_witness_tip_height;
+            }
+            ShieldedPool::Ironwood => {
+                spendable_note.ironwood_incremental_witness_hex =
+                    sn.ironwood_incremental_witness_hex.clone();
+                spendable_note.ironwood_witness_tip_height = sn.ironwood_witness_tip_height;
+            }
+        }
+        spendable.push(spendable_note);
     }
 
     Ok(spendable)
@@ -191,9 +309,12 @@ impl From<&OrchardNote> for SerializableOrchardNote {
             memo: note.memo.clone(),
             orchard_incremental_witness_hex: None,
             orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
             rho_bytes: Some(note.note.rho().to_bytes().to_vec()),
             rseed_bytes: Some(note.note.rseed().as_bytes().to_vec()),
             spent_in_txid: None,
+            pool: ShieldedPool::Orchard,
         }
     }
 }
@@ -325,6 +446,45 @@ pub fn release_wallet_notes_by_nullifier_hex(nullifier_hexes: &[String]) -> Nozy
     Ok(released)
 }
 
+/// Mark notes spent in `notes.json` by canonical nullifier hex (post-broadcast).
+#[cfg(feature = "native")]
+pub fn mark_wallet_notes_spent_by_nullifier_hex(
+    nullifier_hexes: &[String],
+    broadcast_txid: Option<&str>,
+) -> NozyResult<usize> {
+    use std::collections::HashSet;
+
+    if nullifier_hexes.is_empty() {
+        return Ok(0);
+    }
+
+    let targets: HashSet<Vec<u8>> = nullifier_hexes
+        .iter()
+        .filter_map(|h| hex::decode(h.trim()).ok())
+        .collect();
+    if targets.is_empty() {
+        return Ok(0);
+    }
+
+    let mut notes = load_wallet_notes()?;
+    let mut marked = 0usize;
+    for note in &mut notes {
+        if !note.spent && targets.contains(&note.nullifier_bytes) {
+            note.spent = true;
+            if let Some(txid) = broadcast_txid {
+                note.spent_in_txid = Some(txid.to_string());
+            }
+            marked += 1;
+        }
+    }
+
+    if marked > 0 {
+        save_wallet_notes(&notes)?;
+    }
+
+    Ok(marked)
+}
+
 /// Merge notes discovered during a scan into an existing cache.
 #[cfg(feature = "native")]
 pub fn merge_scanned_notes(
@@ -347,6 +507,24 @@ pub fn merge_scanned_notes(
                 existing.nullifier_bytes = new_note.nullifier_bytes.clone();
                 existing.rho_bytes = new_note.rho_bytes.clone();
                 existing.rseed_bytes = new_note.rseed_bytes.clone();
+            }
+            if new_note
+                .orchard_incremental_witness_hex
+                .as_ref()
+                .is_some_and(|w| !w.is_empty())
+            {
+                existing.orchard_incremental_witness_hex =
+                    new_note.orchard_incremental_witness_hex.clone();
+                existing.orchard_witness_tip_height = new_note.orchard_witness_tip_height;
+            }
+            if new_note
+                .ironwood_incremental_witness_hex
+                .as_ref()
+                .is_some_and(|w| !w.is_empty())
+            {
+                existing.ironwood_incremental_witness_hex =
+                    new_note.ironwood_incremental_witness_hex.clone();
+                existing.ironwood_witness_tip_height = new_note.ironwood_witness_tip_height;
             }
             continue;
         }
@@ -528,7 +706,7 @@ impl NoteScanner {
 
         let mut witness_tracker: Option<OrchardWitnessTracker> =
             if matches!(zebra_client.protocol(), Protocol::JsonRpc) {
-                let initial_tree: OrchardCommitmentTree = if start_height == 0 {
+                let initial_tree: OrchardCommitmentTree = if start_height <= 1 {
                     OrchardCommitmentTree::empty()
                 } else {
                     let cp = start_height.saturating_sub(1);
@@ -543,6 +721,36 @@ impl NoteScanner {
             } else {
                 None
             };
+        let mut ironwood_witness_tracker: Option<IronwoodWitnessTracker> = if matches!(
+            zebra_client.protocol(),
+            Protocol::JsonRpc
+        ) {
+            let initial_tree: Option<IronwoodCommitmentTree> = if start_height <= 1 {
+                Some(IronwoodCommitmentTree::empty())
+            } else {
+                let cp = start_height.saturating_sub(1);
+                match zebra_client.get_ironwood_treestate_parsed(cp).await {
+                    Ok(parsed) => {
+                        if let Some(fs) = parsed.final_state {
+                            Some(ironwood_commitment_tree_from_final_state(&fs)?)
+                        } else {
+                            Some(IronwoodCommitmentTree::empty())
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            error = %e,
+                            checkpoint_height = cp,
+                            "Ironwood treestate unavailable; skipping Ironwood witness tracking for this scan"
+                        );
+                        None
+                    }
+                }
+            };
+            initial_tree.map(IronwoodWitnessTracker::new)
+        } else {
+            None
+        };
 
         while current_height <= end_height {
             let batch_end = (current_height + batch_size as u32 - 1).min(end_height);
@@ -629,6 +837,24 @@ impl NoteScanner {
                                 detail: e.to_string(),
                             });
                         }
+                        if let Err(e) = self.process_block_ironwood_actions(
+                            &transactions,
+                            height,
+                            &orchard_fvk,
+                            &orchard_ivk_external,
+                            &orchard_ivk_internal,
+                            &orchard_sk,
+                            ironwood_witness_tracker.as_mut(),
+                            &mut note_index,
+                            &mut all_notes,
+                            &mut spendable_notes,
+                            &pb,
+                        ) {
+                            return Err(NozyError::ScanAtBlock {
+                                height,
+                                detail: e.to_string(),
+                            });
+                        }
                     }
                     Err(e) => {
                         return Err(NozyError::ScanAtBlock {
@@ -647,10 +873,26 @@ impl NoteScanner {
         if let Some(ref tr) = witness_tracker {
             note_index.apply_orchard_witnesses_from_tracker(tr, end_height)?;
             for sn in &mut spendable_notes {
+                if sn.pool != ShieldedPool::Orchard {
+                    continue;
+                }
                 let nf = sn.orchard_note.nullifier.to_bytes();
                 if let Some(w) = tr.serialized_witness_for_nullifier(&nf)? {
                     sn.orchard_incremental_witness_hex = Some(hex::encode(w));
                     sn.orchard_witness_tip_height = Some(end_height);
+                }
+            }
+        }
+        if let Some(ref tr) = ironwood_witness_tracker {
+            note_index.apply_ironwood_witnesses_from_tracker(tr, end_height)?;
+            for sn in &mut spendable_notes {
+                if sn.pool != ShieldedPool::Ironwood {
+                    continue;
+                }
+                let nf = sn.orchard_note.nullifier.to_bytes();
+                if let Some(w) = tr.serialized_witness_for_nullifier(&nf)? {
+                    sn.ironwood_incremental_witness_hex = Some(hex::encode(w));
+                    sn.ironwood_witness_tip_height = Some(end_height);
                 }
             }
         }
@@ -716,92 +958,180 @@ impl NoteScanner {
         pb: &ProgressBar,
     ) -> NozyResult<()> {
         for tx in transactions {
-            for (action_idx, action) in tx.orchard_actions.iter().enumerate() {
-                if action.nullifier.len() == 32 {
-                    if note_index.mark_note_spent_on_chain(&action.nullifier, orchard_fvk) {
-                        spendable_notes.retain(|sn| {
-                            sn.orchard_note.nullifier.to_bytes().as_slice() != action.nullifier
-                        });
-                    }
-                }
+            self.process_shielded_actions(
+                &tx.txid,
+                &tx.orchard_actions,
+                ShieldedPool::Orchard,
+                block_height,
+                orchard_fvk,
+                orchard_ivk_external,
+                orchard_ivk_internal,
+                Some(orchard_sk),
+                witness_tracker.as_mut().map(|tr| &mut **tr),
+                note_index,
+                all_notes,
+                spendable_notes,
+                pb,
+            )?;
+        }
+        Ok(())
+    }
 
-                let cmx_node = merkle_hash_from_cmx_bytes(&action.cmx)?;
-                if let Some(tr) = witness_tracker.as_mut() {
-                    tr.append_cmx(cmx_node)?;
-                }
+    fn process_block_ironwood_actions(
+        &self,
+        transactions: &[ParsedTransaction],
+        block_height: u32,
+        orchard_fvk: &FullViewingKey,
+        orchard_ivk_external: &IncomingViewingKey,
+        orchard_ivk_internal: &IncomingViewingKey,
+        orchard_sk: &SpendingKey,
+        mut witness_tracker: Option<&mut IronwoodWitnessTracker>,
+        note_index: &mut NoteIndex,
+        all_notes: &mut Vec<OrchardNote>,
+        spendable_notes: &mut Vec<SpendableNote>,
+        pb: &ProgressBar,
+    ) -> NozyResult<()> {
+        for tx in transactions {
+            self.process_shielded_actions(
+                &tx.txid,
+                &tx.ironwood_actions,
+                ShieldedPool::Ironwood,
+                block_height,
+                orchard_fvk,
+                orchard_ivk_external,
+                orchard_ivk_internal,
+                Some(orchard_sk),
+                witness_tracker.as_mut().map(|tr| &mut **tr),
+                note_index,
+                all_notes,
+                spendable_notes,
+                pb,
+            )?;
+        }
+        Ok(())
+    }
 
-                let chosen = match self.decrypt_orchard_action(
+    #[allow(clippy::too_many_arguments)]
+    fn process_shielded_actions<T: ShieldedWitnessTrackerOps>(
+        &self,
+        txid: &str,
+        actions: &[OrchardActionData],
+        pool: ShieldedPool,
+        block_height: u32,
+        orchard_fvk: &FullViewingKey,
+        orchard_ivk_external: &IncomingViewingKey,
+        orchard_ivk_internal: &IncomingViewingKey,
+        orchard_sk: Option<&SpendingKey>,
+        mut witness_tracker: Option<&mut T>,
+        note_index: &mut NoteIndex,
+        all_notes: &mut Vec<OrchardNote>,
+        spendable_notes: &mut Vec<SpendableNote>,
+        pb: &ProgressBar,
+    ) -> NozyResult<()> {
+        for (action_idx, action) in actions.iter().enumerate() {
+            if action.nullifier.len() == 32 {
+                if note_index.mark_note_spent_on_chain(&action.nullifier, orchard_fvk) {
+                    spendable_notes.retain(|sn| {
+                        sn.orchard_note.nullifier.to_bytes().as_slice() != action.nullifier
+                    });
+                }
+            }
+
+            let cmx_node = merkle_hash_from_cmx_bytes(&action.cmx)?;
+            if let Some(tr) = witness_tracker.as_mut() {
+                tr.append_cmx(cmx_node)?;
+            }
+
+            let chosen = match self.decrypt_shielded_action(
+                action,
+                pool,
+                orchard_fvk,
+                orchard_ivk_external,
+                block_height,
+                txid,
+                orchard::keys::Scope::External,
+            ) {
+                Ok(Some(n)) => Some((n, orchard::keys::Scope::External)),
+                Ok(None) => match self.decrypt_shielded_action(
                     action,
+                    pool,
                     orchard_fvk,
-                    orchard_ivk_external,
+                    orchard_ivk_internal,
                     block_height,
-                    &tx.txid,
-                    orchard::keys::Scope::External,
+                    txid,
+                    orchard::keys::Scope::Internal,
                 ) {
-                    Ok(Some(n)) => Some((n, orchard::keys::Scope::External)),
-                    Ok(None) => match self.decrypt_orchard_action(
-                        action,
-                        orchard_fvk,
-                        orchard_ivk_internal,
-                        block_height,
-                        &tx.txid,
-                        orchard::keys::Scope::Internal,
-                    ) {
-                        Ok(Some(n)) => Some((n, orchard::keys::Scope::Internal)),
+                    Ok(Some(n)) => Some((n, orchard::keys::Scope::Internal)),
+                    Ok(None) => None,
+                    Err(e) => return Err(e),
+                },
+                Err(e) => return Err(e),
+            };
+
+            if let Some((orchard_note, scope)) = chosen {
+                if let Some(tr) = witness_tracker.as_mut() {
+                    tr.register_discovered_note(orchard_note.nullifier.to_bytes())?;
+                }
+
+                if scan_log::scan_progress_enabled() {
+                    pb.println(format!(
+                        "Found {} note in block {} (scope: {:?})",
+                        pool, block_height, scope
+                    ));
+                } else {
+                    tracing::info!(block_height, ?scope, %pool, "Found shielded note");
+                }
+
+                let nf = orchard_note.nullifier.to_bytes();
+                let witness_hex = if let Some(t) = witness_tracker.as_ref() {
+                    match t.serialized_witness_for_nullifier(&nf) {
+                        Ok(Some(b)) => Some(hex::encode(b)),
                         Ok(None) => None,
                         Err(e) => return Err(e),
-                    },
-                    Err(e) => return Err(e),
+                    }
+                } else {
+                    None
                 };
 
-                if let Some((orchard_note, scope)) = chosen {
-                    if let Some(tr) = witness_tracker.as_mut() {
-                        tr.register_discovered_note(orchard_note.nullifier.to_bytes())?;
-                    }
+                let mut serializable: SerializableOrchardNote = (&orchard_note).into();
+                serializable.pool = pool;
+                serializable.set_witness_for_pool(witness_hex.clone(), Some(block_height));
+                note_index.add_note(serializable);
 
-                    if scan_log::scan_progress_enabled() {
-                        pb.println(format!(
-                            "Found note in block {} (scope: {:?})",
-                            block_height, scope
-                        ));
-                    } else {
-                        tracing::info!(block_height, ?scope, "Found Orchard note");
-                    }
+                all_notes.push(orchard_note.clone());
 
-                    let nf = orchard_note.nullifier.to_bytes();
-                    let witness_hex = if let Some(t) = witness_tracker.as_ref() {
-                        match t.serialized_witness_for_nullifier(&nf) {
-                            Ok(Some(b)) => Some(hex::encode(b)),
-                            Ok(None) => None,
-                            Err(e) => return Err(e),
-                        }
-                    } else {
-                        None
-                    };
-
-                    let mut serializable: SerializableOrchardNote = (&orchard_note).into();
-                    serializable.orchard_incremental_witness_hex = witness_hex.clone();
-                    serializable.orchard_witness_tip_height = Some(block_height);
-                    note_index.add_note(serializable);
-
-                    all_notes.push(orchard_note.clone());
-
-                    spendable_notes.push(SpendableNote {
+                if let Some(orchard_sk) = orchard_sk {
+                    let mut spendable = SpendableNote {
                         orchard_note,
                         spending_key: orchard_sk.clone(),
                         derivation_path: format!("m/32'/133'/0'/0/{}", action_idx),
-                        orchard_incremental_witness_hex: witness_hex,
-                        orchard_witness_tip_height: Some(block_height),
-                    });
+                        pool,
+                        orchard_incremental_witness_hex: None,
+                        orchard_witness_tip_height: None,
+                        ironwood_incremental_witness_hex: None,
+                        ironwood_witness_tip_height: None,
+                    };
+                    match pool {
+                        ShieldedPool::Orchard => {
+                            spendable.orchard_incremental_witness_hex = witness_hex.clone();
+                            spendable.orchard_witness_tip_height = Some(block_height);
+                        }
+                        ShieldedPool::Ironwood => {
+                            spendable.ironwood_incremental_witness_hex = witness_hex.clone();
+                            spendable.ironwood_witness_tip_height = Some(block_height);
+                        }
+                    }
+                    spendable_notes.push(spendable);
                 }
             }
         }
         Ok(())
     }
 
-    fn decrypt_orchard_action(
+    fn decrypt_shielded_action(
         &self,
         action: &OrchardActionData,
+        pool: ShieldedPool,
         orchard_fvk: &FullViewingKey,
         ivk: &IncomingViewingKey,
         block_height: u32,
@@ -811,12 +1141,13 @@ impl NoteScanner {
         use orchard::{
             keys::PreparedIncomingViewingKey,
             note::{ExtractedNoteCommitment, Nullifier},
-            note_encryption::{CompactAction, OrchardDomain},
+            note_encryption::{CompactAction, IronwoodDomain, OrchardDomain},
         };
         use zcash_note_encryption::EphemeralKeyBytes;
 
         scan_verbose!(
-            "Attempting Orchard action decryption in transaction {} (scope: {:?})",
+            "Attempting {:?} action decryption in transaction {} (scope: {:?})",
+            pool,
             txid,
             scope
         );
@@ -849,25 +1180,23 @@ impl NoteScanner {
             return Ok(None);
         }
 
-        scan_verbose!("Parsed Orchard action components from blockchain");
-        scan_verbose!("   Nullifier: {}", hex::encode(&action.nullifier));
-        scan_verbose!("   CMX: {}", hex::encode(&action.cmx));
-        scan_verbose!("   CV: {}", hex::encode(&action.cv));
-        scan_verbose!("   RK: {}", hex::encode(&action.rk));
-        scan_verbose!("   Ephemeral Key: {}", hex::encode(&action.ephemeral_key));
-        scan_verbose!("   Encrypted Note: {} bytes", action.encrypted_note.len());
-        scan_verbose!("   Out Ciphertext: {} bytes", action.enc_ciphertext.len());
-
         let compact_action =
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
 
-        let domain = OrchardDomain::for_compact_action(&compact_action);
-
         let prepared_ivk = PreparedIncomingViewingKey::new(ivk);
 
-        scan_verbose!("Orchard decryption framework ready (CompactAction + OrchardDomain + IVK)");
+        let decrypted = match pool {
+            ShieldedPool::Orchard => {
+                let domain = OrchardDomain::for_compact_action(&compact_action);
+                try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+            }
+            ShieldedPool::Ironwood => {
+                let domain = IronwoodDomain::for_compact_action(&compact_action);
+                try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+            }
+        };
 
-        match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
+        match decrypted {
             Some((note, address)) => {
                 scan_verbose!("Successfully decrypted note: {} ZAT", note.value().inner());
 
@@ -903,31 +1232,28 @@ impl NoteScanner {
         if let Some(tx_array) = block_json.get("tx").and_then(|v| v.as_array()) {
             for (i, tx) in tx_array.iter().enumerate() {
                 if let Some(txid) = tx.get("txid").and_then(|v| v.as_str()) {
-                    let has_orchard = tx
+                    let orchard_actions = tx
                         .get("orchard")
-                        .and_then(|o| o.as_object())
-                        .and_then(|o| o.get("actions"))
-                        .and_then(|a| a.as_array())
-                        .map(|a| !a.is_empty())
-                        .unwrap_or(false);
+                        .map(Self::parse_orchard_actions_from_json_static)
+                        .transpose()?
+                        .unwrap_or_default();
+                    let ironwood_actions = tx
+                        .get("ironwood")
+                        .or_else(|| tx.get("ironwoodActions"))
+                        .or_else(|| tx.get("ironwood_actions"))
+                        .map(Self::parse_orchard_actions_from_json_static)
+                        .transpose()?
+                        .unwrap_or_default();
 
-                    if has_orchard {
+                    if !orchard_actions.is_empty() || !ironwood_actions.is_empty() {
                         let raw_hex = tx.get("hex").and_then(|v| v.as_str()).unwrap_or("");
-
-                        let orchard_json = tx.get("orchard").ok_or_else(|| {
-                            NozyError::InvalidOperation(
-                                "No orchard data in transaction".to_string(),
-                            )
-                        })?;
-                        let orchard_actions =
-                            Self::parse_orchard_actions_from_json_static(orchard_json)?;
-
                         let parsed_tx = ParsedTransaction {
                             txid: txid.to_string(),
                             height,
                             index: i as u32,
                             raw_data: hex::decode(raw_hex).unwrap_or_default(),
                             orchard_actions,
+                            ironwood_actions,
                         };
 
                         transactions.push(parsed_tx);
@@ -962,8 +1288,12 @@ impl NoteScanner {
     ) -> NozyResult<Vec<OrchardActionData>> {
         let mut actions = Vec::new();
 
-        if let Some(actions_array) = orchard_json["actions"].as_array() {
-            scan_verbose!("Found {} Orchard actions to parse", actions_array.len());
+        if let Some(actions_array) = orchard_json
+            .get("actions")
+            .and_then(|a| a.as_array())
+            .or_else(|| orchard_json.as_array())
+        {
+            scan_verbose!("Found {} shielded actions to parse", actions_array.len());
             for (idx, action) in actions_array.iter().enumerate() {
                 let nullifier_hex = action["nullifier"].as_str().unwrap_or("");
                 let cmx_hex = action["cmx"].as_str().unwrap_or("");
@@ -1063,7 +1393,7 @@ impl NoteScanner {
                 }
             }
         } else {
-            scan_verbose!("No 'actions' array found in Orchard JSON");
+            scan_verbose!("No 'actions' array found in shielded action JSON");
         }
 
         Ok(actions)
@@ -1113,4 +1443,55 @@ pub async fn scan_real_notes(
         );
     }
     Ok(spendable_notes)
+}
+
+#[cfg(test)]
+mod scan_parser_tests {
+    use super::*;
+
+    fn action_json() -> serde_json::Value {
+        serde_json::json!({
+            "nullifier": "00".repeat(32),
+            "cmx": "11".repeat(32),
+            "ephemeralKey": "22".repeat(32),
+            "encCiphertext": "33".repeat(580),
+            "outCiphertext": "44".repeat(80),
+            "cv": "55".repeat(32),
+            "rk": "66".repeat(32)
+        })
+    }
+
+    #[test]
+    fn parse_block_data_preserves_ironwood_actions() {
+        let block = serde_json::json!({
+            "tx": [{
+                "txid": "tx-with-ironwood",
+                "hex": "",
+                "ironwood": { "actions": [action_json()] }
+            }]
+        });
+
+        let txs = NoteScanner::parse_block_data(&block, 3_500_000).unwrap();
+
+        assert_eq!(txs.len(), 1);
+        assert!(txs[0].orchard_actions.is_empty());
+        assert_eq!(txs[0].ironwood_actions.len(), 1);
+    }
+
+    #[test]
+    fn parse_block_data_accepts_ironwood_actions_array_alias() {
+        let block = serde_json::json!({
+            "tx": [{
+                "txid": "tx-with-ironwood-actions",
+                "hex": "",
+                "ironwoodActions": [action_json()]
+            }]
+        });
+
+        let txs = NoteScanner::parse_block_data(&block, 3_500_000).unwrap();
+
+        assert_eq!(txs.len(), 1);
+        assert!(txs[0].orchard_actions.is_empty());
+        assert_eq!(txs[0].ironwood_actions.len(), 1);
+    }
 }

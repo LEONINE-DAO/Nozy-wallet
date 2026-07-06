@@ -14,9 +14,16 @@ use crate::zebra_integration::ZebraClient;
 use async_trait::async_trait;
 use futures::future::join_all;
 use orchard::{
-    builder::Builder as OrchardBuilder, builder::BundleType, bundle::Flags, circuit::ProvingKey,
-    keys::FullViewingKey, keys::SpendAuthorizingKey, tree::Anchor, tree::MerklePath,
-    value::NoteValue, Address as OrchardAddress,
+    builder::Builder as OrchardBuilder,
+    builder::BundleType,
+    bundle::BundleVersion,
+    circuit::{OrchardCircuitVersion, ProvingKey},
+    keys::FullViewingKey,
+    keys::SpendAuthorizingKey,
+    tree::Anchor,
+    tree::MerklePath,
+    value::NoteValue,
+    Address as OrchardAddress,
 };
 use rand::rngs::OsRng;
 use std::sync::{Arc, OnceLock};
@@ -30,7 +37,8 @@ use zcash_protocol::value::ZatBalance;
 static ORCHARD_PROVING_KEY: OnceLock<Arc<ProvingKey>> = OnceLock::new();
 
 fn orchard_proving_key() -> &'static Arc<ProvingKey> {
-    ORCHARD_PROVING_KEY.get_or_init(|| Arc::new(ProvingKey::build()))
+    ORCHARD_PROVING_KEY
+        .get_or_init(|| Arc::new(ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2)))
 }
 
 /// Eagerly build the global Orchard Halo2 proving key (CPU-heavy; cached after first call).
@@ -262,9 +270,9 @@ impl OrchardTransactionBuilder {
         let change_amount = total_input_value.saturating_sub(amount_zatoshis + fee_zatoshis);
 
         let bundle_type = BundleType::Transactional {
-            flags: Flags::ENABLED,
             bundle_required: true,
         };
+        let bundle_version = BundleVersion::orchard_v2();
 
         let status = self.proving_manager.get_status();
         if !status.can_prove {
@@ -339,7 +347,15 @@ impl OrchardTransactionBuilder {
                 .prepare_spend_anchor_and_path(zebra_client, spendable_note, tip_height)
                 .await?;
 
-            let mut builder = OrchardBuilder::new(bundle_type, anchor);
+            let mut builder = OrchardBuilder::new(
+                bundle_type,
+                bundle_version,
+                bundle_version.default_flags(),
+                anchor,
+            )
+            .map_err(|e| {
+                NozyError::InvalidOperation(format!("Failed to initialize Orchard builder: {e:?}"))
+            })?;
 
             builder
                 .add_spend(fvk, spendable_note.orchard_note.note.clone(), merkle_path)

@@ -11,7 +11,10 @@ use std::path::{Path, PathBuf};
 use std::sync::Once;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-const MANIFEST_VERSION: u32 = 1;
+const MANIFEST_VERSION: u32 = 2;
+
+const DEFAULT_MAINNET_RPC: &str = "http://127.0.0.1:8232";
+const DEFAULT_TESTNET_RPC: &str = "http://127.0.0.1:18232";
 
 static PROFILES_INIT: Once = Once::new();
 
@@ -33,6 +36,169 @@ pub struct WalletProfile {
     pub id: String,
     pub name: String,
     pub created_at: u64,
+    /// `mainnet` or `testnet` — restored into global config when this profile is activated.
+    #[serde(default)]
+    pub network: Option<String>,
+    /// Zebra JSON-RPC URL used with this profile.
+    #[serde(default)]
+    pub zebra_url: Option<String>,
+    /// Last Orchard scan height for this profile (mirrors config while active).
+    #[serde(default)]
+    pub last_scan_height: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProfileConnectionSettings {
+    pub network: String,
+    pub zebra_url: String,
+    pub last_scan_height: Option<u32>,
+}
+
+pub fn default_network_for_profile_name(name: &str) -> &'static str {
+    if name.to_ascii_lowercase().contains("testnet") {
+        "testnet"
+    } else {
+        "mainnet"
+    }
+}
+
+pub fn default_zebra_url_for_network(network: &str) -> &'static str {
+    if network.eq_ignore_ascii_case("testnet") {
+        DEFAULT_TESTNET_RPC
+    } else {
+        DEFAULT_MAINNET_RPC
+    }
+}
+
+fn inferred_connection_settings(profile: &WalletProfile) -> ProfileConnectionSettings {
+    let network = profile
+        .network
+        .clone()
+        .unwrap_or_else(|| default_network_for_profile_name(&profile.name).to_string());
+    let zebra_url = profile
+        .zebra_url
+        .clone()
+        .unwrap_or_else(|| default_zebra_url_for_network(&network).to_string());
+    ProfileConnectionSettings {
+        network,
+        zebra_url,
+        last_scan_height: profile.last_scan_height,
+    }
+}
+
+pub fn profile_connection_settings(id: &str) -> NozyResult<ProfileConnectionSettings> {
+    ensure_initialized_once();
+    let base = get_wallet_base_dir();
+    let manifest = load_manifest(&base)?;
+    let profile = manifest
+        .profiles
+        .iter()
+        .find(|profile| profile.id == id)
+        .ok_or_else(|| NozyError::Storage(format!("Wallet profile not found: {id}")))?;
+    Ok(inferred_connection_settings(profile))
+}
+
+fn persist_profile_fields(
+    base: &Path,
+    manifest: &mut ProfilesManifest,
+    id: &str,
+    network: Option<&str>,
+    zebra_url: Option<&str>,
+    last_scan_height: Option<Option<u32>>,
+) -> NozyResult<()> {
+    let profile = manifest
+        .profiles
+        .iter_mut()
+        .find(|profile| profile.id == id)
+        .ok_or_else(|| NozyError::Storage(format!("Wallet profile not found: {id}")))?;
+
+    if let Some(network) = network {
+        profile.network = Some(network.to_string());
+    }
+    if let Some(url) = zebra_url {
+        profile.zebra_url = Some(url.to_string());
+    }
+    if let Some(height) = last_scan_height {
+        profile.last_scan_height = height;
+    }
+
+    save_manifest(base, manifest)
+}
+
+pub fn save_profile_connection_settings(
+    id: &str,
+    network: &str,
+    zebra_url: &str,
+    last_scan_height: Option<u32>,
+) -> NozyResult<()> {
+    ensure_initialized_once();
+    let base = get_wallet_base_dir();
+    let mut manifest = load_manifest(&base)?;
+    persist_profile_fields(
+        &base,
+        &mut manifest,
+        id,
+        Some(network),
+        Some(zebra_url),
+        Some(last_scan_height),
+    )
+}
+
+pub fn touch_active_profile_scan_height(height: u32) -> NozyResult<()> {
+    ensure_initialized_once();
+    let base = get_wallet_base_dir();
+    let mut manifest = load_manifest(&base)?;
+    let Some(active_id) = manifest.active_id.clone() else {
+        return Ok(());
+    };
+    persist_profile_fields(
+        &base,
+        &mut manifest,
+        &active_id,
+        None,
+        None,
+        Some(Some(height)),
+    )
+}
+
+pub fn snapshot_active_profile_from_config() -> NozyResult<()> {
+    use crate::config::load_config;
+
+    ensure_initialized_once();
+    let base = get_wallet_base_dir();
+    let mut manifest = load_manifest(&base)?;
+    let Some(active_id) = manifest.active_id.clone() else {
+        return Ok(());
+    };
+
+    let config = load_config();
+    persist_profile_fields(
+        &base,
+        &mut manifest,
+        &active_id,
+        Some(&config.network),
+        Some(&config.zebra_url),
+        Some(config.last_scan_height),
+    )
+}
+
+pub fn apply_profile_connection_to_config(id: &str) -> NozyResult<ProfileConnectionSettings> {
+    use crate::config::{load_config, save_config};
+
+    let settings = profile_connection_settings(id)?;
+    let mut config = load_config();
+    let network_changed = !config.network.eq_ignore_ascii_case(&settings.network);
+    config.network = settings.network.clone();
+    config.zebra_url = settings.zebra_url.clone();
+    if network_changed {
+        config.last_scan_height = settings.last_scan_height;
+    } else {
+        config.last_scan_height = settings.last_scan_height.or(config.last_scan_height);
+    }
+    config.backend = crate::config::BackendKind::Zebra;
+    config.protocol = crate::config::Protocol::JsonRpc;
+    save_config(&config)?;
+    Ok(settings)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -181,9 +347,41 @@ fn save_manifest(base: &Path, manifest: &ProfilesManifest) -> NozyResult<()> {
         .map_err(|e| NozyError::Storage(format!("Failed to write wallet profiles: {}", e)))
 }
 
+fn migrate_profile_network_fields(base: &Path) -> NozyResult<()> {
+    use crate::config::load_config;
+
+    let mut manifest = load_manifest(base)?;
+    let config = load_config();
+    let mut changed = false;
+
+    for profile in &mut manifest.profiles {
+        if profile.network.is_some() && profile.zebra_url.is_some() {
+            continue;
+        }
+
+        let is_active = manifest.active_id.as_deref() == Some(profile.id.as_str());
+        if is_active {
+            profile.network = Some(config.network.clone());
+            profile.zebra_url = Some(config.zebra_url.clone());
+            profile.last_scan_height = config.last_scan_height;
+        } else {
+            let network = default_network_for_profile_name(&profile.name).to_string();
+            profile.network = Some(network.clone());
+            profile.zebra_url = Some(default_zebra_url_for_network(&network).to_string());
+        }
+        changed = true;
+    }
+
+    if changed {
+        save_manifest(base, &manifest)?;
+    }
+    Ok(())
+}
+
 pub fn ensure_profiles_initialized() -> NozyResult<()> {
     let base = get_wallet_base_dir();
     if manifest_path(&base).exists() {
+        migrate_profile_network_fields(&base)?;
         return Ok(());
     }
 
@@ -192,6 +390,9 @@ pub fn ensure_profiles_initialized() -> NozyResult<()> {
             id: new_profile_id(),
             name: default_profile_name(0),
             created_at: now_secs(),
+            network: None,
+            zebra_url: None,
+            last_scan_height: None,
         };
         let dest = profile_dir(&base, &profile.id);
         migrate_legacy_wallet_to_profile(&base, &dest)?;
@@ -311,6 +512,9 @@ pub fn create_new_profile(name: Option<&str>) -> NozyResult<WalletProfile> {
             .map(str::to_string)
             .unwrap_or_else(|| default_profile_name(manifest.profiles.len())),
         created_at: now_secs(),
+        network: None,
+        zebra_url: None,
+        last_scan_height: None,
     };
 
     fs::create_dir_all(profile_dir(&base, &profile.id)).map_err(|e| {
@@ -320,11 +524,24 @@ pub fn create_new_profile(name: Option<&str>) -> NozyResult<WalletProfile> {
     manifest.profiles.push(profile.clone());
     manifest.active_id = Some(profile.id.clone());
     save_manifest(&base, &manifest)?;
+
+    let network = default_network_for_profile_name(&profile.name);
+    let zebra_url = default_zebra_url_for_network(network);
+    save_profile_connection_settings(&profile.id, network, zebra_url, None)?;
+    apply_profile_connection_to_config(&profile.id)?;
+
     Ok(profile)
 }
 
 pub fn set_active_wallet_profile(id: &str) -> NozyResult<()> {
     ensure_initialized_once();
+    let _ = snapshot_active_profile_from_config();
+    set_active_profile_id_in_manifest(id)?;
+    apply_profile_connection_to_config(id)?;
+    Ok(())
+}
+
+fn set_active_profile_id_in_manifest(id: &str) -> NozyResult<()> {
     let base = get_wallet_base_dir();
     let mut manifest = load_manifest(&base)?;
     if !manifest.profiles.iter().any(|p| p.id == id) {
@@ -334,7 +551,26 @@ pub fn set_active_wallet_profile(id: &str) -> NozyResult<()> {
         )));
     }
     manifest.active_id = Some(id.to_string());
-    save_manifest(&base, &manifest)?;
+    save_manifest(&base, &manifest)
+}
+
+/// Persist network/RPC for a profile and apply to global config when it is active.
+pub fn configure_profile_network(
+    id: &str,
+    network: &str,
+    zebra_url: &str,
+    reset_scan_height: bool,
+) -> NozyResult<()> {
+    let existing = profile_connection_settings(id)?;
+    let scan_height = if reset_scan_height {
+        None
+    } else {
+        existing.last_scan_height
+    };
+    save_profile_connection_settings(id, network, zebra_url, scan_height)?;
+    if active_profile_id().as_deref() == Some(id) {
+        apply_profile_connection_to_config(id)?;
+    }
     Ok(())
 }
 
@@ -360,6 +596,9 @@ mod tests {
                 id: new_profile_id(),
                 name: "Wallet 1".to_string(),
                 created_at: now_secs(),
+                network: None,
+                zebra_url: None,
+                last_scan_height: None,
             };
             fs::create_dir_all(profile_dir(&base, &p.id)).unwrap();
             fs::write(profile_dir(&base, &p.id).join("wallet.dat"), b"wallet-1").unwrap();
@@ -374,6 +613,9 @@ mod tests {
             id: new_profile_id(),
             name: "Wallet 2".to_string(),
             created_at: now_secs(),
+            network: None,
+            zebra_url: None,
+            last_scan_height: None,
         };
         fs::create_dir_all(profile_dir(&base, &profile2.id)).unwrap();
         manifest.profiles.push(profile2.clone());
@@ -389,5 +631,26 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn default_network_for_profile_name_detects_testnet() {
+        assert_eq!(
+            default_network_for_profile_name("Ironwood Testnet"),
+            "testnet"
+        );
+        assert_eq!(default_network_for_profile_name("Wallet 1"), "mainnet");
+    }
+
+    #[test]
+    fn default_zebra_url_matches_network() {
+        assert_eq!(
+            default_zebra_url_for_network("testnet"),
+            DEFAULT_TESTNET_RPC
+        );
+        assert_eq!(
+            default_zebra_url_for_network("mainnet"),
+            DEFAULT_MAINNET_RPC
+        );
     }
 }

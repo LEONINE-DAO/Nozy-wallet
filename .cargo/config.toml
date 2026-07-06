@@ -1,0 +1,4 @@
+# Ironwood (NU6.3) pre-release transaction-building support is gated behind
+# this unstable cfg in zcash/librustzcash.
+[build]
+rustflags = ["--cfg", "zcash_unstable=\"nu6.3\""]

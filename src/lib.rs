@@ -35,6 +35,14 @@ pub mod config;
 #[cfg(feature = "native")]
 pub mod grpc_client;
 #[cfg(feature = "native")]
+pub mod ironwood;
+#[cfg(feature = "native")]
+pub mod ironwood_tree_codec;
+#[cfg(feature = "native")]
+pub mod ironwood_tx;
+#[cfg(feature = "native")]
+pub mod ironwood_witness;
+#[cfg(feature = "native")]
 pub mod keystone;
 #[cfg(feature = "native")]
 pub mod local_analytics;
@@ -76,6 +84,8 @@ pub mod scan_log;
 pub mod secret;
 #[cfg(feature = "native")]
 pub mod send_readiness;
+#[cfg(feature = "native")]
+pub mod shielded_pool;
 #[cfg(feature = "native")]
 pub mod storage;
 #[cfg(feature = "native")]
@@ -139,6 +149,30 @@ pub use config::{load_config, save_config, update_last_scan_height, WalletConfig
 #[cfg(feature = "native")]
 pub use config::{BackendKind, Protocol};
 #[cfg(feature = "native")]
+pub use ironwood::{
+    assess_orchard_migration_readiness, build_schedule_from_plan, display_ironwood_status,
+    execute_orchard_migration, execute_orchard_migration_broadcast, execute_orchard_note_split,
+    fetch_pool_balances, flatten_canonical_denomination_zatoshis, ironwood_migration_schedule_path,
+    is_ironwood_active, load_orchard_migration_schedule, note_requires_canonical_split,
+    nu6_3_activation_height, orchard_only_send_blocker, plan_orchard_migration,
+    plan_orchard_migration_at, plan_orchard_note_split_outputs, presigned_transfer_broadcastable,
+    refresh_orchard_migration_schedule_at, save_orchard_migration_plan_at,
+    save_orchard_migration_schedule, validate_orchard_migration_schedule, IronwoodWalletStatus,
+    MigrationBroadcastResult, MigrationExecutionResult, MigrationPlanSummary,
+    MigrationReadinessReport, MigrationReadinessState, MigrationSchedule,
+    MigrationScheduleValidation, MigrationScheduledTransfer, MigrationTransferStatus,
+    OrchardNoteSplitResult, PreparedMigrationTransaction, MIGRATION_SCHEDULE_VERSION,
+    NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_MAINNET_DEPLOYMENT_TARGET,
+    NU6_3_TESTNET_ACTIVATION_TARGET, NU6_3_TESTNET_DEPLOYMENT_TARGET,
+    ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD, ZIP318_TRANSFER_EXPIRY_BLOCKS,
+};
+#[cfg(feature = "native")]
+pub use ironwood_tx::{
+    build_single_ironwood_spend, refresh_ironwood_cached_witnesses_to_tip,
+    select_single_ironwood_spend_note, IronwoodWitnessProvider,
+    ZebraJsonRpcIronwoodWitnessProvider,
+};
+#[cfg(feature = "native")]
 pub use keystone::{
     build_keystone_send_pczt, clear_pending_send, decode_pczt_ur_frames, encode_pczt_ur_frames,
     export_ufvk_from_wallet, extract_signed_tx_from_pczt_bytes, load_pending_send,
@@ -195,6 +229,8 @@ pub use send_readiness::{
     WITNESS_CATCHUP_PARALLEL_BLOCKS,
 };
 #[cfg(feature = "native")]
+pub use shielded_pool::ShieldedPool;
+#[cfg(feature = "native")]
 pub use storage::{WalletData, WalletStorage};
 #[cfg(feature = "native")]
 pub use swap::{SwapDirection, SwapEngine, SwapRequest, SwapResponse, SwapService, SwapStatus};
@@ -212,9 +248,12 @@ pub use transaction_history::{
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
 #[cfg(feature = "native")]
 pub use wallet_profiles::{
-    active_profile_id, active_wallet_exists, create_new_profile, list_wallet_profiles,
-    migrate_orphaned_sent_transactions, profile_has_wallet, set_active_wallet_profile,
-    WalletProfile,
+    active_profile_id, active_wallet_exists, apply_profile_connection_to_config,
+    configure_profile_network, create_new_profile, default_network_for_profile_name,
+    default_zebra_url_for_network, list_wallet_profiles, migrate_orphaned_sent_transactions,
+    profile_connection_settings, profile_has_wallet, save_profile_connection_settings,
+    set_active_wallet_profile, snapshot_active_profile_from_config,
+    touch_active_profile_scan_height, ProfileConnectionSettings, WalletProfile,
 };
 #[cfg(feature = "native")]
 pub use wallet_sync::{
@@ -226,4 +265,6 @@ pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
 #[cfg(feature = "native")]
 pub use zeaking_adapter::{ZebraBlockParser, ZebraBlockSource};
 #[cfg(feature = "native")]
-pub use zebra_integration::{OrchardPoolStats, ZebraClient, ZebraConnectionMode};
+pub use zebra_integration::{
+    OrchardPoolStats, ShieldedPoolStats, ZebraClient, ZebraConnectionMode,
+};

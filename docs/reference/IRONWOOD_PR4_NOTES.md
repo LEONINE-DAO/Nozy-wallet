@@ -1,8 +1,10 @@
 # Ironwood — protocol formal verification (not wallet updates)
 
+**Wallet / NU6.3 network upgrade work:** see [`IRONWOOD_WALLET_READINESS.md`](IRONWOOD_WALLET_READINESS.md).
+
 **For Nozy team — revisit when we engage with Zcash proof work.**
 
-Ironwood is **not** a wallet or node release train. It is the Zcash repo for **machine-checked protocol proofs** in Lean 4, alongside the mdbook spec. Nozy implements Orchard spends/sync in Rust; Ironwood asks “is the protocol argument sound?” — a different layer.
+Ironwood is **also** the name of the proposed **NU6.3 network upgrade** (new shielded pool + turnstile). This file tracks the **Lean 4 formal verification** repo (`zcash/ironwood`). Nozy implements Orchard spends/sync in Rust; the proof repo asks “is the protocol argument sound?” — a different layer from wallet migration code.
 
 | Layer | Examples |
 |-------|----------|

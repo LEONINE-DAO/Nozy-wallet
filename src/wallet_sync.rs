@@ -356,7 +356,21 @@ pub async fn sync_wallet_notes(
         return finish_caught_up_sync(&zebra_client, notes_before, &range, &config, 0).await;
     }
 
-    let mut note_scanner = NoteScanner::new(wallet, zebra_client.clone());
+    let notes_path = crate::paths::get_wallet_data_dir().join("notes.json");
+    let mut note_scanner = if notes_path.exists() {
+        NoteScanner::with_index_file(wallet, zebra_client.clone(), &notes_path).map_err(|e| {
+            WalletSyncError::with_range(
+                WalletSyncPhase::LoadNotes,
+                e,
+                None,
+                scan_start,
+                scan_end,
+                chain_tip_opt,
+            )
+        })?
+    } else {
+        NoteScanner::new(wallet, zebra_client.clone())
+    };
     let (scan_result, _spendable) = note_scanner
         .scan_notes(Some(range.scan_start), Some(range.scan_end))
         .await
@@ -421,6 +435,7 @@ pub async fn sync_wallet_notes(
             chain_tip_opt,
         )
     })?;
+    let _ = crate::wallet_profiles::touch_active_profile_scan_height(range.scan_end);
 
     let new_notes_in_scan = cached_notes.len().saturating_sub(total_before);
     let blocks_scanned = range
@@ -452,8 +467,15 @@ async fn refresh_and_persist_witnesses(
     notes: &mut [crate::notes::SerializableOrchardNote],
     target_height: u32,
 ) -> NozyResult<u32> {
-    let refreshed = refresh_cached_witnesses_to_tip(zebra_client, notes, target_height).await?;
-    Ok(refreshed)
+    let orchard_refreshed =
+        refresh_cached_witnesses_to_tip(zebra_client, notes, target_height).await?;
+    let ironwood_refreshed = crate::ironwood_tx::refresh_ironwood_cached_witnesses_to_tip(
+        zebra_client,
+        notes,
+        target_height,
+    )
+    .await?;
+    Ok(orchard_refreshed + ironwood_refreshed)
 }
 
 /// Target height for witness catch-up when RPC scan is already at tip.
@@ -629,9 +651,12 @@ mod tests {
             memo: vec![],
             orchard_incremental_witness_hex: Some("ab".to_string()),
             orchard_witness_tip_height: Some(3_379_050),
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
             spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
         }];
         let chain_tip = 3_389_822;
         let target = witness_catchup_target_height(&notes, chain_tip);
@@ -654,9 +679,12 @@ mod tests {
             memo: vec![],
             orchard_incremental_witness_hex: Some("ab".to_string()),
             orchard_witness_tip_height: Some(3_389_500),
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
             spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
         }];
         let chain_tip = 3_389_822;
         assert_eq!(witness_catchup_target_height(&notes, chain_tip), chain_tip);
@@ -702,9 +730,12 @@ mod tests {
             memo: vec![],
             orchard_incremental_witness_hex: None,
             orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
             spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
         }];
         apply_empty_cache_backfill(&mut range, &config, &opts, &cached);
         assert!(range.scan_start > range.scan_end);
@@ -725,9 +756,12 @@ mod tests {
             memo: vec![],
             orchard_incremental_witness_hex: None,
             orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
             rho_bytes: None,
             rseed_bytes: None,
             spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
         }];
 
         let scanned: Vec<SerializableOrchardNote> = vec![];

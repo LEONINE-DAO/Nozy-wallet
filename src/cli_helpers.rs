@@ -152,12 +152,21 @@ pub async fn scan_notes_for_sending(
     let zebra_client = ZebraClient::from_config(&config);
     let chain_tip = zebra_client.get_best_block_height().await?;
     let cached_notes = crate::notes::load_wallet_notes().unwrap_or_default();
-    ensure_cached_witness_fresh_for_send(&cached_notes, chain_tip)?;
+    let ironwood_witness_incomplete = cached_notes.iter().any(|n| {
+        !n.spent
+            && n.pool == crate::shielded_pool::ShieldedPool::Ironwood
+            && !n.witness_hex_for_pool().is_some_and(|w| !w.is_empty())
+    });
+    if !ironwood_witness_incomplete {
+        ensure_cached_witness_fresh_for_send(&cached_notes, chain_tip)?;
+    }
 
     // Fast path: reuse persisted notes + witnesses from sync (witness catch-up at spend time).
-    if let Ok(cached) = load_spendable_notes_from_wallet(&wallet) {
-        if !cached.is_empty() {
-            return Ok(cached);
+    if !ironwood_witness_incomplete {
+        if let Ok(cached) = load_spendable_notes_from_wallet(&wallet) {
+            if !cached.is_empty() {
+                return Ok(cached);
+            }
         }
     }
 
@@ -172,7 +181,16 @@ pub async fn scan_notes_for_sending(
     const SEND_SCAN_MAINNET_FLOOR: u32 = 3_276_000;
 
     let cached_notes = crate::notes::load_wallet_notes().unwrap_or_default();
-    let start_height = if let Some(earliest) = cached_notes
+    let start_height = if ironwood_witness_incomplete {
+        cached_notes
+            .iter()
+            .filter(|n| !n.spent && n.pool == crate::shielded_pool::ShieldedPool::Ironwood)
+            .map(|n| n.block_height)
+            .min()
+            .unwrap_or(1)
+            .saturating_sub(SEND_SCAN_REWIND_BLOCKS)
+            .min(tip_height)
+    } else if let Some(earliest) = cached_notes
         .iter()
         .filter(|n| !n.spent)
         .map(|n| n.block_height)

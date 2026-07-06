@@ -1,9 +1,10 @@
 use crate::config::{normalize_zebra_rpc_url, BackendKind, Protocol, WalletConfig};
 use crate::error::{NozyError, NozyResult};
 use crate::grpc_client::ZebraGrpcClient;
+use crate::shielded_pool::ShieldedPool;
 use crate::zebra_tree_rpc::{
-    parse_z_get_subtrees_by_index, parse_z_gettreestate_orchard, OrchardTreestateParsed,
-    ZebraSubtreesByIndex,
+    parse_z_get_subtrees_by_index, parse_z_gettreestate_orchard, parse_z_gettreestate_pool,
+    OrchardTreestateParsed, ShieldedTreestateParsed, ZebraSubtreesByIndex,
 };
 use hex;
 use serde::Deserialize;
@@ -619,6 +620,12 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
         parse_orchard_pool_from_blockchain_info(&info)
     }
 
+    /// Ironwood pool chain balance (NU6.3+). Returns error if node has no ironwood pool yet.
+    pub async fn get_ironwood_pool_stats(&self) -> NozyResult<ShieldedPoolStats> {
+        let info = self.get_blockchain_info().await?;
+        parse_pool_from_blockchain_info(&info, "ironwood")
+    }
+
     pub async fn get_blockchain_info(&self) -> NozyResult<HashMap<String, Value>> {
         let request = serde_json::json!({
             "jsonrpc": "2.0",
@@ -661,6 +668,37 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
         response.result.ok_or_else(|| {
             NozyError::InvalidOperation("No transaction data in response".to_string())
         })
+    }
+
+    /// True when `getrawtransaction` verbose reports the tx is confirmed in the active chain.
+    pub async fn transaction_in_active_chain(&self, txid: &str) -> NozyResult<bool> {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": "getrawtransaction",
+            "params": [txid, 1],
+            "id": 1
+        });
+
+        let response: ZebraResponse<HashMap<String, Value>> = self.make_request(request).await?;
+
+        if let Some(error) = response.error {
+            if error.code == -5 {
+                return Ok(false);
+            }
+            return Err(NozyError::InvalidOperation(format!(
+                "Zebra RPC error: {} (code: {})",
+                error.message, error.code
+            )));
+        }
+
+        Ok(response
+            .result
+            .and_then(|result| {
+                result
+                    .get("in_active_chain")
+                    .and_then(|value| value.as_bool())
+            })
+            .unwrap_or(false))
     }
 
     pub async fn decode_raw_transaction(&self, raw_tx: &str) -> NozyResult<HashMap<String, Value>> {
@@ -738,6 +776,25 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
         &self,
         height: u32,
     ) -> NozyResult<OrchardTreestateParsed> {
+        self.get_shielded_treestate_parsed(ShieldedPool::Orchard, height)
+            .await
+    }
+
+    /// Full Ironwood treestate from `z_gettreestate` (JSON-RPC only).
+    pub async fn get_ironwood_treestate_parsed(
+        &self,
+        height: u32,
+    ) -> NozyResult<ShieldedTreestateParsed> {
+        self.get_shielded_treestate_parsed(ShieldedPool::Ironwood, height)
+            .await
+    }
+
+    /// Full shielded-pool treestate from `z_gettreestate` (JSON-RPC only).
+    pub async fn get_shielded_treestate_parsed(
+        &self,
+        pool: ShieldedPool,
+        height: u32,
+    ) -> NozyResult<ShieldedTreestateParsed> {
         match self.protocol {
             Protocol::JsonRpc => {
                 let request = serde_json::json!({
@@ -760,10 +817,14 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
                     NozyError::InvalidOperation("No z_gettreestate result".to_string())
                 })?;
 
-                parse_z_gettreestate_orchard(&result)
+                if pool == ShieldedPool::Orchard {
+                    parse_z_gettreestate_orchard(&result)
+                } else {
+                    parse_z_gettreestate_pool(&result, pool)
+                }
             }
             Protocol::Grpc => Err(NozyError::InvalidOperation(
-                "z_gettreestate requires JSON-RPC (Orchard treestate)".to_string(),
+                "z_gettreestate requires JSON-RPC (shielded treestate)".to_string(),
             )),
         }
     }
@@ -815,9 +876,23 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
     }
 
     pub async fn get_orchard_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
+        self.get_shielded_tree_state(ShieldedPool::Orchard, height)
+            .await
+    }
+
+    pub async fn get_ironwood_tree_state(&self, height: u32) -> NozyResult<IronwoodTreeState> {
+        self.get_shielded_tree_state(ShieldedPool::Ironwood, height)
+            .await
+    }
+
+    pub async fn get_shielded_tree_state(
+        &self,
+        pool: ShieldedPool,
+        height: u32,
+    ) -> NozyResult<OrchardTreeState> {
         match self.protocol {
             Protocol::JsonRpc => {
-                let parsed = self.get_orchard_treestate_parsed(height).await?;
+                let parsed = self.get_shielded_treestate_parsed(pool, height).await?;
                 Ok(OrchardTreeState {
                     height: parsed.height,
                     anchor: parsed.anchor,
@@ -1074,9 +1149,20 @@ pub struct OrchardPoolStats {
     pub block_height: u32,
 }
 
-fn parse_orchard_pool_from_blockchain_info(
+/// Chain-reported shielded pool balance (`getblockchaininfo` → `valuePools`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShieldedPoolStats {
+    pub pool_id: String,
+    pub chain_value_zec: f64,
+    pub chain_value_zat: u64,
+    pub monitored: bool,
+    pub block_height: u32,
+}
+
+fn parse_pool_from_blockchain_info(
     info: &HashMap<String, Value>,
-) -> NozyResult<OrchardPoolStats> {
+    pool_id: &str,
+) -> NozyResult<ShieldedPoolStats> {
     let block_height = info.get("blocks").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
     let pools = info
         .get("valuePools")
@@ -1086,7 +1172,7 @@ fn parse_orchard_pool_from_blockchain_info(
         })?;
 
     for pool in pools {
-        if pool.get("id").and_then(|v| v.as_str()) == Some("orchard") {
+        if pool.get("id").and_then(|v| v.as_str()) == Some(pool_id) {
             let chain_value_zec = pool
                 .get("chainValue")
                 .and_then(|v| v.as_f64())
@@ -1099,7 +1185,8 @@ fn parse_orchard_pool_from_blockchain_info(
                 .get("monitored")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
-            return Ok(OrchardPoolStats {
+            return Ok(ShieldedPoolStats {
+                pool_id: pool_id.to_string(),
                 chain_value_zec,
                 chain_value_zat,
                 monitored,
@@ -1108,9 +1195,21 @@ fn parse_orchard_pool_from_blockchain_info(
         }
     }
 
-    Err(NozyError::InvalidOperation(
-        "getblockchaininfo: orchard pool not found in valuePools".to_string(),
-    ))
+    Err(NozyError::InvalidOperation(format!(
+        "getblockchaininfo: {pool_id} pool not found in valuePools"
+    )))
+}
+
+fn parse_orchard_pool_from_blockchain_info(
+    info: &HashMap<String, Value>,
+) -> NozyResult<OrchardPoolStats> {
+    let stats = parse_pool_from_blockchain_info(info, "orchard")?;
+    Ok(OrchardPoolStats {
+        chain_value_zec: stats.chain_value_zec,
+        chain_value_zat: stats.chain_value_zat,
+        monitored: stats.monitored,
+        block_height: stats.block_height,
+    })
 }
 
 /// Zebra `getrawtransaction` uses `height`; some stacks use `blockheight`.
@@ -1145,6 +1244,9 @@ pub struct OrchardTreeState {
     pub anchor: [u8; 32],
     pub commitment_count: u64,
 }
+
+/// Ironwood uses the Orchard note-commitment tree primitives with a separate pool/tree.
+pub type IronwoodTreeState = OrchardTreeState;
 
 #[cfg(test)]
 mod connection_policy_tests {

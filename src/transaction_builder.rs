@@ -3,10 +3,15 @@ use crate::fee_policy::{
     is_expiry_consensus_error, OrchardSendFeeShape, PilotSendOptions,
     PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS,
 };
+use crate::ironwood_tx::{
+    build_single_ironwood_spend, select_single_ironwood_spend_note,
+    ZebraJsonRpcIronwoodWitnessProvider,
+};
 use crate::notes::SpendableNote;
 use crate::orchard_tx::{
     select_single_spend_note, OrchardTransactionBuilder, ZebraJsonRpcOrchardWitnessProvider,
 };
+use crate::shielded_pool::ShieldedPool;
 use crate::zebra_integration::ZebraClient;
 use zcash_address::unified::{Container, Encoding};
 
@@ -84,13 +89,86 @@ impl ZcashTransactionBuilder {
             let amount_zec = amount_zatoshis as f64 / 100_000_000.0;
             let available_zec = total_available as f64 / 100_000_000.0;
             return Err(NozyError::InvalidOperation(format!(
+                "Insufficient shielded funds: need {:.8} ZEC, have {:.8} ZEC",
+                amount_zec, available_zec
+            )));
+        }
+
+        let chain_tip = zebra_client.get_best_block_height().await?;
+        let info = zebra_client.get_blockchain_info().await?;
+        let testnet = info
+            .get("chain")
+            .and_then(|v| v.as_str())
+            .is_some_and(|chain| matches!(chain, "test" | "testnet" | "regtest"));
+
+        if crate::ironwood::is_ironwood_active(chain_tip, testnet) {
+            let ironwood_notes: Vec<&SpendableNote> = spendable_notes
+                .iter()
+                .filter(|n| !n.orchard_note.spent && n.pool == ShieldedPool::Ironwood)
+                .collect();
+            if ironwood_notes.is_empty() {
+                return Err(NozyError::InvalidOperation(
+                    "Ironwood (NU6.3) is active but no spendable Ironwood notes were found. \
+                     Run `nozy sync --to-tip` to index Ironwood pool outputs."
+                        .to_string(),
+                ));
+            }
+            let ironwood_refs: Vec<SpendableNote> =
+                ironwood_notes.iter().map(|n| (*n).clone()).collect();
+            let spend_note =
+                select_single_ironwood_spend_note(&ironwood_refs, amount_zatoshis, fee_zatoshis)?;
+            crate::send_readiness::ensure_witness_fresh_for_send(spend_note, chain_tip)?;
+            let has_change =
+                spend_note.orchard_note.value > amount_zatoshis.saturating_add(fee_zatoshis);
+            let shape = OrchardSendFeeShape::single_spend_send(has_change, memo);
+            let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority);
+            if fee_zatoshis < expected_fee {
+                return Err(NozyError::InvalidOperation(format!(
+                    "Fee {} zats is below ZIP-317 minimum {} zats for this transaction shape",
+                    fee_zatoshis, expected_fee
+                )));
+            }
+
+            let built = build_single_ironwood_spend(
+                zebra_client,
+                &ZebraJsonRpcIronwoodWitnessProvider,
+                &ironwood_refs,
+                recipient_address,
+                amount_zatoshis,
+                fee_zatoshis,
+                memo,
+                pilot.expiry_delta_blocks,
+            )
+            .await?;
+
+            return Ok(SignedTransaction {
+                raw_transaction: built.raw_transaction,
+                txid: built.txid,
+                expiry_height: built.expiry_height,
+            });
+        }
+
+        let total_available_orchard: u64 = spendable_notes
+            .iter()
+            .filter(|note| !note.orchard_note.spent && note.pool == ShieldedPool::Orchard)
+            .map(|note| note.orchard_note.value)
+            .sum();
+
+        if total_available_orchard < total_needed {
+            let amount_zec = amount_zatoshis as f64 / 100_000_000.0;
+            let available_zec = total_available_orchard as f64 / 100_000_000.0;
+            return Err(NozyError::InvalidOperation(format!(
                 "Insufficient Orchard funds: need {:.8} ZEC, have {:.8} ZEC",
                 amount_zec, available_zec
             )));
         }
 
-        let spend_note = select_single_spend_note(spendable_notes, amount_zatoshis, fee_zatoshis)?;
-        let chain_tip = zebra_client.get_best_block_height().await?;
+        let orchard_notes: Vec<SpendableNote> = spendable_notes
+            .iter()
+            .filter(|n| !n.orchard_note.spent && n.pool == ShieldedPool::Orchard)
+            .cloned()
+            .collect();
+        let spend_note = select_single_spend_note(&orchard_notes, amount_zatoshis, fee_zatoshis)?;
         crate::send_readiness::ensure_witness_fresh_for_send(spend_note, chain_tip)?;
         let has_change =
             spend_note.orchard_note.value > amount_zatoshis.saturating_add(fee_zatoshis);
@@ -108,7 +186,7 @@ impl ZcashTransactionBuilder {
             .build_single_spend(
                 zebra_client,
                 &ZebraJsonRpcOrchardWitnessProvider,
-                std::slice::from_ref(spend_note),
+                &orchard_notes,
                 recipient_address,
                 amount_zatoshis,
                 fee_zatoshis,
