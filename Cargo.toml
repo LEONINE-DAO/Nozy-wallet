@@ -76,7 +76,7 @@ clap = { version = "4.6", features = ["derive", "env"], optional = true }
 dialoguer = { version = "0.12", optional = true }
 indicatif = { version = "0.17", optional = true }
 # Nozy Lite live status TUI
-ratatui = { version = "0.29", optional = true }
+ratatui = { version = "0.30", optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # Tracing subscriber (native-only, has OS deps)
