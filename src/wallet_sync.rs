@@ -234,8 +234,12 @@ pub(crate) fn notes_cache_checkpoint_height(
 }
 
 fn note_has_pool_witness(note: &crate::notes::SerializableOrchardNote) -> bool {
-    note.witness_hex_for_pool()
-        .is_some_and(|hex| !hex.is_empty())
+    // Tip height alone means a prior witness catch-up completed; empty hex is still
+    // "progress" for resume-from-cache (hex may be rebuilt on refresh).
+    note.witness_tip_height_for_pool().is_some_and(|h| h > 0)
+        || note
+            .witness_hex_for_pool()
+            .is_some_and(|hex| !hex.is_empty())
 }
 
 /// Earliest unspent note that still needs a pool witness rebuilt via RPC scan.
