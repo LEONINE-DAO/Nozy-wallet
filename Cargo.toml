@@ -124,7 +124,7 @@ pczt = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e764
     "tx-extractor",
     "zcp-builder",
 ] }
-ur = { version = "0.4.1", optional = true, default-features = false, features = ["std"] }
+ur = { version = "0.5.0", optional = true, default-features = false, features = ["std"] }
 
 [features]
 default = ["native"]
