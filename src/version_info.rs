@@ -22,4 +22,4 @@ macro_rules! set_release_codename {
     };
 }
 
-set_release_codename!("Nozy Lite (CLI)");
+set_release_codename!("Nozy Lite (CLI)", patch "1");

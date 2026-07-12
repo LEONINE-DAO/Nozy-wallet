@@ -2,7 +2,7 @@
 
 **Orchard-first Zcash wallet** — **CLI production release** today; desktop app, browser extension, and companion API in active development. This repository is a **wallet and companion services**, not a consensus node.
 
-**Latest release:** [v2.4.1 — Nozy Lite (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1) · See [CHANGELOG.md](CHANGELOG.md) for notes. Prior: [v2.4.0 Ironwood](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0).
+**Latest release:** [v2.4.1.1 — Nozy Lite (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1.1) · See [CHANGELOG.md](CHANGELOG.md) for notes. Prior: [v2.4.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1) · [v2.4.0 Ironwood](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0).
 
 ## What NozyWallet is
 

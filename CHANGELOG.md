@@ -11,6 +11,15 @@
 
 - **Desktop co-signing:** file-based group co-sign UI deferred; Keystone is the supported hardware path for this beta.
 
+## [2.4.1.1] — Nozy Lite (CLI) (2026-07-11)
+
+Patch on **v2.4.1**. Crate SemVer remains **2.4.1**; `nozy --version` reports **2.4.1.1 (Nozy Lite (CLI))**.
+
+### Fixed
+
+- **Unit test / sync resume:** treat witness tip height as cache progress so `cached_notes_resume_when_last_scan_missing` passes.
+- **Desktop `Cargo.lock`:** resolve `ratatui` / `unicode-width` for path-dep nozy, and align package version with `1.0.0-beta.1` so `cargo metadata --locked` succeeds in CI.
+
 ## [2.4.1] — Nozy Lite (CLI) (2026-07-11)
 
 Productizes the production **`nozy` CLI** as **Nozy Lite** for operators: uptime checks and data peeks beside Zebrad, without the Tauri desktop WebView.
