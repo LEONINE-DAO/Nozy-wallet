@@ -5,6 +5,7 @@ import { HomePage } from "../pages/Home";
 import { SendPage } from "../pages/Send";
 import { SettingsPage } from "../pages/Settings";
 import { HistoryPage } from "../pages/History";
+import { IronwoodPage } from "../pages/Ironwood";
 import { BrowserPage } from "../pages/Browser";
 import { ContactsPage } from "../pages/Contacts";
 import { WebWalletWatchOnlyPage } from "../pages/WebWalletWatchOnly";
@@ -27,7 +28,8 @@ export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
   const { hasNymSubscription } = useSubscriptionStore();
-  const { setAddress, isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
+  const { setAddress, isSyncing, setIsSyncing, setBalanceFromAvailable, syncProgressPercent } =
+    useWalletStore();
   const [syncBannerToken, setSyncBannerToken] = useState(0);
   const [provingDownloaded, setProvingDownloaded] = useState<boolean | null>(null);
   const [provingDownloading, setProvingDownloading] = useState(false);
@@ -116,7 +118,7 @@ export function AuthenticatedLayout() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 text-gray-900 font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -144,7 +146,9 @@ export function AuthenticatedLayout() {
               {isSyncing ? (
                 <>
                   <Refresh size={16} className="animate-spin shrink-0" />
-                  <span>Syncing…</span>
+                  <span>
+                    {syncProgressPercent != null ? `${syncProgressPercent}% synced` : "Syncing…"}
+                  </span>
                 </>
               ) : (
                 <>
@@ -203,7 +207,7 @@ export function AuthenticatedLayout() {
         </div>
       )}
 
-      <main className="flex-1 overflow-hidden bg-gray-50 dark:bg-gray-900 relative">
+      <main className="flex-1 min-h-0 overflow-hidden bg-gray-950 relative flex flex-col">
         {activeTab === "browser" && dappBrowserEnabled ? (
           hasNymSubscription ? (
             <BrowserPage />
@@ -214,25 +218,28 @@ export function AuthenticatedLayout() {
           <>
             <div className="absolute top-0 left-0 w-full h-64 bg-linear-to-b from-primary-50/70 to-transparent pointer-events-none" />
             {activeTab === "home" && <OrchardPoolBanner />}
-            <div className="container mx-auto px-10 py-10 relative z-10 overflow-y-auto h-full">
-              {activeTab === "home" && <HomePage onNavigate={setActiveTab} />}
-              {activeTab === "history" && <HistoryPage />}
-              {activeTab === "send" && <SendPage />}
-              {activeTab === "settings" && <SettingsPage />}
-              {activeTab === "contacts" && <ContactsPage />}
-              {activeTab === "web" &&
-                (webWatchOnlyEnabled ? (
-                  <WebWalletWatchOnlyPage />
-                ) : (
-                  <div className="max-w-2xl mx-auto py-8">
-                    <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-                      Web Watch-Only Disabled
-                    </h2>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Set `VITE_ENABLE_WEB_WATCH_ONLY=true` to enable the Phase 1 web watch-only panel.
-                    </p>
-                  </div>
-                ))}
+            <div className="relative z-10 flex-1 min-h-0 overflow-y-auto">
+              <div className="container mx-auto px-8 pt-8 pb-24 max-w-6xl">
+                {activeTab === "home" && <HomePage onNavigate={setActiveTab} />}
+                {activeTab === "history" && <HistoryPage />}
+                {activeTab === "ironwood" && <IronwoodPage />}
+                {activeTab === "send" && <SendPage />}
+                {activeTab === "settings" && <SettingsPage />}
+                {activeTab === "contacts" && <ContactsPage />}
+                {activeTab === "web" &&
+                  (webWatchOnlyEnabled ? (
+                    <WebWalletWatchOnlyPage />
+                  ) : (
+                    <div className="max-w-2xl mx-auto py-8">
+                      <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
+                        Web Watch-Only Disabled
+                      </h2>
+                      <p className="text-sm text-gray-600 dark:text-gray-400">
+                        Set `VITE_ENABLE_WEB_WATCH_ONLY=true` to enable the Phase 1 web watch-only panel.
+                      </p>
+                    </div>
+                  ))}
+              </div>
             </div>
           </>
         )}

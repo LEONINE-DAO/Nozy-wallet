@@ -1,5 +1,7 @@
 # Desktop v1.0.0-beta.1 — Hot Lemon Pepper Sprinkles (Windows)
 
+> **Superseded for GA.** Use [`DESKTOP_RELEASE.md`](DESKTOP_RELEASE.md) for **`desktop-v1.0.0`**. This file remains the beta.1 release notes archive.
+
 Copy the sections below into the GitHub Release body when tagging **`desktop-v1.0.0-beta.1`**.
 
 ---

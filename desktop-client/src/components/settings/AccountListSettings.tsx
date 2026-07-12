@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { Button } from "../Button";
 import { Input } from "../Input";
-import { ArrowLeft, CheckCircle, AddCircle, User } from "@solar-icons/react";
+import { CheckCircle, User } from "@solar-icons/react";
 import { useSettingsStore } from "../../store/settingsStore";
 import { Modal } from "../Modal";
 import toast from "react-hot-toast";
-import { Tooltip } from "../Tooltip";
+import { NetworkWalletSwitcher } from "../NetworkWalletSwitcher";
+import { SettingsBackButton } from "./SettingsBackButton";
 
 const DEFAULT_ACCOUNT_IDS = ["0"];
 
@@ -41,22 +42,28 @@ export function AccountListSettings({ onBack }: AccountListSettingsProps) {
 
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span className="font-medium">Back to Settings</span>
-      </button>
+      <SettingsBackButton onClick={onBack} />
 
       <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">
-        Accounts
+        Wallets & Accounts
       </h2>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-        Manage accounts and switch between them. Each account has its own receive address and balance.
+        Add wallets, change the active wallet profile, and manage accounts after you unlock.
       </p>
 
-      <div className="space-y-3">
+      <div className="space-y-6">
+        <NetworkWalletSwitcher />
+
+        <div className="space-y-3">
+          <div>
+            <h3 className="text-sm font-semibold uppercase tracking-widest text-gray-500 dark:text-gray-400">
+              In-wallet accounts
+            </h3>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              These account labels stay inside the active wallet profile.
+            </p>
+          </div>
+
         {accountIds.map((id) => {
           const label = accountLabels[id] ?? id;
           const isActive = activeAccountId === id;
@@ -110,18 +117,12 @@ export function AccountListSettings({ onBack }: AccountListSettingsProps) {
           );
         })}
 
-        <Tooltip content="Backend support for multiple accounts is coming soon. You can rename the default account above.">
-          <div className="flex">
-            <button
-              disabled
-              className="w-full p-4 rounded-xl border border-dashed border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500 flex items-center justify-center gap-2 cursor-not-allowed"
-            >
-              <AddCircle size={20} />
-              <span>Add account</span>
-              <span className="text-xs">(coming soon)</span>
-            </button>
-          </div>
-        </Tooltip>
+        <p className="text-sm text-gray-400 px-1">
+          Additional accounts under one wallet profile are not available in v1.0.0.
+          Use <span className="font-medium text-gray-300">Wallets &amp; Accounts</span> network
+          profiles to manage separate mainnet/testnet wallets.
+        </p>
+        </div>
       </div>
 
       <Modal

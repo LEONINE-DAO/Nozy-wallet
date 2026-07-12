@@ -58,18 +58,18 @@ export function Modal({ isOpen, onClose, title, children, initialFocusRef }: Mod
           role="dialog"
           aria-modal="true"
           aria-labelledby={title ? titleId : undefined}
-          className="bg-white/95 rounded-3xl w-full max-w-lg shadow-2xl animate-scale-up border border-white/50 max-h-[90vh] flex flex-col pointer-events-auto"
+          className="bg-gray-900 rounded-2xl w-full max-w-lg shadow-2xl animate-scale-up border border-gray-600 max-h-[90vh] flex flex-col pointer-events-auto text-white"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex items-center justify-between p-6 border-b border-gray-100/50 shrink-0">
-            <h3 id={titleId} className="text-xl font-bold text-gray-900">
+          <div className="flex items-center justify-between px-6 py-5 border-b border-gray-700 shrink-0">
+            <h3 id={titleId} className="text-lg font-semibold text-white">
               {title}
             </h3>
             <button
               type="button"
               onClick={() => onCloseRef.current()}
-              className="p-2 rounded-full hover:bg-gray-100 transition-colors text-gray-500 hover:text-gray-900"
+              className="p-2 rounded-xl hover:bg-gray-800 transition-colors text-gray-300 hover:text-white"
             >
               <CloseCircle size={24} />
             </button>

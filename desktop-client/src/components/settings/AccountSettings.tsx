@@ -3,13 +3,13 @@ import { Button } from "../Button";
 import { Input } from "../Input";
 import { Modal } from "../Modal";
 import {
-  ArrowLeft,
   Copy,
   Eye,
   EyeClosed,
   CheckCircle,
   Lock,
 } from "@solar-icons/react";
+import { SettingsBackButton } from "./SettingsBackButton";
 import { useWalletStore } from "../../store/walletStore";
 import { walletApi } from "../../lib/api";
 import toast from "react-hot-toast";
@@ -164,15 +164,29 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
     setShowPasswordDialog(null);
   };
 
+  const clearSensitiveState = useCallback(() => {
+    setSeedPhrase(null);
+    setPrivateKey(null);
+    setShowSeed(false);
+    setShowPrivateKey(false);
+    setPassword("");
+    setShowPasswordDialog(null);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      clearSensitiveState();
+    };
+  }, [clearSensitiveState]);
+
+  const handleBack = () => {
+    clearSensitiveState();
+    onBack();
+  };
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
-      <button
-        onClick={onBack}
-        className="mb-6 flex items-center gap-2 text-gray-500 transition-colors hover:text-gray-900 dark:text-gray-400 dark:hover:text-gray-100"
-      >
-        <ArrowLeft className="h-5 w-5" />
-        <span className="font-medium">Back to Settings</span>
-      </button>
+      <SettingsBackButton onClick={handleBack} />
 
       <h2 className="mb-2 text-3xl font-bold text-gray-900 dark:text-gray-100">
         Account Information

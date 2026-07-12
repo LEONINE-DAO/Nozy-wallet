@@ -17,14 +17,13 @@ export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
     ? `${address.slice(0, 6)}...${address.slice(-4)}`
     : "No Wallet";
 
-  // Poll health every 2 minutes
   const { data: healthData, isError } = useQuery({
     queryKey: ["walletHealth"],
     queryFn: async () => {
       const res = await walletApi.checkHealth();
       return res.data;
     },
-    refetchInterval: 120000, // 2 minutes
+    refetchInterval: 120000,
     staleTime: 60000,
     retry: false,
   });
@@ -48,34 +47,28 @@ export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
   }, []);
 
   return (
-    <div
-      className="relative"
-      ref={dropdownRef}
-    >
+    <div className="relative" ref={dropdownRef}>
       <button
         onClick={() => setIsOpen(!isOpen)}
-        className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/60 border border-white/50 shadow-sm backdrop-blur-sm hover:bg-white/80 transition-all cursor-pointer text-left group"
+        className="flex items-center gap-3 px-3 py-2 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-white/50 dark:border-gray-700/50 shadow-sm backdrop-blur-sm hover:bg-white/80 dark:hover:bg-gray-800/80 transition-all cursor-pointer text-left group"
       >
-        <div className="w-9 h-9 rounded-full bg-linear-to-br from-primary-100 to-white flex items-center justify-center text-primary-600 shadow-inner border border-white">
-          <User
-            size={20}
-            weight="Bold"
-          />
+        <div className="w-9 h-9 rounded-full bg-linear-to-br from-primary-100 to-white dark:from-primary-900/40 dark:to-gray-800 flex items-center justify-center text-primary-600 dark:text-primary-300 shadow-inner border border-white dark:border-gray-700">
+          <User size={20} weight="Bold" />
         </div>
         <div className="flex flex-col">
-          <span className="text-xs font-bold text-gray-800 group-hover:text-primary transition-colors uppercase tracking-wide">
+          <span className="text-xs font-bold text-gray-800 dark:text-gray-200 group-hover:text-primary transition-colors uppercase tracking-wide">
             My Wallet
           </span>
-          <span className="text-xs text-gray-500 font-mono">
+          <span className="text-xs text-gray-500 dark:text-gray-400 font-mono">
             {displayAddress}
           </span>
         </div>
       </button>
 
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-48 rounded-xl bg-white/90 backdrop-blur-md border border-white/50 shadow-xl py-2 z-50 animate-fade-in">
-          <div className="px-4 py-2 border-b border-gray-100 mb-1">
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+        <div className="absolute right-0 top-full mt-2 w-52 rounded-xl bg-white/95 dark:bg-gray-900/95 backdrop-blur-md border border-white/50 dark:border-gray-700/50 shadow-xl py-2 z-50 animate-fade-in">
+          <div className="px-4 py-2 border-b border-gray-100 dark:border-gray-800 mb-1">
+            <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
               Profile
             </p>
           </div>
@@ -84,7 +77,7 @@ export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
               onNavigate("contacts");
               setIsOpen(false);
             }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-primary-50 hover:text-primary transition-colors flex items-center gap-2"
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/15 hover:text-primary transition-colors flex items-center gap-2"
           >
             <User size={18} />
             Contacts
@@ -94,12 +87,12 @@ export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
               onNavigate("settings");
               setIsOpen(false);
             }}
-            className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-primary-50 hover:text-primary transition-colors flex items-center gap-2"
+            className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-primary/10 dark:hover:bg-primary/15 hover:text-primary transition-colors flex items-center gap-2"
           >
             <Settings size={18} />
             Settings
           </button>
-          <div className="w-full px-4 py-2 flex items-center gap-3 bg-gray-50/50 mt-1">
+          <div className="w-full px-4 py-2 flex items-center gap-3 bg-gray-50/50 dark:bg-gray-800/50 mt-1">
             <div
               className={`w-2.5 h-2.5 rounded-full shadow-lg transition-colors duration-500 ${
                 isSynced
@@ -108,8 +101,8 @@ export function ProfileDropdown({ onNavigate }: ProfileDropdownProps) {
               }`}
             />
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-gray-900">Mainnet</span>
-              <span className="text-xs text-gray-500">
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Mainnet</span>
+              <span className="text-xs text-gray-500 dark:text-gray-400">
                 {isSynced ? "Synced" : "Disconnected"}
               </span>
             </div>

@@ -12,7 +12,54 @@ export interface SyncOutcome {
   message: string;
 }
 
+/** Live progress callback while a multi-round sync is running. */
+export interface SyncProgressUpdate {
+  message: string;
+  percent: number | null;
+  status: SyncStatusResponse | null;
+}
+
 const MAX_SYNC_ROUNDS = 50;
+
+/** Scan progress 0–100 from last scanned height vs chain tip. */
+export function progressPercent(status: SyncStatusResponse | null | undefined): number | null {
+  if (!status) return null;
+  const tip = status.zebra_tip;
+  const last = status.last_scan_height;
+  if (tip == null || tip === 0) return null;
+  if (last == null) return 0;
+  if (last >= tip) return 100;
+  return Math.min(100, Math.max(0, Math.round((last / tip) * 100)));
+}
+
+/** Short user-facing sync line, e.g. "87% synced · 2.1M / 2.4M". */
+export function formatSyncProgressMessage(status: SyncStatusResponse | null): string {
+  if (!status) return "Syncing wallet with the network…";
+
+  if (status.zebra_tip == null) {
+    return "Connecting to Zebra node…";
+  }
+
+  const tip = status.zebra_tip;
+  const last = status.last_scan_height;
+  const percent = progressPercent(status);
+  const tipLabel = tip.toLocaleString();
+  const lastLabel = last != null ? last.toLocaleString() : "—";
+
+  if (last != null && last > tip) {
+    return `Waiting for node catch-up · tip ${tipLabel} (wallet at ${lastLabel})`;
+  }
+
+  if (percent != null && percent < 100) {
+    return `${percent}% synced · scanned ${lastLabel} of tip ${tipLabel}`;
+  }
+
+  if (!status.witness_fresh_for_send) {
+    return `Almost done · updating Orchard witnesses (${status.witness_lag_blocks.toLocaleString()} blocks behind)`;
+  }
+
+  return `100% synced · tip ${tipLabel}`;
+}
 
 function isNodeBehindWalletScan(status: SyncStatusResponse): boolean {
   const last = status.last_scan_height;
@@ -80,23 +127,39 @@ export function describeSyncStatus(status: SyncStatusResponse | null): SyncOutco
   };
 }
 
+function emitProgress(
+  onProgress: ((update: SyncProgressUpdate) => void) | undefined,
+  status: SyncStatusResponse | null,
+) {
+  if (!onProgress) return;
+  onProgress({
+    message: formatSyncProgressMessage(status),
+    percent: progressPercent(status),
+    status,
+  });
+}
+
 /**
  * Run sync until caught up, the node blocks further progress, or no forward movement.
  * Witness catch-up and large scan gaps may require multiple backend rounds.
  */
 export async function syncWalletToTip(
-  onProgress?: (message: string) => void,
+  onProgress?: (update: SyncProgressUpdate) => void,
 ): Promise<SyncOutcome> {
   let lastStatus: SyncStatusResponse | null = null;
   let prevGap: number | null = null;
   let staleRounds = 0;
 
+  try {
+    const statusRes = await walletApi.getSyncStatus();
+    lastStatus = statusRes.data;
+  } catch {
+    lastStatus = null;
+  }
+  emitProgress(onProgress, lastStatus);
+
   for (let round = 0; round < MAX_SYNC_ROUNDS; round++) {
-    onProgress?.(
-      round === 0
-        ? "Syncing wallet with the network…"
-        : describeSyncStatus(lastStatus).message,
-    );
+    emitProgress(onProgress, lastStatus);
 
     await walletApi.syncWallet();
     await walletApi.checkTransactionConfirmations().catch(() => undefined);
@@ -107,6 +170,8 @@ export async function syncWalletToTip(
     } catch {
       lastStatus = null;
     }
+
+    emitProgress(onProgress, lastStatus);
 
     const outcome = describeSyncStatus(lastStatus);
     if (outcome.caughtUp) {

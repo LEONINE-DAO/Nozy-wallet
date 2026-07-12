@@ -64,10 +64,10 @@ class Logger {
       this.logs.shift();
     }
 
-    // Also log to console in development
+    // Also log to console in development (sanitized — never print secrets)
     if (import.meta.env.DEV) {
       const consoleMethod = level === 'error' ? console.error : level === 'warn' ? console.warn : console.log;
-      consoleMethod(`[${level.toUpperCase()}] ${message}`, context || '', error || '');
+      consoleMethod(`[${level.toUpperCase()}] ${message}`, entry.context || '', entry.error || '');
     }
   }
 

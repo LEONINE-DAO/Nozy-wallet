@@ -2,8 +2,9 @@ use crate::error::TauriError;
 use crate::session::load_session_wallet;
 use nozy::{
     build_keystone_send_pczt, estimate_transaction_fee_for_send, extract_signed_tx_from_pczt_bytes,
-    load_config, mark_wallet_notes_spent_from_spendables, orchard_spending_key_from_wallet,
-    prepared_send_from_build, scan_notes_for_sending, select_single_spend_note,
+    load_config, mark_wallet_notes_spent_from_spendables,
+    orchard_spending_key_from_wallet, prepared_send_from_build, scan_notes_for_sending,
+    select_single_spend_note,
     sign_pczt_orchard_spends, transaction_history::{SentTransactionRecord, SentTransactionStorage},
     KeystonePreparedSend, KeystoneWalletConfig, PilotSendOptions, NOZY_WALLET_PRIORITY_FEE,
     PILOT_EXPIRY_DELTA_BLOCKS, ZebraClient, ZebraJsonRpcOrchardWitnessProvider,
@@ -61,16 +62,27 @@ pub struct CompleteCosignSendRequest {
 pub async fn prepare_cosign_request(
     request: PrepareCosignRequest,
 ) -> Result<PrepareCosignResponse, TauriError> {
-    if !request.recipient.starts_with("u1") || request.recipient.len() < 78 {
+    let config = load_config();
+    let expected_testnet = config.network.eq_ignore_ascii_case("testnet");
+    let recipient = request.recipient.trim().to_string();
+    let prefix_ok = if expected_testnet {
+        recipient.starts_with("utest1")
+    } else {
+        recipient.starts_with("u1")
+    };
+    if !prefix_ok || recipient.len() < 78 {
         return Err(TauriError::from(
-            "Invalid recipient address. Must be a valid shielded address (u1...).".to_string(),
+            if expected_testnet {
+                "Invalid recipient address. Testnet co-sign sends require a valid shielded address (utest1...).".to_string()
+            } else {
+                "Invalid recipient address. Mainnet co-sign sends require a valid shielded address (u1...).".to_string()
+            },
         ));
     }
     if request.amount <= 0.0 {
         return Err(TauriError::from("Amount must be greater than 0.".to_string()));
     }
 
-    let config = load_config();
     let zebra_url = request
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
@@ -102,7 +114,7 @@ pub async fn prepare_cosign_request(
         &wallet,
         &keystone,
         &spendable_notes,
-        &request.recipient,
+        &recipient,
         amount_zatoshis,
         fee_zatoshis,
         memo_preview,
@@ -112,12 +124,7 @@ pub async fn prepare_cosign_request(
     .await
     .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let prepared = prepared_send_from_build(
-        &request.recipient,
-        amount_zatoshis,
-        fee_zatoshis,
-        &build,
-    );
+    let prepared = prepared_send_from_build(&recipient, amount_zatoshis, fee_zatoshis, &build);
     let ur_frames =
         nozy::encode_pczt_ur_frames(&build.pczt_bytes, nozy::DEFAULT_UR_FRAGMENT_SIZE)
             .map_err(|e| TauriError::from(e.to_string()))?;

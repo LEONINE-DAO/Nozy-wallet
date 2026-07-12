@@ -3452,7 +3452,7 @@ dependencies = [
 
 [[package]]
 name = "nozywallet-desktop"
-version = "1.0.0-beta.1"
+version = "1.0.0-beta.2"
 dependencies = [
  "hex",
  "indexmap 2.13.1",

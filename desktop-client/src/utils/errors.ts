@@ -17,7 +17,9 @@ const ERROR_MAP: Array<{ pattern: RegExp | string; message: string; code?: strin
   { pattern: /insufficient|not enough|balance.*low/i, message: "Insufficient balance. Check your balance and try a smaller amount.", code: "SEND_001" },
   { pattern: /invalid address|bad address|invalid recipient/i, message: "Invalid recipient address. Please check and try again.", code: "SEND_002" },
   { pattern: /invalid amount|amount.*invalid/i, message: "Invalid amount. Enter a positive number.", code: "SEND_003" },
-  { pattern: /transaction.*fail|send.*fail/i, message: "Transaction failed. Check your password and balance, then try again.", code: "SEND_004" },
+  { pattern: /ironwood notes only|hardware signing.*ironwood/i, message: "Ironwood (NU6.3) is active. Hardware wallet sends for Ironwood are not supported yet — use software Send in the app or `nozy send`.", code: "SEND_IRONWOOD" },
+  { pattern: /orchard notes remain.*migrate/i, message: "Orchard notes remain after Ironwood activation. Run `nozy ironwood migrate` before sending.", code: "SEND_IRONWOOD" },
+  { pattern: /transaction.*fail|send.*fail/i, message: "Transaction failed. Check sync status and balance, then try again.", code: "SEND_004" },
   // Network & node
   { pattern: /connection refused|ECONNREFUSED|failed to connect/i, message: "Cannot connect to node. Check the node URL and that it's running.", code: "NET_001" },
   { pattern: /timeout|ETIMEDOUT|timed out/i, message: "Request timed out. The node may be slow or unreachable.", code: "NET_002" },
@@ -30,7 +32,7 @@ const ERROR_MAP: Array<{ pattern: RegExp | string; message: string; code?: strin
   { pattern: /command.*not found|unknown command|not found.*command/i, message: "This feature is not available in the current app build. Restart the desktop app after updating.", code: "BACKEND_001" },
   // Address book
   { pattern: /address.*already exists|duplicate.*name|contact.*already exist/i, message: "A contact with this name may already exist. Use a different name.", code: "CONTACT_001" },
-  { pattern: /only shielded|must be.*shielded|shielded.*required/i, message: "Only shielded addresses (u1 or zs1) can be saved to contacts.", code: "CONTACT_002" },
+  { pattern: /only shielded|must be.*shielded|shielded.*required/i, message: "Only shielded addresses (u1, utest1, or zs1) can be saved to contacts.", code: "CONTACT_002" },
   // Generic
   { pattern: /user denied|rejected|cancelled/i, message: "Action was cancelled.", code: "USER_001" },
   { pattern: /too many requests|rate limit/i, message: "Too many requests. Please wait a moment and try again.", code: "RATE_001" },
@@ -61,8 +63,12 @@ export function getUserFriendlyMessage(error: unknown, fallback: string): UserFr
     if (matches) return { message, code };
   }
 
-  if (raw.length <= 120 && !raw.includes("Error:") && !raw.includes(" at ")) {
-    return { message: raw };
+  const looksLikeStackTrace = raw.includes(" at ") || raw.includes("Error:");
+  if (!looksLikeStackTrace) {
+    if (raw.length <= 320) {
+      return { message: raw };
+    }
+    return { message: `${raw.slice(0, 317)}…` };
   }
   return { message: fallback };
 }

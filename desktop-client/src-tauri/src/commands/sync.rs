@@ -1,8 +1,7 @@
 use crate::error::TauriError;
 use crate::session::load_session_wallet;
 use nozy::{
-    load_config, sync_wallet_notes, wallet_balance_snapshot, HDWallet,
-    WalletSyncOptions,
+    load_config, sync_wallet_notes, wallet_balance_snapshot, HDWallet, WalletSyncOptions,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;

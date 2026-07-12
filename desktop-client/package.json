@@ -1,7 +1,7 @@
 {
   "name": "nozy-wallet-desktop",
   "private": true,
-  "version": "1.0.0-beta.1",
+  "version": "1.0.0-beta.2",
   "type": "module",
   "scripts": {
     "dev": "node scripts/free-vite-port.mjs && vite",

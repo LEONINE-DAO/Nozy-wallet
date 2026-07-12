@@ -1,12 +1,13 @@
 import { useState, useEffect } from "react";
 import { Button } from "../Button";
 import { Input } from "../Input";
-import { ArrowLeft, Shield } from "@solar-icons/react";
+import { Shield } from "@solar-icons/react";
 import QRCode from "react-qr-code";
 import toast from "react-hot-toast";
 import { walletApi } from "../../lib/api";
 import type { KeystoneStatusResponse } from "../../lib/types";
 import { formatErrorForDisplay } from "../../utils/errors";
+import { SettingsBackButton } from "./SettingsBackButton";
 
 interface KeystoneSettingsProps {
   onBack: () => void;
@@ -35,13 +36,7 @@ export function KeystoneSettings({ onBack }: KeystoneSettingsProps) {
 
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span className="font-medium">Back to Settings</span>
-      </button>
+      <SettingsBackButton onClick={onBack} />
 
       <div className="flex items-center gap-3 mb-6">
         <div className="w-12 h-12 rounded-full bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center">

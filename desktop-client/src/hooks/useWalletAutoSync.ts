@@ -23,7 +23,8 @@ type UseWalletAutoSyncOptions = {
  */
 export function useWalletAutoSync(options: UseWalletAutoSyncOptions = {}) {
   const { onCaughtUp, onSyncComplete } = options;
-  const { isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
+  const { isSyncing, setIsSyncing, setBalanceFromAvailable, setSyncProgress, clearSyncProgress } =
+    useWalletStore();
   const inFlightRef = useRef(false);
   const lastSyncAttemptRef = useRef(0);
   const isSyncingRef = useRef(isSyncing);
@@ -57,7 +58,9 @@ export function useWalletAutoSync(options: UseWalletAutoSyncOptions = {}) {
       lastSyncAttemptRef.current = now;
 
       try {
-        const outcome = await syncWalletToTip();
+        const outcome = await syncWalletToTip((update) => {
+          setSyncProgress(update.percent, update.message);
+        });
         const snapshot = await refreshBalanceSnapshot();
         if (snapshot) {
           setBalanceFromAvailable(snapshot.available);
@@ -73,9 +76,17 @@ export function useWalletAutoSync(options: UseWalletAutoSyncOptions = {}) {
       } finally {
         inFlightRef.current = false;
         setIsSyncing(false);
+        clearSyncProgress();
       }
     },
-    [onCaughtUp, onSyncComplete, setBalanceFromAvailable, setIsSyncing],
+    [
+      onCaughtUp,
+      onSyncComplete,
+      setBalanceFromAvailable,
+      setIsSyncing,
+      setSyncProgress,
+      clearSyncProgress,
+    ],
   );
 
   useEffect(() => {

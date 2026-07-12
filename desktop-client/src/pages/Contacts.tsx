@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { Card } from "../components/Card";
+import { PageHeader } from "../components/PageHeader";
 import { walletApi } from "../lib/api";
 import type { AddressBookEntry } from "../lib/types";
 import toast from "react-hot-toast";
@@ -60,8 +62,8 @@ export function ContactsPage() {
       toast.error("Name and address are required");
       return;
     }
-    if (!address.startsWith("u1") && !address.startsWith("zs1")) {
-      toast.error("Address must be a shielded address (u1 or zs1)");
+    if (!address.startsWith("u1") && !address.startsWith("utest1") && !address.startsWith("zs1")) {
+      toast.error("Address must be a shielded address (u1, utest1, or zs1)");
       return;
     }
     setAddSaving(true);
@@ -102,28 +104,31 @@ export function ContactsPage() {
   };
 
   return (
-    <div className="space-y-6 animate-fade-in max-w-4xl mx-auto text-left">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <h2 className="text-3xl font-bold text-gray-900">Contacts</h2>
-        <Button
-          type="button"
-          onClick={() => {
-            if (showAddForm) {
-              resetAddForm();
-              setShowAddForm(false);
-            } else {
-              setShowAddForm(true);
-            }
-          }}
-          className="gap-2"
-        >
-          {showAddForm ? "Cancel" : "Add contact"}
-        </Button>
-      </div>
+    <div className="space-y-6 animate-fade-in max-w-3xl mx-auto text-left pb-8">
+      <PageHeader
+        title="Contacts"
+        description="Save addresses for quick reuse when sending"
+        actions={
+          <Button
+            type="button"
+            onClick={() => {
+              if (showAddForm) {
+                resetAddForm();
+                setShowAddForm(false);
+              } else {
+                setShowAddForm(true);
+              }
+            }}
+            className="gap-2"
+          >
+            {showAddForm ? "Cancel" : "Add contact"}
+          </Button>
+        }
+      />
 
       {showAddForm && (
-        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Add contact</h3>
+        <Card padding="md">
+          <h3 className="text-base font-semibold text-gray-900 dark:text-gray-100 mb-4">New contact</h3>
           <form className="space-y-4" onSubmit={handleAdd}>
             <Input
               label="Name"
@@ -134,7 +139,7 @@ export function ContactsPage() {
               required
             />
             <Input
-              label="Address (u1 or zs1)"
+              label="Address (u1, utest1, or zs1)"
               placeholder="Shielded address"
               value={addAddress}
               onChange={(e) => setAddAddress(e.target.value)}
@@ -149,9 +154,9 @@ export function ContactsPage() {
               onChange={(e) => setAddNotes(e.target.value)}
               autoComplete="off"
             />
-            <p className="text-xs text-gray-500">
-              Paste a shielded Zcash address starting with <span className="font-mono">u1</span> or{" "}
-              <span className="font-mono">zs1</span>.
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              Paste a shielded Zcash address starting with <span className="font-mono">u1</span>,{" "}
+              <span className="font-mono">utest1</span>, or <span className="font-mono">zs1</span>.
             </p>
             <div className="flex gap-2 justify-end pt-2">
               <Button
@@ -170,7 +175,7 @@ export function ContactsPage() {
               </Button>
             </div>
           </form>
-        </div>
+        </Card>
       )}
 
       {!loading && !error && entries.length > 0 && (
@@ -181,14 +186,14 @@ export function ContactsPage() {
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             aria-label="Search contacts"
-            className="bg-white/60 border-white/50"
+            className="bg-white/60 dark:bg-gray-800/60 border-white/50 dark:border-gray-700/50"
           />
         </div>
       )}
 
-      <div className="bg-white/60 backdrop-blur-md rounded-2xl border border-white/50 shadow-sm overflow-hidden">
+      <Card padding="none" className="overflow-hidden">
         {loading ? (
-          <div className="p-12 flex items-center justify-center gap-2 text-gray-600">
+          <div className="p-12 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400">
             <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
             <span>Loading contacts…</span>
           </div>
@@ -203,7 +208,7 @@ export function ContactsPage() {
             </Button>
           </div>
         ) : entries.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
+          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
             <p>No contacts yet</p>
             <p className="text-sm mt-1">Add addresses to quickly reuse when sending.</p>
             {!showAddForm && (
@@ -213,31 +218,31 @@ export function ContactsPage() {
             )}
           </div>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-gray-500">
+          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
             <p>No contacts match your search</p>
           </div>
         ) : (
-          <ul className="divide-y divide-gray-100/50">
+          <ul className="divide-y divide-gray-100/50 dark:divide-gray-700/50">
             {filtered.map((entry) => (
               <li
                 key={entry.name}
-                className="p-4 hover:bg-white/40 transition-colors flex items-center justify-between gap-4 group"
+                className="p-4 hover:bg-white/40 dark:hover:bg-gray-700/30 transition-colors flex items-center justify-between gap-4 group"
               >
                 <div className="flex items-center gap-4 min-w-0 flex-1">
                   <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center shrink-0">
                     <User size={20} />
                   </div>
                   <div className="min-w-0">
-                    <p className="font-semibold text-gray-900 truncate">{entry.name}</p>
+                    <p className="font-semibold text-gray-900 dark:text-gray-100 truncate">{entry.name}</p>
                     <p
-                      className="text-sm font-mono text-gray-500 truncate cursor-pointer hover:text-gray-700"
+                      className="text-sm font-mono text-gray-500 dark:text-gray-400 truncate cursor-pointer hover:text-gray-700 dark:hover:text-gray-300"
                       title={entry.address}
                       onClick={() => handleCopy(entry.address)}
                     >
                       {entry.address}
                     </p>
                     {entry.notes && (
-                      <p className="text-xs text-gray-500 mt-0.5 truncate">{entry.notes}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">{entry.notes}</p>
                     )}
                   </div>
                 </div>
@@ -245,7 +250,7 @@ export function ContactsPage() {
                   <button
                     type="button"
                     onClick={() => handleCopy(entry.address)}
-                    className="p-2 rounded-lg text-gray-500 hover:bg-gray-100 hover:text-gray-700 transition-colors"
+                    className="p-2 rounded-xl text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
                     title="Copy address"
                   >
                     <Copy size={18} />
@@ -253,7 +258,7 @@ export function ContactsPage() {
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-red-600 hover:bg-red-50 hover:text-red-700"
+                    className="text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 hover:text-red-700 dark:hover:text-red-300"
                     onClick={() => handleRemove(entry.name)}
                     disabled={removeName === entry.name}
                   >
@@ -264,7 +269,7 @@ export function ContactsPage() {
             ))}
           </ul>
         )}
-      </div>
+      </Card>
     </div>
   );
 }

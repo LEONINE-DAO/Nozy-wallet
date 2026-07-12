@@ -1,15 +1,68 @@
 use crate::error::TauriError;
 use crate::session::load_session_wallet;
 use nozy::{
-    estimate_transaction_fee_for_send, load_config, mark_wallet_notes_spent_from_spendables,
-    scan_notes_for_sending, select_single_spend_note,
+    estimate_transaction_fee_for_send, load_config, mark_wallet_notes_spent_by_nullifier_hex,
+    mark_wallet_notes_spent_from_spendables, scan_notes_for_sending, select_single_spend_note,
+    sync_wallet_notes, WalletSyncOptions,
     transaction_history::{
         SentTransactionRecord, SentTransactionStorage, TransactionStatus,
     },
-    ZcashTransactionBuilder, ZebraClient,
+    ZcashTransactionBuilder, ZebraClient, load_wallet_notes,
 };
 use serde::{Deserialize, Serialize};
-use tauri::command;
+use tauri::{AppHandle, Emitter, command};
+
+#[derive(Clone, Serialize)]
+struct SendProgressEvent {
+    stage: String,
+    percent: u8,
+    message: String,
+}
+
+fn emit_send_progress(app: &AppHandle, stage: &str, percent: u8, message: &str) {
+    let _ = app.emit(
+        "send-progress",
+        SendProgressEvent {
+            stage: stage.to_string(),
+            percent,
+            message: message.to_string(),
+        },
+    );
+}
+
+async fn repair_ironwood_witnesses_by_rescan(
+    password: Option<&str>,
+    zebra_url: &str,
+) -> Result<bool, TauriError> {
+    let notes = load_wallet_notes().map_err(|e| TauriError::from(e.to_string()))?;
+    let min_ironwood_unspent = notes
+        .iter()
+        .filter(|n| !n.spent && matches!(n.pool, nozy::shielded_pool::ShieldedPool::Ironwood))
+        .map(|n| n.block_height)
+        .min();
+    let Some(start_height) = min_ironwood_unspent.map(|h| h.saturating_sub(1)) else {
+        return Ok(false);
+    };
+
+    let wallet = load_session_wallet(password)
+        .await
+        .map_err(|e| TauriError {
+            message: e.message,
+            code: e.code,
+        })?;
+    let sync_result = sync_wallet_notes(
+        wallet,
+        WalletSyncOptions {
+            start_height: Some(start_height),
+            end_height: None,
+            scan_to_tip: true,
+            zebra_url: Some(zebra_url.to_string()),
+            ..WalletSyncOptions::default()
+        },
+    )
+    .await;
+    Ok(sync_result.is_ok())
+}
 
 fn status_key(status: &TransactionStatus) -> &'static str {
     match status {
@@ -66,14 +119,35 @@ pub struct SendTransactionRequest {
 
 #[command]
 pub async fn send_transaction(
+    app: AppHandle,
     request: SendTransactionRequest,
 ) -> Result<SendTransactionResponse, TauriError> {
-    if !request.recipient.starts_with("u1") || request.recipient.len() < 78 {
+    emit_send_progress(
+        &app,
+        "Validating",
+        5,
+        "Checking recipient address and amount…",
+    );
+
+    let config = load_config();
+    let recipient = nozy::input_validation::normalize_unified_address(&request.recipient);
+    let expected_testnet = config.network.eq_ignore_ascii_case("testnet");
+    let prefix_ok = if expected_testnet {
+        recipient.starts_with("utest1")
+    } else {
+        recipient.starts_with("u1")
+    };
+    if !prefix_ok || recipient.len() < 78 {
         return Ok(SendTransactionResponse {
             success: false,
             txid: None,
-            message: "Invalid recipient address. Must be a valid shielded address (u1...)"
-                .to_string(),
+            message: if expected_testnet {
+                "Invalid recipient address. Testnet sends require a valid Orchard unified address (utest1...)."
+                    .to_string()
+            } else {
+                "Invalid recipient address. Mainnet sends require a valid Orchard unified address (u1...)."
+                    .to_string()
+            },
         });
     }
 
@@ -86,10 +160,11 @@ pub async fn send_transaction(
         });
     }
 
-    let config = load_config();
     let zebra_url = request
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
+
+    emit_send_progress(&app, "Unlocking wallet", 15, "Loading wallet keys…");
 
     let wallet = load_session_wallet(request.password.as_deref())
         .await
@@ -97,6 +172,13 @@ pub async fn send_transaction(
             message: e.message,
             code: e.code,
         })?;
+
+    emit_send_progress(
+        &app,
+        "Selecting notes",
+        30,
+        "Gathering spendable Orchard notes…",
+    );
 
     let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
         .await
@@ -114,6 +196,9 @@ pub async fn send_transaction(
         .as_ref()
         .map(|m| m.trim().as_bytes())
         .filter(|b| !b.is_empty());
+
+    emit_send_progress(&app, "Estimating fee", 42, "Calculating ZIP-317 priority fee…");
+
     let fee_zatoshis =
         estimate_transaction_fee_for_send(&zebra_client, memo_preview, pilot.priority).await;
 
@@ -127,43 +212,112 @@ pub async fn send_transaction(
     tx_builder.set_zebra_url(&zebra_url);
     tx_builder.enable_mainnet_broadcast();
 
-    match tx_builder
+    emit_send_progress(
+        &app,
+        "Building proof",
+        58,
+        "Generating zero-knowledge proof — this can take several minutes…",
+    );
+
+    let send_result = tx_builder
         .build_and_broadcast_send_transaction(
             &zebra_client,
             &spendable_notes,
-            &request.recipient,
+            &recipient,
             amount_zatoshis,
             fee_zatoshis,
             memo_bytes.as_deref(),
             pilot,
         )
-        .await
-    {
+        .await;
+
+    let send_result = if let Err(e) = &send_result {
+        if e.to_string()
+            .contains("Ironwood witness does not match z_gettreestate")
+            && repair_ironwood_witnesses_by_rescan(request.password.as_deref(), &zebra_url)
+                .await
+                .unwrap_or(false)
+        {
+            emit_send_progress(
+                &app,
+                "Repairing witnesses",
+                70,
+                "Refreshing Ironwood witnesses and rebuilding the transaction…",
+            );
+            let wallet_retry = load_session_wallet(request.password.as_deref())
+                .await
+                .map_err(|e| TauriError {
+                    message: e.message,
+                    code: e.code,
+                })?;
+            let spendable_notes_retry = scan_notes_for_sending(wallet_retry, &zebra_url)
+                .await
+                .map_err(|e| TauriError::from(e.to_string()))?;
+            emit_send_progress(
+                &app,
+                "Building proof",
+                78,
+                "Rebuilding shielded proof after witness repair…",
+            );
+            let retried = tx_builder
+                .build_and_broadcast_send_transaction(
+                    &zebra_client,
+                    &spendable_notes_retry,
+                    &recipient,
+                    amount_zatoshis,
+                    fee_zatoshis,
+                    memo_bytes.as_deref(),
+                    pilot,
+                )
+                .await;
+            retried
+        } else {
+            send_result
+        }
+    } else {
+        send_result
+    };
+
+    match send_result {
         Ok(transaction) => {
+            emit_send_progress(
+                &app,
+                "Saving transaction",
+                94,
+                "Recording the sent transaction locally…",
+            );
             let tx_storage =
                 SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
 
-            let spent_note = select_single_spend_note(
-                &spendable_notes,
-                amount_zatoshis,
-                fee_zatoshis,
-            )
-            .map_err(|e| TauriError::from(e.to_string()))?;
+            let spent_note_ids = if let Some(nullifier_hex) = &transaction.spent_nullifier_hex {
+                if let Err(e) = mark_wallet_notes_spent_by_nullifier_hex(
+                    std::slice::from_ref(nullifier_hex),
+                    Some(&transaction.txid),
+                ) {
+                    eprintln!("Warning: could not mark spent note locally: {e}");
+                }
+                vec![nullifier_hex.clone()]
+            } else {
+                let spent_note = select_single_spend_note(
+                    &spendable_notes,
+                    amount_zatoshis,
+                    fee_zatoshis,
+                )
+                .map_err(|e| TauriError::from(e.to_string()))?;
 
-            if let Err(e) =
-                mark_wallet_notes_spent_from_spendables(
+                if let Err(e) = mark_wallet_notes_spent_from_spendables(
                     std::slice::from_ref(spent_note),
                     Some(&transaction.txid),
-                )
-            {
-                eprintln!("Warning: could not mark spent note locally: {e}");
-            }
+                ) {
+                    eprintln!("Warning: could not mark spent note locally: {e}");
+                }
 
-            let spent_note_ids = vec![hex::encode(spent_note.orchard_note.nullifier.to_bytes())];
+                vec![hex::encode(spent_note.orchard_note.nullifier.to_bytes())]
+            };
 
             let mut tx_record = SentTransactionRecord::new_pilot(
                 transaction.txid.clone(),
-                request.recipient.clone(),
+                recipient.clone(),
                 amount_zatoshis,
                 fee_zatoshis,
                 memo_bytes.clone(),
@@ -176,6 +330,13 @@ pub async fn send_transaction(
             tx_storage
                 .save_transaction(tx_record)
                 .map_err(|e| TauriError::from(e.to_string()))?;
+
+            emit_send_progress(
+                &app,
+                "Complete",
+                100,
+                "Transaction broadcast successfully.",
+            );
 
             Ok(SendTransactionResponse {
                 success: true,

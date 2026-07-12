@@ -1,10 +1,12 @@
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
+import { useWalletStore } from "../store/walletStore";
 import {
   describeSyncStatus,
   refreshBalanceSnapshot,
   syncWalletToTip,
   type SyncOutcome,
+  type SyncProgressUpdate,
 } from "./syncHelpers";
 
 export function showSyncOutcomeToast(outcome: SyncOutcome, toastId: string) {
@@ -19,6 +21,10 @@ export function showSyncOutcomeToast(outcome: SyncOutcome, toastId: string) {
   toast.error(outcome.message, { id: toastId });
 }
 
+function applyProgressToStore(update: SyncProgressUpdate) {
+  useWalletStore.getState().setSyncProgress(update.percent, update.message);
+}
+
 export async function runWalletSyncWithFeedback(options: {
   setIsSyncing: (syncing: boolean) => void;
   onBalance?: (available: number) => void;
@@ -30,8 +36,9 @@ export async function runWalletSyncWithFeedback(options: {
   setIsSyncing(true);
 
   try {
-    const outcome = await syncWalletToTip((message) => {
-      toast.loading(message, { id: toastId });
+    const outcome = await syncWalletToTip((update) => {
+      applyProgressToStore(update);
+      toast.loading(update.message, { id: toastId });
     });
 
     const snapshot = await refreshBalanceSnapshot();
@@ -47,6 +54,7 @@ export async function runWalletSyncWithFeedback(options: {
     return null;
   } finally {
     setIsSyncing(false);
+    useWalletStore.getState().clearSyncProgress();
   }
 }
 

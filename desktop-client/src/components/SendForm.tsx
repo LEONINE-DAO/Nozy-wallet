@@ -1,25 +1,33 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import toast from "react-hot-toast";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "../utils/logger";
 import { formatErrorForDisplay } from "../utils/errors";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { Textarea, textareaClassName } from "../components/Textarea";
 import { Modal } from "../components/Modal";
 import { Tooltip } from "../components/Tooltip";
 import {
-  Scanner,
   InfoCircle,
   CheckCircle,
   User,
   Shield,
+  Refresh,
 } from "@solar-icons/react";
 import QRCode from "react-qr-code";
 import { useWalletStore } from "../store/walletStore";
 import { useTokenStore } from "../store/tokenStore";
 import { walletApi } from "../lib/api";
 import { isWalletReadyForSend } from "../lib/syncHelpers";
-import type { AddressBookEntry } from "../lib/types";
+import type { AddressBookEntry, IronwoodDesktopStatusResponse } from "../lib/types";
 import { TransactionIdDetail } from "./TxExplorerLink";
+
+type BackendSendProgress = {
+  stage: string;
+  percent: number;
+  message: string;
+};
 
 /* FUTURE: group file co-sign — re-enable when treasury multi-party approval ships
 import {
@@ -37,6 +45,56 @@ interface SendFormProps {
 
 const DEFAULT_AMOUNT = "0.00";
 const MAX_ZEC_DECIMALS = 8;
+const UA_MIN_LEN = 78;
+const UA_MAX_LEN = 256;
+
+function normalizeUnifiedAddress(value: string): string {
+  return value.replace(/\s+/g, "");
+}
+
+function isUnifiedZcashAddress(value: string): boolean {
+  const normalized = normalizeUnifiedAddress(value);
+  if (!normalized.startsWith("u1") && !normalized.startsWith("utest1")) return false;
+  return normalized.length >= UA_MIN_LEN && normalized.length <= UA_MAX_LEN;
+}
+
+function ironwoodSendBlockReason(
+  status: IronwoodDesktopStatusResponse | null,
+): string | null {
+  if (!status?.ironwood_active) return null;
+  if (status.ironwood_send_enabled) return null;
+  const blocked = status.blockers.find((blocker) =>
+    /orchard notes remain|no unspent shielded/i.test(blocker),
+  );
+  return blocked ?? null;
+}
+
+async function loadIronwoodSendBlockReason(): Promise<string | null> {
+  try {
+    const res = await walletApi.getIronwoodStatus();
+    return ironwoodSendBlockReason(res.data);
+  } catch {
+    return null;
+  }
+}
+
+function recipientNetworkError(
+  recipient: string,
+  network: "mainnet" | "testnet" | null,
+): string | null {
+  const normalized = normalizeUnifiedAddress(recipient);
+  if (!normalized) return null;
+  if (!isUnifiedZcashAddress(normalized)) {
+    return "Address must be an Orchard unified address (u1… or utest1…) at least 78 characters.";
+  }
+  if (network === "testnet" && !normalized.startsWith("utest1")) {
+    return "This wallet is on testnet. Recipients must use utest1… addresses. Switch network in Settings → Wallets & Accounts if you meant mainnet.";
+  }
+  if (network === "mainnet" && !normalized.startsWith("u1")) {
+    return "This wallet is on mainnet. Recipients must use u1… addresses. Use Settings → Wallets & Accounts to switch to testnet for utest1… recipients.";
+  }
+  return null;
+}
 
 function sanitizeAmountInput(raw: string): string {
   const cleaned = raw.replace(/-/g, "").replace(/[^0-9.]/g, "");
@@ -50,6 +108,104 @@ function sanitizeAmountInput(raw: string): string {
 function parseAmount(value: string): number {
   const parsed = Number.parseFloat(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
+}
+
+type SendProgressState = {
+  percent: number;
+  label: string;
+  detail: string;
+};
+
+/** Timed stages while the backend builds/proves (no streamed proving %). */
+const SEND_PROGRESS_STAGES: Array<{ atMs: number; percent: number; label: string; detail: string }> = [
+  {
+    atMs: 0,
+    percent: 6,
+    label: "Preparing transaction",
+    detail: "Checking notes, fees, and sync status…",
+  },
+  {
+    atMs: 3_000,
+    percent: 18,
+    label: "Selecting Orchard notes",
+    detail: "Gathering shielded notes for this send…",
+  },
+  {
+    atMs: 10_000,
+    percent: 35,
+    label: "Building zero-knowledge proof",
+    detail: "First send can take several minutes — keep this window open.",
+  },
+  {
+    atMs: 45_000,
+    percent: 55,
+    label: "Proving in progress",
+    detail: "Still working on the Orchard proof — this is normal.",
+  },
+  {
+    atMs: 120_000,
+    percent: 72,
+    label: "Proving taking longer",
+    detail: "Large circuits are slow the first time; please wait.",
+  },
+  {
+    atMs: 240_000,
+    percent: 85,
+    label: "Almost finished proving",
+    detail: "Finalizing the shielded circuit…",
+  },
+];
+
+function sendProgressAtElapsed(elapsedMs: number): SendProgressState {
+  let stage = SEND_PROGRESS_STAGES[0];
+  for (const candidate of SEND_PROGRESS_STAGES) {
+    if (elapsedMs >= candidate.atMs) stage = candidate;
+  }
+  // Ease toward ~92% so the bar never looks stuck at a flat number forever.
+  const softCap = 92;
+  const overshoot = Math.max(0, elapsedMs - stage.atMs);
+  const eased = Math.min(
+    softCap,
+    stage.percent + Math.floor(Math.log10(10 + overshoot / 1000) * 4),
+  );
+  return { percent: eased, label: stage.label, detail: stage.detail };
+}
+
+function SendProgressPanel({ progress }: { progress: SendProgressState }) {
+  return (
+    <div
+      className="rounded-2xl border border-primary/30 bg-primary/5 dark:bg-primary/10 p-4 space-y-3"
+      role="status"
+      aria-live="polite"
+    >
+      <div className="flex items-start gap-3">
+        <Refresh size={20} className="animate-spin text-primary shrink-0 mt-0.5" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="font-semibold text-gray-900 dark:text-gray-100">{progress.label}</p>
+            <span className="text-sm font-bold tabular-nums text-primary">{progress.percent}%</span>
+          </div>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">{progress.detail}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-500 mt-2">
+            Please don’t close or navigate away while this finishes.
+          </p>
+        </div>
+      </div>
+      <div
+        className="h-2 rounded-full bg-black/10 dark:bg-white/10 overflow-hidden"
+        role="progressbar"
+        aria-valuenow={progress.percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-label={`Send progress ${progress.percent} percent`}
+      >
+        <div
+          className="h-full rounded-full bg-primary transition-all duration-700"
+          style={{ width: `${progress.percent}%` }}
+        />
+      </div>
+    </div>
+  );
 }
 
 export function SendForm({ onSuccess, onCancel }: SendFormProps) {
@@ -67,6 +223,11 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [showMemo, setShowMemo] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [sendProgress, setSendProgress] = useState<SendProgressState | null>(null);
+  const sendProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const sendProgressUnlistenRef = useRef<UnlistenFn | null>(null);
+  const gotBackendProgressRef = useRef(false);
+  const backendProveStartedAtRef = useRef<number | null>(null);
   const [success, setSuccess] = useState(false);
   const [pickContactOpen, setPickContactOpen] = useState(false);
   const [contacts, setContacts] = useState<AddressBookEntry[]>([]);
@@ -77,6 +238,8 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [sentTxid, setSentTxid] = useState<string | null>(null);
   const [walletUnlocked, setWalletUnlocked] = useState(false);
   const [walletHasPassword, setWalletHasPassword] = useState(true);
+  const [activeNetwork, setActiveNetwork] = useState<"mainnet" | "testnet" | null>(null);
+  const [ironwoodSendBlocked, setIronwoodSendBlocked] = useState<string | null>(null);
   const [keystoneEnabled, setKeystoneEnabled] = useState(false);
   const [keystonePrepared, setKeystonePrepared] = useState(false);
   const [keystoneSummary, setKeystoneSummary] = useState("");
@@ -92,22 +255,55 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   */
 
   useEffect(() => {
+    let cancelled = false;
+    void loadIronwoodSendBlockReason().then((reason) => {
+      if (!cancelled) setIronwoodSendBlocked(reason);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [showReview, activeNetwork]);
+
+  useEffect(() => {
     walletApi.getWalletStatus().then((r) => {
       setWalletUnlocked(r.data?.unlocked ?? false);
-      setWalletHasPassword(r.data?.has_password ?? true);
+      setWalletHasPassword(r.data?.has_password ?? false);
+    }).catch(() => {});
+    walletApi.getNetworkWalletStatus().then((r) => {
+      const network = r.data?.network;
+      if (network === "testnet" || network === "mainnet") {
+        setActiveNetwork(network);
+      }
     }).catch(() => {});
     walletApi.getKeystoneStatus().then((r) => {
       const onMainnet = r.data?.network !== "testnet";
       setKeystoneEnabled((r.data?.enabled ?? false) && onMainnet);
+      if (r.data?.network === "testnet" || r.data?.network === "mainnet") {
+        setActiveNetwork(r.data.network);
+      }
     }).catch(() => {});
   }, [showReview]);
 
   const amountValue = parseAmount(amount);
-  const isValid =
-    address &&
-    Number.isFinite(amountValue) &&
-    amountValue > 0 &&
-    amountValue + feeZec <= balance;
+  const normalizedAddress = normalizeUnifiedAddress(address);
+  const addressValidationError = recipientNetworkError(address, activeNetwork)
+    ?? (normalizedAddress && !isUnifiedZcashAddress(normalizedAddress)
+      ? "Address must be an Orchard unified address (u1… or utest1…) at least 78 characters."
+      : null);
+
+  const reviewDisabledReason = (() => {
+    if (!normalizedAddress) return "Enter a recipient address.";
+    if (addressValidationError) return addressValidationError;
+    if (!Number.isFinite(amountValue) || amountValue <= 0) {
+      return "Enter an amount greater than 0.";
+    }
+    if (amountValue + feeZec > balance) {
+      return `Insufficient balance: need ${(amountValue + feeZec).toFixed(8)} ${tokenSymbol} including fee (${balance.toFixed(8)} ${tokenSymbol} available). Sync if balance looks wrong.`;
+    }
+    return null;
+  })();
+
+  const isValid = reviewDisabledReason === null;
 
   useEffect(() => {
     if (pickContactOpen) {
@@ -134,8 +330,9 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
       toast.error("Name is required");
       return;
     }
-    if (!address.startsWith("u1")) {
-      toast.error("Address must be a mainnet Orchard unified address (u1…)");
+    const networkError = recipientNetworkError(address, activeNetwork);
+    if (networkError) {
+      toast.error(networkError);
       return;
     }
     setSaveContactSaving(true);
@@ -183,6 +380,17 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   };
 
   const handleProceedToReview = async () => {
+    const networkError = recipientNetworkError(address, activeNetwork);
+    if (networkError) {
+      toast.error(networkError);
+      return;
+    }
+    const ironwoodBlock = await loadIronwoodSendBlockReason();
+    if (ironwoodBlock) {
+      setIronwoodSendBlocked(ironwoodBlock);
+      toast.error(ironwoodBlock);
+      return;
+    }
     try {
       const statusRes = await walletApi.getSyncStatus();
       const { ready, reason } = isWalletReadyForSend(statusRes.data);
@@ -207,19 +415,111 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     setKeystoneSignedInput("");
   };
 
+  const stopSendProgress = () => {
+    if (sendProgressTimerRef.current) {
+      clearInterval(sendProgressTimerRef.current);
+      sendProgressTimerRef.current = null;
+    }
+    if (sendProgressUnlistenRef.current) {
+      void sendProgressUnlistenRef.current();
+      sendProgressUnlistenRef.current = null;
+    }
+    gotBackendProgressRef.current = false;
+    backendProveStartedAtRef.current = null;
+    setSendProgress(null);
+  };
+
+  const applyProgress = (next: SendProgressState, toastId: string) => {
+    setSendProgress(next);
+    toast.loading(`${next.label} (${next.percent}%)`, { id: toastId });
+  };
+
+  const startSendProgress = (toastId: string) => {
+    stopSendProgress();
+    const startedAt = Date.now();
+    gotBackendProgressRef.current = false;
+    backendProveStartedAtRef.current = null;
+
+    void listen<BackendSendProgress>("send-progress", (event) => {
+      const payload = event.payload;
+      if (!payload || typeof payload.percent !== "number") return;
+      gotBackendProgressRef.current = true;
+      if (/proof|prove/i.test(payload.stage) && backendProveStartedAtRef.current == null) {
+        backendProveStartedAtRef.current = Date.now();
+      }
+      applyProgress(
+        {
+          percent: Math.min(100, Math.max(0, payload.percent)),
+          label: payload.stage || "Sending",
+          detail: payload.message || "Working…",
+        },
+        toastId
+      );
+    })
+      .then((unlisten) => {
+        sendProgressUnlistenRef.current = unlisten;
+      })
+      .catch(() => {
+        // Not running under Tauri / event API unavailable — timer fallback only.
+      });
+
+    const tick = () => {
+      // Prefer real Tauri stages once they arrive. During the long proving wait,
+      // gently advance between the last backend percent and 90% so the UI doesn't freeze.
+      if (gotBackendProgressRef.current) {
+        setSendProgress((prev) => {
+          if (!prev || prev.percent >= 90 || prev.percent >= 100) return prev;
+          if (backendProveStartedAtRef.current == null) return prev;
+          const elapsed = Date.now() - backendProveStartedAtRef.current;
+          const eased = Math.min(
+            90,
+            Math.max(prev.percent, 58 + Math.floor(Math.log10(10 + elapsed / 1000) * 8))
+          );
+          if (eased <= prev.percent) return prev;
+          const next = {
+            ...prev,
+            percent: eased,
+            detail:
+              eased < 90
+                ? "Still generating the zero-knowledge proof — keep this window open."
+                : prev.detail,
+          };
+          toast.loading(`${next.label} (${next.percent}%)`, { id: toastId });
+          return next;
+        });
+        return;
+      }
+      applyProgress(sendProgressAtElapsed(Date.now() - startedAt), toastId);
+    };
+    tick();
+    sendProgressTimerRef.current = setInterval(tick, 1000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (sendProgressTimerRef.current) {
+        clearInterval(sendProgressTimerRef.current);
+      }
+      if (sendProgressUnlistenRef.current) {
+        void sendProgressUnlistenRef.current();
+      }
+    };
+  }, []);
+
   const handleKeystonePrepare = async () => {
     setIsSending(true);
-    const toastId = toast.loading(
-      "Building Keystone PCZT (proving may take several minutes)…"
-    );
+    const toastId = toast.loading("Preparing Keystone PCZT…");
+    startSendProgress(toastId);
     const trimmedPassword = password.trim();
+    const recipient = normalizeUnifiedAddress(address);
     try {
       const { data } = await walletApi.keystonePrepareSend({
-        recipient: address,
+        recipient,
         amount: amountValue,
         memo: memo || undefined,
         password: trimmedPassword || undefined,
       });
+      stopSendProgress();
       if (!data.success) {
         toast.error(data.message ?? "Failed to prepare Keystone transaction", { id: toastId });
         return;
@@ -229,6 +529,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
       setKeystoneUrFrames(data.ur_frames ?? (data.pczt_hex ? [data.pczt_hex] : []));
       toast.success("Scan QR on Keystone, sign, then paste signed data below", { id: toastId });
     } catch (error: unknown) {
+      stopSendProgress();
       toast.error(formatErrorForDisplay(error, "Failed to prepare Keystone transaction."), {
         id: toastId,
       });
@@ -244,6 +545,11 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     }
     setIsBroadcasting(true);
     const toastId = toast.loading("Broadcasting Keystone-signed transaction…");
+    setSendProgress({
+      percent: 90,
+      label: "Broadcasting transaction",
+      detail: "Submitting the signed transaction to the network…",
+    });
     try {
       const lines = keystoneSignedInput
         .split(/\n/)
@@ -255,6 +561,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           ? { pcztHex: lines[0], broadcast: true }
           : { urFrames: lines, broadcast: true }
       );
+      stopSendProgress();
       if (!data.success || !data.txid) {
         toast.error("Broadcast failed — check signed PCZT and sync status", { id: toastId });
         return;
@@ -274,6 +581,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         onSuccess?.();
       }, 3000);
     } catch (error: unknown) {
+      stopSendProgress();
       toast.error(
         formatErrorForDisplay(error, "Broadcast failed. Check signed PCZT and sync status."),
         { id: toastId }
@@ -290,19 +598,25 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
   const handleSend = async () => {
     setIsSending(true);
-    const sendToast = toast.loading(
-      "Building shielded transaction (first send may take several minutes while proving)…"
-    );
+    const sendToast = toast.loading("Preparing shielded transaction…");
+    startSendProgress(sendToast);
     const trimmedPassword = password.trim();
+    const recipient = normalizeUnifiedAddress(address);
     try {
       const { data: sent } = await walletApi.sendTransaction({
-        recipient: address,
+        recipient,
         amount: amountValue,
         memo: memo || undefined,
         password: trimmedPassword || undefined,
       });
+      setSendProgress({
+        percent: 100,
+        label: "Transaction sent",
+        detail: "Broadcast complete.",
+      });
       const txidMsg = sent.txid ? ` TXID: ${sent.txid}` : "";
       toast.success(`Transaction sent successfully!${txidMsg}`, { id: sendToast });
+      stopSendProgress();
       setSentTxid(sent.txid ?? null);
       setSuccess(true);
 
@@ -317,15 +631,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         onSuccess?.();
       }, 2000);
     } catch (error: unknown) {
+      stopSendProgress();
       logger.error("Transaction send failed", error as Error, {
-        recipient: address,
+        recipient,
         amount: amountValue,
         hasMemo: !!memo
       });
       toast.error(
         formatErrorForDisplay(
           error,
-          "Send failed. Check password (same as Unlock), sync status, and balance."
+          "Send failed. Check sync status, balance, and whether Ironwood is blocking Orchard sends on this network."
         ),
         {
         id: sendToast,
@@ -339,11 +654,11 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   if (success && sentTxid) {
     return (
       <div className="text-center py-8 space-y-4 animate-fade-in">
-        <div className="w-20 h-20 rounded-full bg-green-100 text-green-500 flex items-center justify-center mx-auto mb-6 animate-scale-up">
+        <div className="w-20 h-20 rounded-full bg-green-100 dark:bg-green-900/30 text-green-500 flex items-center justify-center mx-auto mb-6 animate-scale-up">
           <CheckCircle size={48} weight="Bold" />
         </div>
-        <h3 className="text-2xl font-bold text-gray-900">Transaction Sent!</h3>
-        <p className="text-gray-500">Your funds are on their way.</p>
+        <h3 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Transaction Sent!</h3>
+        <p className="text-gray-500 dark:text-gray-400">Your funds are on their way.</p>
         <div className="mt-4 text-left">
           <TransactionIdDetail txid={sentTxid} />
         </div>
@@ -355,14 +670,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     return (
       <div className="space-y-6 animate-fade-in">
         <div className="text-center">
-          <h3 className="text-xl font-bold text-gray-900">
+          <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">
             {keystoneEnabled
               ? keystonePrepared
                 ? "Sign on Keystone"
                 : "Prepare for Keystone"
               : "Confirm Transfer"}
           </h3>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
             {keystoneEnabled
               ? keystonePrepared
                 ? "Scan the QR on your Keystone device, sign, then paste the signed PCZT below."
@@ -371,22 +686,29 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </p>
         </div>
 
-        <div className="bg-gray-50 rounded-2xl p-6 space-y-4">
+        {ironwoodSendBlocked && (
+          <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-900/20">
+            <Shield size={18} className="text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+            <p className="text-sm text-amber-900/90 dark:text-amber-200">{ironwoodSendBlocked}</p>
+          </div>
+        )}
+
+        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-6 space-y-4 border border-gray-100 dark:border-gray-700/50">
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Amount</span>
-            <span className="font-bold text-lg text-gray-900">
+            <span className="text-gray-500 dark:text-gray-400 text-sm">Amount</span>
+            <span className="font-bold text-lg text-gray-900 dark:text-gray-100">
               {amount} {tokenSymbol}
             </span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-sm">Fee</span>
-            <span className="text-gray-900 font-medium text-sm">
+            <span className="text-gray-500 dark:text-gray-400 text-sm">Fee</span>
+            <span className="text-gray-900 dark:text-gray-100 font-medium text-sm">
               {feeZec.toFixed(8)} {tokenSymbol} (priority ×4)
             </span>
           </div>
-          <div className="h-px bg-gray-200 my-2" />
+          <div className="h-px bg-gray-200 dark:bg-gray-700 my-2" />
           <div className="flex justify-between items-center text-base">
-            <span className="font-bold text-gray-900">Total</span>
+            <span className="font-bold text-gray-900 dark:text-gray-100">Total</span>
             <span className="font-bold text-primary-700">
               {((Number.isFinite(amountValue) ? amountValue : 0) + feeZec).toFixed(8)}{" "}
               {tokenSymbol}
@@ -395,10 +717,10 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         </div>
 
         <div className="space-y-1">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">
+          <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest pl-1">
             Recipient
           </p>
-          <div className="bg-gray-50 p-3 rounded-xl border border-gray-100 font-mono text-xs text-gray-600 break-all leading-relaxed">
+          <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-100 dark:border-gray-700/50 font-mono text-xs text-gray-600 dark:text-gray-300 break-all leading-relaxed">
             {address}
           </div>
         </div>
@@ -418,13 +740,13 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
               className="bg-white/50 focus:bg-white transition-all"
             />
             {walletUnlocked && (
-              <p className="text-xs text-gray-500 pl-1">
+              <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">
                 Wallet is unlocked. Leave blank to use your unlock session, or re-enter to confirm.
               </p>
             )}
           </div>
         ) : (
-          <p className="text-xs text-gray-500">
+          <p className="text-xs text-gray-500 dark:text-gray-400">
             This wallet has no encryption password (same as CLI with empty password).
           </p>
         )}
@@ -432,23 +754,23 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         {keystoneEnabled && keystonePrepared && (
           <div className="space-y-3">
             {keystoneSummary && (
-              <p className="text-sm text-gray-600 whitespace-pre-wrap rounded-lg bg-amber-50/60 border border-amber-200/60 p-3">
+              <p className="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap rounded-lg bg-amber-50/60 dark:bg-amber-900/20 border border-amber-200/60 dark:border-amber-800/50 p-3">
                 {keystoneSummary}
               </p>
             )}
             {keystoneUrFrames.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest pl-1">
+                <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest pl-1">
                   PCZT for Keystone {keystoneUrFrames.length > 1 ? `(frame 1 of ${keystoneUrFrames.length})` : ""}
                 </p>
-                <div className="flex justify-center p-4 bg-white rounded-xl border border-gray-200">
+                <div className="flex justify-center p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
                   <QRCode value={keystoneUrFrames[0]} size={180} level="M" />
                 </div>
                 <textarea
                   readOnly
                   value={keystoneUrFrames.join("\n")}
                   rows={4}
-                  className="w-full rounded-lg border border-amber-200 bg-amber-50/50 px-3 py-2 text-xs font-mono"
+                  className={textareaClassName + " border-amber-200 dark:border-amber-800/50 bg-amber-50/50 dark:bg-amber-900/20 text-xs font-mono"}
                 />
                 <Button
                   variant="outline"
@@ -466,17 +788,19 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
                 </Button>
               </div>
             )}
-            <textarea
+            <Textarea
               value={keystoneSignedInput}
               onChange={(e) => setKeystoneSignedInput(e.target.value)}
               placeholder="Paste signed PCZT hex or UR frames from Keystone"
               rows={4}
-              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-xs font-mono"
+              className="text-xs font-mono"
             />
           </div>
         )}
 
         {/* FUTURE: group file co-sign export UI */}
+
+        {sendProgress && <SendProgressPanel progress={sendProgress} />}
 
         <div className="flex gap-3 pt-2">
           <Button
@@ -498,25 +822,37 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
                 className="flex-1 rounded-xl shadow-lg shadow-primary/20 gap-2"
               >
                 <Shield size={18} />
-                {isBroadcasting ? "Broadcasting…" : "Broadcast signed tx"}
+                {isBroadcasting
+                  ? sendProgress
+                    ? `${sendProgress.percent}%`
+                    : "Broadcasting…"
+                  : "Broadcast signed tx"}
               </Button>
             ) : (
               <Button
                 onClick={() => void handleKeystonePrepare()}
-                disabled={isSending || sendPasswordRequired}
+                disabled={isSending || sendPasswordRequired || Boolean(ironwoodSendBlocked)}
                 className="flex-1 rounded-xl shadow-lg shadow-primary/20 gap-2"
               >
                 <Shield size={18} />
-                {isSending ? "Building…" : "Prepare for Keystone"}
+                {isSending
+                  ? sendProgress
+                    ? `${sendProgress.percent}%`
+                    : "Building…"
+                  : "Prepare for Keystone"}
               </Button>
             )
           ) : (
             <Button
               onClick={handleSend}
-              disabled={isSending || sendPasswordRequired}
+              disabled={isSending || sendPasswordRequired || Boolean(ironwoodSendBlocked)}
               className="flex-1 rounded-xl shadow-lg shadow-primary/20"
             >
-              {isSending ? "Sending..." : "Confirm Send"}
+              {isSending
+                ? sendProgress
+                  ? `Sending ${sendProgress.percent}%`
+                  : "Sending…"
+                : "Confirm Send"}
             </Button>
           )}
         </div>
@@ -528,14 +864,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     <div className="space-y-6">
       <div className="space-y-2 group">
         <div className="flex justify-between items-end px-2">
-          <label className="text-sm font-medium text-gray-500 group-focus-within:text-primary transition-colors">
+          <label className="text-sm font-medium text-gray-500 dark:text-gray-400 group-focus-within:text-primary transition-colors">
             Amount
           </label>
-          <div className="text-xs text-gray-400 font-medium">
+          <div className="text-xs text-gray-400 dark:text-gray-500 font-medium">
             Available:{" "}
             <Tooltip content="Total Orchard shielded balance after sync. Use max after fee.">
               <span
-                className="text-gray-700 cursor-pointer hover:text-primary transition-colors uppercase"
+                className="text-gray-700 dark:text-gray-300 cursor-pointer hover:text-primary transition-colors uppercase"
                 onClick={handleMax}
               >
                 {balance.toLocaleString()} {tokenSymbol}
@@ -555,7 +891,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
             onBlur={handleAmountBlur}
             onWheel={preventAmountWheel}
             placeholder={DEFAULT_AMOUNT}
-            className="w-full text-4xl bg-transparent border-none focus:ring-0 text-center font-bold text-gray-900 placeholder:text-gray-300 p-2 drop-shadow-sm [appearance:textfield]"
+            className="w-full text-4xl bg-transparent border-none focus:ring-0 text-center font-bold text-gray-900 dark:text-gray-100 placeholder:text-gray-300 dark:placeholder:text-gray-600 p-2 drop-shadow-sm [appearance:textfield]"
           />
           <span className="absolute right-8 top-1/2 -translate-y-1/2 text-primary font-bold text-xl pointer-events-none uppercase">
             {tokenSymbol}
@@ -565,7 +901,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <label className="text-sm font-medium text-gray-700 ml-1">
+          <label className="text-sm font-medium text-gray-700 dark:text-gray-300 ml-1">
             Recipient Address
           </label>
           <div className="flex items-center gap-2">
@@ -581,7 +917,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
               <button
                 type="button"
                 onClick={() => setSaveContactOpen(true)}
-                className="text-xs text-gray-500 hover:text-primary hover:underline"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-primary hover:underline"
               >
                 Save to contacts
               </button>
@@ -589,41 +925,44 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </div>
         </div>
         <div className="relative group">
-          <textarea
+          <Textarea
             value={address}
             onChange={(e) => setAddress(e.target.value)}
-            placeholder="u1… (mainnet Orchard unified address)"
+            placeholder="u1… or utest1… Orchard unified address"
             rows={2}
             spellCheck={false}
             autoComplete="off"
-            className="flex w-full min-h-[3.5rem] rounded-lg border border-gray-200/60 bg-white/60 px-3 py-2.5 pr-12 text-sm ring-offset-transparent placeholder:text-gray-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 transition-all hover:border-primary/30 hover:bg-white/80 backdrop-blur-sm font-mono resize-y"
+            className="min-h-[3.5rem] font-mono"
           />
-          <button
-            type="button"
-            title="QR scan coming soon"
-            className="absolute right-4 top-4 text-gray-400 hover:text-primary transition-colors"
-            onClick={() => toast("QR scanning is not available yet. Paste the address manually.")}
-          >
-            <Scanner size={20} />
-          </button>
         </div>
+        {activeNetwork && (
+          <p className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+            Active network:{" "}
+            <span className="font-medium text-gray-700 dark:text-gray-300">
+              {activeNetwork === "testnet" ? "Testnet (utest1…)" : "Mainnet (u1…)"}
+            </span>
+          </p>
+        )}
+        {addressValidationError && (
+          <p className="text-sm text-amber-800 dark:text-amber-300 ml-1">{addressValidationError}</p>
+        )}
 
         {pickContactOpen && (
-          <div className="rounded-xl border border-gray-200/60 bg-white/80 p-3 space-y-1 max-h-48 overflow-y-auto">
+          <div className="rounded-xl border border-gray-200/60 dark:border-gray-700/60 bg-white/80 dark:bg-gray-800/80 p-3 space-y-1 max-h-48 overflow-y-auto">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+              <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
                 Choose contact
               </p>
               <button
                 type="button"
                 onClick={() => setPickContactOpen(false)}
-                className="text-xs text-gray-500 hover:text-gray-800"
+                className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
               >
                 Close
               </button>
             </div>
             {contacts.length === 0 ? (
-              <p className="text-sm text-gray-500 py-2">No contacts yet. Add some from Contacts.</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 py-2">No contacts yet. Add some from Contacts.</p>
             ) : (
               contacts.map((c) => (
                 <button
@@ -633,10 +972,10 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
                     setAddress(c.address);
                     setPickContactOpen(false);
                   }}
-                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 transition-colors"
+                  className="w-full text-left px-3 py-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700/50 transition-colors"
                 >
-                  <p className="font-medium text-gray-900">{c.name}</p>
-                  <p className="text-xs font-mono text-gray-500 truncate">{c.address}</p>
+                  <p className="font-medium text-gray-900 dark:text-gray-100">{c.name}</p>
+                  <p className="text-xs font-mono text-gray-500 dark:text-gray-400 truncate">{c.address}</p>
                 </button>
               ))
             )}
@@ -676,7 +1015,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
       <div>
         <button
           onClick={() => setShowMemo(!showMemo)}
-          className="text-sm text-gray-500 hover:text-primary flex items-center gap-1.5 transition-colors ml-1"
+          className="text-sm text-gray-500 dark:text-gray-400 hover:text-primary flex items-center gap-1.5 transition-colors ml-1"
         >
           <InfoCircle size={16} />
           {showMemo ? "Hide Memo" : "Add Memo (Optional)"}
@@ -694,14 +1033,21 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         )}
       </div>
 
-      <p className="text-sm text-gray-500 ml-1">Network fee (ZIP-317 × 4)</p>
+      <p className="text-sm text-gray-500 dark:text-gray-400 ml-1">Network fee (ZIP-317 × 4)</p>
+
+      {ironwoodSendBlocked && (
+        <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-900/20">
+          <Shield size={18} className="text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+          <p className="text-sm text-amber-900/90 dark:text-amber-200">{ironwoodSendBlocked}</p>
+        </div>
+      )}
 
       {keystoneEnabled && (
-        <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/60 bg-amber-50/40">
-          <Shield size={18} className="text-amber-700 mt-0.5 shrink-0" />
-          <span className="text-sm text-gray-700">
+        <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/60 dark:border-amber-800/40 bg-amber-50/40 dark:bg-amber-900/15">
+          <Shield size={18} className="text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
+          <span className="text-sm text-gray-700 dark:text-gray-300">
             <span className="font-medium">Keystone signing enabled (mainnet)</span>
-            <span className="block text-xs text-gray-500 mt-1">
+            <span className="block text-xs text-gray-500 dark:text-gray-400 mt-1">
               Sends require approval on your Keystone device (Zcash mainnet). Pair in Settings → Keystone.
             </span>
           </span>
@@ -713,7 +1059,18 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
       <div className="rounded-xl border...">...</div>
       */}
 
-      <div className="flex gap-3 pt-4">
+      <div className="flex flex-col gap-2 pt-4">
+        {reviewDisabledReason && (
+          <p className="text-sm text-amber-800 text-center px-2">{reviewDisabledReason}</p>
+        )}
+        {!reviewDisabledReason && ironwoodSendBlocked && (
+          <p className="text-sm text-amber-800 text-center px-2">
+            You can open Review, but Orchard-only sends are blocked while Ironwood (NU6.3) is
+            active. Migrate Orchard notes on the Ironwood tab (Split → Plan → Migrate → Broadcast),
+            then send from Ironwood balance.
+          </p>
+        )}
+        <div className="flex gap-3">
         {onCancel && (
           <Button
             variant="ghost"
@@ -725,20 +1082,27 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         )}
         <Tooltip
           content={
-            keystoneEnabled
-              ? "Review and prepare a Keystone PCZT transaction"
-              : "Review transaction details before sending"
+            reviewDisabledReason
+              ? reviewDisabledReason
+              : ironwoodSendBlocked
+                ? "Open review — migrate on the Ironwood tab before Orchard-only sends work on this network"
+                : keystoneEnabled
+                  ? "Review and prepare a Keystone PCZT transaction"
+                  : "Review transaction details before sending"
           }
         >
-          <Button
-            size="lg"
-            disabled={!isValid}
-            onClick={handleProceedToReview}
-            className="flex-1 rounded-xl py-4 text-lg shadow-xl bg-black text-white shadow-primary/30 -hover:translate-y-[2px] transition-all duration-300 disabled:cursor-not-allowed disabled:transform-none disabled:shadow-none"
-          >
-            {keystoneEnabled ? "Review & prepare" : "Review"}
-          </Button>
+          <span className="inline-flex flex-1">
+            <Button
+              size="lg"
+              disabled={!isValid}
+              onClick={() => void handleProceedToReview()}
+              className="w-full"
+            >
+              {keystoneEnabled ? "Review & prepare" : "Review"}
+            </Button>
+          </span>
         </Tooltip>
+        </div>
       </div>
     </div>
   );

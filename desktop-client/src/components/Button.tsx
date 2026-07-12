@@ -1,10 +1,7 @@
 import React from "react";
-import { clsx, type ClassValue } from "clsx";
-import { twMerge } from "tailwind-merge";
+import { cn } from "../lib/cn";
 
-export function cn(...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs));
-}
+export { cn };
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: "primary" | "secondary" | "outline" | "ghost" | "danger";
@@ -17,20 +14,21 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center rounded-lg font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex items-center justify-center rounded-xl font-medium transition-all duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 focus-visible:ring-offset-2 focus-visible:ring-offset-transparent disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98]",
           {
-            "bg-[#f0a113] text-black shadow-lg shadow-[#f0a113]/20":
+            "bg-primary text-gray-900 shadow-md shadow-primary/20 hover:bg-primary-300":
               variant === "primary",
-            "bg-white/60 text-gray-900 hover:bg-white border border-transparent hover:border-white/50 backdrop-blur-sm":
+            "bg-white/60 dark:bg-gray-800/60 text-gray-900 dark:text-gray-100 hover:bg-white dark:hover:bg-gray-700 border border-white/50 dark:border-gray-700/50 backdrop-blur-sm":
               variant === "secondary",
-            "border-2 border-[#f0a113] text-[#f0a113] hover:bg-[#f0a113]-50":
+            "border-2 border-primary text-primary-600 dark:text-primary-300 hover:bg-primary/10 dark:hover:bg-primary/15":
               variant === "outline",
-            "hover:bg-gray-100 text-gray-700": variant === "ghost",
-            "bg-red-600 text-black hover:bg-red-700 shadow-lg shadow-red-600/20 focus-visible:ring-red-500":
+            "hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-700 dark:text-gray-300":
+              variant === "ghost",
+            "bg-red-600 text-white hover:bg-red-700 shadow-md shadow-red-600/20 focus-visible:ring-red-500":
               variant === "danger",
             "h-9 px-4 text-sm": size === "sm",
-            "h-11 px-8 text-base": size === "md",
-            "h-14 px-10 text-lg": size === "lg",
+            "h-11 px-6 text-sm": size === "md",
+            "h-12 px-8 text-base": size === "lg",
           },
           className
         )}
@@ -39,3 +37,5 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     );
   }
 );
+
+Button.displayName = "Button";

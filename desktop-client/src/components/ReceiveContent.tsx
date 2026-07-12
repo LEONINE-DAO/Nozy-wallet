@@ -24,13 +24,13 @@ export function ReceiveContent() {
   return (
     <div className="space-y-8 animate-fade-in text-center">
       <div className="space-y-2">
-        <p className="text-gray-500 text-sm">
+        <p className="text-gray-500 dark:text-gray-400 text-sm">
           Scan this QR code or copy the address below to receive funds.
         </p>
       </div>
 
       <div className="flex justify-center my-6">
-        <div className="w-48 h-48 bg-white rounded-xl border-2 border-primary/20 p-3 shadow-inner flex items-center justify-center">
+        <div className="w-48 h-48 bg-white dark:bg-gray-100 rounded-xl border-2 border-primary/20 p-3 shadow-inner flex items-center justify-center">
           {hasAddress ? (
             <QRCode
               value={address!}
@@ -41,40 +41,33 @@ export function ReceiveContent() {
               aria-label="Wallet receive address QR code"
             />
           ) : (
-            <div className="w-full h-full bg-gray-100 flex items-center justify-center text-gray-400 text-xs text-center border border-dashed border-gray-300 rounded-lg px-3">
+            <div className="w-full h-full bg-gray-100 dark:bg-gray-200 flex items-center justify-center text-gray-400 text-xs text-center border border-dashed border-gray-300 rounded-lg px-3">
               Unlock your wallet to show a receive QR code
             </div>
           )}
         </div>
       </div>
 
-      <div className="bg-gray-50 rounded-2xl p-4 border border-gray-100 text-left relative group">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-widest mb-1 ml-1">
+      <div className="bg-gray-50 dark:bg-gray-800/60 rounded-2xl p-4 border border-gray-100 dark:border-gray-700/50 text-left relative group">
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest mb-1 ml-1">
           Your Address
         </p>
-        <div className="font-mono text-xs md:text-sm text-gray-800 break-all leading-relaxed">
+        <div className="font-mono text-xs md:text-sm text-gray-800 dark:text-gray-200 break-all leading-relaxed pr-10">
           {displayAddress}
         </div>
         <button
           onClick={handleCopy}
-          className="absolute top-2 right-2 p-2 rounded-lg bg-white shadow-sm border border-gray-100 text-gray-500 hover:text-primary hover:border-primary/50 transition-all"
+          className="absolute top-2 right-2 p-2 rounded-xl bg-white dark:bg-gray-700 shadow-sm border border-gray-100 dark:border-gray-600 text-gray-500 dark:text-gray-400 hover:text-primary hover:border-primary/50 transition-all"
         >
           {copied ? (
-            <CheckCircle
-              size={16}
-              className="text-green-500"
-            />
+            <CheckCircle size={16} className="text-green-500" />
           ) : (
             <Copy size={16} />
           )}
         </button>
       </div>
 
-      <Button
-        onClick={handleCopy}
-        className="w-full rounded-xl py-3 shadow-lg shadow-primary/20"
-        disabled={!hasAddress}
-      >
+      <Button onClick={handleCopy} className="w-full" disabled={!hasAddress}>
         {copied ? "Copied to Clipboard" : "Copy Address"}
       </Button>
     </div>

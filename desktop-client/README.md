@@ -120,6 +120,16 @@ The Send screen uses the same path as the CLI: **scan spendable Orchard notes**,
 
 Run the app: from `desktop-client`, `npm install` then `cargo tauri dev`.
 
+## Ironwood migration (desktop UI)
+
+The **Ironwood** nav tab wraps the same core path as CLI `nozy ironwood plan|migrate|broadcast`:
+
+1. **Plan migration** — save ZIP 318 schedule  
+2. **Start migration** — prebuild next turnstile (when readiness is `ready-to-prebuild`)  
+3. **Broadcast** — submit in-window (needs local Zebrad / Tor / Advanced attestation)
+
+**Testnet check:** Ironwood testnet wallet profile + WSL Zebrad with Ironwood RPC; sync to tip; open Ironwood tab. If status says note split required, run `nozy ironwood split` in the CLI first (split UI is not in this MVP).
+
 ## Keystone hardware wallet (mainnet)
 
 Air-gapped Orchard signing via **PCZT** + QR (`zcash-pczt` UR frames).

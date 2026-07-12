@@ -5,8 +5,17 @@ import { Tooltip } from "./Tooltip";
 import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
 import { useWalletStore } from "../store/walletStore";
 import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
+import { cn } from "../lib/cn";
 
-export type TabId = "home" | "history" | "settings" | "send" | "browser" | "contacts" | "web";
+export type TabId =
+  | "home"
+  | "history"
+  | "ironwood"
+  | "settings"
+  | "send"
+  | "browser"
+  | "contacts"
+  | "web";
 
 interface HeaderProps {
   activeTab: TabId;
@@ -14,12 +23,9 @@ interface HeaderProps {
   showLabels: boolean;
 }
 
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}
-
 export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
-  const { isSyncing, setIsSyncing, setBalanceFromAvailable } = useWalletStore();
+  const { isSyncing, setIsSyncing, setBalanceFromAvailable, syncProgressPercent } =
+    useWalletStore();
 
   const handleManualSync = async () => {
     if (isSyncing) return;
@@ -29,45 +35,62 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
     });
   };
 
+  const syncButtonLabel = isSyncing
+    ? syncProgressPercent != null
+      ? `${syncProgressPercent}%`
+      : "Syncing…"
+    : "Sync";
+
   return (
-    <header className="w-full backdrop-blur-xl z-20">
-      <div className="container mx-auto px-6 py-4 flex items-center justify-between">
-        <div className="flex items-center gap-10">
-          <div className="flex items-center gap-3">
+    <header className="w-full shrink-0 z-20 border-b border-gray-800 bg-gray-950 shadow-sm">
+      <div className="container mx-auto px-8 py-3 flex items-center justify-between gap-6">
+        <div className="flex items-center gap-6 min-w-0">
+          <div className="flex items-center shrink-0">
             <img
               src="/logo.png"
               alt="Nozy Wallet"
-              className="w-auto h-24 object-contain drop-shadow-md"
+              className="w-auto h-10 object-contain"
               onError={(e) => {
                 e.currentTarget.style.display = "none";
               }}
             />
           </div>
-          <nav className="flex items-center gap-2">
-            <Tooltip content="View balance and recent activity">
+          <nav className="flex items-center gap-2" aria-label="Primary">
+            <Tooltip content="View balance and recent activity" placement="bottom">
               <div>
                 <HeaderItem
                   icon={<Home weight="Bold" />}
                   label="Home"
-                  showLabel={showLabels}
+                  showLabel
                   active={activeTab === "home"}
                   onClick={() => onTabChange("home")}
                 />
               </div>
             </Tooltip>
-            <Tooltip content="View and search transaction history">
+            <Tooltip content="View and search transaction history" placement="bottom">
               <div>
                 <HeaderItem
                   icon={<History weight="Bold" />}
                   label="History"
-                  showLabel={showLabels}
+                  showLabel
                   active={activeTab === "history"}
                   onClick={() => onTabChange("history")}
                 />
               </div>
             </Tooltip>
+            <Tooltip content="Ironwood / NU6.3 migration readiness" placement="bottom">
+              <div>
+                <HeaderItem
+                  icon={<Shield weight="Bold" />}
+                  label="Ironwood"
+                  showLabel
+                  active={activeTab === "ironwood"}
+                  onClick={() => onTabChange("ironwood")}
+                />
+              </div>
+            </Tooltip>
             {dappBrowserEnabled && (
-              <Tooltip content="Browse Zcash dApps">
+              <Tooltip content="Browse Zcash dApps" placement="bottom">
                 <div>
                   <HeaderItem
                     icon={<Shield weight="Bold" />}
@@ -80,7 +103,7 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
               </Tooltip>
             )}
             {webWatchOnlyEnabled && (
-              <Tooltip content="Watch-only web wallet status">
+              <Tooltip content="Watch-only web wallet status" placement="bottom">
                 <div>
                   <HeaderItem
                     icon={<Shield weight="Bold" />}
@@ -95,26 +118,33 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
           </nav>
         </div>
 
-        <div className="flex items-center gap-3">
-          <Tooltip content={isSyncing ? "Syncing wallet with the network…" : "Sync wallet with the network"}>
+        <div className="flex items-center gap-2 shrink-0">
+          <Tooltip
+            placement="bottom"
+            content={
+              isSyncing
+                ? syncProgressPercent != null
+                  ? `Syncing — ${syncProgressPercent}% complete`
+                  : "Syncing wallet with the network…"
+                : "Sync wallet with the network"
+            }
+          >
             <button
               className={cn(
-                "flex items-center gap-2 px-3 py-2.5 rounded-xl text-gray-500 hover:text-primary hover:bg-white/60 hover:shadow-sm border border-transparent hover:border-white/50 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait",
-                isSyncing && "bg-primary/10 text-primary"
+                "flex items-center gap-2 px-3.5 py-2.5 rounded-xl font-semibold text-sm border transition-all active:scale-95 disabled:opacity-50 disabled:cursor-wait min-w-[5rem] justify-center",
+                isSyncing
+                  ? "bg-primary/15 text-primary border-primary/40"
+                  : "text-gray-100 bg-gray-800 border-gray-600 hover:bg-primary/15 hover:border-primary/40"
               )}
               title="Sync Wallet"
               onClick={handleManualSync}
               disabled={isSyncing}
             >
               <Refresh
-                size={20}
+                size={18}
                 className={cn("shrink-0 transition-transform", isSyncing && "animate-spin")}
               />
-              {(showLabels || isSyncing) && (
-                <span className="text-sm font-medium">
-                  {isSyncing ? "Syncing…" : "Sync"}
-                </span>
-              )}
+              <span className="tabular-nums">{syncButtonLabel}</span>
             </button>
           </Tooltip>
           <ProfileDropdown onNavigate={(path) => onTabChange(path)} />
@@ -140,24 +170,18 @@ function HeaderItem({
   return (
     <button
       onClick={onClick}
+      aria-current={active ? "page" : undefined}
       className={cn(
-        "flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-200 font-medium text-sm group",
+        "flex items-center gap-2 px-4 py-2.5 rounded-xl transition-all duration-200 font-semibold text-sm border",
         active
-          ? "bg-[#f0a113] text-black shadow-lg shadow-gray-200/25"
-          : "text-gray-700 hover:bg-white/60 hover:shadow-sm hover:text-primary-700"
+          ? "bg-primary text-gray-950 border-primary shadow-md shadow-primary/25"
+          : "text-gray-100 bg-gray-800 border-gray-600 hover:bg-primary/20 hover:border-primary/50"
       )}
     >
-      <div
-        className={cn(
-          "transition-transform duration-200",
-          active ? "scale-110" : "group-hover:scale-110"
-        )}
-      >
-        {React.cloneElement(icon as React.ReactElement, {
-          size: 20,
-          weight: active ? "Bold" : "Linear",
-        })}
-      </div>
+      {React.cloneElement(icon as React.ReactElement, {
+        size: 20,
+        weight: "Bold",
+      })}
       {showLabel && <span>{label}</span>}
     </button>
   );

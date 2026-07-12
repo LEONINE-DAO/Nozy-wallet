@@ -106,15 +106,15 @@ interface TransactionIdDetailProps {
 
 export function TransactionIdDetail({ txid, network = "mainnet" }: TransactionIdDetailProps) {
   return (
-    <div className="rounded-xl border border-[#f0a113]/35 bg-[#f0a113]/8 p-3 space-y-2">
-      <p className="text-xs font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide">
+    <div className="rounded-xl border border-primary/40 bg-primary/10 p-3 space-y-2">
+      <p className="text-xs font-semibold text-gray-200 uppercase tracking-wide">
         Transaction ID
       </p>
       <TxIdLink txid={txid} network={network} />
       <TxExplorerLink
         txid={txid}
         network={network}
-        label="View on mainnet.zcashexplorer.app"
+        label="View on explorer"
         variant="pill"
         className="mt-1"
       />

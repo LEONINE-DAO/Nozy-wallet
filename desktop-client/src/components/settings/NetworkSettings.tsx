@@ -1,10 +1,11 @@
 import { useState, useEffect } from "react";
 import { Button } from "../Button";
 import { Input } from "../Input";
-import { ArrowLeft, CheckCircle, Danger, InfoCircle } from "@solar-icons/react";
+import { CheckCircle, Danger, InfoCircle } from "@solar-icons/react";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../../utils/errors";
 import { walletApi } from "../../lib/api";
+import { SettingsBackButton } from "./SettingsBackButton";
 
 interface NetworkSettingsProps {
   onBack: () => void;
@@ -12,6 +13,7 @@ interface NetworkSettingsProps {
 
 export function NetworkSettings({ onBack }: NetworkSettingsProps) {
   const [url, setUrl] = useState("");
+  const [network, setNetwork] = useState<"mainnet" | "testnet">("mainnet");
   const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [testStatus, setTestStatus] = useState<"idle" | "success" | "error">(
@@ -28,7 +30,8 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
       const res = await walletApi.getConfig();
       if (res.data) {
         setUrl(res.data.zebra_url);
-        toast.success("Network configuration loaded");
+        const cfg = res.data as { network?: string };
+        setNetwork(cfg.network === "testnet" ? "testnet" : "mainnet");
       }
     } catch (e) {
       toast.error(formatErrorForDisplay(e, "Failed to load network configuration"));
@@ -70,33 +73,60 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
   };
 
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-gray-500 hover:text-gray-900 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span className="font-medium">Back to Settings</span>
-      </button>
+    <div className="max-w-2xl mx-auto animate-fade-in pb-8">
+      <SettingsBackButton onClick={onBack} />
 
-      <h2 className="text-3xl font-bold text-gray-900 mb-2">Network & Node</h2>
-      <p className="text-gray-500 mb-8">
+      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Network & Node</h2>
+      <p className="text-gray-500 dark:text-gray-400 mb-8">
         Configure your connection to a Zebra (Zcash) node for syncing and sending.
       </p>
 
       <div className="space-y-6">
-        <div className="bg-white/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 shadow-sm space-y-4">
+        <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 dark:border-gray-700/50 shadow-sm space-y-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-gray-700 dark:text-gray-300">Active wallet network</p>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                network === "testnet"
+                  ? "bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200"
+                  : "bg-emerald-100 dark:bg-emerald-900/30 text-emerald-800 dark:text-emerald-200"
+              }`}
+            >
+              {network === "testnet" ? "Testnet (Ironwood)" : "Mainnet"}
+            </span>
+          </div>
+          {network === "testnet" && (
+            <p className="text-xs text-amber-800 dark:text-amber-200 bg-amber-50 dark:bg-amber-900/20 border border-amber-100 dark:border-amber-800/50 rounded-xl px-3 py-2">
+              Testnet wallets use port <strong>18232</strong>, not 8232. Switch network in
+              Settings → Wallets & Accounts if this still shows mainnet.
+            </p>
+          )}
           <Input
             label="Zebra node RPC URL"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
-            placeholder="http://127.0.0.1:8232"
+            placeholder={
+              network === "testnet" ? "http://127.0.0.1:18232" : "http://127.0.0.1:8232"
+            }
             disabled={isLoading}
           />
-          <div className="flex items-center gap-2 text-xs text-gray-500">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             <InfoCircle size={14} />
             <span>
-              Local: <code className="bg-black/5 px-1 rounded">http://127.0.0.1:8232</code>. Zebra on another PC: use that PC&apos;s IP, e.g. <code className="bg-black/5 px-1 rounded">http://192.168.1.10:8232</code>. On the Zebra machine, set <code className="bg-black/5 px-1 rounded">[rpc] listen_addr = &quot;0.0.0.0:8232&quot;</code> so it accepts remote connections.
+              {network === "testnet" ? (
+                <>
+                  Local testnet:{" "}
+                  <code className="bg-black/5 dark:bg-white/10 px-1 rounded">http://127.0.0.1:18232</code>. WSL
+                  Zebrad: use the WSL IP, e.g.{" "}
+                  <code className="bg-black/5 dark:bg-white/10 px-1 rounded">http://172.x.x.x:18232</code>.
+                </>
+              ) : (
+                <>
+                  Local mainnet:{" "}
+                  <code className="bg-black/5 dark:bg-white/10 px-1 rounded">http://127.0.0.1:8232</code>. Remote
+                  Zebrad: use that PC&apos;s IP on the same port.
+                </>
+              )}
             </span>
           </div>
 
@@ -121,8 +151,8 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
             <div
               className={`p-3 rounded-xl flex items-center gap-2 text-sm font-medium ${
                 testStatus === "success"
-                  ? "bg-green-50 text-green-700 border border-green-100"
-                  : "bg-red-50 text-red-700 border border-red-100"
+                  ? "bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-100 dark:border-green-800/50"
+                  : "bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-100 dark:border-red-800/50"
               }`}
             >
               {testStatus === "success" ? (

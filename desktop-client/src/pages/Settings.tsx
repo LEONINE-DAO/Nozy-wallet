@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Button } from "../components/Button";
+import { PageHeader } from "../components/PageHeader";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
 import {
@@ -75,10 +76,10 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="max-w-2xl mx-auto animate-fade-in">
-      <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-8">Settings</h2>
+    <div className="max-w-2xl mx-auto animate-fade-in pb-8">
+      <PageHeader title="Settings" description="Manage your wallet, network, and preferences" className="mb-8" />
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <SettingsItem
           icon={<User />}
           title="Account Information"
@@ -87,8 +88,8 @@ export function SettingsPage() {
         />
         <SettingsItem
           icon={<User />}
-          title="Accounts"
-          description="Create, switch, and rename accounts"
+          title="Wallets & Accounts"
+          description="Add wallets and change the active wallet profile"
           onClick={() => setActiveSection("accounts")}
         />
         <SettingsItem
@@ -99,8 +100,8 @@ export function SettingsPage() {
         />
         <SettingsItem
           icon={<Shield />}
-          title="Network privacy (Nym / NymVPN)"
-          description="Route traffic through Nym for full metadata privacy"
+          title="Network privacy"
+          description="Local node default; Nym/Tor advanced options"
           onClick={() => setActiveSection("networkprivacy")}
         />
         <SettingsItem
@@ -132,7 +133,7 @@ export function SettingsPage() {
           Log Out
         </Button>
         <p className="text-center text-xs text-gray-400 dark:text-gray-500 mt-4">
-          Version 1.0.0 (Beta)
+          Version 1.0.0
         </p>
       </div>
     </div>
@@ -153,16 +154,16 @@ function SettingsItem({
   return (
     <div
       onClick={onClick}
-      className="p-4 rounded-xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-white/50 dark:border-gray-700/50 hover:border-amber-300/60 dark:hover:border-amber-500/40 hover:shadow-md hover:shadow-amber-500/10 cursor-pointer transition-all duration-200 flex items-center gap-4 group"
+      className="p-4 rounded-2xl bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm border border-white/50 dark:border-gray-700/50 hover:border-primary/30 dark:hover:border-primary/40 hover:shadow-md hover:shadow-primary/5 cursor-pointer transition-all duration-200 flex items-center gap-4 group"
     >
-      <div className="w-10 h-10 rounded-full bg-amber-100/60 dark:bg-amber-900/30 flex items-center justify-center text-amber-500 group-hover:bg-amber-100 dark:group-hover:bg-amber-900/50 transition-colors [&_svg]:text-amber-500">
+      <div className="w-10 h-10 rounded-xl bg-primary/10 dark:bg-primary/15 flex items-center justify-center text-primary group-hover:bg-primary/15 dark:group-hover:bg-primary/20 transition-colors [&_svg]:text-primary">
         {icon}
       </div>
       <div className="flex-1">
         <h3 className="font-medium text-gray-900 dark:text-gray-100">{title}</h3>
         <p className="text-sm text-gray-500 dark:text-gray-400">{description}</p>
       </div>
-      <div className="text-gray-400 dark:text-gray-500 group-hover:text-amber-500 transition-colors">
+      <div className="text-gray-400 dark:text-gray-500 group-hover:text-primary transition-colors">
         <AltArrowRight size={20} />
       </div>
     </div>

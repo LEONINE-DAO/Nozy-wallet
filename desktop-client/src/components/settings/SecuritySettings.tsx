@@ -1,9 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Button } from "../Button";
 import { Input } from "../Input";
-import { ArrowLeft, Lock, Shield, Moon, Sun } from "@solar-icons/react";
+import { Lock, Shield } from "@solar-icons/react";
 import { useSettingsStore } from "../../store/settingsStore";
 import { Toggle } from "../Toggle";
+import { SettingsBackButton } from "./SettingsBackButton";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../../utils/errors";
 import { walletApi } from "../../lib/api";
@@ -22,8 +23,6 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
     setShowNavigationLabels,
     hideBalance,
     setHideBalance,
-    darkMode,
-    setDarkMode,
     autoLockEnabled,
     setAutoLockEnabled,
     autoLockMinutes,
@@ -33,15 +32,6 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
     screenshotProtection,
     setScreenshotProtection,
   } = useSettingsStore();
-
-  // Apply dark mode to document root
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-  }, [darkMode]);
 
   const handleToggle =
     (setter: (v: boolean) => void, label: string) => (value: boolean) => {
@@ -89,13 +79,7 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
 
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
-      <button
-        onClick={onBack}
-        className="flex items-center gap-2 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 mb-6 transition-colors"
-      >
-        <ArrowLeft className="w-5 h-5" />
-        <span className="font-medium">Back to Settings</span>
-      </button>
+      <SettingsBackButton onClick={onBack} />
 
       <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">
         Security & Privacy
@@ -107,7 +91,7 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
       <div className="space-y-6">
         <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-sm rounded-2xl p-6 border border-white/50 dark:border-gray-700/50 shadow-sm">
           <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-[#f0a113]-100/50 flex items-center justify-center text-[#f0a113]">
+            <div className="w-10 h-10 rounded-xl bg-primary/10 dark:bg-primary/15 flex items-center justify-center text-primary">
               <Lock size={20} />
             </div>
             <div>
@@ -188,13 +172,6 @@ export function SecuritySettings({ onBack }: SecuritySettingsProps) {
             Privacy & Interface
           </h3>
           <div className="space-y-2">
-            <Toggle
-              icon={darkMode ? <Sun size={20} /> : <Moon size={20} />}
-              title="Dark Mode"
-              description="Switch between light and dark theme"
-              checked={darkMode}
-              onChange={handleToggle(setDarkMode, "Dark mode")}
-            />
             <Toggle
               title="Hide Balance"
               description="Hide balance on home screen"

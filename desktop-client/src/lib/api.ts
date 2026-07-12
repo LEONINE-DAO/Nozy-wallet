@@ -2,6 +2,10 @@ import { invoke as tauriInvokeRaw } from "@tauri-apps/api/core";
 import {
   WalletExistsResponse,
   WalletProfileInfo,
+  NetworkWalletStatusResponse,
+  ConfigureNetworkWalletRequest,
+  DesktopTestnetWalletRequest,
+  DesktopTestnetWalletResponse,
   CreateWalletRequest,
   RestoreWalletRequest,
   UnlockWalletRequest,
@@ -22,6 +26,15 @@ import {
   BackupActionResponse,
   SyncStatusResponse,
   OrchardPoolStatsResponse,
+  IronwoodDesktopStatusResponse,
+  IronwoodStatusRequest,
+  IronwoodPlanSaveResponse,
+  IronwoodMigrateRequest,
+  IronwoodMigrateResponse,
+  IronwoodSplitRequest,
+  IronwoodSplitResponse,
+  IronwoodBroadcastRequest,
+  IronwoodBroadcastResponse,
   PrepareCosignRequest,
   PrepareCosignResponse,
   SignCosignRequest,
@@ -62,6 +75,29 @@ export const walletApi = {
   switchWalletProfile: async (profileId: string) => {
     await invoke("switch_wallet_profile", { request: { profile_id: profileId } });
     return { data: null };
+  },
+
+  getNetworkWalletStatus: async (): Promise<{ data: NetworkWalletStatusResponse }> => {
+    const result = await invoke<NetworkWalletStatusResponse>("get_network_wallet_status");
+    return { data: result };
+  },
+
+  configureNetworkWallet: async (
+    data: ConfigureNetworkWalletRequest
+  ): Promise<{ data: NetworkWalletStatusResponse }> => {
+    const result = await invoke<NetworkWalletStatusResponse>("configure_network_wallet", {
+      request: data,
+    });
+    return { data: result };
+  },
+
+  createOrRestoreTestnetWallet: async (
+    data: DesktopTestnetWalletRequest
+  ): Promise<{ data: DesktopTestnetWalletResponse }> => {
+    const result = await invoke<DesktopTestnetWalletResponse>("create_or_restore_testnet_wallet", {
+      request: data,
+    });
+    return { data: result };
   },
 
   createWallet: async (data: CreateWalletRequest): Promise<{ data: string }> => {
@@ -106,6 +142,41 @@ export const walletApi = {
 
   getOrchardPoolStats: async (): Promise<{ data: OrchardPoolStatsResponse }> => {
     const result = await invoke<OrchardPoolStatsResponse>("get_orchard_pool_stats");
+    return { data: result };
+  },
+
+  getIronwoodStatus: async (
+    request: IronwoodStatusRequest = {}
+  ): Promise<{ data: IronwoodDesktopStatusResponse }> => {
+    const result = await invoke<IronwoodDesktopStatusResponse>("get_ironwood_status", {
+      request,
+    });
+    return { data: result };
+  },
+
+  ironwoodPlanSave: async (): Promise<{ data: IronwoodPlanSaveResponse }> => {
+    const result = await invoke<IronwoodPlanSaveResponse>("ironwood_plan_save");
+    return { data: result };
+  },
+
+  ironwoodMigrate: async (
+    request: IronwoodMigrateRequest = {}
+  ): Promise<{ data: IronwoodMigrateResponse }> => {
+    const result = await invoke<IronwoodMigrateResponse>("ironwood_migrate", { request });
+    return { data: result };
+  },
+
+  ironwoodSplit: async (
+    request: IronwoodSplitRequest = {}
+  ): Promise<{ data: IronwoodSplitResponse }> => {
+    const result = await invoke<IronwoodSplitResponse>("ironwood_split", { request });
+    return { data: result };
+  },
+
+  ironwoodBroadcast: async (
+    request: IronwoodBroadcastRequest = {}
+  ): Promise<{ data: IronwoodBroadcastResponse }> => {
+    const result = await invoke<IronwoodBroadcastResponse>("ironwood_broadcast", { request });
     return { data: result };
   },
 

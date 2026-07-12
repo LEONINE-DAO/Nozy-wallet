@@ -1,8 +1,14 @@
 use crate::error::TauriError;
 
+
+
 use nozy::{load_config, save_config, ZebraClient};
 
+
+
 use serde::{Deserialize, Serialize};
+
+
 
 use tauri::command;
 
@@ -17,6 +23,8 @@ pub struct ConfigResponse {
     pub last_scan_height: Option<u32>,
 
     pub theme: Option<String>,
+
+    pub network: String,
 
 }
 
@@ -38,6 +46,8 @@ pub async fn get_config() -> Result<ConfigResponse, TauriError> {
 
         theme: None,
 
+        network: config.network,
+
     })
 
 }
@@ -58,11 +68,21 @@ pub struct SetZebraUrlRequest {
 
 pub async fn set_zebra_url(request: SetZebraUrlRequest) -> Result<(), TauriError> {
 
+    let url = request.url.trim().to_string();
+
     let mut config = load_config();
 
-    config.zebra_url = request.url.clone();
+    config.zebra_url = url.clone();
 
     save_config(&config).map_err(|e| TauriError::from(e.to_string()))?;
+
+
+
+    if let Some(profile_id) = nozy::active_profile_id() {
+
+        let _ = nozy::configure_profile_network(&profile_id, &config.network, &url, false);
+
+    }
 
 
 
