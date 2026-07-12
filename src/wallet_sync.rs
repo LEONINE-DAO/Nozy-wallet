@@ -219,6 +219,81 @@ pub(crate) fn apply_empty_cache_backfill(
     range.scan_end = range.chain_tip;
 }
 
+/// Highest known height from cached notes (discovery block or witness tip).
+pub(crate) fn notes_cache_checkpoint_height(
+    notes: &[crate::notes::SerializableOrchardNote],
+) -> Option<u32> {
+    notes
+        .iter()
+        .map(|n| {
+            n.block_height
+                .max(n.orchard_witness_tip_height.unwrap_or(0))
+                .max(n.ironwood_witness_tip_height.unwrap_or(0))
+        })
+        .max()
+}
+
+fn note_has_pool_witness(note: &crate::notes::SerializableOrchardNote) -> bool {
+    note.witness_hex_for_pool()
+        .is_some_and(|hex| !hex.is_empty())
+}
+
+/// Earliest unspent note that still needs a pool witness rebuilt via RPC scan.
+pub(crate) fn unwitnessed_unspent_floor(
+    notes: &[crate::notes::SerializableOrchardNote],
+) -> Option<u32> {
+    notes
+        .iter()
+        .filter(|n| !n.spent && !note_has_pool_witness(n))
+        .map(|n| n.block_height)
+        .min()
+}
+
+/// When notes exist but `last_scan_height` is missing, resume after the note cache
+/// instead of re-scanning from the network default floor (testnet height 1).
+///
+/// Unspent notes without a persisted pool witness must be rescanned from their
+/// discovery height — witness refresh cannot bootstrap from an empty hex blob.
+pub(crate) fn apply_cached_notes_resume(
+    range: &mut ScanRange,
+    config: &WalletConfig,
+    options: &WalletSyncOptions,
+    notes_before: &[crate::notes::SerializableOrchardNote],
+) {
+    if options.start_height.is_some() || notes_before.is_empty() {
+        return;
+    }
+
+    if let Some(floor) = unwitnessed_unspent_floor(notes_before) {
+        if floor < range.scan_start {
+            range.scan_start = floor;
+        }
+        // Bound each round so witness rebuild can persist progress and the UI can update.
+        let batch = options.incremental_batch.max(1);
+        if options.end_height.is_none() {
+            range.scan_end = range.scan_start.saturating_add(batch).min(range.chain_tip);
+        }
+        return;
+    }
+
+    if config.last_scan_height.is_some() {
+        return;
+    }
+    let Some(checkpoint) = notes_cache_checkpoint_height(notes_before) else {
+        return;
+    };
+    let resume = checkpoint.saturating_add(1);
+    if resume > range.scan_start {
+        range.scan_start = resume;
+    }
+    if !options.scan_to_tip && options.end_height.is_none() {
+        let batch = options.incremental_batch.max(1);
+        range.scan_end = range.scan_start.saturating_add(batch).min(range.chain_tip);
+    } else if options.scan_to_tip && options.end_height.is_none() {
+        range.scan_end = range.chain_tip;
+    }
+}
+
 /// Default incremental scan window when not scanning to tip.
 pub const DEFAULT_INCREMENTAL_BATCH: u32 = 1_000;
 
@@ -346,6 +421,7 @@ pub async fn sync_wallet_notes(
         )
     })?;
     apply_empty_cache_backfill(&mut range, &config, &options, &notes_before);
+    apply_cached_notes_resume(&mut range, &config, &options, &notes_before);
 
     let ctx = SyncRangeContext::from_range(&range);
     let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
@@ -384,7 +460,6 @@ pub async fn sync_wallet_notes(
                 chain_tip_opt,
             )
         })?;
-
     let mut cached_notes = notes_before;
     merge_scanned_notes(&mut cached_notes, &scan_result.notes);
     if cached_notes.is_empty() && total_before > 0 {
@@ -739,6 +814,68 @@ mod tests {
         }];
         apply_empty_cache_backfill(&mut range, &config, &opts, &cached);
         assert!(range.scan_start > range.scan_end);
+    }
+
+    #[test]
+    fn cached_notes_resume_when_last_scan_missing() {
+        use crate::notes::SerializableOrchardNote;
+
+        let config = test_config(None, "testnet");
+        let opts = WalletSyncOptions::to_tip();
+        let mut range = resolve_scan_range(&config, &opts, 4_159_000).unwrap();
+        assert_eq!(range.scan_start, 1);
+        let cached = vec![SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            block_height: 4_100_000,
+            nullifier_bytes: vec![2; 32],
+            txid: "abc".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: Some(4_120_000),
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
+            rho_bytes: None,
+            rseed_bytes: None,
+            spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
+        }];
+        apply_cached_notes_resume(&mut range, &config, &opts, &cached);
+        assert_eq!(range.scan_start, 4_120_001);
+        assert_eq!(range.scan_end, 4_159_000);
+    }
+
+    #[test]
+    fn cached_notes_rescan_unwitnessed_unspent_even_with_checkpoint() {
+        use crate::notes::SerializableOrchardNote;
+
+        let config = test_config(Some(4_159_000), "testnet");
+        let opts = WalletSyncOptions::to_tip();
+        let mut range = resolve_scan_range(&config, &opts, 4_159_100).unwrap();
+        assert_eq!(range.scan_start, 4_159_001);
+        let cached = vec![SerializableOrchardNote {
+            note_bytes: vec![1],
+            value: 250_000,
+            address_bytes: vec![0; 43],
+            block_height: 4_143_641,
+            nullifier_bytes: vec![2; 32],
+            txid: "abc".to_string(),
+            spent: false,
+            memo: vec![],
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
+            rho_bytes: None,
+            rseed_bytes: None,
+            spent_in_txid: None,
+            pool: crate::shielded_pool::ShieldedPool::Ironwood,
+        }];
+        apply_cached_notes_resume(&mut range, &config, &opts, &cached);
+        assert_eq!(range.scan_start, 4_143_641);
+        assert_eq!(range.scan_end, 4_144_641);
     }
 
     #[test]

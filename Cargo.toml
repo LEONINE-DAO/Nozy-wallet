@@ -1,6 +1,6 @@
 [package]
 name = "nozy"
-version = "2.4.0"
+version = "2.4.1"
 edition = "2021"
 default-run = "nozy"
 description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
@@ -75,6 +75,9 @@ prost-types = { version = "0.14", optional = true }
 clap = { version = "4.6", features = ["derive", "env"], optional = true }
 dialoguer = { version = "0.12", optional = true }
 indicatif = { version = "0.17", optional = true }
+# Nozy Lite live status TUI
+ratatui = { version = "0.29", optional = true }
+crossterm = { version = "0.28", optional = true }
 
 # Tracing subscriber (native-only, has OS deps)
 tracing-subscriber = { version = "0.3.20", features = ["env-filter"], optional = true }
@@ -136,6 +139,8 @@ native = [
     "dep:clap",
     "dep:dialoguer",
     "dep:indicatif",
+    "dep:ratatui",
+    "dep:crossterm",
     "dep:tracing-subscriber",
     "dep:directories",
     "dep:secp256k1",
@@ -169,7 +174,13 @@ secret-network = ["dep:cosmrs", "dep:tendermint"]
 
 [workspace]
 members = ["zeaking", "api-server", "zeaking-ffi"]
-exclude = ["desktop-client/src-tauri", "wasm-poc", "browser-extension/wasm-core"]
+exclude = [
+    "desktop-client/src-tauri",
+    "wasm-poc",
+    "browser-extension/wasm-core",
+    "tools/nym-dvpn-lwd-spike",
+    "tools/nym-smolmix-broadcast-spike",
+]
 resolver = "2"
 
 # Ironwood (NU6.3) pre-release — keeps transitive deps on the same git revisions.

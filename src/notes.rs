@@ -446,6 +446,45 @@ pub fn release_wallet_notes_by_nullifier_hex(nullifier_hexes: &[String]) -> Nozy
     Ok(released)
 }
 
+/// Ensure local `notes.json` reflects outbound sends recorded in `sent_transactions.json`
+/// and notes already tagged with `spent_in_txid`.
+#[cfg(feature = "native")]
+pub fn reconcile_wallet_spends_from_local_state() -> NozyResult<usize> {
+    use crate::transaction_history::SentTransactionStorage;
+
+    let mut marked = 0usize;
+    if let Ok(storage) = SentTransactionStorage::new() {
+        for record in storage.get_all_transactions() {
+            if record.spent_note_ids.is_empty() {
+                continue;
+            }
+            marked += mark_wallet_notes_spent_by_nullifier_hex(
+                &record.spent_note_ids,
+                Some(&record.txid),
+            )?;
+        }
+    }
+
+    let notes = load_wallet_notes()?;
+    let mut by_spend_tx: std::collections::HashMap<String, Vec<String>> =
+        std::collections::HashMap::new();
+    for note in &notes {
+        if note.spent {
+            if let Some(txid) = &note.spent_in_txid {
+                by_spend_tx
+                    .entry(txid.clone())
+                    .or_default()
+                    .push(hex::encode(&note.nullifier_bytes));
+            }
+        }
+    }
+    for (txid, nullifiers) in by_spend_tx {
+        marked += mark_wallet_notes_spent_by_nullifier_hex(&nullifiers, Some(&txid))?;
+    }
+
+    Ok(marked)
+}
+
 /// Mark notes spent in `notes.json` by canonical nullifier hex (post-broadcast).
 #[cfg(feature = "native")]
 pub fn mark_wallet_notes_spent_by_nullifier_hex(

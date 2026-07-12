@@ -2,7 +2,7 @@
 
 **Orchard-first Zcash wallet** — **CLI production release** today; desktop app, browser extension, and companion API in active development. This repository is a **wallet and companion services**, not a consensus node.
 
-**Latest release:** [v2.3.6.7 — Teriyaki Hot (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.3.6.7) · See [CHANGELOG.md](CHANGELOG.md) for 2.3.x notes.
+**Latest release:** [v2.4.1 — Nozy Lite (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1) · See [CHANGELOG.md](CHANGELOG.md) for notes. Prior: [v2.4.0 Ironwood](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0).
 
 ## What NozyWallet is
 
@@ -12,7 +12,7 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 
 | Surface | Path | Role |
 |--------|------|------|
-| **CLI + core library** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, `ZebraClient`, transaction building |
+| **CLI + core library (Nozy Lite)** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, ops health/TUI, `ZebraClient`, transaction building |
 | **Zeaking** | `zeaking/` | Compact sync via lightwalletd → SQLite (`zeaking::lwd`) |
 | **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`) — **in development** |
 | **Desktop** | `desktop-client/` | Tauri app — **in development** (not promoted for production use yet) |
@@ -22,7 +22,9 @@ NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for 
 
 **Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`zebra-wsl-rpc.ps1`, `start-lightwalletd-wsl.ps1`, `run-nozy-api.ps1`).
 
-**Production-ready today:** the **`nozy` CLI** with your own **`zebrad` + `lightwalletd`**. Desktop, extension, API companion, and mobile are in active development — build from source if you are contributing; do not treat release assets for those surfaces as production-ready yet.
+**Production-ready today:** the **`nozy` CLI** — productized as **[Nozy Lite](docs/reference/NOZY_LITE.md)** for **uptime & data checks** next to Zebrad (plus sync/send/Ironwood). Desktop, extension, API companion, and mobile are in active development — build from source if you are contributing; do not treat release assets for those surfaces as production-ready yet.
+
+**Nozy Lite (operators):** `nozy health`, `nozy status --watch` / `nozy tui`, and `--json` for monitoring — see [`docs/reference/NOZY_LITE.md`](docs/reference/NOZY_LITE.md) and [`docs/reference/NOZY_LITE_BENCHES.md`](docs/reference/NOZY_LITE_BENCHES.md).
 
 ## Node operator FAQ
 

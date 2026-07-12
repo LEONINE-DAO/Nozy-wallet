@@ -235,6 +235,8 @@ pub fn next_zip318_anchor_boundary(height: u32) -> u32 {
 }
 
 fn canonical_power_of_ten_denominations(mut amount_zat: u64) -> Vec<MigrationDenomination> {
+    // Priority 3 (active): ZIP 318 power-of-ten. Planned: Zooko {1,2,5}×10^k via
+    // `network_privacy::AmountTimingAlgorithm::Zooko125Planned` once ecosystem converges.
     if amount_zat == 0 {
         return Vec::new();
     }
@@ -1421,11 +1423,15 @@ pub async fn reconcile_migration_broadcast_confirmations(
 }
 
 /// Broadcast the next presigned ZIP 318 turnstile transaction inside its anchor bucket window.
+///
+/// Priority 1: real broadcasts require local Zebrad, detected Tor/I2P, user Nym/Tor attestation,
+/// or an explicit `--force-clearnet` override (see `network_privacy`).
 pub async fn execute_orchard_migration_broadcast(
     zebra_url: &str,
     ironwood_active: bool,
     dry_run: bool,
     wait_confirm: bool,
+    network_privacy: &crate::ironwood::network_privacy::MigrationNetworkPrivacyOpts,
 ) -> NozyResult<MigrationBroadcastResult> {
     let zebra = crate::zebra_integration::ZebraClient::new(zebra_url.to_string());
     let chain_tip = zebra.get_best_block_height().await?;
@@ -1437,11 +1443,11 @@ pub async fn execute_orchard_migration_broadcast(
         ));
     }
 
-    let (mut schedule, mut schedule_path, _rebuilt) =
+    let (mut schedule, _, _rebuilt) =
         load_or_rebuild_orchard_migration_schedule(ironwood_active, chain_tip, &plan)?;
 
     let _ = reconcile_migration_broadcast_confirmations(&zebra, &mut schedule).await?;
-    schedule_path = save_orchard_migration_schedule(&schedule)?;
+    let mut schedule_path = save_orchard_migration_schedule(&schedule)?;
 
     let transfer = schedule
         .transfers
@@ -1479,6 +1485,14 @@ pub async fn execute_orchard_migration_broadcast(
         .expect("prepared txid validated");
 
     if dry_run {
+        let privacy = crate::ironwood::network_privacy::assess_migration_network_privacy(
+            zebra_url,
+            network_privacy,
+        )
+        .await;
+        let mut blockers = vec!["Dry run — transaction was not broadcast.".to_string()];
+        blockers.extend(privacy.blockers.clone());
+        blockers.extend(privacy.warnings.clone());
         return Ok(MigrationBroadcastResult {
             sequence: transfer.sequence,
             txid: prepared_txid.clone(),
@@ -1486,8 +1500,20 @@ pub async fn execute_orchard_migration_broadcast(
             schedule_path,
             confirmed: false,
             readiness_state: MigrationReadinessState::ReadyToBroadcast,
-            blockers: vec!["Dry run — transaction was not broadcast.".to_string()],
+            blockers,
         });
+    }
+
+    let privacy = crate::ironwood::network_privacy::require_migration_network_privacy(
+        zebra_url,
+        network_privacy,
+    )
+    .await?;
+    for warning in &privacy.warnings {
+        eprintln!("⚠️  {warning}");
+    }
+    if let Some(mode) = privacy.mode {
+        eprintln!("🔒 Migration network privacy: {}", mode.label());
     }
 
     let broadcast_txid = zebra.broadcast_transaction(raw_hex).await?;

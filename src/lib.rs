@@ -45,6 +45,10 @@ pub mod ironwood_witness;
 #[cfg(feature = "native")]
 pub mod keystone;
 #[cfg(feature = "native")]
+pub mod lite_ops;
+#[cfg(feature = "native")]
+pub mod lite_tui;
+#[cfg(feature = "native")]
 pub mod local_analytics;
 #[cfg(feature = "native")]
 pub mod monero;
@@ -58,6 +62,8 @@ pub mod note_sync;
 pub mod notes;
 #[cfg(feature = "native")]
 pub mod nu6_1_check;
+#[cfg(feature = "native")]
+pub mod nym_mixnet_broadcast;
 #[cfg(feature = "native")]
 pub mod orchard_chain_tree;
 #[cfg(feature = "native")]
@@ -150,21 +156,26 @@ pub use config::{load_config, save_config, update_last_scan_height, WalletConfig
 pub use config::{BackendKind, Protocol};
 #[cfg(feature = "native")]
 pub use ironwood::{
+    amount_timing_status, assess_migration_cover_traffic, assess_migration_network_privacy,
     assess_orchard_migration_readiness, build_schedule_from_plan, display_ironwood_status,
     execute_orchard_migration, execute_orchard_migration_broadcast, execute_orchard_note_split,
     fetch_pool_balances, flatten_canonical_denomination_zatoshis, ironwood_migration_schedule_path,
     is_ironwood_active, load_orchard_migration_schedule, note_requires_canonical_split,
     nu6_3_activation_height, orchard_only_send_blocker, plan_orchard_migration,
     plan_orchard_migration_at, plan_orchard_note_split_outputs, presigned_transfer_broadcastable,
-    refresh_orchard_migration_schedule_at, save_orchard_migration_plan_at,
-    save_orchard_migration_schedule, validate_orchard_migration_schedule, IronwoodWalletStatus,
-    MigrationBroadcastResult, MigrationExecutionResult, MigrationPlanSummary,
-    MigrationReadinessReport, MigrationReadinessState, MigrationSchedule,
-    MigrationScheduleValidation, MigrationScheduledTransfer, MigrationTransferStatus,
-    OrchardNoteSplitResult, PreparedMigrationTransaction, MIGRATION_SCHEDULE_VERSION,
+    previous_zip318_anchor_boundary, refresh_orchard_migration_schedule_at,
+    require_migration_network_privacy, safer_migration_status_snapshot,
+    save_orchard_migration_plan_at, save_orchard_migration_schedule,
+    selected_amount_timing_algorithm, validate_orchard_migration_schedule, AmountTimingAlgorithm,
+    IronwoodWalletStatus, MigrationBroadcastResult, MigrationExecutionResult,
+    MigrationNetworkPrivacyOpts, MigrationPlanSummary, MigrationReadinessReport,
+    MigrationReadinessState, MigrationSchedule, MigrationScheduleValidation,
+    MigrationScheduledTransfer, MigrationTransferStatus, OrchardNoteSplitResult,
+    PreparedMigrationTransaction, SaferMigrationStatusSnapshot, MIGRATION_SCHEDULE_VERSION,
     NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_MAINNET_DEPLOYMENT_TARGET,
     NU6_3_TESTNET_ACTIVATION_TARGET, NU6_3_TESTNET_DEPLOYMENT_TARGET,
-    ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD, ZIP318_TRANSFER_EXPIRY_BLOCKS,
+    ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD, ZIP318_DEFAULT_K_MAX,
+    ZIP318_TRANSFER_EXPIRY_BLOCKS,
 };
 #[cfg(feature = "native")]
 pub use ironwood_tx::{
@@ -182,6 +193,13 @@ pub use keystone::{
     DEFAULT_UR_FRAGMENT_SIZE, UR_TYPE_ZCASH_PCZT,
 };
 #[cfg(feature = "native")]
+pub use lite_ops::{
+    balance_to_json, gather_health_report, print_health_human, sync_to_json, LiteBalanceJson,
+    LiteHealthReport, LiteSyncJson, DEFAULT_MAX_SCAN_GAP,
+};
+#[cfg(feature = "native")]
+pub use lite_tui::run_status_tui;
+#[cfg(feature = "native")]
 pub use monero::{
     MoneroRpcClient, MoneroTransactionRecord, MoneroTransactionStatus, MoneroTransactionStorage,
     MoneroWallet,
@@ -194,9 +212,10 @@ pub use note_index::NoteIndex;
 pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
 pub use notes::{
-    load_spendable_notes_from_wallet, load_wallet_notes, mark_wallet_notes_spent_from_spendables,
-    merge_scanned_notes, release_wallet_notes_by_nullifier_hex, save_wallet_notes,
-    wallet_unspent_balance_zatoshis, NoteScanResult, NoteScanner, OrchardNote,
+    load_spendable_notes_from_wallet, load_wallet_notes, mark_wallet_notes_spent_by_nullifier_hex,
+    mark_wallet_notes_spent_from_spendables, merge_scanned_notes,
+    reconcile_wallet_spends_from_local_state, release_wallet_notes_by_nullifier_hex,
+    save_wallet_notes, wallet_unspent_balance_zatoshis, NoteScanResult, NoteScanner, OrchardNote,
     SerializableOrchardNote, SpendableNote,
 };
 #[cfg(feature = "native")]

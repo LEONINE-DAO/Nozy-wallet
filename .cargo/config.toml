@@ -2,3 +2,13 @@
 # this unstable cfg in zcash/librustzcash.
 [build]
 rustflags = ["--cfg", "zcash_unstable=\"nu6.3\""]
+
+# Windows debug builds often overflow the default stack when hitting Orchard/notes paths
+# (e.g. `nozy health` / `balance --json`). Raise the PE stack reserve for MSVC links.
+[target.x86_64-pc-windows-msvc]
+rustflags = [
+    "--cfg",
+    "zcash_unstable=\"nu6.3\"",
+    "-C",
+    "link-arg=/STACK:16777216",
+]

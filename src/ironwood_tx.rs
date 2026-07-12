@@ -139,7 +139,8 @@ impl IronwoodWitnessProvider for ZebraJsonRpcIronwoodWitnessProvider {
         }
 
         let ts = zebra.get_ironwood_tree_state(anchor_height).await?;
-        if !witness_root_matches_anchor(&witness, &ts.anchor) {
+        let witness_matches = witness_root_matches_anchor(&witness, &ts.anchor);
+        if !witness_matches {
             return Err(NozyError::InvalidOperation(
                 "Ironwood witness does not match z_gettreestate (rescan or wait for sync)."
                     .to_string(),
@@ -186,8 +187,9 @@ pub async fn build_single_ironwood_spend(
     memo: Option<&[u8]>,
     expiry_delta_blocks: u32,
 ) -> NozyResult<OrchardBuiltSpend> {
+    let recipient_address = crate::input_validation::normalize_unified_address(recipient_address);
     let (network_type, recipient_decoded) =
-        zcash_address::unified::Address::decode(recipient_address)
+        zcash_address::unified::Address::decode(&recipient_address)
             .map_err(|e| NozyError::InvalidOperation(format!("Invalid recipient address: {e}")))?;
 
     let spend_note =

@@ -21,6 +21,8 @@ pub struct SignedTransaction {
     pub txid: String,
     /// On-chain expiry height encoded in the transaction (for history / speed-up).
     pub expiry_height: u32,
+    /// Canonical nullifier hex of the note that was spent (for local balance bookkeeping).
+    pub spent_nullifier_hex: Option<String>,
 }
 
 pub struct ZcashTransactionBuilder {
@@ -141,10 +143,16 @@ impl ZcashTransactionBuilder {
             )
             .await?;
 
+            let fvk = orchard::keys::FullViewingKey::from(&spend_note.spending_key);
+            let spent_nullifier_hex = Some(hex::encode(
+                spend_note.orchard_note.note.nullifier(&fvk).to_bytes(),
+            ));
+
             return Ok(SignedTransaction {
                 raw_transaction: built.raw_transaction,
                 txid: built.txid,
                 expiry_height: built.expiry_height,
+                spent_nullifier_hex,
             });
         }
 
@@ -195,10 +203,16 @@ impl ZcashTransactionBuilder {
             )
             .await?;
 
+        let fvk = orchard::keys::FullViewingKey::from(&spend_note.spending_key);
+        let spent_nullifier_hex = Some(hex::encode(
+            spend_note.orchard_note.note.nullifier(&fvk).to_bytes(),
+        ));
+
         Ok(SignedTransaction {
             raw_transaction: built.raw_transaction,
             txid: built.txid,
             expiry_height: built.expiry_height,
+            spent_nullifier_hex,
         })
     }
 

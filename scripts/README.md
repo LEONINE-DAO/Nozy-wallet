@@ -23,6 +23,7 @@ PowerShell / bash helpers for **Nozy** (CLI, desktop, `api-server` / zeaking com
 | `stop-nozy-wsl.sh` | Stop desktop / optionally Zebrad. |
 | `run-nozy-api.sh` | WSL/Linux: start **`nozywallet-api`**. Auto-picks port **3000–3100** or set **`NOZY_HTTP_PORT`**. |
 | `build-release.ps1` / `build-release.sh` | Release build helpers. |
+| `nozy-lite-bench.ps1` | Measure Nozy Lite CLI size / `--version` / `health` timings for [`docs/reference/NOZY_LITE_BENCHES.md`](../docs/reference/NOZY_LITE_BENCHES.md). |
 
 **Do not** run `run-nozy-api.ps1` from **bash** — use **`bash scripts/run-nozy-api.sh`** instead.
 

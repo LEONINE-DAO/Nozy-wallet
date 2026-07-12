@@ -41,6 +41,8 @@ pub enum ZebraConnectionMode {
     DirectRemote,
     TorProxy,
     I2pProxy,
+    /// Opt-in smolmix path for remote `sendrawtransaction` (`NOZY_BROADCAST_VIA_NYM_MIXNET=1`).
+    NymMixnet,
     Blocked,
 }
 
@@ -52,6 +54,7 @@ impl ZebraConnectionMode {
             Self::DirectRemote => "direct_remote",
             Self::TorProxy => "tor_proxy",
             Self::I2pProxy => "i2p_proxy",
+            Self::NymMixnet => "nym_mixnet",
             Self::Blocked => "blocked",
         }
     }
@@ -75,6 +78,8 @@ pub struct ZebraClient {
     block_remote_without_privacy: bool,
     privacy_block_reason: Option<String>,
     connection_mode: ZebraConnectionMode,
+    /// Remote sendraw over Nym smolmix helper (env and/or config).
+    broadcast_via_nym_mixnet: bool,
     #[allow(dead_code)]
     grpc_client: Option<Arc<ZebraGrpcClient>>,
 }
@@ -112,6 +117,11 @@ impl ZebraClient {
         } else {
             false
         }
+    }
+
+    /// True when `url` targets loopback / private / link-local Zebrad (desktop preferred path).
+    pub fn url_is_local(url: &str) -> bool {
+        Self::is_local_url(url)
     }
 
     fn is_local_url(url: &str) -> bool {
@@ -292,6 +302,7 @@ impl ZebraClient {
             } else {
                 ZebraConnectionMode::DirectRemote
             },
+            broadcast_via_nym_mixnet: false,
             grpc_client: None,
         }
     }
@@ -339,9 +350,15 @@ impl ZebraClient {
         let primary_local = Self::is_local_url(&client.url);
         let primary_trusted = config.is_trusted_zebra_url(&client.url);
 
+        client.broadcast_via_nym_mixnet = crate::nym_mixnet_broadcast::mixnet_broadcast_requested(
+            config.privacy_network.broadcast_via_nym_mixnet,
+        );
+
         if primary_local || primary_trusted {
             client.connection_mode = if primary_local {
                 ZebraConnectionMode::DirectLocal
+            } else if client.broadcast_via_nym_mixnet {
+                ZebraConnectionMode::NymMixnet
             } else {
                 ZebraConnectionMode::DirectTrusted
             };
@@ -408,6 +425,15 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
                 }
             }
         }
+
+        client.broadcast_via_nym_mixnet = crate::nym_mixnet_broadcast::mixnet_broadcast_requested(
+            config.privacy_network.broadcast_via_nym_mixnet,
+        );
+        if client.broadcast_via_nym_mixnet && !Self::is_local_url(&client.url) {
+            // Display egress intent for remote submit; sync still uses Tor/direct rules above.
+            client.connection_mode = ZebraConnectionMode::NymMixnet;
+        }
+
         client
     }
 
@@ -549,6 +575,16 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
     }
 
     pub async fn broadcast_transaction(&self, raw_tx: &str) -> NozyResult<String> {
+        if let Some(txid) = crate::nym_mixnet_broadcast::maybe_broadcast_via_nym_mixnet(
+            &self.url,
+            raw_tx,
+            self.broadcast_via_nym_mixnet,
+        )
+        .await?
+        {
+            return Ok(txid);
+        }
+
         let request = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "sendrawtransaction",

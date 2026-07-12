@@ -11,6 +11,22 @@
 
 - **Desktop co-signing:** file-based group co-sign UI deferred; Keystone is the supported hardware path for this beta.
 
+## [2.4.1] — Nozy Lite (CLI) (2026-07-11)
+
+Productizes the production **`nozy` CLI** as **Nozy Lite** for operators: uptime checks and data peeks beside Zebrad, without the Tauri desktop WebView.
+
+### Added
+
+- **`nozy health`** — cron-friendly health check (Zebra reachability, RPC scan gap, optional LWD / Ironwood RPC); exit codes 0–4; `--json`.
+- **`--json`** on `status` / `balance` (and global `--json`) for monitoring.
+- **`nozy tui`** / **`nozy status --watch`** — live ratatui dashboard (tip, scan gap, balances, Ironwood readiness).
+- Docs: [`docs/reference/NOZY_LITE.md`](docs/reference/NOZY_LITE.md), measured benches in [`docs/reference/NOZY_LITE_BENCHES.md`](docs/reference/NOZY_LITE_BENCHES.md), `scripts/nozy-lite-bench.ps1`.
+
+### Changed
+
+- Windows MSVC link stack raised (`/STACK:16MB`) so debug CLI paths that load wallet crypto do not overflow the default stack.
+- README positions CLI downloads as **Nozy Lite (CLI)**.
+
 ## [1.0.0-beta.1] — Hot Lemon Pepper Sprinkles (Desktop) (2026-07-01)
 
 First public **desktop beta** for **Windows** — a Tauri app that requires a running **Zebrad** node and **lightwalletd** (same stack as the CLI).

@@ -123,21 +123,47 @@ impl WalletStorage {
     }
 
     pub async fn save_wallet(&self, wallet: &HDWallet, password: &str) -> NozyResult<()> {
-        let mut wallet_data = WalletData::new(wallet.get_mnemonic());
-        wallet_data.password_protected = wallet.is_password_protected();
-        wallet_data.password_hash = wallet.get_password_hash().cloned();
+        let data_dir = self.data_dir.clone();
+        let mnemonic = wallet.get_mnemonic();
+        let password_protected = wallet.is_password_protected();
+        let password_hash = wallet.get_password_hash().cloned();
+        let password = password.to_string();
 
-        let serialized = serde_json::to_string(&wallet_data)
-            .map_err(|e| NozyError::Storage(format!("Failed to serialize wallet: {}", e)))?;
+        // AES + 100k-iter KDF must not block the Tokio/Tauri async runtime.
+        tokio::task::spawn_blocking(move || {
+            let storage = WalletStorage::new(data_dir);
+            let mut wallet_data = WalletData::new(mnemonic);
+            wallet_data.password_protected = password_protected;
+            wallet_data.password_hash = password_hash;
 
-        let encrypted = self.encrypt_data(&serialized, password)?;
-        std::fs::write(self.data_dir.join("wallet.dat"), encrypted)
-            .map_err(|e| NozyError::Storage(format!("Failed to write wallet file: {}", e)))?;
+            let serialized = serde_json::to_string(&wallet_data)
+                .map_err(|e| NozyError::Storage(format!("Failed to serialize wallet: {}", e)))?;
 
-        Ok(())
+            let encrypted = storage.encrypt_data(&serialized, &password)?;
+            std::fs::write(storage.data_dir.join("wallet.dat"), encrypted)
+                .map_err(|e| NozyError::Storage(format!("Failed to write wallet file: {}", e)))?;
+
+            Ok(())
+        })
+        .await
+        .map_err(|e| NozyError::Storage(format!("Wallet save task failed: {e}")))?
     }
 
     pub async fn load_wallet(&self, password: &str) -> NozyResult<HDWallet> {
+        let data_dir = self.data_dir.clone();
+        let password = password.to_string();
+
+        // Decrypt runs a 100k-iteration KDF; offload so IPC/status never stalls the UI.
+        tokio::task::spawn_blocking(move || {
+            let storage = WalletStorage::new(data_dir);
+            storage.load_wallet_blocking(&password)
+        })
+        .await
+        .map_err(|e| NozyError::Storage(format!("Wallet load task failed: {e}")))?
+    }
+
+    /// Synchronous wallet load for blocking-pool workers.
+    pub fn load_wallet_blocking(&self, password: &str) -> NozyResult<HDWallet> {
         let encrypted = std::fs::read(self.data_dir.join("wallet.dat"))
             .map_err(|e| NozyError::Storage(format!("Failed to read wallet file: {}", e)))?;
 
@@ -162,6 +188,11 @@ impl WalletStorage {
         }
 
         Ok(wallet)
+    }
+
+    /// True when the wallet cannot be opened with an empty encryption password.
+    pub async fn requires_password(&self) -> bool {
+        self.load_wallet("").await.is_err()
     }
 
     fn encrypt_data(&self, data: &str, password: &str) -> NozyResult<String> {

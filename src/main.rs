@@ -104,9 +104,9 @@ async fn save_wallet_to_active_profile(wallet: &mut HDWallet) -> NozyResult<()> 
 #[derive(Parser)]
 #[command(name = "nozy")]
 #[command(version = nozy::version_info::VERSION_DISPLAY)]
-#[command(about = "NozyWallet - A privacy-focused Zcash Orchard wallet")]
+#[command(about = "NozyWallet / Nozy Lite — privacy-first Orchard CLI (ops health, sync, send)")]
 #[command(
-    long_about = "NozyWallet is a privacy-first Orchard wallet that enforces complete transaction privacy by default. Unlike other Zcash wallets, NozyWallet only supports shielded transactions - making it functionally equivalent to Monero in terms of privacy, but with faster block times and lower fees."
+    long_about = "NozyWallet is a privacy-first Orchard wallet. The CLI is productized as Nozy Lite for operator uptime and data checks next to Zebrad (health/--json/TUI), plus sync, send, and Ironwood. Fully shielded by default."
 )]
 pub struct Cli {
     #[arg(short, long, global = true)]
@@ -123,6 +123,10 @@ pub struct Cli {
 
     #[arg(long, global = true, env = "ZEBRA_RPC_URL")]
     pub zebra_url: Option<String>,
+
+    /// Machine-readable JSON on supported ops commands (health, status, balance)
+    #[arg(long, global = true)]
+    pub json: bool,
 
     #[command(subcommand)]
     pub command: Commands,
@@ -187,7 +191,10 @@ pub enum Commands {
     Info,
 
     #[command(about = "Display the current shielded balance")]
-    Balance,
+    Balance {
+        #[arg(long, help = "Emit JSON (also accepts global --json)")]
+        json: bool,
+    },
 
     #[command(about = "Manage local wallet profiles")]
     Profile {
@@ -260,7 +267,46 @@ pub enum Commands {
     },
 
     #[command(about = "Display current wallet status and sync information")]
-    Status,
+    Status {
+        #[arg(long, help = "Live TUI dashboard (same as `nozy tui`)")]
+        watch: bool,
+        #[arg(
+            long,
+            default_value_t = 5,
+            help = "Refresh interval seconds for --watch / TUI"
+        )]
+        interval: u64,
+        #[arg(
+            long,
+            help = "Emit JSON sync+balance summary (also accepts global --json)"
+        )]
+        json: bool,
+    },
+
+    #[command(about = "Nozy Lite health check for monitoring (exit codes for cron/systemd)")]
+    Health {
+        #[arg(
+            long,
+            default_value_t = nozy::DEFAULT_MAX_SCAN_GAP,
+            help = "Max allowed RPC scan gap (blocks) before exit 2"
+        )]
+        max_scan_gap: u32,
+        #[arg(long, help = "Fail (exit 3) if lightwalletd tip is unavailable")]
+        require_lwd: bool,
+        #[arg(
+            long,
+            help = "Fail (exit 3) if Ironwood pool is not reported by Zebra RPC"
+        )]
+        require_ironwood_rpc: bool,
+        #[arg(long, help = "Emit JSON report (also accepts global --json)")]
+        json: bool,
+    },
+
+    #[command(about = "Nozy Lite live status TUI (chain tip, scan gap, balances)")]
+    Tui {
+        #[arg(long, default_value_t = 5, help = "Refresh interval seconds")]
+        interval: u64,
+    },
 
     #[command(about = "lightwalletd compact-block cache (Zeaking LWD)")]
     Lwd {
@@ -342,6 +388,16 @@ pub enum IronwoodCommand {
             help = "After broadcast, poll Zebrad until the transaction confirms on chain"
         )]
         wait_confirm: bool,
+        #[arg(
+            long,
+            help = "Attest that NymVPN/Tor (or equivalent) is protecting this machine's egress"
+        )]
+        attest_private_network: bool,
+        #[arg(
+            long,
+            help = "Allow clearnet broadcast to a remote node (discouraged; IP may link to migration)"
+        )]
+        force_clearnet: bool,
     },
     #[command(
         about = "Split one Orchard note into canonical ZIP 318 denominations (send-to-self)"
@@ -1136,46 +1192,66 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             }
         }
 
-        Commands::Balance => {
-            use nozy::paths::get_wallet_data_dir;
-            use nozy::wallet_balance_snapshot;
-
-            let notes_path = get_wallet_data_dir().join("notes.json");
-            let snapshot = match wallet_balance_snapshot() {
-                Ok(snapshot) => snapshot,
-                Err(e) => {
-                    eprintln!("❌ Failed to read wallet balance: {}", e);
-                    return Ok(());
+        Commands::Balance { json } => {
+            let as_json = json || cli.json;
+            if as_json {
+                match nozy::balance_to_json() {
+                    Ok(b) => {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&b).map_err(|e| {
+                                NozyError::InvalidOperation(format!("json encode: {e}"))
+                            })?
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("{}", e);
+                        std::process::exit(4);
+                    }
                 }
-            };
-
-            println!("💰 Balance Information");
-            println!("{}", "=".repeat(50));
-            println!(
-                "   Confirmed: {:.8} ZEC ({} unspent notes)",
-                snapshot.confirmed_zatoshis as f64 / 100_000_000.0,
-                snapshot.unspent_note_count
-            );
-
-            if snapshot.pending_zatoshis > 0 {
-                println!(
-                    "   Pending:   -{:.8} ZEC",
-                    snapshot.pending_zatoshis as f64 / 100_000_000.0
-                );
-                println!(
-                    "   Available: {:.8} ZEC",
-                    snapshot.available_zatoshis as f64 / 100_000_000.0
-                );
-                println!("\n   💡 Pending transactions reduce available balance until confirmed");
             } else {
-                println!(
-                    "   Available: {:.8} ZEC",
-                    snapshot.available_zatoshis as f64 / 100_000_000.0
-                );
-            }
+                use nozy::paths::get_wallet_data_dir;
+                use nozy::wallet_balance_snapshot;
 
-            if !notes_path.exists() {
-                println!("\n   ⚠️  Run 'sync' to update your balance.");
+                let notes_path = get_wallet_data_dir().join("notes.json");
+                let snapshot = match wallet_balance_snapshot() {
+                    Ok(snapshot) => snapshot,
+                    Err(e) => {
+                        eprintln!("❌ Failed to read wallet balance: {}", e);
+                        return Ok(());
+                    }
+                };
+
+                println!("💰 Balance Information");
+                println!("{}", "=".repeat(50));
+                println!(
+                    "   Confirmed: {:.8} ZEC ({} unspent notes)",
+                    snapshot.confirmed_zatoshis as f64 / 100_000_000.0,
+                    snapshot.unspent_note_count
+                );
+
+                if snapshot.pending_zatoshis > 0 {
+                    println!(
+                        "   Pending:   -{:.8} ZEC",
+                        snapshot.pending_zatoshis as f64 / 100_000_000.0
+                    );
+                    println!(
+                        "   Available: {:.8} ZEC",
+                        snapshot.available_zatoshis as f64 / 100_000_000.0
+                    );
+                    println!(
+                        "\n   💡 Pending transactions reduce available balance until confirmed"
+                    );
+                } else {
+                    println!(
+                        "   Available: {:.8} ZEC",
+                        snapshot.available_zatoshis as f64 / 100_000_000.0
+                    );
+                }
+
+                if !notes_path.exists() {
+                    println!("\n   ⚠️  Run 'sync' to update your balance.");
+                }
             }
         }
 
@@ -1825,7 +1901,43 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             }
         }
 
-        Commands::Status => {
+        Commands::Status {
+            watch,
+            interval,
+            json,
+        } => {
+            let as_json = json || cli.json;
+            if watch {
+                nozy::run_status_tui(&config, interval).await?;
+                return Ok(());
+            }
+            if as_json {
+                let zebra_client = ZebraClient::from_config(&config);
+                let sync = nozy::gather_sync_status(&zebra_client, &config).await;
+                let sync_json = nozy::sync_to_json(&sync);
+                let balance = nozy::balance_to_json().ok();
+                #[derive(serde::Serialize)]
+                struct StatusJson {
+                    network: String,
+                    zebra_url: String,
+                    sync: nozy::LiteSyncJson,
+                    balance: Option<nozy::LiteBalanceJson>,
+                }
+                let out = StatusJson {
+                    network: config.network.clone(),
+                    zebra_url: config.zebra_url.clone(),
+                    sync: sync_json,
+                    balance,
+                };
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&out).map_err(|e| {
+                        NozyError::InvalidOperation(format!("json encode: {e}"))
+                    })?
+                );
+                return Ok(());
+            }
+
             use nozy::load_config;
             use nozy::nu6_1_check;
             use nozy::paths::get_wallet_data_dir;
@@ -1957,6 +2069,39 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             nozy::print_sync_status(&sync_snapshot);
 
             println!("\n{}", "=".repeat(60));
+        }
+
+        Commands::Health {
+            max_scan_gap,
+            require_lwd,
+            require_ironwood_rpc,
+            json,
+        } => {
+            let as_json = json || cli.json;
+            let zebra_client = ZebraClient::from_config(&config);
+            let report = nozy::gather_health_report(
+                &zebra_client,
+                &config,
+                max_scan_gap,
+                require_lwd,
+                require_ironwood_rpc,
+            )
+            .await;
+            if as_json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report).map_err(|e| {
+                        NozyError::InvalidOperation(format!("json encode: {e}"))
+                    })?
+                );
+            } else {
+                nozy::print_health_human(&report);
+            }
+            std::process::exit(report.exit_code as i32);
+        }
+
+        Commands::Tui { interval } => {
+            nozy::run_status_tui(&config, interval).await?;
         }
 
         Commands::Lwd { command } => {
@@ -3344,8 +3489,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             .map(|h| h.to_string())
                             .unwrap_or_else(|| "none".to_string())
                     );
-                    match refreshed {
-                        Some((schedule, path, expired)) if expired > 0 => {
+                    match &refreshed {
+                        Some((schedule, path, expired)) if *expired > 0 => {
                             println!(
                                 "   Schedule refresh: rebuilt {} expired/missed transfers at {}",
                                 expired,
@@ -3408,6 +3553,81 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     for blocker in &readiness.blockers {
                         println!("   Blocker: {blocker}");
                     }
+
+                    // Safer migration priorities (see SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md)
+                    let privacy = nozy::ironwood::assess_migration_network_privacy(
+                        &config.zebra_url,
+                        &nozy::ironwood::MigrationNetworkPrivacyOpts::default(),
+                    )
+                    .await;
+                    println!();
+                    println!("   Priority 1 — network privacy (IP):");
+                    println!(
+                        "      Zebra URL local: {}",
+                        if privacy.zebra_url_local { "yes" } else { "no" }
+                    );
+                    println!(
+                        "      Tor/I2P proxy detected: {}",
+                        if privacy.privacy_proxy_detected {
+                            privacy.privacy_proxy_label.as_deref().unwrap_or("yes")
+                        } else {
+                            "no"
+                        }
+                    );
+                    if privacy.allowed {
+                        println!(
+                            "      Broadcast policy: allowed ({})",
+                            privacy.mode.map(|m| m.label()).unwrap_or("ok")
+                        );
+                    } else {
+                        println!(
+                            "      Broadcast policy: blocked until local node, Tor/I2P, \
+                             --attest-private-network, or --force-clearnet"
+                        );
+                    }
+                    for warning in &privacy.warnings {
+                        println!("      Warning: {warning}");
+                    }
+                    for blocker in &privacy.blockers {
+                        println!("      Blocker: {blocker}");
+                    }
+
+                    let bucket = nozy::ironwood::previous_zip318_anchor_boundary(chain_tip);
+                    let local_in_bucket = refreshed
+                        .as_ref()
+                        .map(|(schedule, _, _)| {
+                            schedule
+                                .transfers
+                                .iter()
+                                .filter(|t| t.anchor_bucket_height == bucket)
+                                .count()
+                        })
+                        .unwrap_or(0);
+                    let cover = nozy::ironwood::assess_migration_cover_traffic(
+                        chain_tip,
+                        local_in_bucket,
+                        nozy::ironwood::ZIP318_DEFAULT_K_MAX,
+                    );
+                    println!("   Priority 2 — shared cover traffic:");
+                    println!(
+                        "      Current ZIP 318 bucket: {} ({} local transfer(s), k_max={})",
+                        cover.current_bucket_height, cover.local_transfers_in_bucket, cover.k_max
+                    );
+                    for note in &cover.notes {
+                        println!("      Note: {note}");
+                    }
+                    for warning in &cover.warnings {
+                        println!("      Warning: {warning}");
+                    }
+
+                    let amount_timing = nozy::ironwood::amount_timing_status();
+                    println!("   Priority 3 — amount/timing algorithm:");
+                    println!("      Active: {}", amount_timing.active.label());
+                    println!("      Planned: {}", amount_timing.planned.label());
+                    for note in &amount_timing.notes {
+                        println!("      Note: {note}");
+                    }
+
                     println!();
                     match readiness.state {
                         MigrationReadinessState::PlanningOnly => {
@@ -3546,6 +3766,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 IronwoodCommand::Broadcast {
                     dry_run,
                     wait_confirm,
+                    attest_private_network,
+                    force_clearnet,
                 } => {
                     if !ironwood_active {
                         return Err(NozyError::InvalidOperation(format!(
@@ -3569,11 +3791,17 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         }
                     }
 
+                    let network_privacy = nozy::ironwood::MigrationNetworkPrivacyOpts {
+                        attest_private_network,
+                        force_clearnet,
+                        broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
+                    };
                     let result = execute_orchard_migration_broadcast(
                         &config.zebra_url,
                         ironwood_active,
                         dry_run,
                         wait_confirm,
+                        &network_privacy,
                     )
                     .await?;
 

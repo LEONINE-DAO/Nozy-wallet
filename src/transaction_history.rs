@@ -340,11 +340,12 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
     #[cfg(feature = "native")]
     {
         use crate::notes::load_wallet_notes;
+        use std::collections::HashSet;
 
         let notes = load_wallet_notes().unwrap_or_default();
         let mut by_txid: HashMap<String, Vec<NoteForHistory>> = HashMap::new();
 
-        for sn in notes {
+        for sn in &notes {
             let Some(orchard_note) = sn.to_wallet_orchard_note() else {
                 continue;
             };
@@ -357,6 +358,49 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
                     note: orchard_note,
                     created_at: DateTime::UNIX_EPOCH,
                 });
+        }
+
+        let mut known_sent: HashSet<String> = views
+            .iter()
+            .filter(|view| view.transaction_type == TransactionType::Sent)
+            .map(|view| view.txid.clone())
+            .collect();
+
+        for sn in &notes {
+            if !sn.spent {
+                continue;
+            }
+            let Some(spend_txid) = sn.spent_in_txid.as_deref() else {
+                continue;
+            };
+            if known_sent.contains(spend_txid) {
+                continue;
+            }
+            let change_same_tx: u64 = notes
+                .iter()
+                .filter(|n| !n.spent && n.txid == spend_txid)
+                .map(|n| n.value)
+                .sum();
+            let amount_zatoshis = sn.value.saturating_sub(change_same_tx);
+            if amount_zatoshis == 0 {
+                continue;
+            }
+            views.push(TransactionView {
+                txid: spend_txid.to_string(),
+                transaction_type: TransactionType::Sent,
+                net_amount_zatoshis: -(amount_zatoshis as i64),
+                fee_zatoshis: None,
+                recipient_address: None,
+                my_addresses: vec![],
+                block_height: Some(sn.block_height),
+                block_time: None,
+                confirmations: current_height.saturating_sub(sn.block_height),
+                status: TransactionStatus::Confirmed,
+                memo: None,
+                notes_involved: vec![hex::encode(&sn.nullifier_bytes)],
+                created_at: DateTime::UNIX_EPOCH,
+            });
+            known_sent.insert(spend_txid.to_string());
         }
 
         for notes in by_txid.into_values() {

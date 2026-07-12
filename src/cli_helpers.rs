@@ -2,8 +2,6 @@ use crate::error::{NozyError, NozyResult};
 use crate::fee_policy::{estimate_orchard_send_fee_zatoshis, PilotSendOptions};
 use crate::{load_config, HDWallet, NoteScanner, WalletStorage, ZebraClient};
 use dialoguer::Password;
-
-/// Sum unspent note values from cached `notes.json` (no Zebra RPC).
 pub fn cached_unspent_balance_zatoshis() -> NozyResult<u64> {
     use crate::notes::{load_wallet_notes, wallet_unspent_balance_zatoshis};
 
@@ -21,9 +19,15 @@ pub struct WalletBalanceSnapshot {
 
 /// Load confirmed, pending, and available shielded balance from local wallet state.
 pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
-    use crate::notes::{load_wallet_notes, wallet_unspent_balance_zatoshis};
+    use crate::notes::{
+        load_wallet_notes, reconcile_wallet_spends_from_local_state,
+        wallet_unspent_balance_zatoshis,
+    };
     use crate::paths::get_wallet_data_dir;
     use crate::transaction_history::SentTransactionStorage;
+    use std::collections::HashSet;
+
+    let _ = reconcile_wallet_spends_from_local_state();
 
     let notes_path = get_wallet_data_dir().join("notes.json");
     let notes = if notes_path.exists() {
@@ -34,20 +38,37 @@ pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
 
     let confirmed_zatoshis = wallet_unspent_balance_zatoshis(&notes);
     let unspent_note_count = notes.iter().filter(|note| !note.spent).count();
-    let pending_zatoshis = SentTransactionStorage::new()
+    let (pending_zatoshis, pending_tx_ids) = SentTransactionStorage::new()
         .map(|storage| {
-            storage
-                .get_pending_transactions()
+            let pending = storage.get_pending_transactions();
+            let total = pending
                 .iter()
                 .map(|tx| tx.amount_zatoshis.saturating_add(tx.fee_zatoshis))
-                .sum::<u64>()
+                .sum::<u64>();
+            let ids = pending.iter().map(|tx| tx.txid.clone()).collect::<Vec<_>>();
+            (total, ids)
         })
-        .unwrap_or(0);
+        .unwrap_or((0, Vec::new()));
+    let pending_txid_set: HashSet<&str> = pending_tx_ids.iter().map(String::as_str).collect();
+    let pending_spent_input_zatoshis = notes
+        .iter()
+        .filter(|note| {
+            note.spent
+                && note
+                    .spent_in_txid
+                    .as_deref()
+                    .is_some_and(|txid| pending_txid_set.contains(txid))
+        })
+        .map(|note| note.value)
+        .sum::<u64>();
+    let effective_confirmed_zatoshis =
+        confirmed_zatoshis.saturating_add(pending_spent_input_zatoshis);
+    let available_zatoshis = effective_confirmed_zatoshis.saturating_sub(pending_zatoshis);
 
     Ok(WalletBalanceSnapshot {
-        confirmed_zatoshis,
+        confirmed_zatoshis: effective_confirmed_zatoshis,
         pending_zatoshis,
-        available_zatoshis: confirmed_zatoshis.saturating_sub(pending_zatoshis),
+        available_zatoshis,
         unspent_note_count,
     })
 }
@@ -274,23 +295,32 @@ pub async fn build_and_broadcast_transaction(
         println!("🆔 Network TXID: {}", transaction.txid);
 
         let tx_storage = SentTransactionStorage::new()?;
-        use orchard::keys::FullViewingKey;
-        let spent_note = crate::orchard_tx::select_single_spend_note(
-            spendable_notes,
-            amount_zatoshis,
-            fee_zatoshis,
-        )?;
-        let fvk = FullViewingKey::from(&spent_note.spending_key);
-        let spent_note_ids = vec![hex::encode(
-            spent_note.orchard_note.note.nullifier(&fvk).to_bytes(),
-        )];
-
-        if let Err(e) = crate::notes::mark_wallet_notes_spent_from_spendables(
-            std::slice::from_ref(spent_note),
-            Some(&transaction.txid),
-        ) {
-            eprintln!("Warning: could not mark spent notes locally: {e}");
-        }
+        let spent_note_ids = if let Some(nullifier_hex) = &transaction.spent_nullifier_hex {
+            if let Err(e) = crate::notes::mark_wallet_notes_spent_by_nullifier_hex(
+                std::slice::from_ref(nullifier_hex),
+                Some(&transaction.txid),
+            ) {
+                eprintln!("Warning: could not mark spent notes locally: {e}");
+            }
+            vec![nullifier_hex.clone()]
+        } else {
+            use orchard::keys::FullViewingKey;
+            let spent_note = crate::orchard_tx::select_single_spend_note(
+                spendable_notes,
+                amount_zatoshis,
+                fee_zatoshis,
+            )?;
+            let fvk = FullViewingKey::from(&spent_note.spending_key);
+            let nullifier_hex =
+                hex::encode(spent_note.orchard_note.note.nullifier(&fvk).to_bytes());
+            if let Err(e) = crate::notes::mark_wallet_notes_spent_from_spendables(
+                std::slice::from_ref(spent_note),
+                Some(&transaction.txid),
+            ) {
+                eprintln!("Warning: could not mark spent notes locally: {e}");
+            }
+            vec![nullifier_hex]
+        };
 
         let mut tx_record = SentTransactionRecord::new_pilot(
             transaction.txid.clone(),

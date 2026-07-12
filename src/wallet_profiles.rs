@@ -86,6 +86,27 @@ fn inferred_connection_settings(profile: &WalletProfile) -> ProfileConnectionSet
     }
 }
 
+/// Repair profiles whose stored network/RPC disagree with the profile name (e.g. testnet
+/// wallets migrated while mainnet config was active).
+fn normalized_connection_settings(profile: &WalletProfile) -> (ProfileConnectionSettings, bool) {
+    let mut settings = inferred_connection_settings(profile);
+    let mut changed = false;
+    let name_network = default_network_for_profile_name(&profile.name);
+
+    if name_network == "testnet" {
+        if !settings.network.eq_ignore_ascii_case("testnet") {
+            settings.network = "testnet".to_string();
+            changed = true;
+        }
+        if settings.zebra_url.contains(":8232") && !settings.zebra_url.contains(":18232") {
+            settings.zebra_url = DEFAULT_TESTNET_RPC.to_string();
+            changed = true;
+        }
+    }
+
+    (settings, changed)
+}
+
 pub fn profile_connection_settings(id: &str) -> NozyResult<ProfileConnectionSettings> {
     ensure_initialized_once();
     let base = get_wallet_base_dir();
@@ -95,7 +116,7 @@ pub fn profile_connection_settings(id: &str) -> NozyResult<ProfileConnectionSett
         .iter()
         .find(|profile| profile.id == id)
         .ok_or_else(|| NozyError::Storage(format!("Wallet profile not found: {id}")))?;
-    Ok(inferred_connection_settings(profile))
+    Ok(normalized_connection_settings(profile).0)
 }
 
 fn persist_profile_fields(
@@ -185,7 +206,24 @@ pub fn snapshot_active_profile_from_config() -> NozyResult<()> {
 pub fn apply_profile_connection_to_config(id: &str) -> NozyResult<ProfileConnectionSettings> {
     use crate::config::{load_config, save_config};
 
-    let settings = profile_connection_settings(id)?;
+    ensure_initialized_once();
+    let base = get_wallet_base_dir();
+    let manifest = load_manifest(&base)?;
+    let profile = manifest
+        .profiles
+        .iter()
+        .find(|profile| profile.id == id)
+        .ok_or_else(|| NozyError::Storage(format!("Wallet profile not found: {id}")))?;
+    let (settings, needs_persist) = normalized_connection_settings(profile);
+    if needs_persist {
+        save_profile_connection_settings(
+            id,
+            &settings.network,
+            &settings.zebra_url,
+            profile.last_scan_height,
+        )?;
+    }
+
     let mut config = load_config();
     let network_changed = !config.network.eq_ignore_ascii_case(&settings.network);
     config.network = settings.network.clone();
@@ -361,8 +399,14 @@ fn migrate_profile_network_fields(base: &Path) -> NozyResult<()> {
 
         let is_active = manifest.active_id.as_deref() == Some(profile.id.as_str());
         if is_active {
-            profile.network = Some(config.network.clone());
-            profile.zebra_url = Some(config.zebra_url.clone());
+            let name_network = default_network_for_profile_name(&profile.name);
+            if name_network == "testnet" {
+                profile.network = Some("testnet".to_string());
+                profile.zebra_url = Some(default_zebra_url_for_network("testnet").to_string());
+            } else {
+                profile.network = Some(config.network.clone());
+                profile.zebra_url = Some(config.zebra_url.clone());
+            }
             profile.last_scan_height = config.last_scan_height;
         } else {
             let network = default_network_for_profile_name(&profile.name).to_string();

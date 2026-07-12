@@ -6,6 +6,13 @@
 | [`rfcs/README.md`](rfcs/README.md) | RFCs: multichain, NEAR/Secret, spikes, extension ports |
 | [`rfcs/DYNAMIC_FEE_PHASE_A_IMPLEMENTATION.md`](rfcs/DYNAMIC_FEE_PHASE_A_IMPLEMENTATION.md) | **Dynamic fee pilot — Phase A checklist** (review before coding) |
 | [`rfcs/DYNAMIC_FEE_PILOT_PLAN.md`](rfcs/DYNAMIC_FEE_PILOT_PLAN.md) | Dynamic fee pilot architecture (Shielded Labs alignment) |
+| [`reference/DYNAMIC_FEE_CASE_BREAKDOWN.md`](reference/DYNAMIC_FEE_CASE_BREAKDOWN.md) | **Dynamic-fee pilot case breakdown** — Cases 1–6 + cross-ref to Ironwood labels |
+| [`reference/IRONWOOD_WALLET_READINESS.md`](reference/IRONWOOD_WALLET_READINESS.md) | **Ironwood NU6.3** — migration case breakdown, v2.4.0 wrap-up (links to dynamic-fee doc) |
+| [`reference/KYC_INBOUND_PRIVACY_CASE_BREAKDOWN.md`](reference/KYC_INBOUND_PRIVACY_CASE_BREAKDOWN.md) | **KYC / `t` inbound privacy** — throwaway UAs, quarantine, mix warnings, Zodl/Zingo/Zkool research cases |
+| [`reference/NYM_IP_PRIVACY_CASE_BREAKDOWN.md`](reference/NYM_IP_PRIVACY_CASE_BREAKDOWN.md) | **Nym IP / egress** — IP↔tx submit as biggest win; smolmix broadcast vs smol-dvpn sync cases |
+| [`reference/NOZY_LITE.md`](reference/NOZY_LITE.md) | **Nozy Lite** — CLI/TUI for operators: uptime, health, data checks |
+| [`reference/NOZY_LITE_BENCHES.md`](reference/NOZY_LITE_BENCHES.md) | **Lite benches** — CLI vs desktop size / cold start (measured, not invented) |
+| [`reference/SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md`](reference/SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md) | **2026-07-11 session** — Nym D2a–D2e + desktop Ironwood MVP + UX (scoreboard + leftover checklist) |
 | [`ZEBRA_DEV_CLI_POSITIONING.md`](ZEBRA_DEV_CLI_POSITIONING.md) | **Positioning + roadmap:** Nozy CLI as the go-to **Zebra + Orchard** dev / debug tool |
 | [`TESTNET_CLI_WALKTHROUGH.md`](TESTNET_CLI_WALKTHROUGH.md) | **Zebrad testnet + Nozy CLI:** start node, config, sync, TZEC send |
 | [`BUSINESS_ZEC_ZNS_TODO.md`](BUSINESS_ZEC_ZNS_TODO.md) | **Business & POS + ZNS** — phased backlog (vendor Sell mode, name resolve) |

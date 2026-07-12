@@ -2,7 +2,13 @@
 
 use crate::error::{NozyError, NozyResult};
 
+/// Strip line breaks and other whitespace from pasted unified addresses.
+pub fn normalize_unified_address(address: &str) -> String {
+    address.chars().filter(|c| !c.is_whitespace()).collect()
+}
+
 pub fn validate_zcash_address(address: &str) -> NozyResult<()> {
+    let address = normalize_unified_address(address);
     if address.is_empty() {
         return Err(NozyError::InvalidInput(
             "Address cannot be empty".to_string(),
@@ -103,5 +109,17 @@ mod tests {
     fn accepts_testnet_unified_addresses_from_nozy() {
         let addr = "utest1dt8gy9uhr638jrpjzlacn3m7jengue30p3g849xwu7kj29yvrkfeyczq694qsyjh2f9tzs2krccjq0mtpzelgkr2p8735teapcy88mrx";
         validate_zcash_address(addr).expect("real testnet UA should validate");
+    }
+
+    #[test]
+    fn normalizes_multiline_unified_addresses() {
+        use zcash_address::unified::Encoding;
+        let joined = "utest1455x45ffymw8x0zqsnjfrp63h09vfw8ps5vmuecey5shrnfn7egy9fwrgypexkef9d52njhw3y0tnegjtz2xs2xpyj5dsnvuduzjrg2y";
+        let multiline = "utest1455x45ffymw8x0zqsnjfrp63h09vfw8\nps5vmuecey5shrnfn7egy9fwrgypexkef9d52\nnjhw3y0tnegjtz2xs2xpyj5dsnvuduzjrg2y";
+        assert_eq!(normalize_unified_address(multiline), joined);
+        validate_zcash_address(multiline)
+            .expect("multiline UA should validate after normalization");
+        zcash_address::unified::Address::decode(&normalize_unified_address(multiline))
+            .expect("multiline UA should decode after normalization");
     }
 }

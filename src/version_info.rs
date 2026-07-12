@@ -22,4 +22,4 @@ macro_rules! set_release_codename {
     };
 }
 
-set_release_codename!("Teriyaki Hot (CLI)", patch "7");
+set_release_codename!("Nozy Lite (CLI)");

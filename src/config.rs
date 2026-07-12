@@ -107,6 +107,11 @@ pub struct PrivacyNetworkConfig {
 
     #[serde(default = "default_true")]
     pub require_privacy_network: bool,
+
+    /// When true (or `NOZY_BROADCAST_VIA_NYM_MIXNET=1`), remote `sendrawtransaction`
+    /// goes through the Nym smolmix helper subprocess. Local/LAN URLs stay direct.
+    #[serde(default = "default_false")]
+    pub broadcast_via_nym_mixnet: bool,
 }
 
 fn default_true() -> bool {
@@ -138,6 +143,7 @@ impl Default for PrivacyNetworkConfig {
             i2p_proxy: default_i2p_proxy(),
             preferred_network: default_preferred_network(),
             require_privacy_network: true,
+            broadcast_via_nym_mixnet: false,
         }
     }
 }

@@ -3,6 +3,7 @@
 //! See `docs/reference/IRONWOOD_WALLET_READINESS.md` for the full implementation plan.
 
 pub mod migration;
+pub mod network_privacy;
 pub mod status;
 
 pub use migration::{
@@ -11,15 +12,23 @@ pub use migration::{
     flatten_canonical_denomination_zatoshis, ironwood_migration_schedule_path,
     load_orchard_migration_schedule, next_zip318_anchor_boundary, note_requires_canonical_split,
     plan_orchard_migration, plan_orchard_migration_at, plan_orchard_note_split_outputs,
-    presigned_transfer_broadcastable, reconcile_migration_broadcast_confirmations,
-    refresh_orchard_migration_schedule_at, save_orchard_migration_plan_at,
-    save_orchard_migration_schedule, validate_orchard_migration_schedule, MigrationBroadcastResult,
-    MigrationDenomination, MigrationExecutionResult, MigrationPlanSummary,
-    MigrationReadinessReport, MigrationReadinessState, MigrationSchedule,
-    MigrationScheduleValidation, MigrationScheduledTransfer, MigrationTransfer,
-    MigrationTransferStatus, OrchardNoteSplitResult, PreparedMigrationTransaction,
-    Zip318ScheduleSummary, IRONWOOD_MIGRATION_SCHEDULE_FILE, MIGRATION_SCHEDULE_VERSION,
-    ZIP318_ANCHOR_BUCKET_INTERVAL_BLOCKS, ZIP318_DEFAULT_K_MAX, ZIP318_TRANSFER_EXPIRY_BLOCKS,
+    presigned_transfer_broadcastable, previous_zip318_anchor_boundary,
+    reconcile_migration_broadcast_confirmations, refresh_orchard_migration_schedule_at,
+    save_orchard_migration_plan_at, save_orchard_migration_schedule,
+    validate_orchard_migration_schedule, MigrationBroadcastResult, MigrationDenomination,
+    MigrationExecutionResult, MigrationPlanSummary, MigrationReadinessReport,
+    MigrationReadinessState, MigrationSchedule, MigrationScheduleValidation,
+    MigrationScheduledTransfer, MigrationTransfer, MigrationTransferStatus, OrchardNoteSplitResult,
+    PreparedMigrationTransaction, Zip318ScheduleSummary, IRONWOOD_MIGRATION_SCHEDULE_FILE,
+    MIGRATION_SCHEDULE_VERSION, ZIP318_ANCHOR_BUCKET_INTERVAL_BLOCKS, ZIP318_DEFAULT_K_MAX,
+    ZIP318_TRANSFER_EXPIRY_BLOCKS,
+};
+pub use network_privacy::{
+    amount_timing_status, assess_migration_cover_traffic, assess_migration_network_privacy,
+    require_migration_network_privacy, safer_migration_status_snapshot,
+    selected_amount_timing_algorithm, AmountTimingAlgorithm, AmountTimingStatus,
+    MigrationCoverAssessment, MigrationNetworkPrivacyAssessment, MigrationNetworkPrivacyMode,
+    MigrationNetworkPrivacyOpts, SaferMigrationStatusSnapshot,
 };
 pub use status::{
     display_ironwood_status, fetch_pool_balances, ironwood_software_send_available,
