@@ -26,7 +26,8 @@ const Header = () => {
       const element = document.getElementById(id);
       if (element) {
         element.scrollIntoView({ behavior: "smooth" });
-        window.history.pushState(null, "", `/#${id}`);
+        const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+        window.history.pushState(null, "", `${base}/#${id}`);
       }
     } else {
       navigate("/", { state: { scrollTo: id } });

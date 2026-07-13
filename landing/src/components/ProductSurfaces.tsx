@@ -34,6 +34,34 @@ const statusStyles: Record<Status, string> = {
 const surfaces: Surface[] = [
   {
     icon: Bolt,
+    title: "CLI Lite",
+    tagline: "Production-ready shielded ZEC on your own Zebrad + lightwalletd.",
+    status: "live",
+    statusLabel: "Mainnet ready",
+    bullets: [
+      "Orchard-first sends and sync (Nozy Lite)",
+      "ZIP-317 fees, NU6.2 mainnet",
+      "Ops helpers: health, status --json, optional Nym broadcast",
+    ],
+    primary: { label: "Get CLI Lite", href: "#download" },
+    secondary: { label: "Latest release", href: REPO_RELEASES },
+  },
+  {
+    icon: LockPassword,
+    title: "Desktop",
+    tagline: "Tauri GUI — Hot Lemon beta with Ironwood readiness tooling.",
+    status: "preview",
+    statusLabel: "Beta.2",
+    bullets: [
+      "Windows / macOS / Linux builds published",
+      "Ironwood migrate / split / broadcast UI",
+      "GA deferred until Ironwood is official",
+    ],
+    primary: { label: "Download desktop beta", href: "#download" },
+    secondary: { label: "Desktop source", href: PATHS.desktop },
+  },
+  {
+    icon: ShieldCheck,
     title: "Browser extension",
     tagline: "The community-shaped path — privacy-first, in your browser.",
     status: "preview",
@@ -41,7 +69,7 @@ const surfaces: Surface[] = [
     bullets: [
       "MV3 + WASM Orchard wallet",
       "Compact sync via local companion API",
-      "Future home of the full web super-wallet UX",
+      "Zips ship alongside desktop beta releases",
     ],
     primary: { label: "Extension docs", href: PATHS.extension, external: true },
     secondary: { label: "Companion setup", href: PATHS.extensionCompanion },
@@ -59,33 +87,6 @@ const surfaces: Surface[] = [
     ],
     primary: { label: "Web app plan", href: PATHS.webApp, external: true },
     secondary: { label: "Enhancement roadmap", href: PATHS.enhancementRoadmap },
-  },
-  {
-    icon: ShieldCheck,
-    title: "CLI wallet",
-    tagline: "Production-ready shielded ZEC on your own Zebrad + lightwalletd.",
-    status: "live",
-    statusLabel: "Mainnet ready",
-    bullets: [
-      "Orchard-first sends and sync",
-      "ZIP-317 fees, NU6.2 mainnet",
-      "Best for operators and power users today",
-    ],
-    primary: { label: "Get CLI", href: "#download" },
-    secondary: { label: "Latest release", href: REPO_RELEASES },
-  },
-  {
-    icon: LockPassword,
-    title: "Desktop",
-    tagline: "Tauri app for node stacks, debugging, and heavy sync.",
-    status: "preview",
-    statusLabel: "In development",
-    bullets: [
-      "Zebrad + lightwalletd from one place",
-      "Operator and developer workflows",
-      "Build from source until production release",
-    ],
-    primary: { label: "Build desktop", href: PATHS.desktop, external: true },
   },
   {
     icon: Download,
@@ -183,8 +184,8 @@ const ProductSurfaces = () => {
           <p className="text-zinc-600 text-lg leading-relaxed">
             NozyWallet is community-shaped for privacy-native daily use: extension and web app for
             daily flows, CLI and desktop for operators, mobile when you are on the go.{" "}
-            <strong className="text-zinc-800 font-semibold">Shielded ZEC is live now</strong> on
-            the CLI; other privacy chains ship as modules when ready.
+            <strong className="text-zinc-800 font-semibold">CLI Lite is live for mainnet</strong>;
+            Desktop beta.2 is out for early testers. Other privacy chains ship as modules when ready.
           </p>
         </div>
 

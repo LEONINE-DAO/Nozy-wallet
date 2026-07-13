@@ -15,12 +15,13 @@
     "@tailwindcss/vite": "^4.3.2",
     "@vercel/analytics": "^1.6.1",
     "react": "19.2.7",
-    "react-dom": "19.2.6",
+    "react-dom": "19.2.7",
     "react-router-dom": "^7.12.0",
     "tailwindcss": "^4.3.2"
   },
   "overrides": {
-    "react-dom": "19.2.6"
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
   },
   "optionalDependencies": {
     "@emnapi/core": "1.11.1",
