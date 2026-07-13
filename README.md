@@ -6,7 +6,7 @@
 
 ## What NozyWallet is
 
-NozyWallet helps you create and restore a **shielded Orchard wallet**, scan for incoming notes, build transactions, and (on supported surfaces) send ZEC. The project **does not ship a full blockchain node**. You run **[Zebra](https://github.com/ZcashFoundation/zebra) (`zebrad`)** for JSON-RPC and **[lightwalletd](https://github.com/zcash/lightwalletd)** for compact blocks, then point the wallet at those endpoints.
+NozyWallet helps you create and restore a **shielded Orchard now Ironwood wallet**, scan for incoming notes, build transactions, and (on supported surfaces) send ZEC. The project **does not ship a full blockchain node**. You run **[Zebra](https://github.com/ZcashFoundation/zebra) (`zebrad`)** for JSON-RPC and **[lightwalletd](https://github.com/zcash/lightwalletd)** for compact blocks, then point the wallet at those endpoints.
 
 **Privacy policy in the wallet:** transparent `t1` addresses are **rejected** for user-facing send/receive flows; the product is **shielded-first** (Orchard / unified `u1`), not a mixed transparent wallet. That is a design choice, not a claim of “Monero equivalence.”
 
