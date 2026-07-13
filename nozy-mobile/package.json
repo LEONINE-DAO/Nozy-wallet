@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "nozy-mobile",
   "description": "NozyWallet mobile companion — private Zcash wallet via nozywallet-api",
   "license": "0BSD",
@@ -36,5 +36,11 @@
     "@babel/core": "^7.25.2",
     "@types/react": "~18.3.12",
     "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "tar": "7.5.16",
+    "@xmldom/xmldom": "^0.9.10",
+    "postcss": "8.5.10",
+    "js-yaml@3": "3.15.0"
   }
 }
