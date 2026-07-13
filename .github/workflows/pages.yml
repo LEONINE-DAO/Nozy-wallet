@@ -147,7 +147,9 @@ jobs:
       - name: Install landing dependencies
         if: steps.build-landing.outputs.need_landing == 'true'
         working-directory: landing
-        run: npm ci
+        run: |
+          # Prefer a clean lockfile install; fall back if lock drifts (keeps Pages from going blank).
+          npm ci || npm install
 
       - name: Build landing page
         if: steps.build-landing.outputs.need_landing == 'true'

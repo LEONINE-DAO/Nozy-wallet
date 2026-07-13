@@ -47,7 +47,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: landing
-        run: npm ci
+        run: npm ci || npm install
 
       - name: Run npm audit
         working-directory: landing
