@@ -1,7 +1,8 @@
 {
   "expo": {
     "name": "NozyWallet",
-    "slug": "nozy-mobile",
+    "slug": "nozy-wallet",
+    "owner": "leonine-dao",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -11,7 +12,7 @@
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
+      "backgroundColor": "#000000"
     },
     "ios": {
       "supportsTablet": true,
@@ -26,7 +27,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#FFFFFF"
+        "backgroundColor": "#000000"
       },
       "package": "com.leoninedao.nozywallet",
       "versionCode": 1
@@ -35,7 +36,11 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "defaultApiUrl": "http://10.0.2.2:3000"
+      "defaultApiUrl": "http://10.0.2.2:3000",
+      "hostedApiUrl": "https://nozywallet.leoninedao.org",
+      "eas": {
+        "projectId": "13205ab5-3b91-42ae-b7b9-b14eded62a1c"
+      }
     }
   }
 }
