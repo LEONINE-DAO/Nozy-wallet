@@ -229,6 +229,11 @@ jobs:
                 cp -r "$file" _site/ 2>/dev/null || true
               fi
             done
+            # GitHub Pages SPA: serve index.html for unknown paths (/privacy, etc.)
+            if [ -f "_site/index.html" ] && [ ! -f "_site/404.html" ]; then
+              cp _site/index.html _site/404.html
+              echo "✅ Copied index.html → 404.html for SPA routes"
+            fi
             echo "✅ Landing page deployed to root (preserved /book/ directory)"
           elif [ -d "landing/docs" ]; then
             echo "🌐 Copying landing page from landing/docs/ to root..."

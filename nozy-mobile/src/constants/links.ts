@@ -1,6 +1,6 @@
-/** Public URLs — update privacyPolicy when the live site URL is finalized. */
+/** Public URLs — privacy policy lives on GitHub Pages landing. */
 export const LINKS = {
-  privacyPolicy: "https://leoninedao.org/privacy",
+  privacyPolicy: "https://leonine-dao.github.io/Nozy-wallet/privacy/",
   documentation: "https://leonine-dao.github.io/Nozy-wallet/book/",
   github: "https://github.com/LEONINE-DAO/Nozy-wallet",
   supportEmail: "mailto:support@leoninedao.org",

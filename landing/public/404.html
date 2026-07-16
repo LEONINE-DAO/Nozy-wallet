@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>NozyWallet</title>
+    <script type="text/javascript">
+      // GitHub Pages SPA fallback — repo served at /Nozy-wallet/
+      // Prefer real files under /privacy/ when present; this is for other routes.
+      (function (l) {
+        var segmentKeep = 1;
+        l.replace(
+          l.protocol +
+            "//" +
+            l.hostname +
+            (l.port ? ":" + l.port : "") +
+            l.pathname
+              .split("/")
+              .slice(0, 1 + segmentKeep)
+              .join("/") +
+            "/?/" +
+            l.pathname
+              .slice(1)
+              .split("/")
+              .slice(segmentKeep)
+              .join("/")
+              .replace(/&/g, "~and~") +
+            (l.search ? "&q=" + l.search.slice(1).replace(/&/g, "~and~") : "") +
+            l.hash,
+        );
+      })(window.location);
+    </script>
+  </head>
+  <body></body>
+</html>

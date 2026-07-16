@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Privacy Policy — NozyWallet</title>
+    <meta
+      name="description"
+      content="NozyWallet privacy policy: on-chain Orchard/Ironwood privacy vs off-chain API and node logging."
+    />
+    <link rel="icon" type="image/png" href="/Nozy-wallet/logo.png" />
+    <style>
+      :root {
+        color-scheme: light;
+        --text: #52525b;
+        --heading: #18181b;
+        --muted: #71717a;
+        --accent: #a16207;
+        --border: #f4f4f5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: #fff;
+        color: var(--text);
+        line-height: 1.6;
+      }
+      main {
+        max-width: 48rem;
+        margin: 0 auto;
+        padding: 4rem 1.5rem 6rem;
+      }
+      h1 {
+        color: var(--heading);
+        font-size: 2.25rem;
+        margin: 0 0 0.5rem;
+      }
+      .updated {
+        color: var(--muted);
+        font-size: 0.875rem;
+        margin-bottom: 2.5rem;
+      }
+      h2 {
+        color: var(--heading);
+        font-size: 1.35rem;
+        margin: 2.5rem 0 1rem;
+      }
+      h3 {
+        color: #27272a;
+        font-size: 1.05rem;
+        margin: 1.5rem 0 0.5rem;
+      }
+      p,
+      li {
+        margin: 0 0 1rem;
+      }
+      ul {
+        padding-left: 1.5rem;
+        margin: 0 0 1rem;
+      }
+      li {
+        margin-bottom: 0.5rem;
+      }
+      a {
+        color: var(--accent);
+      }
+      .back {
+        display: inline-block;
+        margin-bottom: 2rem;
+        text-decoration: none;
+        color: var(--muted);
+      }
+      .back:hover {
+        color: var(--accent);
+      }
+      hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 2.5rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <a class="back" href="/Nozy-wallet/">← NozyWallet</a>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated: July 16, 2026</p>
+
+      <h2>1. Who we are</h2>
+      <p>
+        This policy describes how <strong>NozyWallet</strong> (developed by
+        LEONINE DAO) handles information when you use our website, desktop app,
+        mobile app, CLI, or related documentation. NozyWallet is an open-source
+        Orchard / Ironwood (shielded) Zcash wallet. We do not operate a
+        custodial exchange and we do not hold your funds.
+      </p>
+      <p>
+        Contact:
+        <a href="mailto:support@leoninedao.org">support@leoninedao.org</a>
+      </p>
+
+      <h2>2. On-chain vs off-chain privacy (Orchard/Ironwood vs API/node logging)</h2>
+      <p>
+        <strong>On-chain (Orchard / Ironwood):</strong> Shielded transactions
+        hide sender, receiver, and amount on the public Zcash ledger. NozyWallet
+        is shielded-only by design — transparent addresses are not supported.
+        Ironwood (NU6.3) migration and related wallet tools follow the same
+        shielded privacy model on-chain.
+      </p>
+      <p>
+        <strong>Off-chain (API / node logging):</strong> Orchard and Ironwood do
+        not hide your IP address, sync schedule, or the fact that you contacted
+        an API or node. Anyone who runs the infrastructure you use may log
+        connection metadata. For strongest privacy, run your own Zebrad node and
+        your own NozyWallet API on hardware you control.
+      </p>
+
+      <h2>3. NozyWallet Mobile (companion app)</h2>
+      <p>
+        The mobile app is a <strong>companion client</strong>. It does not
+        download the full blockchain. It sends HTTPS requests to a
+        <strong>NozyWallet API server</strong> you configure (for example your
+        home PC or a VPS). That API connects to a Zebra node for sync, proving,
+        and broadcast.
+      </p>
+      <h3>Stored on your phone</h3>
+      <ul>
+        <li>API server URL and optional API key (device storage / AsyncStorage)</li>
+        <li>Session preferences (for example unlock state, display theme)</li>
+        <li>
+          No wallet seed is required to stay on the phone in companion mode;
+          wallet files live on the API server you connect to
+        </li>
+      </ul>
+      <h3>Stored on your API server</h3>
+      <ul>
+        <li>
+          Wallet scan data, notes, and transaction history needed to show
+          balance and send shielded ZEC
+        </li>
+        <li>
+          Seed phrase and keys if you create or restore a wallet through that
+          API
+        </li>
+      </ul>
+      <p>
+        <strong>If you use someone else’s hosted API</strong> (including any
+        Nozy-operated service), that operator can see when you connect, your IP
+        address, and wallet data stored on their server. Read the in-app
+        hosted-mode disclosure before using a third-party API.
+      </p>
+      <p>
+        <strong>Current product note:</strong> NozyWallet does not yet operate
+        its own Zebrad node for public mobile hosting. Sync requires a Zebrad
+        reachable from the API you use — typically your own home or VPS setup,
+        or another operator you trust.
+      </p>
+
+      <h2>4. Desktop app and CLI</h2>
+      <p>
+        Desktop and command-line builds run wallet logic locally or against a
+        node you configure. Wallet files and keys are stored on your machine
+        under your user profile unless you choose a remote API deployment. The
+        same on-chain / off-chain distinction applies: your Zebrad operator
+        (often you) may see RPC and sync metadata.
+      </p>
+
+      <h2>5. What we collect</h2>
+      <p>
+        <strong>We do not sell personal data.</strong> NozyWallet software does
+        not include third-party advertising or in-app analytics SDKs.
+      </p>
+      <ul>
+        <li>
+          <strong>Mobile app:</strong> No telemetry is sent to NozyWallet by
+          default. Connection settings stay on your device unless you configure
+          an API that logs requests on its server.
+        </li>
+        <li>
+          <strong>This website:</strong> Our hosting provider may collect
+          standard web logs (IP address, browser type, pages visited). If
+          analytics are enabled on the marketing site, they are used only to
+          understand traffic to this website — not to track wallet usage.
+        </li>
+        <li>
+          <strong>Support:</strong> If you email us or open a GitHub issue, we
+          receive the information you choose to send.
+        </li>
+      </ul>
+
+      <h2>6. Third-party services</h2>
+      <p>You may choose to connect NozyWallet to:</p>
+      <ul>
+        <li>
+          <strong>Zebra nodes</strong> — for blockchain sync and transaction
+          broadcast
+        </li>
+        <li>
+          <strong>lightwalletd</strong> — optional compact sync (experimental
+          mobile paths)
+        </li>
+        <li>
+          <strong>Your own or third-party API hosts</strong> — for mobile
+          companion mode
+        </li>
+        <li>
+          <strong>Block explorers</strong> — when you open transaction links
+          from the app
+        </li>
+      </ul>
+      <p>
+        Each service has its own privacy practices. We do not control what a
+        remote node or API operator logs.
+      </p>
+
+      <h2>7. Security</h2>
+      <ul>
+        <li>Use HTTPS for any API URL exposed on the public internet.</li>
+        <li>
+          Protect your recovery phrase and API keys. We cannot recover them for
+          you.
+        </li>
+        <li>
+          Uninstalling the mobile app removes local settings; server-side wallet
+          data remains on whichever API host you used until you delete it there.
+        </li>
+      </ul>
+
+      <h2>8. Children</h2>
+      <p>
+        NozyWallet is not directed at children under 13 (or the minimum age in
+        your jurisdiction). We do not knowingly collect personal information
+        from children.
+      </p>
+
+      <h2>9. Your choices</h2>
+      <ul>
+        <li>Run your own API and Zebrad for maximum control.</li>
+        <li>Clear mobile connection settings in the app or uninstall the app.</li>
+        <li>
+          Use a new wallet profile or server if you no longer trust a host.
+        </li>
+      </ul>
+
+      <h2>10. Changes to this policy</h2>
+      <p>
+        We may update this page when the product or law changes. The “Last
+        updated” date at the top will change. Continued use after an update
+        means you accept the revised policy.
+      </p>
+
+      <h2>11. More detail</h2>
+      <p>
+        Technical privacy architecture:
+        <a
+          href="https://leonine-dao.github.io/Nozy-wallet/book/nozy/privacy-model.html"
+          >NozyWallet privacy model (documentation)</a
+        >
+      </p>
+
+      <hr />
+      <p class="updated">
+        Canonical store URL:
+        <a href="https://leonine-dao.github.io/Nozy-wallet/privacy/"
+          >https://leonine-dao.github.io/Nozy-wallet/privacy/</a
+        >
+      </p>
+    </main>
+  </body>
+</html>
