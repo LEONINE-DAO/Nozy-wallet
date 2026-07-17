@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Companion APKs need HTTP to a home-PC / LAN API. Hosted traffic still uses HTTPS.
+     Tighten before Play production if reviewers require HTTPS-only. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

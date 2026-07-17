@@ -35,6 +35,11 @@ function loadHostedApiKey() {
 module.exports = () => {
   const base = appJson.expo;
   const hostedApiKey = USE_HOSTED_DEFAULTS ? loadHostedApiKey() : null;
+  if (USE_HOSTED_DEFAULTS && !hostedApiKey && process.env.EAS_BUILD === "true") {
+    throw new Error(
+      "NOZY_API_KEY is missing for this EAS build. Set it with: eas env:create --name NOZY_API_KEY --environment preview|production",
+    );
+  }
   return {
     ...base,
     owner: "leonine-dao",

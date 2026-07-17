@@ -1,164 +1,147 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useEffect, useState } from "react";
-import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState } from "react";
+import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
-import { Input } from "../components/Input";
-import { useWalletSession } from "../context/WalletSessionContext";
-import { api } from "../services/api";
-import { colors, fontSize, spacing } from "../theme";
+import { PageHeader } from "../components/PageHeader";
+import { AccountSettings } from "../components/settings/AccountSettings";
+import { DisplaySettings } from "../components/settings/DisplaySettings";
+import { LightClientSettings } from "../components/settings/LightClientSettings";
+import { MobileConnectionSettings } from "../components/settings/MobileConnectionSettings";
+import { OnDeviceWalletSettings } from "../components/settings/OnDeviceWalletSettings";
+import { NetworkPrivacySettings } from "../components/settings/NetworkPrivacySettings";
+import { NetworkSettings } from "../components/settings/NetworkSettings";
+import { SettingsItem } from "../components/settings/SettingsItem";
+import { SyncSettings } from "../components/settings/SyncSettings";
+import { WalletsAccountsSettings } from "../components/settings/WalletsAccountsSettings";
+import { enableExperimentalFeatures } from "../lib/buildProfile";
+import { colors, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Settings">;
 
+type SettingsSection =
+  | "main"
+  | "network"
+  | "privacy"
+  | "mobile"
+  | "lightclient"
+  | "ondevice"
+  | "display"
+  | "sync"
+  | "wallets"
+  | "account";
+
 export function SettingsScreen({ navigation }: Props) {
-  const { apiUrl, setApiUrl, apiKey, setApiKey, autoSync, setAutoSync } =
-    useWalletSession();
-  const [zebraUrl, setZebraUrl] = useState("");
-  const [network, setNetwork] = useState("");
-  const [theme, setTheme] = useState("dark");
-  const [mobileApiUrl, setMobileApiUrl] = useState(apiUrl);
-  const [mobileApiKey, setMobileApiKey] = useState(apiKey);
-  const [status, setStatus] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [section, setSection] = useState<SettingsSection>("main");
+  const showExperimental = enableExperimentalFeatures();
 
-  useEffect(() => {
-    setMobileApiKey(apiKey);
-  }, [apiKey]);
-
-  useEffect(() => {
-    void api
-      .getConfig()
-      .then((c) => {
-        setZebraUrl(c.zebra_url);
-        setNetwork(c.network);
-        setTheme(c.theme);
-      })
-      .catch(() => {});
-  }, []);
-
-  async function saveZebra() {
-    setError("");
-    setLoading(true);
-    try {
-      await api.setZebraUrl(zebraUrl.trim());
-      setStatus("Zebra URL saved");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Save failed");
-    } finally {
-      setLoading(false);
-    }
+  if (section === "network") {
+    return <NetworkSettings onBack={() => setSection("main")} />;
   }
-
-  async function testZebra() {
-    setError("");
-    setStatus("");
-    setLoading(true);
-    try {
-      const res = await api.testZebra(zebraUrl.trim() || undefined);
-      setStatus(res.message);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Connection test failed");
-    } finally {
-      setLoading(false);
-    }
+  if (section === "privacy") {
+    return <NetworkPrivacySettings onBack={() => setSection("main")} />;
   }
-
-  async function toggleTheme() {
-    const next = theme === "dark" ? "light" : "dark";
-    try {
-      await api.setTheme(next);
-      setTheme(next);
-      setStatus(`Theme set to ${next}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Theme update failed");
-    }
+  if (section === "mobile") {
+    return <MobileConnectionSettings onBack={() => setSection("main")} />;
   }
-
-  async function saveMobileApi() {
-    await setApiUrl(mobileApiUrl);
-    await setApiKey(mobileApiKey);
-    setStatus("API URL and key saved");
+  if (section === "lightclient") {
+    return <LightClientSettings onBack={() => setSection("main")} />;
+  }
+  if (section === "ondevice") {
+    return <OnDeviceWalletSettings onBack={() => setSection("main")} />;
+  }
+  if (section === "display") {
+    return <DisplaySettings onBack={() => setSection("main")} />;
+  }
+  if (section === "sync") {
+    return <SyncSettings onBack={() => setSection("main")} />;
+  }
+  if (section === "wallets") {
+    return <WalletsAccountsSettings onBack={() => setSection("main")} />;
+  }
+  if (section === "account") {
+    return <AccountSettings onBack={() => setSection("main")} />;
   }
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.section}>Mobile app</Text>
-        <Input
-          label="API server URL (this app)"
-          value={mobileApiUrl}
-          onChangeText={setMobileApiUrl}
-          autoCapitalize="none"
+        <PageHeader
+          title="Settings"
+          description="Manage your wallet, network, and preferences"
         />
-        <Input
-          label="API key (for VPS with NOZY_API_KEY)"
-          value={mobileApiKey}
-          onChangeText={setMobileApiKey}
-          autoCapitalize="none"
-          secureTextEntry
-          placeholder="Leave blank for local API"
-        />
-        <Button
-          label="Save API URL & key"
-          variant="secondary"
-          onPress={() => void saveMobileApi()}
-        />
-
-        <Text style={styles.section}>Wallet / node</Text>
-        <Text style={styles.meta}>Network: {network || "..."}</Text>
-        <Input
-          label="Zebra RPC URL"
-          value={zebraUrl}
-          onChangeText={setZebraUrl}
-          autoCapitalize="none"
-          placeholder="http://127.0.0.1:8232"
-        />
-        <View style={styles.row}>
-          <Button
-            label="Save Zebra URL"
-            onPress={() => void saveZebra()}
-            loading={loading}
-            style={styles.half}
+        <View style={styles.list}>
+          {showExperimental ? (
+            <>
+              <SettingsItem
+                title="On-device wallet (Phase 2)"
+                description="Keys on phone — create, unlock, sync via nozy-ffi"
+                onPress={() => setSection("ondevice")}
+              />
+              <SettingsItem
+                title="Light client (experimental)"
+                description="On-device LWD sync via zeaking-ffi"
+                onPress={() => setSection("lightclient")}
+              />
+            </>
+          ) : null}
+          <SettingsItem
+            title="Mobile connection"
+            description="Own API (home/VPS) or Nozy hosted — sync needs Zebrad behind the API"
+            onPress={() => setSection("mobile")}
           />
-          <Button
-            label="Test connection"
-            variant="secondary"
-            onPress={() => void testZebra()}
-            loading={loading}
-            style={styles.half}
+          <SettingsItem
+            title="Account Information"
+            description="Address, seed, private key, change password"
+            onPress={() => setSection("account")}
+          />
+          <SettingsItem
+            title="Wallets & Accounts"
+            description="Switch profiles and mainnet / testnet wallets"
+            onPress={() => setSection("wallets")}
+          />
+          <SettingsItem
+            title="Network & Node"
+            description="Configure Zebra RPC on the API server"
+            onPress={() => setSection("network")}
+          />
+          <SettingsItem
+            title="Network privacy"
+            description="Local Zebrad defaults, Nym/Tor attestation"
+            onPress={() => setSection("privacy")}
+          />
+          <SettingsItem
+            title="Sync"
+            description="Keep wallet near tip while unlocked"
+            onPress={() => setSection("sync")}
+          />
+          <SettingsItem
+            title="Display"
+            description="Fiat equivalent and balance visibility"
+            onPress={() => setSection("display")}
+          />
+          <SettingsItem
+            title="Address book"
+            description="Saved contacts for shielded sends"
+            onPress={() => navigation.navigate("AddressBook")}
+          />
+          <SettingsItem
+            title="Ironwood"
+            description="NU6.3 readiness and Orchard migration"
+            onPress={() => navigation.navigate("Ironwood")}
+          />
+          <SettingsItem
+            title="Keystone wallet"
+            description="Hardware wallet PCZT signing"
+            onPress={() => navigation.navigate("Keystone")}
+          />
+          <SettingsItem
+            title="About & privacy"
+            description="Privacy policy and support links"
+            onPress={() => navigation.navigate("About")}
           />
         </View>
-
-        <Text style={styles.section}>Sync</Text>
-        <Button
-          label={autoSync ? "Auto-sync on dashboard: ON" : "Auto-sync on dashboard: OFF"}
-          variant="secondary"
-          onPress={() => void setAutoSync(!autoSync)}
-        />
-        <Text style={styles.meta}>
-          When ON, wallet syncs automatically each time you open the Dashboard.
-          First sync can take a long time — keep the API running.
-        </Text>
-
-        <Text style={styles.section}>Appearance</Text>
-        <Button
-          label={`Theme: ${theme} (tap to switch)`}
-          variant="secondary"
-          onPress={() => void toggleTheme()}
-        />
-
-        <Text style={styles.section}>About</Text>
-        <Button
-          label="About & privacy"
-          variant="secondary"
-          onPress={() => navigation.navigate("About")}
-        />
-
-        {status ? <Text style={styles.ok}>{status}</Text> : null}
-        {error ? <Text style={styles.error}>{error}</Text> : null}
-
         <Button label="Back" variant="ghost" onPress={() => navigation.goBack()} />
       </ScrollView>
     </SafeAreaView>
@@ -168,17 +151,5 @@ export function SettingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { padding: spacing.lg, gap: spacing.md },
-  section: {
-    color: colors.primary,
-    fontSize: fontSize.sm,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase",
-    marginTop: spacing.md,
-  },
-  meta: { color: colors.textMuted, fontSize: fontSize.sm },
-  row: { flexDirection: "row", gap: spacing.sm },
-  half: { flex: 1 },
-  ok: { color: colors.success, fontSize: fontSize.sm },
-  error: { color: colors.error, fontSize: fontSize.sm },
+  list: { gap: spacing.sm },
 });

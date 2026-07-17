@@ -7,12 +7,14 @@ import { Input } from "../Input";
 import { PublicNodeRiskModal } from "../PublicNodeRiskModal";
 import { Select } from "../Select";
 import { SettingsBackButton } from "./SettingsBackButton";
+import { useWalletSession } from "../../context/WalletSessionContext";
 import { api } from "../../services/api";
 import {
   type NodeConnectionMode,
   defaultLocalZebraUrl,
   defaultPublicZebraUrl,
   inferNodeConnectionMode,
+  isHostedApiUrl,
   isLocalZebraUrl,
 } from "../../lib/connectionPresets";
 import { colors, fontSize, spacing } from "../../theme";
@@ -20,6 +22,8 @@ import { colors, fontSize, spacing } from "../../theme";
 type Props = { onBack: () => void };
 
 export function NetworkSettings({ onBack }: Props) {
+  const { apiUrl } = useWalletSession();
+  const apiIsHosted = isHostedApiUrl(apiUrl);
   const [zebraUrl, setZebraUrl] = useState("");
   const [initialZebraUrl, setInitialZebraUrl] = useState("");
   const [network, setNetwork] = useState("");
@@ -185,6 +189,15 @@ export function NetworkSettings({ onBack }: Props) {
           node means the API machine’s localhost — only works if Zebrad runs
           next to that API.
         </Text>
+        {apiIsHosted ? (
+          <View style={styles.banner}>
+            <Text style={styles.bannerText}>
+              You are on the Nozy hosted API. http://127.0.0.1 here is the
+              DigitalOcean box, not your phone or home PC. To use your node,
+              switch Mobile connection to your own API that sits next to Zebrad.
+            </Text>
+          </View>
+        ) : null}
         <Card>
           <Text style={styles.meta}>Network: {network || "…"}</Text>
           <Select

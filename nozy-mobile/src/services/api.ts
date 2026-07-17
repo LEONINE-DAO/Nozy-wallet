@@ -73,30 +73,51 @@ export function setApiKey(key: string | null): void {
 
 async function request<T>(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<T> {
+  const { timeoutMs = 30_000, ...fetchOptions } = options;
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
-    ...(options.headers as Record<string, string> | undefined),
+    ...(fetchOptions.headers as Record<string, string> | undefined),
   };
   if (apiKey) {
     headers["X-API-Key"] = apiKey;
   }
 
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
   let response: Response;
   try {
     response = await fetch(`${apiBaseUrl}${path}`, {
-      ...options,
+      ...fetchOptions,
       headers,
+      signal: controller.signal,
     });
   } catch (e) {
+    const aborted =
+      (e instanceof Error && e.name === "AbortError") ||
+      (typeof e === "object" &&
+        e !== null &&
+        "name" in e &&
+        (e as { name: string }).name === "AbortError");
+    if (aborted) {
+      throw new Error(
+        `Request timed out after ${Math.round(timeoutMs / 1000)}s. Check API URL and that nozywallet-api is reachable.`,
+      );
+    }
     const detail = e instanceof Error ? e.message : "Network request failed";
+    const usingHttp = apiBaseUrl.startsWith("http://");
     const hint =
       Platform.OS === "android" &&
       (apiBaseUrl.includes("localhost") || apiBaseUrl.includes("127.0.0.1"))
-        ? " On the Android emulator use http://10.0.2.2:3000 (not localhost)."
-        : " Check that nozywallet-api is running and the API URL in Settings is correct.";
+        ? " On the Android emulator use http://10.0.2.2:3000 (not localhost). On a real phone use your PC LAN IP or HTTPS."
+        : usingHttp
+          ? " If this is a real phone, use your PC's LAN IP (e.g. http://192.168.x.x:3000) or HTTPS — not 10.0.2.2."
+          : " Check that nozywallet-api is running and the API URL in Settings is correct.";
     throw new Error(`${detail}.${hint}`);
+  } finally {
+    clearTimeout(timer);
   }
 
   const body = await response.json().catch(() => ({}));
@@ -155,6 +176,8 @@ export const api = {
   syncWallet: (password?: string, zebraUrl?: string) =>
     request<SyncResponse>("/api/sync", {
       method: "POST",
+      // Full tip sync can take several minutes on a cold wallet.
+      timeoutMs: 10 * 60 * 1000,
       body: JSON.stringify({
         password: password ?? null,
         zebra_url: zebraUrl ?? null,

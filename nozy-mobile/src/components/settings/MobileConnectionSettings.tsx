@@ -28,6 +28,8 @@ export function MobileConnectionSettings({ onBack }: Props) {
     setLoading(true);
     setError("");
     setStatus("");
+    const previousUrl = apiUrl;
+    const previousKey = apiKey;
     try {
       if (
         requireHostedApiKey() &&
@@ -59,6 +61,10 @@ export function MobileConnectionSettings({ onBack }: Props) {
       setStatus(ok);
       Alert.alert("Connected", ok);
     } catch (e) {
+      await setApiUrl(previousUrl);
+      await setApiKey(previousKey);
+      setUrlDraft(previousUrl);
+      setKeyDraft(previousKey);
       const msg = e instanceof Error ? e.message : "Could not reach API";
       setError(msg);
       Alert.alert("Connection failed", msg);

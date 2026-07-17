@@ -84,8 +84,9 @@ export function WalletSessionProvider({
         AsyncStorage.getItem(BACKEND_MODE_KEY),
       ]);
       if (storedPassword) {
+        // Keep password for unlock form only — do not mark session unlocked
+        // until the user (or Welcome) successfully calls unlock on the API.
         setPasswordState(storedPassword);
-        setUnlocked(true);
       }
       if (storedApiUrl) {
         setApiBaseUrl(storedApiUrl);

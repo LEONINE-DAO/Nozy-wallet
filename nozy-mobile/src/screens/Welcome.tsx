@@ -103,6 +103,8 @@ export function WelcomeScreen({ navigation }: Props) {
     setConnError("");
     setConnStatus("");
     setError(null);
+    const previousUrl = apiUrl;
+    const previousKey = apiKey;
     try {
       if (
         requireHostedApiKey() &&
@@ -121,6 +123,11 @@ export function WelcomeScreen({ navigation }: Props) {
       setWalletExistsOnDisk(info.exists);
       setRequiresPassword(Boolean(info.has_password));
     } catch (e) {
+      // Revert drafts that failed health so a bad URL does not stick.
+      await setApiUrl(previousUrl);
+      await setApiKey(previousKey);
+      setUrlDraft(previousUrl);
+      setKeyDraft(previousKey);
       setApiReachable(false);
       setConnError(
         e instanceof Error
