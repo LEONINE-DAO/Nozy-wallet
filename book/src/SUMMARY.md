@@ -60,6 +60,7 @@
 
 - [Network Configuration](advanced/network-config.md)
 - [Zebra Node Setup](advanced/zebra-node.md)
+- [Zakura Node Setup](advanced/zakura-node.md)
 - [Proving Parameters](advanced/proving-parameters.md)
 - [API Server Setup](advanced/api-server.md)
 - [Secret Network (ZEC + Secret from One Seed)](advanced/secret-network.md)

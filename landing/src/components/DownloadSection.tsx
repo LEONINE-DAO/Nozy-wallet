@@ -35,7 +35,7 @@ const DownloadSection = () => {
           </div>
           <p className="text-sm text-zinc-600 mb-4">
             Orchard-first <code className="text-xs bg-zinc-100 px-1 rounded">nozy</code> binary.
-            Pair with your own <strong>zebrad</strong> + <strong>lightwalletd</strong>.
+            Pair with your own <strong>zebrad</strong> or <strong>Zakura</strong> + <strong>lightwalletd</strong>.
             On Linux / macOS run{" "}
             <code className="text-xs bg-zinc-100 px-1 rounded">chmod +x</code> after download.
           </p>

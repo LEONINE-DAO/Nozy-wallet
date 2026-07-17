@@ -33,6 +33,37 @@ fn is_retryable_zebra_transport_error(msg: &str) -> bool {
         || m.contains("unexpected eof")
 }
 
+/// Detected full-node implementation behind the Zebra-family JSON-RPC surface.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ChainNodeKind {
+    Zebra,
+    Zakura,
+    Unknown,
+}
+
+impl ChainNodeKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Zebra => "Zebra",
+            Self::Zakura => "Zakura",
+            Self::Unknown => "Zcash node",
+        }
+    }
+
+    /// Classify from `getnetworkinfo` → `subversion` (or similar) string.
+    pub fn from_subversion(subversion: &str) -> Self {
+        let s = subversion.to_ascii_lowercase();
+        if s.contains("zakura") {
+            Self::Zakura
+        } else if s.contains("zebra") || s.contains("zebrad") {
+            Self::Zebra
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ZebraConnectionMode {
@@ -202,52 +233,62 @@ impl ZebraClient {
     fn candidate_cookie_paths() -> Vec<PathBuf> {
         let mut paths = Vec::new();
 
-        if let Ok(path) = std::env::var("ZEBRA_RPC_COOKIE_PATH") {
-            if !path.trim().is_empty() {
-                paths.push(PathBuf::from(path));
+        for env_key in ["ZEBRA_RPC_COOKIE_PATH", "ZAKURA_RPC_COOKIE_PATH"] {
+            if let Ok(path) = std::env::var(env_key) {
+                if !path.trim().is_empty() {
+                    paths.push(PathBuf::from(path));
+                }
             }
         }
 
-        if let Ok(cookie_inline) = std::env::var("ZEBRA_RPC_COOKIE") {
-            if let Some(pair) = Self::parse_cookie_pair(&cookie_inline) {
-                // Inline cookie env is handled in `resolve_rpc_auth`; no file path to add.
-                let _ = pair;
+        for env_key in ["ZEBRA_RPC_COOKIE", "ZAKURA_RPC_COOKIE"] {
+            if let Ok(cookie_inline) = std::env::var(env_key) {
+                if let Some(pair) = Self::parse_cookie_pair(&cookie_inline) {
+                    // Inline cookie env is handled in `resolve_rpc_auth`; no file path to add.
+                    let _ = pair;
+                }
             }
         }
 
-        if let Ok(home) = std::env::var("HOME") {
-            paths.push(
-                PathBuf::from(home)
-                    .join(".cache")
-                    .join("zebra")
-                    .join(".cookie"),
-            );
-        }
-        if let Ok(profile) = std::env::var("USERPROFILE") {
-            paths.push(
-                PathBuf::from(profile)
-                    .join(".cache")
-                    .join("zebra")
-                    .join(".cookie"),
-            );
+        for cache_name in ["zebra", "zakura"] {
+            if let Ok(home) = std::env::var("HOME") {
+                paths.push(
+                    PathBuf::from(&home)
+                        .join(".cache")
+                        .join(cache_name)
+                        .join(".cookie"),
+                );
+            }
+            if let Ok(profile) = std::env::var("USERPROFILE") {
+                paths.push(
+                    PathBuf::from(&profile)
+                        .join(".cache")
+                        .join(cache_name)
+                        .join(".cookie"),
+                );
+            }
         }
 
         paths
     }
 
     fn resolve_rpc_auth() -> Option<(String, String)> {
-        if let (Ok(user), Ok(pass)) = (
-            std::env::var("ZEBRA_RPC_USER"),
-            std::env::var("ZEBRA_RPC_PASS"),
-        ) {
-            if !user.trim().is_empty() && !pass.trim().is_empty() {
-                return Some((user, pass));
+        for (user_key, pass_key) in [
+            ("ZEBRA_RPC_USER", "ZEBRA_RPC_PASS"),
+            ("ZAKURA_RPC_USER", "ZAKURA_RPC_PASS"),
+        ] {
+            if let (Ok(user), Ok(pass)) = (std::env::var(user_key), std::env::var(pass_key)) {
+                if !user.trim().is_empty() && !pass.trim().is_empty() {
+                    return Some((user, pass));
+                }
             }
         }
 
-        if let Ok(cookie_inline) = std::env::var("ZEBRA_RPC_COOKIE") {
-            if let Some(pair) = Self::parse_cookie_pair(&cookie_inline) {
-                return Some(pair);
+        for env_key in ["ZEBRA_RPC_COOKIE", "ZAKURA_RPC_COOKIE"] {
+            if let Ok(cookie_inline) = std::env::var(env_key) {
+                if let Some(pair) = Self::parse_cookie_pair(&cookie_inline) {
+                    return Some(pair);
+                }
             }
         }
 
@@ -1094,6 +1135,26 @@ This blocks remote RPC only; localhost RPC remains allowed.",
         Ok(zebra_response)
     }
 
+    /// Detect node implementation from `getnetworkinfo` when available.
+    pub async fn detect_chain_node_kind(&self) -> ChainNodeKind {
+        match self.get_network_info().await {
+            Ok(info) => {
+                if let Some(Value::String(subver)) = info.get("subversion") {
+                    return ChainNodeKind::from_subversion(subver);
+                }
+            }
+            Err(_) => {}
+        }
+        ChainNodeKind::Unknown
+    }
+
+    /// NozyWallet-required RPC: treestate at chain tip (Orchard witness path).
+    pub async fn probe_wallet_treestate(&self) -> NozyResult<()> {
+        let height = self.get_block_count().await?;
+        self.get_orchard_treestate_parsed(height).await?;
+        Ok(())
+    }
+
     pub async fn test_connection(&self) -> NozyResult<()> {
         match self.protocol {
             Protocol::Grpc => {
@@ -1106,7 +1167,12 @@ This blocks remote RPC only; localhost RPC remains allowed.",
             }
             Protocol::JsonRpc => {
                 let block_count = self.get_block_count().await?;
-                println!("✅ Successfully connected to Zebra node at {}", self.url);
+                let kind = self.detect_chain_node_kind().await;
+                println!(
+                    "✅ Successfully connected to {} node at {}",
+                    kind.label(),
+                    self.url
+                );
                 println!("   Current block height: {}", block_count);
             }
         }
@@ -1283,6 +1349,27 @@ pub struct OrchardTreeState {
 
 /// Ironwood uses the Orchard note-commitment tree primitives with a separate pool/tree.
 pub type IronwoodTreeState = OrchardTreeState;
+
+#[cfg(test)]
+mod chain_node_kind_tests {
+    use super::ChainNodeKind;
+
+    #[test]
+    fn detects_zakura_subversion() {
+        assert_eq!(
+            ChainNodeKind::from_subversion("/Zakura:1.0.0/"),
+            ChainNodeKind::Zakura
+        );
+    }
+
+    #[test]
+    fn detects_zebra_subversion() {
+        assert_eq!(
+            ChainNodeKind::from_subversion("/Zebra:6.0.0/"),
+            ChainNodeKind::Zebra
+        );
+    }
+}
 
 #[cfg(test)]
 mod connection_policy_tests {

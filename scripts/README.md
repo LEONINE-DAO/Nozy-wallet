@@ -1,6 +1,6 @@
 # Nozy-wallet helper scripts
 
-**Windows:** **Run Zebrad only in WSL** — do not run a separate native Windows Zebrad for Nozy development. If you **already have a synced Zebrad** in WSL (or elsewhere), skip installing another; just set Nozy’s RPC URL to that node.
+**Windows:** **Run Zebrad or Zakurad in WSL** — do not run a separate native Windows node for Nozy development unless you intend to. If you **already have a synced node** in WSL (or elsewhere), skip installing another; just set Nozy’s RPC URL to that node.
 
 PowerShell / bash helpers for **Nozy** (CLI, desktop, `api-server` / zeaking companion, WSL). **Zebrad node** launchers live in your [Zebrad](https://github.com/ZcashFoundation/zebra) checkout (`C:\Zebrad\scripts\start-zebrad-wsl.ps1`) — see Zebrad `scripts/README.md`.
 
@@ -24,6 +24,8 @@ PowerShell / bash helpers for **Nozy** (CLI, desktop, `api-server` / zeaking com
 | `run-nozy-api.sh` | WSL/Linux: start **`nozywallet-api`**. Auto-picks port **3000–3100** or set **`NOZY_HTTP_PORT`**. |
 | `build-release.ps1` / `build-release.sh` | Release build helpers. |
 | `nozy-lite-bench.ps1` | Measure Nozy Lite CLI size / `--version` / `health` timings for [`docs/reference/NOZY_LITE_BENCHES.md`](../docs/reference/NOZY_LITE_BENCHES.md). |
+| `test-zebrad-nozywallet.ps1` | Windows Zebrad + config smoke test |
+| `test-zakura-nozywallet.ps1` | Windows Zakurad + treestate + LWD smoke test |
 
 **Do not** run `run-nozy-api.ps1` from **bash** — use **`bash scripts/run-nozy-api.sh`** instead.
 

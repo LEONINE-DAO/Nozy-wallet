@@ -1603,8 +1603,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 Ok(_) => {
                     println!();
                     println!("🎉 Connection successful!");
+                    let kind = client.detect_chain_node_kind().await;
                     let backend_name = match config.backend {
-                        nozy::BackendKind::Zebra => "Zebra",
+                        nozy::BackendKind::Zebra => kind.label(),
                         nozy::BackendKind::Crosslink => "Crosslink",
                     };
                     let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
@@ -1619,6 +1620,19 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             backend_name
                         );
                     }
+
+                    match client.probe_wallet_treestate().await {
+                        Ok(_) => {
+                            println!("✅ z_gettreestate at tip OK (Orchard witness path ready)");
+                        }
+                        Err(e) => {
+                            println!("⚠️  z_gettreestate probe failed: {}", e);
+                            println!(
+                                "   Sync/send may fail until the node exposes Orchard treestate at tip."
+                            );
+                        }
+                    }
+
                     println!("✅ Ready to sync and send transactions!");
 
                     match client.get_network_info().await {
@@ -1628,6 +1642,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             }
                             if let Some(blocks) = info.get("blocks") {
                                 println!("   Blocks: {:?}", blocks);
+                            }
+                            if let Some(subver) = info.get("subversion") {
+                                println!("   Subversion: {:?}", subver);
                             }
                         }
                         Err(_) => {}

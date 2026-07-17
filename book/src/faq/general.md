@@ -23,7 +23,7 @@ Mainnet and testnet — configure via `nozy config` or Settings.
 
 ## Do I need my own node?
 
-Strongly recommended. Wallet needs Zebrad JSON-RPC; see [Zebra Node Setup](../advanced/zebra-node.md).
+Strongly recommended. Wallet needs a Zebra-family JSON-RPC node ([Zebrad](https://github.com/ZcashFoundation/zebra) or [Zakura](https://zakura.com/)); see [Zebra Node Setup](../advanced/zebra-node.md) or [Zakura Node Setup](../advanced/zakura-node.md).
 
 ## Where is data stored?
 

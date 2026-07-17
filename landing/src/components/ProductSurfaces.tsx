@@ -35,7 +35,7 @@ const surfaces: Surface[] = [
   {
     icon: Bolt,
     title: "CLI Lite",
-    tagline: "Production-ready shielded ZEC on your own Zebrad + lightwalletd.",
+    tagline: "Production-ready shielded ZEC on your own Zebrad or Zakura + lightwalletd.",
     status: "live",
     statusLabel: "Mainnet ready",
     bullets: [
@@ -95,7 +95,7 @@ const surfaces: Surface[] = [
     status: "soon",
     statusLabel: "In development",
     bullets: [
-      "Connects to nozywallet-api on PC or VPS",
+      "Connects to nozywallet-api on PC or VPS + Zebrad/Zakura",
       "Business / Sell mode on the roadmap",
       "App Store and Play when ready",
     ],

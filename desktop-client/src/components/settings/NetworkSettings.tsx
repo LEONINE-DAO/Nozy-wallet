@@ -78,7 +78,25 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
 
       <h2 className="text-3xl font-bold text-gray-900 dark:text-gray-100 mb-2">Network & Node</h2>
       <p className="text-gray-500 dark:text-gray-400 mb-8">
-        Configure your connection to a Zebra (Zcash) node for syncing and sending.
+        Configure your connection to a full node for syncing and sending. Use{" "}
+        <a
+          href="https://github.com/ZcashFoundation/zebra"
+          className="text-emerald-600 dark:text-emerald-400 underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Zebrad
+        </a>{" "}
+        or{" "}
+        <a
+          href="https://zakura.com/"
+          className="text-emerald-600 dark:text-emerald-400 underline"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Zakura
+        </a>{" "}
+        JSON-RPC (same port and URL field).
       </p>
 
       <div className="space-y-6">
@@ -102,7 +120,7 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
             </p>
           )}
           <Input
-            label="Zebra node RPC URL"
+            label="Full node RPC URL (Zebrad or Zakura)"
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             placeholder={
@@ -117,14 +135,14 @@ export function NetworkSettings({ onBack }: NetworkSettingsProps) {
                 <>
                   Local testnet:{" "}
                   <code className="bg-black/5 dark:bg-white/10 px-1 rounded">http://127.0.0.1:18232</code>. WSL
-                  Zebrad: use the WSL IP, e.g.{" "}
+                  node: use the WSL IP, e.g.{" "}
                   <code className="bg-black/5 dark:bg-white/10 px-1 rounded">http://172.x.x.x:18232</code>.
                 </>
               ) : (
                 <>
                   Local mainnet:{" "}
                   <code className="bg-black/5 dark:bg-white/10 px-1 rounded">http://127.0.0.1:8232</code>. Remote
-                  Zebrad: use that PC&apos;s IP on the same port.
+                  node: use that host&apos;s IP on the same port.
                 </>
               )}
             </span>

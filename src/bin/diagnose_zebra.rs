@@ -3,7 +3,7 @@ use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    println!("🔍 Zebra Node RPC Diagnostic Tool");
+    println!("🔍 Zebra / Zakura node RPC diagnostic tool");
     println!("==================================\n");
 
     // Get Zebra URL from command line or use default

@@ -11,13 +11,14 @@
 | [`MAINNET_SEND_READINESS_EVIDENCE.md`](MAINNET_SEND_READINESS_EVIDENCE.md) | Mainnet send timings assume a **live** Zebrad RPC |
 | [`../issues/bugs/2026-06-desktop-pre-release-debug-session.md`](../issues/bugs/2026-06-desktop-pre-release-debug-session.md) | NET_001 RCA, Windows `zebrad.toml` path, port 8232 vs 18232 |
 | [`../../ZEBRAD_SHIELDED_SEND_LIMIT.md`](../../ZEBRAD_SHIELDED_SEND_LIMIT.md) | What Zebrad does **not** provide (Orchard witnesses) |
+| [`ZAKURA_NOZYWALLET_CONNECTIVITY.md`](ZAKURA_NOZYWALLET_CONNECTIVITY.md) | Same wallet wiring for [Zakura](https://zakura.com/) users |
 | [`../../book/src/advanced/zebra-node.md`](../../book/src/advanced/zebra-node.md) | User-facing book chapter (summary + link here) |
 
 ---
 
 ## Executive summary (lecture slide)
 
-1. **NozyWallet is not a full node** — it needs a reachable **Zebrad JSON-RPC** endpoint for chain tip, broadcast, and treestate.
+1. **NozyWallet is not a full node** — it needs a reachable **Zebrad or Zakura JSON-RPC** endpoint for chain tip, broadcast, and treestate.
 2. **Connectivity is config-driven** — `zebra_url` in `config.json`, overridable by `ZEBRA_RPC_URL`.
 3. **“Connected” means `getblockcount` works** — run `nozy test-zebra` before sync or send.
 4. **Windows + WSL is a common layout** — Zebrad in Linux, wallet on Windows; use the **WSL IP**, not `127.0.0.1`, unless localhost forwarding is explicitly set up.
