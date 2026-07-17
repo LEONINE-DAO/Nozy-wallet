@@ -3,10 +3,19 @@
 //! Priority 1: protect broadcasting IP (local Zebrad OR Tor/I2P/Nym).
 //!   Biggest win for remote stacks: route **all outgoing tx submits** over Nym
 //!   (smolmix), not only sync. See `docs/reference/NYM_IP_PRIVACY_CASE_BREAKDOWN.md`.
-//! Priority 2: shared cohort / cover traffic (scaffolding; cross-user health later).
-//! Priority 3: amount + timing selection algorithm (ZIP 318 now; Zooko path planned).
+//! Priority 2: shared cohort / cover traffic (scaffolding).
+//!   Cover is not locally verifiable without a honeypot channel — thin-bucket
+//!   UX is SHOULD warn/delay. Next: public-chain cover estimator (crossings
+//!   per denom per bucket), not a coordinator.
+//! Priority 3: amount + timing selection.
+//!   Active default: Shielded Labs / Zooko `{1,2,5}×10^k` (Appendix A) so
+//!   turnstile amounts collide with wallets following that doc. ZIP 318
+//!   power-of-ten remains available as a compatibility ladder.
+//!   Hard invariant: only canonical amounts cross the turnstile; Orchard→Orchard
+//!   rearrange privately when needed; abandon residual below 0.001 ZEC.
 //!
-//! See `docs/reference/SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md`.
+//! See `docs/reference/SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md` and the
+//! Shielded Labs doc *Security issues in migrating user funds from Orchard to Ironwood*.
 
 use crate::error::{NozyError, NozyResult};
 use crate::privacy_network::proxy::{PrivacyNetwork, ProxyConfig};
@@ -19,22 +28,24 @@ use serde::{Deserialize, Serialize};
 pub enum AmountTimingAlgorithm {
     /// ZIP 318 greedy power-of-ten denominations + 256-block anchor buckets.
     Zip318PowerOfTen,
-    /// Zooko-style `{1,2,5}×10^k` + concurrency/cover gates (planned).
-    Zooko125Planned,
+    /// Shielded Labs / Zooko `{1,2,5}×10^k` buckets (Appendix A) — active default.
+    Zooko125,
 }
 
 impl AmountTimingAlgorithm {
     pub fn label(self) -> &'static str {
         match self {
             Self::Zip318PowerOfTen => "ZIP 318 power-of-ten + shared anchor buckets",
-            Self::Zooko125Planned => "Zooko {1,2,5}×10^k + concurrency gates (planned)",
+            Self::Zooko125 => {
+                "Shielded Labs / Zooko {1,2,5}×10^k + shared anchor buckets (Appendix A)"
+            }
         }
     }
 }
 
 /// Active amount/timing algorithm for Orchard → Ironwood migration.
 pub fn selected_amount_timing_algorithm() -> AmountTimingAlgorithm {
-    AmountTimingAlgorithm::Zip318PowerOfTen
+    AmountTimingAlgorithm::Zooko125
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -317,12 +328,19 @@ pub struct AmountTimingStatus {
 pub fn amount_timing_status() -> AmountTimingStatus {
     AmountTimingStatus {
         active: selected_amount_timing_algorithm(),
-        planned: AmountTimingAlgorithm::Zooko125Planned,
+        planned: AmountTimingAlgorithm::Zooko125,
         notes: vec![
-            "Active: ZIP 318 canonical power-of-ten denominations and 256-block buckets."
+            "Active: Shielded Labs / Zooko {1,2,5}×10^k denominations (Appendix A) + \
+             shared 256-block anchor buckets so turnstile amounts collide with peer wallets."
                 .to_string(),
-            "Planned: align with Zooko {1,2,5}×10^k + concurrency/cover gates from the \
-             coordination-migration writeup without fragmenting the anonymity set."
+            "Invariant: only canonical bucket amounts cross the turnstile; residual below \
+             0.001 ZEC is abandoned (not one-off turnstile sizes)."
+                .to_string(),
+            "Network privacy (Defense A) is required before Broadcast: local Zebrad, Nym, or Tor. \
+             Clearnet links revealed turnstile amounts to your IP/session."
+                .to_string(),
+            "Memoryless randomized timing (Appendix A) and consolidation rounds are the next \
+             cover-traffic steps; ZIP 318 power-of-ten remains a compatibility ladder."
                 .to_string(),
         ],
     }
@@ -467,10 +485,10 @@ mod tests {
     }
 
     #[test]
-    fn amount_timing_defaults_to_zip318() {
+    fn amount_timing_defaults_to_zooko_125() {
         assert_eq!(
             selected_amount_timing_algorithm(),
-            AmountTimingAlgorithm::Zip318PowerOfTen
+            AmountTimingAlgorithm::Zooko125
         );
     }
 }

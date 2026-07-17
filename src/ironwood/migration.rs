@@ -4,10 +4,12 @@
 //! transactions with the NU6.3 `zcash_primitives` builder. Broadcast remains
 //! gated until scheduled-window validation and retry handling are complete.
 //!
-//! ZIP 318 (draft) specifies a privacy-preserving flow:
-//! note-splitting, canonical power-of-ten denominations, shared anchor-height
-//! buckets, and persisted scheduled/pre-signed migration transactions.
+//! Privacy-preserving flow (ZIP 318 schedule + Shielded Labs Appendix A):
+//! note-splitting, canonical `{1,2,5}×10^k` denominations (active default),
+//! shared anchor-height buckets, and persisted scheduled/pre-signed migration
+//! transactions. ZIP 318 power-of-ten remains a compatibility ladder.
 
+use super::network_privacy::{selected_amount_timing_algorithm, AmountTimingAlgorithm};
 use crate::error::{NozyError, NozyResult};
 use crate::notes::{load_wallet_notes, SerializableOrchardNote, SpendableNote};
 use crate::orchard_tx::OrchardWitnessProvider;
@@ -40,6 +42,10 @@ pub const ZIP318_DEFAULT_K_MAX: u8 = 4;
 pub const IRONWOOD_MIGRATION_SCHEDULE_FILE: &str = "ironwood_migration_schedule.json";
 pub const ZIP318_TRANSFER_EXPIRY_BLOCKS: u32 = ZIP318_ANCHOR_BUCKET_INTERVAL_BLOCKS;
 pub const MIGRATION_SCHEDULE_VERSION: u32 = 1;
+
+/// Smallest Shielded Labs / Zooko `{1,2,5}×10^k` bucket (0.001 ZEC).
+/// Residuals below this are abandoned rather than emitted as one-off turnstile sizes.
+pub const ZOOKO_RESIDUAL_ABANDON_ZAT: u64 = 100_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MigrationTransfer {
@@ -235,8 +241,6 @@ pub fn next_zip318_anchor_boundary(height: u32) -> u32 {
 }
 
 fn canonical_power_of_ten_denominations(mut amount_zat: u64) -> Vec<MigrationDenomination> {
-    // Priority 3 (active): ZIP 318 power-of-ten. Planned: Zooko {1,2,5}×10^k via
-    // `network_privacy::AmountTimingAlgorithm::Zooko125Planned` once ecosystem converges.
     if amount_zat == 0 {
         return Vec::new();
     }
@@ -263,6 +267,89 @@ fn canonical_power_of_ten_denominations(mut amount_zat: u64) -> Vec<MigrationDen
         }
     }
     result
+}
+
+/// Build ascending `{1,2,5}×10^k` buckets in zatoshis (k >= -3 → 0.001 ZEC upward).
+fn zooko_125_buckets_up_to(max_zat: u64) -> Vec<u64> {
+    let mut buckets = Vec::new();
+    let mut base = ZOOKO_RESIDUAL_ABANDON_ZAT; // 0.001 ZEC
+    loop {
+        for &digit in &[1u64, 2, 5] {
+            let Some(value) = base.checked_mul(digit) else {
+                continue;
+            };
+            if value > max_zat {
+                return buckets;
+            }
+            buckets.push(value);
+        }
+        match base.checked_mul(10) {
+            Some(next) if next > base => base = next,
+            _ => break,
+        }
+    }
+    buckets
+}
+
+/// Greedy Shielded Labs / Zooko `{1,2,5}×10^k` decomposition for schedule planning.
+/// Residuals below 0.001 ZEC are abandoned (not scheduled as unique turnstile sizes).
+fn canonical_125_denominations(mut amount_zat: u64) -> Vec<MigrationDenomination> {
+    if amount_zat < ZOOKO_RESIDUAL_ABANDON_ZAT {
+        return Vec::new();
+    }
+
+    let buckets = zooko_125_buckets_up_to(amount_zat);
+    let mut result = Vec::new();
+    for &denom in buckets.iter().rev() {
+        let count = amount_zat / denom;
+        if count > 0 {
+            result.push(MigrationDenomination {
+                value_zat: denom,
+                count: count as u32,
+            });
+            amount_zat -= count * denom;
+        }
+    }
+    // Intentionally abandon residual < ZOOKO_RESIDUAL_ABANDON_ZAT.
+    let _ = amount_zat;
+    result
+}
+
+/// Active canonical ladder (Shielded Labs `{1,2,5}×10^k` by default).
+fn canonical_denominations(amount_zat: u64) -> Vec<MigrationDenomination> {
+    match selected_amount_timing_algorithm() {
+        AmountTimingAlgorithm::Zip318PowerOfTen => {
+            canonical_power_of_ten_denominations(amount_zat)
+        }
+        AmountTimingAlgorithm::Zooko125 => canonical_125_denominations(amount_zat),
+    }
+}
+
+/// Appendix A amount selection for one migration round (probabilistic step-down).
+///
+/// Starts at the largest bucket ≤ `current_balance_zat`, then fair-coin steps down
+/// on heads until tails or the smallest bucket. Returns `None` when the residual
+/// should be abandoned (< 0.001 ZEC).
+pub fn select_zooko_round_amount<R: rand::RngCore>(
+    current_balance_zat: u64,
+    rng: &mut R,
+) -> Option<u64> {
+    if current_balance_zat < ZOOKO_RESIDUAL_ABANDON_ZAT {
+        return None;
+    }
+    let buckets = zooko_125_buckets_up_to(current_balance_zat);
+    if buckets.is_empty() {
+        return None;
+    }
+    let mut idx = buckets.len() - 1;
+    while idx > 0 {
+        // Heads → step down; tails → stop.
+        if rng.next_u32() & 1 == 0 {
+            break;
+        }
+        idx -= 1;
+    }
+    Some(buckets[idx])
 }
 
 fn schedule_canonical_transfers(
@@ -1003,7 +1090,7 @@ pub fn plan_orchard_migration_at(
         .collect();
 
     let total_zatoshis = transfers.iter().map(|t| t.value_zat).sum();
-    let denomination_transfers = canonical_power_of_ten_denominations(total_zatoshis);
+    let denomination_transfers = canonical_denominations(total_zatoshis);
     let total_transfer_count = denomination_transfers.iter().map(|d| d.count).sum();
     let scheduled_transfers =
         schedule_canonical_transfers(&denomination_transfers, chain_tip, ZIP318_DEFAULT_K_MAX);
@@ -1582,11 +1669,11 @@ pub async fn execute_orchard_migration_broadcast(
     })
 }
 
-/// Flatten canonical power-of-ten denominations into per-note output values.
+/// Flatten canonical denominations into per-note output values.
 pub fn flatten_canonical_denomination_zatoshis(amount_zat: u64) -> Vec<u64> {
-    canonical_power_of_ten_denominations(amount_zat)
+    canonical_denominations(amount_zat)
         .into_iter()
-        .flat_map(|part| std::iter::repeat_n(part.value_zat, part.count as usize))
+        .flat_map(|d| std::iter::repeat_n(d.value_zat, d.count as usize))
         .collect()
 }
 
@@ -1954,12 +2041,40 @@ mod tests {
     }
 
     #[test]
-    fn canonical_denominations_are_power_of_ten_greedy() {
+    fn canonical_denominations_are_zooko_125_greedy() {
+        let parts = canonical_denominations(123_450_000);
+        let total: u64 = parts.iter().map(|p| p.value_zat * u64::from(p.count)).sum();
+        // 1.2345 ZEC → 1 + 0.2 + 0.02 + 0.01 + 0.002 + 0.002; residual 0.0005 abandoned
+        assert_eq!(total, 123_400_000);
+        assert_eq!(parts[0].value_zat, 100_000_000);
+        assert_eq!(parts[0].count, 1);
+        assert!(parts.iter().any(|p| p.value_zat == 20_000_000));
+        assert!(parts.iter().any(|p| p.value_zat == 2_000_000));
+    }
+
+    #[test]
+    fn power_of_ten_ladder_still_available() {
         let parts = canonical_power_of_ten_denominations(123_450_000);
         let total: u64 = parts.iter().map(|p| p.value_zat * u64::from(p.count)).sum();
         assert_eq!(total, 123_450_000);
         assert_eq!(parts[0].value_zat, 100_000_000);
-        assert_eq!(parts[0].count, 1);
+    }
+
+    #[test]
+    fn zooko_round_amount_never_exceeds_balance() {
+        use rand::SeedableRng;
+        let mut rng = rand::rngs::StdRng::seed_from_u64(42);
+        // ~2182.48296002 ZEC (Appendix A example starting balance after fee adjust)
+        let balance = 218_248_296_002u64;
+        for _ in 0..64 {
+            if let Some(amount) = select_zooko_round_amount(balance, &mut rng) {
+                assert!(amount <= balance);
+                assert!(amount >= ZOOKO_RESIDUAL_ABANDON_ZAT);
+                // All Appendix A buckets are multiples of 0.001 ZEC.
+                assert_eq!(amount % ZOOKO_RESIDUAL_ABANDON_ZAT, 0);
+            }
+        }
+        assert!(select_zooko_round_amount(50_000, &mut rng).is_none());
     }
 
     #[test]
@@ -2124,7 +2239,10 @@ mod tests {
     fn note_requires_split_for_composite_values() {
         assert!(note_requires_canonical_split(110_000_000));
         assert!(!note_requires_canonical_split(100_000_000));
-        assert!(note_requires_canonical_split(20_000_000));
+        // 0.2 ZEC is a single {1,2,5}×10^k bucket — no split required.
+        assert!(!note_requires_canonical_split(20_000_000));
+        // 0.3 ZEC = 0.2 + 0.1 → composite under the active ladder.
+        assert!(note_requires_canonical_split(30_000_000));
     }
 
     #[test]
@@ -2132,9 +2250,10 @@ mod tests {
         assert!(orchard_note_needs_splittable_split(110_000_000));
         assert!(!orchard_note_needs_splittable_split(100_000_000));
         assert!(!orchard_note_needs_splittable_split(10_000_000));
-        // Fee-dust change from a split: non-canonical but too small to split again.
-        assert!(note_requires_canonical_split(9_960_000));
-        assert!(!orchard_note_needs_splittable_split(9_960_000));
+        // Single canonical bucket and residual-below-floor amounts are not split candidates.
+        assert!(!note_requires_canonical_split(200_000));
+        assert!(!note_requires_canonical_split(50_000));
+        assert!(!orchard_note_needs_splittable_split(50_000));
 
         fn sample_note(value: u64, nullifier_byte: u8) -> crate::notes::SerializableOrchardNote {
             crate::notes::SerializableOrchardNote {
@@ -2160,7 +2279,8 @@ mod tests {
         let notes = vec![
             sample_note(100_000_000, 1),
             sample_note(10_000_000, 2),
-            sample_note(9_960_000, 3),
+            // Residual / fee-dust leftover — not a split candidate under {1,2,5}×10^k.
+            sample_note(50_000, 3),
         ];
         assert!(!orchard_wallet_needs_note_split(&notes));
     }

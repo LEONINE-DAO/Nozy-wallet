@@ -213,7 +213,7 @@ export function IronwoodReadinessCard() {
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-400">
             Prefer a <strong>local Zebrad</strong>. If ZIP 318 requires it, Split first; then Plan
             saves the schedule, Migrate prebuilds the next turnstile, Broadcast submits it
-            in-window.
+            in-window. Amounts use Shielded Labs <strong>{`{1,2,5}×10^k`}</strong> buckets.
             {status?.zip318_note_split_required
               ? " Note split is required before Migrate — use Split below."
               : null}
@@ -244,6 +244,20 @@ export function IronwoodReadinessCard() {
         </div>
       </div>
 
+      {(status?.activation_notice || status?.orchard_funds_at_risk) && (
+        <div className="mt-5 rounded-2xl border border-amber-300/80 dark:border-amber-700/50 bg-amber-50/90 dark:bg-amber-950/30 p-4 text-sm text-amber-950 dark:text-amber-100">
+          <p className="font-semibold">Activation notice</p>
+          <p className="mt-2 leading-6">{status.activation_notice}</p>
+          {status.migration_privacy_warnings?.length ? (
+            <ul className="mt-3 list-disc space-y-1 pl-5 text-amber-900/90 dark:text-amber-200/90">
+              {status.migration_privacy_warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      )}
+
       {error && (
         <div className="mt-5 rounded-2xl border border-red-200 dark:border-red-800/50 bg-red-50 dark:bg-red-900/20 p-4 text-sm text-red-700 dark:text-red-300">
           {error}
@@ -255,7 +269,7 @@ export function IronwoodReadinessCard() {
           label="Activation"
           value={
             status?.activation_height
-              ? `Height ${status.activation_height.toLocaleString()}`
+              ? `Height ${status.activation_height.toLocaleString()} · ${status.activation_target_date}`
               : status
                 ? `Target ${status.activation_target_date}`
                 : "Checking"

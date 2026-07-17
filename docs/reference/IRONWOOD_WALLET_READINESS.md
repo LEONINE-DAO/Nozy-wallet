@@ -1,9 +1,11 @@
 # Ironwood (NU6.3) wallet readiness — NozyWallet
 
-**Status:** In progress (July 2026)  
-**Target:** Mainnet activation **2026-07-21** (miner timeline shared by ZF/ZODL; block height not yet configured in `zcash_protocol`)  
+**Status:** CLI **v2.4.0** shipped (July 2026) — testnet-validated Ironwood scan, migration, and send; desktop/API surfaces in progress  
+**Release:** [v2.4.0 Ironwood (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0)  
+**Target:** Mainnet activation **2026-07-28** at height **3,428,143** (ecosystem PSA; wallet falls back to this height if `zcash_protocol` has not pinned NU6.3 yet)  
 **Forum:** [Ironwood: Verifying the Soundness of Zcash's Circulating Supply](https://forum.zcashcommunity.com/t/ironwood-verifying-the-soundness-of-zcash-s-circulating-supply/56044)  
-**Wallet migration draft:** [ZIP 318 PR #1317](https://github.com/zcash/zips/pull/1317)
+**Wallet migration draft:** [ZIP 318 PR #1317](https://github.com/zcash/zips/pull/1317)  
+**Privacy guidance:** Shielded Labs — *Security issues in migrating user funds from Orchard to Ironwood* (Zooko Wilcox & Taylor Hornby): network-level privacy (Defense A) + `{1,2,5}×10^k` concurrent mixing (Defense B / Appendix A)
 
 ---
 
@@ -20,8 +22,15 @@
 | Ironwood scan/sync (LWD + JSON-RPC) | **JSON-RPC validated** — V3 `IronwoodDomain` decrypt + pool-aware spendable load; LWD needs `ironwood-valar` validation (see **Ironwood lightwalletd** below) |
 | Desktop / API migration UX | **Started (desktop read-only)** — Home card/status panel added; migration actions disabled |
 | Zebrad + lightwalletd NU6.3 | **Testnet WSL node synced** — use WSL IP `:18232` for migration validation (not Windows `zebrad.exe`); run `scripts/ironwood-lwd-smoke.ps1` after `ironwood-valar` LWD |
+| Safer migration Priority 1 (IP) | **Started** — CLI broadcast gate + desktop/API status (`safer_migration`); attest checkbox on Home card |
+| Safer migration Priority 2 (cover) | **Scaffolded** — local thin-bucket warn; **SHOULD** not MUST; next: public-chain cover estimator (no coordinator) |
+| Safer migration Priority 3 (amounts/timing) | **Shielded Labs `{1,2,5}×10^k` active** — residual below 0.001 ZEC abandoned; ZIP 318 power-of-ten kept as compatibility ladder; memoryless timing / consolidation rounds next |
+
+**Safer migration writeup:** [`SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md`](SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md) · code: `src/ironwood/network_privacy.rs`
 
 **Formal verification** (Lean 4 `zcash/ironwood` repo) is separate from wallet work — see [`IRONWOOD_PR4_NOTES.md`](IRONWOOD_PR4_NOTES.md).
+
+**Dynamic-fee pilot (separate case breakdown):** Shielded Labs ZIP-317 / expiry / speed-up policy lives in [`DYNAMIC_FEE_CASE_BREAKDOWN.md`](DYNAMIC_FEE_CASE_BREAKDOWN.md). Ironwood v2.4.0 **reuses** `src/fee_policy.rs` for sends and migration, but **Ironwood “Case 3-F fee dust”** and **dynamic-fee “Case 3 (15 vs 5 blocks)”** are different topics — see the cross-reference table in that doc if you read both papers.
 
 ---
 
@@ -81,7 +90,7 @@ Evidence and rationale:
 - Pool-aware note tagging lets Nozy keep legacy Orchard notes and new Ironwood notes separate during the transition.
 - Spendability should remain conservative: Ironwood notes can be indexed before they are exposed as spendable, then enabled only after transaction-builder support is validated.
 
-Conclusion: migration is not complete until normal send routing stops producing new Orchard-only wallet state. **Phase 3.4 (2026-07-06)** shipped CLI Ironwood send routing; desktop/API Send surfaces still need wiring.
+Conclusion: migration is not complete until normal send routing stops producing new Orchard-only wallet state. **Phase 3.4** shipped CLI Ironwood send routing on testnet (2026-07-06); **v2.4.0** published the validated CLI stack. Desktop/API Send surfaces still need wiring.
 
 ### Product decision
 
@@ -1225,7 +1234,7 @@ This is the schedule ZF/ZODL shared with miners for feedback:
 | 2026-07-03 | Ironwood / NU6.3 testnet activation | Use testnet to validate scan, witness, send, migration |
 | 2026-07-09 | Ironwood / NU6.3 mainnet deployment | Mainnet-compatible release candidate needed |
 | 2026-07-15 | `zcashd 6.20.0` end of support | Nozy must assume Zebra-only node operators |
-| 2026-07-21 | Ironwood / NU6.3 mainnet activation | Migration UX and post-activation send routing must be ready |
+| 2026-07-28 | Ironwood / NU6.3 mainnet activation (height 3,428,143) | Migration UX and post-activation send routing must be ready |
 
 Current `zcash_protocol` mainline facts:
 
@@ -1401,4 +1410,115 @@ nozy --testnet sync --to-tip
 
 ---
 
-*Update this doc when Phase 1 compiles or activation height is finalized.*
+## Release wrap-up — v2.4.0 Ironwood (CLI)
+
+**Published:** 2026-07-06  
+**Tag:** [v2.4.0](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0)  
+**Download:** [nozy-windows.exe](https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe) · Linux · macOS (see release assets)
+
+This section closes the case-breakdown arc that started as a design question — *how should an Orchard-first wallet move users into Ironwood without harming privacy?* — and ends with a production CLI release on testnet-validated Ironwood infrastructure.
+
+### How the cases led here
+
+The migration case breakdown (Cases 1–4 at the top of this doc) was not academic. Each case became an engineering constraint that showed up again in live testnet work:
+
+| Case | Design question | What v2.4.0 proves |
+|------|-----------------|---------------------|
+| **1 — Do nothing** | Can we lag after NU6.3? | No — post-activation sends route to Ironwood; Orchard-only normal sends are blocked once active |
+| **2 — Migrate everything at once** | One-shot migration? | Rejected — ZIP 318 turnstiles, canonical denominations, and anchor buckets instead |
+| **3 — Scheduled turnstile migration** | Privacy-aware migration? | **Shipped** — `ironwood plan` / `migrate` / `broadcast` state machine; 3+ confirmed turnstiles on profile `5e7821be3f1d89d6` |
+| **4 — Post-migration normal sends** | Life after migration? | **Shipped** — V3 `IronwoodDomain` scan, pool-aware witnesses, V6 `ironwood_tx` send path; live smoke `d6794092…` block **4148837** |
+
+Below those product cases, the operator case log (restore sync, treestate parsing, split loops, presigned broadcast, witness repair, LWD smoke) was the day-to-day evidence that the design could survive real nodes, real proving time, and real wallet state — not just compile checks.
+
+```text
+Cases 1–4 (product)     → ZIP 318 posture + Ironwood as the new shielded default
+Cases A–H (2026-07-06)  → IronwoodDomain decrypt, witness repair, Phase 3.4 routing
+Live send smoke         → normal Ironwood spend confirmed on testnet
+v2.4.0 release          → CLI binaries for Windows, Linux, macOS; CI-green master at tag
+```
+
+### What shipped in v2.4.0
+
+| Area | Delivered |
+|------|-----------|
+| **NU6.3 stack** | `orchard` 0.15-pre, librustzcash git pins, `.cargo/config.toml` (`zcash_unstable="nu6.3"`) |
+| **Scan / balance** | Ironwood V3 note decrypt, pool-tagged `notes.json`, Ironwood witness fields |
+| **Migration** | ZIP 318-aware schedule, split, turnstile prebuild, window broadcast |
+| **Send** | Post-activation routing through `ironwood_tx.rs` (V6 PCZT) |
+| **Operator tooling** | `ironwood status` / `plan` / `preflight` / `migrate` / `broadcast`; LWD smoke scripts |
+| **Docs** | This readiness log — case breakdown + live validation trail |
+
+**Not in v2.4.0 (by design):** desktop Send wiring, Keystone Ironwood hardware sign path, API server promotion on releases. The CLI remains the authoritative state machine; surfaces should consume it, not reimplement it.
+
+### Validation snapshot at release
+
+| Check | Result |
+|-------|--------|
+| Orchard → Ironwood migration loop | Complete on testnet profile; Orchard balance **0** |
+| Ironwood balance indexed | **1.0988 ZEC** after rescan (`IronwoodDomain` fix) |
+| `ironwood status` | **Ironwood-ready: yes** |
+| Normal Ironwood send | TXID `d67940924a0c4b1d3cb6e35161f6865140d101d9af85c12df0b97f247946d7af` |
+| ironwood-valar LWD | Smoke-validated (`ironwoodCommitmentTreeSize` at tip) |
+| Mainnet zebrad autostart | WSL `ZebradWSL-*` tasks **Ready** (mainnet only) |
+
+### Reflection — implementing Ironwood as a first-year wallet developer
+
+Shipping Ironwood in NozyWallet was one of the most meaningful stretches of work in the project's first year — not because every surface is finished, but because the work sits on a real protocol transition in Zcash history.
+
+NU6.3 / Ironwood is not a cosmetic upgrade. It is a new shielded pool, a new note version, new transaction semantics, and a wallet migration story (ZIP 318) written explicitly to protect user privacy during the move. Being able to take NozyWallet — an Orchard-first, Zebra-backed wallet — through that transition on testnet, from "Orchard notes still spendable" through turnstile migration to a confirmed normal Ironwood send, felt like participating in the ecosystem's next chapter rather than reading about it.
+
+A few things made the experience genuinely good, even when it was hard:
+
+- **Clear product cases.** Cases 1–4 gave a vocabulary for trade-offs (do nothing, migrate all at once, scheduled turnstiles, post-migration sends). When something failed in testnet — empty Ironwood balance after turnstiles, witness hex missing, send blocked post-activation — we could name which case broke and fix the right layer instead of guessing.
+- **Evidence over optimism.** Every milestone in this doc ties to a command, a TXID, a block height, or a script output. That discipline matters for a young wallet team building on pre-release `librustzcash` pins.
+- **Standing on real infrastructure.** WSL Zebrad, ironwood-valar lightwalletd, local witness derivation, and the existing Nozy proving stack meant Ironwood was integrated into a wallet that already cared about shielded-first usage — not bolted onto a demo.
+- **Release as closure.** Publishing **v2.4.0** after CI green and a retagged release turned months of case notes into something other developers and operators can download and run.
+
+As a first-year wallet developer, Ironwood was the right level of difficulty: hard enough to force deep learning (domains, pools, V6 PCZT, migration windows), bounded enough to ship a CLI milestone before mainnet activation (~2026-07-28 / height 3,428,143). The remaining work — desktop UX, hardware signers, compact sync end-to-end — is real, but it extends a validated core instead of replacing a guess.
+
+### What comes next (post–v2.4.0)
+
+1. **Mainnet week** — upgrade Zebrad + LWD, confirm activation height, run the same operator loop on mainnet profiles.
+2. **Desktop / API** — wire Send and migration UX to the CLI state machine (read-only Home card exists; actions still gated).
+3. **Keystone** — Ironwood hardware sign path (software send already validated).
+4. **Compact sync** — full Zeaking scan over Ironwood actions once LWD path is exercised beyond smoke.
+
+### Closing
+
+The case breakdown started as a privacy decision document. It ends as a release note backed by testnet proof: NozyWallet can scan Ironwood, migrate Orchard funds through ZIP 318-shaped turnstiles, and send normally in the Ironwood pool from the CLI.
+
+That is a good place to be one year into wallet development — and a good foundation for mainnet.
+
+---
+
+## Local-only / untracked material (indexed 2026-07-14)
+
+### Priority 2 — cover estimator (local artifacts)
+
+Public-chain cover trial writeup + data (untracked / local):
+
+| Path | Role |
+|------|------|
+| [`COVER_ESTIMATOR_TESTNET_RESULTS.md`](COVER_ESTIMATOR_TESTNET_RESULTS.md) | Testnet scan 4134000→tip; Cover(D,B) tables |
+| `docs/reference/cover_estimator_*.json` / `cover_estimator_analysis.txt` | Raw scan outputs |
+| `scripts/cover_estimator_scan.py`, `cover_estimator_analyze.py`, `cover_estimator_dual_report.py` | Estimator tooling |
+| Forum post draft / generators | `IRONWOOD_FORUM_POST.docx`, `generate_ironwood_forum_doc.py`, [`SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md`](SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md) |
+
+### API / desktop WIP (untracked or modified)
+
+| Path | Role |
+|------|------|
+| `api-server/src/ironwood_handlers.rs` | HTTP Ironwood status/plan/migrate/broadcast surface |
+| `api-server/src/wallet_profile_handlers.rs` | Multi-profile / network wallet status |
+| `src/ironwood/migration.rs`, `network_privacy.rs` | Migration + safer-migration modes |
+| `scripts/ironwood-lwd-wsl.*`, `install-zebra-v6-wsl.sh` | Operator WSL scripts |
+| Local `lightwalletd/` tree, `zebrad` binary | Runtime copies — not source of truth |
+
+### Session omnibus
+
+Also see [`SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md`](SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md) for Jul 11 desktop MVP + Nym wiring.
+
+---
+
+*Last updated: 2026-07-14 (local artifact index). Prior wrap-up: 2026-07-06 (v2.4.0 CLI).*

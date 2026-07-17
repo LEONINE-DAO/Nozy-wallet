@@ -1592,7 +1592,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!(
                 "🔗 Testing {} node connection...",
                 match config.backend {
-                    nozy::BackendKind::Zebra => "Zebra",
+                    nozy::BackendKind::Zebra => "Zebra-family",
                     nozy::BackendKind::Crosslink => "Crosslink",
                 }
             );
@@ -1603,22 +1603,28 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 Ok(_) => {
                     println!();
                     println!("🎉 Connection successful!");
-                    let backend_name = match config.backend {
-                        nozy::BackendKind::Zebra => "Zebra",
-                        nozy::BackendKind::Crosslink => "Crosslink",
-                    };
+                    let node_kind = client.detect_chain_node_kind().await;
                     let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
                     if is_local {
                         println!(
                             "✅ NozyWallet is connected to your local {} node",
-                            backend_name
+                            node_kind.label()
                         );
                     } else {
                         println!(
                             "✅ NozyWallet is connected to the remote {} node",
-                            backend_name
+                            node_kind.label()
                         );
                     }
+
+                    match client.probe_wallet_treestate().await {
+                        Ok(()) => println!("✅ Wallet RPC probe: z_gettreestate (Orchard) OK"),
+                        Err(e) => {
+                            println!("⚠️  Wallet RPC probe failed: {}", e);
+                            println!("   Shielded sync/send need z_gettreestate at chain tip.");
+                        }
+                    }
+
                     println!("✅ Ready to sync and send transactions!");
 
                     match client.get_network_info().await {
@@ -1628,6 +1634,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             }
                             if let Some(blocks) = info.get("blocks") {
                                 println!("   Blocks: {:?}", blocks);
+                            }
+                            if let Some(subver) = info.get("subversion") {
+                                println!("   Subversion: {:?}", subver);
                             }
                         }
                         Err(_) => {}
@@ -1640,9 +1649,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
                     if is_local {
                         println!("💡 Troubleshooting steps for local node:");
-                        println!("   1. Make sure the node is running on this PC");
+                        println!("   1. Make sure Zebrad or Zakurad is running on this PC");
                         println!("   2. Check if RPC is enabled in the node config");
-                        println!("   3. Verify it is listening on {}", test_url);
+                        println!("   3. Zakura: disable cookie auth for lightwalletd, or set ZAKURA_RPC_COOKIE");
+                        println!("   4. Verify it is listening on {}", test_url);
                     } else {
                         println!("💡 Troubleshooting steps for remote node:");
                         println!("   1. Check if the remote node is accessible");
@@ -3299,7 +3309,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     let mut blockers = Vec::new();
                     if activation_height.is_none() {
                         blockers.push(
-                            "NU6.3 activation height is not configured in zcash_protocol for this network yet"
+                            "NU6.3 activation height is not configured for this network yet"
                                 .to_string(),
                         );
                     } else if !ironwood_active {
@@ -3307,7 +3317,14 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             .map(|height| height.saturating_sub(chain_tip))
                             .unwrap_or(0);
                         blockers.push(format!(
-                            "Planning only: Ironwood activates in {remaining} blocks"
+                            "Planning only: Ironwood activates at height {} in ~{remaining} blocks \
+                             (target {}). After activation Orchard sends freeze except migration.",
+                            activation_height.unwrap_or(0),
+                            if testnet {
+                                nozy::NU6_3_TESTNET_ACTIVATION_TARGET
+                            } else {
+                                nozy::NU6_3_MAINNET_ACTIVATION_TARGET
+                            }
                         ));
                     }
                     if ironwood_active && orchard_zat > 0 {

@@ -1,7 +1,7 @@
 use crate::error::TauriError;
 use crate::commands::ironwood::desktop_migration_readiness;
 use nozy::{
-    fetch_pool_balances, gather_sync_status, is_ironwood_active, load_config,
+    fetch_pool_balances, gather_sync_status, ironwood_user_notices, is_ironwood_active, load_config,
     load_orchard_migration_schedule, load_wallet_notes, max_serialized_witness_lag_blocks,
     nu6_3_activation_height, plan_orchard_migration_at, previous_zip318_anchor_boundary,
     safer_migration_status_snapshot, shielded_pool::ShieldedPool, MigrationNetworkPrivacyOpts,
@@ -191,6 +191,9 @@ pub struct IronwoodDesktopStatusResponse {
     pub ready_to_prebuild: bool,
     pub ready_to_broadcast: bool,
     pub blockers: Vec<String>,
+    pub activation_notice: String,
+    pub migration_privacy_warnings: Vec<String>,
+    pub orchard_funds_at_risk: bool,
     pub safer_migration: IronwoodSaferMigrationResponse,
 }
 
@@ -257,10 +260,15 @@ pub async fn get_ironwood_status(
     }
     if activation_height.is_none() {
         blockers.push(
-            "NU6.3 mainnet activation height is not configured in zcash_protocol yet.".to_string(),
+            "NU6.3 activation height is not configured for this network yet.".to_string(),
         );
     } else if !ironwood_active {
-        blockers.push("Ironwood is not active at the current chain tip yet.".to_string());
+        blockers.push(format!(
+            "Ironwood activates at height {} (target {}). Until then Orchard works normally; \
+             after activation only migration turnstiles can spend Orchard notes.",
+            activation_height.unwrap(),
+            activation_target_date
+        ));
     }
     if !ironwood_rpc_detected {
         blockers
@@ -350,6 +358,7 @@ pub async fn get_ironwood_status(
     );
     // Migration actions available once Ironwood is live on-chain (or RPC shows the pool on testnet).
     let migration_enabled = ironwood_active || (is_testnet && ironwood_rpc_detected);
+    let notices = ironwood_user_notices(ironwood_active, orchard_wallet_zat);
 
     Ok(IronwoodDesktopStatusResponse {
         network: config.network,
@@ -375,6 +384,9 @@ pub async fn get_ironwood_status(
         ready_to_prebuild,
         ready_to_broadcast,
         blockers,
+        activation_notice: notices.activation_notice,
+        migration_privacy_warnings: notices.migration_privacy_warnings,
+        orchard_funds_at_risk: notices.orchard_funds_at_risk,
         safer_migration: IronwoodSaferMigrationResponse {
             network_privacy_allowed: safer.network_privacy_allowed,
             network_privacy_mode: safer.network_privacy_mode,

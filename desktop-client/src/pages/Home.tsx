@@ -18,6 +18,7 @@ import { Tooltip } from "../components/Tooltip";
 import { BlockSyncPanel } from "../components/BlockSyncPanel";
 import { useSettingsStore } from "../store/settingsStore";
 import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
+import { walletApi } from "../lib/api";
 import toast from "react-hot-toast";
 
 interface HomePageProps {
@@ -41,6 +42,27 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const [activeModal, setActiveModal] = useState<"receive" | null>(null);
   const [copied, setCopied] = useState(false);
   const [fiatRate, setFiatRate] = useState<number | null>(null);
+  const [ironwoodNotice, setIronwoodNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await walletApi.getIronwoodStatus();
+        if (cancelled) return;
+        if (res.data.orchard_funds_at_risk || !res.data.ironwood_active) {
+          setIronwoodNotice(res.data.activation_notice);
+        } else {
+          setIronwoodNotice(null);
+        }
+      } catch {
+        if (!cancelled) setIronwoodNotice(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!useLiveFiatPrice && customFiatPerZec != null) {
@@ -95,6 +117,24 @@ export function HomePage({ onNavigate }: HomePageProps) {
               </>
             }
           />
+
+          {ironwoodNotice && (
+            <div className="rounded-2xl border border-amber-300/80 dark:border-amber-700/50 bg-amber-50/90 dark:bg-amber-950/30 px-4 py-3 text-sm text-amber-950 dark:text-amber-100">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="leading-6">
+                  <span className="font-semibold">Ironwood notice: </span>
+                  {ironwoodNotice}
+                </p>
+                <Button
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => onNavigate("ironwood")}
+                >
+                  Open Ironwood
+                </Button>
+              </div>
+            </div>
+          )}
 
           <div className="relative overflow-hidden rounded-2xl p-6 sm:p-8 shadow-xl bg-gradient-to-br from-primary to-primary-200 text-gray-900 transition-transform hover:scale-[1.005] duration-300">
             <div className="relative z-10">

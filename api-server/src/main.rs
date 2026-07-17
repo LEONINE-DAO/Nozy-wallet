@@ -1,4 +1,4 @@
-use axum::http::HeaderValue;
+use axum::http::{HeaderName, HeaderValue};
 use axum::{
     http::{header, Method},
     middleware::from_fn,
@@ -11,9 +11,11 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 mod handlers;
+mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
+mod wallet_profile_handlers;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -71,6 +73,58 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallet/restore", post(handlers::restore_wallet))
         .route("/api/wallet/unlock", post(handlers::unlock_wallet))
         .route("/api/wallet/status", get(handlers::get_wallet_status))
+        .route(
+            "/api/wallet/profiles",
+            get(wallet_profile_handlers::get_network_wallet_status),
+        )
+        .route(
+            "/api/wallet/profiles/switch",
+            post(wallet_profile_handlers::switch_wallet_profile),
+        )
+        .route(
+            "/api/wallet/profiles/configure-network",
+            post(wallet_profile_handlers::configure_network_wallet),
+        )
+        .route(
+            "/api/wallet/profiles/testnet",
+            post(wallet_profile_handlers::create_or_restore_testnet_wallet),
+        )
+        .route(
+            "/api/ironwood/status",
+            get(ironwood_handlers::get_ironwood_status),
+        )
+        .route(
+            "/api/ironwood/plan",
+            post(ironwood_handlers::ironwood_plan_save),
+        )
+        .route(
+            "/api/ironwood/split",
+            post(ironwood_handlers::ironwood_split),
+        )
+        .route(
+            "/api/ironwood/migrate",
+            post(ironwood_handlers::ironwood_migrate),
+        )
+        .route(
+            "/api/ironwood/broadcast",
+            post(ironwood_handlers::ironwood_broadcast),
+        )
+        .route(
+            "/api/wallet/change-password",
+            post(handlers::change_wallet_password),
+        )
+        .route(
+            "/api/wallet/reveal-mnemonic",
+            post(handlers::reveal_mnemonic),
+        )
+        .route(
+            "/api/wallet/reveal-private-key",
+            post(handlers::reveal_private_key),
+        )
+        .route(
+            "/api/config/privacy-network",
+            get(handlers::get_privacy_network).post(handlers::update_privacy_network),
+        )
         .route("/api/address/generate", post(handlers::generate_address))
         .route("/api/balance", get(handlers::get_balance))
         .route("/api/sync", post(handlers::sync_wallet))
@@ -80,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/transaction/history",
             get(handlers::get_transaction_history),
         )
-        .route("/api/transaction/:txid", get(handlers::get_transaction))
+        .route("/api/transaction/{txid}", get(handlers::get_transaction))
         .route(
             "/api/transaction/check-confirmations",
             post(handlers::check_transaction_confirmations),
@@ -92,7 +146,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/address-book", get(handlers::list_address_book))
         .route("/api/address-book", post(handlers::add_address_book_entry))
         .route(
-            "/api/address-book/:name",
+            "/api/address-book/{name}",
             delete(handlers::remove_address_book_entry),
         )
         .route(
@@ -108,7 +162,7 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::test_zebra_connection),
         )
         .route("/api/chain/block-count", get(handlers::chain_block_count))
-        .route("/api/chain/block/:height", get(handlers::chain_block))
+        .route("/api/chain/block/{height}", get(handlers::chain_block))
         .route(
             "/api/transaction/broadcast",
             post(handlers::broadcast_raw_transaction),
@@ -185,23 +239,32 @@ async fn main() -> anyhow::Result<()> {
             };
 
             let cors_layer = if is_production && !cors_origins.is_empty() {
-                let origins: Vec<HeaderValue> = cors_origins
-                    .iter()
-                    .filter_map(|s| HeaderValue::from_str(s).ok())
-                    .collect();
-                CorsLayer::new().allow_origin(AllowOrigin::list(origins))
+                if cors_origins.iter().any(|o| o == "*") {
+                    // Mobile / native clients — allow any origin (no credentials with wildcard).
+                    CorsLayer::new().allow_origin(AllowOrigin::any())
+                } else {
+                    let origins: Vec<HeaderValue> = cors_origins
+                        .iter()
+                        .filter_map(|s| HeaderValue::from_str(s).ok())
+                        .collect();
+                    CorsLayer::new()
+                        .allow_origin(AllowOrigin::list(origins))
+                        .allow_credentials(true)
+                }
             } else {
-                CorsLayer::new().allow_origin(AllowOrigin::predicate(
-                    |origin: &HeaderValue, _request_head: &_| {
-                        let origin_str = origin.to_str().unwrap_or("");
-                        origin_str.starts_with("http://localhost:")
-                            || origin_str.starts_with("http://127.0.0.1:")
-                            || origin_str == "http://localhost"
-                            || origin_str == "http://127.0.0.1"
-                            || origin_str.starts_with("http://10.0.2.2:")
-                            || origin_str.starts_with("http://0.0.0.0:")
-                    },
-                ))
+                CorsLayer::new()
+                    .allow_origin(AllowOrigin::predicate(
+                        |origin: &HeaderValue, _request_head: &_| {
+                            let origin_str = origin.to_str().unwrap_or("");
+                            origin_str.starts_with("http://localhost:")
+                                || origin_str.starts_with("http://127.0.0.1:")
+                                || origin_str == "http://localhost"
+                                || origin_str == "http://127.0.0.1"
+                                || origin_str.starts_with("http://10.0.2.2:")
+                                || origin_str.starts_with("http://0.0.0.0:")
+                        },
+                    ))
+                    .allow_credentials(true)
             };
 
             cors_layer
@@ -217,8 +280,8 @@ async fn main() -> anyhow::Result<()> {
                     header::USER_AGENT,
                     header::ORIGIN,
                     header::REFERER,
+                    HeaderName::from_static("x-api-key"),
                 ])
-                .allow_credentials(true)
         })
         .layer(TraceLayer::new_for_http());
 

@@ -160,22 +160,24 @@ pub use ironwood::{
     assess_orchard_migration_readiness, build_schedule_from_plan, display_ironwood_status,
     execute_orchard_migration, execute_orchard_migration_broadcast, execute_orchard_note_split,
     fetch_pool_balances, flatten_canonical_denomination_zatoshis, ironwood_migration_schedule_path,
-    is_ironwood_active, load_orchard_migration_schedule, note_requires_canonical_split,
-    nu6_3_activation_height, orchard_only_send_blocker, plan_orchard_migration,
-    plan_orchard_migration_at, plan_orchard_note_split_outputs, presigned_transfer_broadcastable,
-    previous_zip318_anchor_boundary, refresh_orchard_migration_schedule_at,
-    require_migration_network_privacy, safer_migration_status_snapshot,
-    save_orchard_migration_plan_at, save_orchard_migration_schedule,
-    selected_amount_timing_algorithm, validate_orchard_migration_schedule, AmountTimingAlgorithm,
+    ironwood_user_notices, is_ironwood_active, load_orchard_migration_schedule,
+    note_requires_canonical_split, nu6_3_activation_height, orchard_only_send_blocker,
+    plan_orchard_migration, plan_orchard_migration_at, plan_orchard_note_split_outputs,
+    presigned_transfer_broadcastable, previous_zip318_anchor_boundary,
+    refresh_orchard_migration_schedule_at, require_migration_network_privacy,
+    safer_migration_status_snapshot, save_orchard_migration_plan_at,
+    save_orchard_migration_schedule, select_zooko_round_amount, selected_amount_timing_algorithm,
+    validate_orchard_migration_schedule, AmountTimingAlgorithm, IronwoodUserNotices,
     IronwoodWalletStatus, MigrationBroadcastResult, MigrationExecutionResult,
     MigrationNetworkPrivacyOpts, MigrationPlanSummary, MigrationReadinessReport,
     MigrationReadinessState, MigrationSchedule, MigrationScheduleValidation,
     MigrationScheduledTransfer, MigrationTransferStatus, OrchardNoteSplitResult,
-    PreparedMigrationTransaction, SaferMigrationStatusSnapshot, MIGRATION_SCHEDULE_VERSION,
-    NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_MAINNET_DEPLOYMENT_TARGET,
-    NU6_3_TESTNET_ACTIVATION_TARGET, NU6_3_TESTNET_DEPLOYMENT_TARGET,
-    ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD, ZIP318_DEFAULT_K_MAX,
-    ZIP318_TRANSFER_EXPIRY_BLOCKS,
+    PreparedMigrationTransaction, SaferMigrationStatusSnapshot, IRONWOOD_ACTIVATION_FREEZE_NOTICE,
+    IRONWOOD_MIGRATION_PRIVACY_WARNINGS, MIGRATION_SCHEDULE_VERSION,
+    NU6_3_MAINNET_ACTIVATION_HEIGHT, NU6_3_MAINNET_ACTIVATION_TARGET,
+    NU6_3_MAINNET_DEPLOYMENT_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
+    NU6_3_TESTNET_DEPLOYMENT_TARGET, ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD,
+    ZIP318_DEFAULT_K_MAX, ZIP318_TRANSFER_EXPIRY_BLOCKS, ZOOKO_RESIDUAL_ABANDON_ZAT,
 };
 #[cfg(feature = "native")]
 pub use ironwood_tx::{
@@ -226,7 +228,7 @@ pub use orchard_tx::{
 #[cfg(feature = "native")]
 pub use paths::{
     get_wallet_base_dir, get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir,
-    get_wallet_data_path,
+    get_wallet_data_path, set_mobile_wallet_root,
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;
@@ -276,8 +278,9 @@ pub use wallet_profiles::{
 };
 #[cfg(feature = "native")]
 pub use wallet_sync::{
-    resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncError, WalletSyncOptions,
-    WalletSyncPhase, WalletSyncResult, DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
+    notes_cache_checkpoint_height, resolve_scan_range, sync_wallet_notes, ScanRange,
+    WalletSyncError, WalletSyncOptions, WalletSyncPhase, WalletSyncResult,
+    DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
 };
 #[cfg(feature = "native")]
 pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
@@ -285,5 +288,5 @@ pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
 pub use zeaking_adapter::{ZebraBlockParser, ZebraBlockSource};
 #[cfg(feature = "native")]
 pub use zebra_integration::{
-    OrchardPoolStats, ShieldedPoolStats, ZebraClient, ZebraConnectionMode,
+    ChainNodeKind, OrchardPoolStats, ShieldedPoolStats, ZebraClient, ZebraConnectionMode,
 };

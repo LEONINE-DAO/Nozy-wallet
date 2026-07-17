@@ -150,6 +150,9 @@ export interface IronwoodDesktopStatusResponse {
   ready_to_prebuild: boolean;
   ready_to_broadcast: boolean;
   blockers: string[];
+  activation_notice: string;
+  migration_privacy_warnings: string[];
+  orchard_funds_at_risk: boolean;
   safer_migration: IronwoodSaferMigrationStatus;
 }
 
