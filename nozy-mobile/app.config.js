@@ -5,6 +5,8 @@ const PROFILE = process.env.EAS_BUILD_PROFILE ?? "development";
 const IS_PRODUCTION =
   PROFILE === "production" ||
   process.env.EXPO_PUBLIC_APP_VARIANT === "production";
+// Preview APKs install on real phones — default to hosted API, not emulator 10.0.2.2.
+const USE_HOSTED_DEFAULTS = IS_PRODUCTION || PROFILE === "preview";
 
 const HOSTED_API =
   appJson.expo.extra?.hostedApiUrl ?? "https://nozywallet.leoninedao.org";
@@ -32,7 +34,7 @@ function loadHostedApiKey() {
 /** @returns {import("@expo/config-types").ExpoConfig} */
 module.exports = () => {
   const base = appJson.expo;
-  const hostedApiKey = IS_PRODUCTION ? loadHostedApiKey() : null;
+  const hostedApiKey = USE_HOSTED_DEFAULTS ? loadHostedApiKey() : null;
   return {
     ...base,
     owner: "leonine-dao",
@@ -41,9 +43,11 @@ module.exports = () => {
       appVariant: IS_PRODUCTION ? "production" : "development",
       easBuildProfile: PROFILE,
       enableExperimentalFeatures: !IS_PRODUCTION,
-      requireHostedApiKey: IS_PRODUCTION,
-      defaultApiUrl: IS_PRODUCTION ? HOSTED_API : base.extra.defaultApiUrl,
-      ...(IS_PRODUCTION && hostedApiKey ? { hostedApiKey } : {}),
+      requireHostedApiKey: USE_HOSTED_DEFAULTS,
+      defaultApiUrl: USE_HOSTED_DEFAULTS
+        ? HOSTED_API
+        : base.extra.defaultApiUrl,
+      ...(hostedApiKey ? { hostedApiKey } : {}),
     },
     // Cleartext HTTP is controlled in android/ (debug manifest), not Expo schema —
     // `usesCleartextTraffic` is invalid on android config and is not synced when android/ exists.
