@@ -258,17 +258,15 @@ pub async fn get_ironwood_status(
     if chain_tip.is_none() {
         blockers.push("Zebra RPC is unreachable from desktop settings.".to_string());
     }
-    if activation_height.is_none() {
-        blockers.push(
+    match activation_height {
+        None => blockers.push(
             "NU6.3 activation height is not configured for this network yet.".to_string(),
-        );
-    } else if !ironwood_active {
-        blockers.push(format!(
-            "Ironwood activates at height {} (target {}). Until then Orchard works normally; \
-             after activation only migration turnstiles can spend Orchard notes.",
-            activation_height.unwrap(),
-            activation_target_date
-        ));
+        ),
+        Some(height) if !ironwood_active => blockers.push(format!(
+            "Ironwood activates at height {height} (target {activation_target_date}). Until then Orchard works normally; \
+             after activation only migration turnstiles can spend Orchard notes."
+        )),
+        Some(_) => {}
     }
     if !ironwood_rpc_detected {
         blockers
