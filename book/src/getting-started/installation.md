@@ -37,7 +37,7 @@ For advanced users, developers, or automated systems, you can use the CLI versio
 ### Prerequisites
 
 - **Rust 1.70+** - Install from [rustup.rs](https://rustup.rs/)
-- **Zebra RPC node** - Running on `http://127.0.0.1:8232` (or configure custom URL)
+- **Zebra-family RPC node** — [Zebrad](https://github.com/ZcashFoundation/zebra) or [Zakura](https://zakura.com/) on `http://127.0.0.1:8232` (or configure a custom URL). See [Zebra Node Setup](../advanced/zebra-node.md) or [Zakura Node Setup](../advanced/zakura-node.md).
 
 ### Build from Source
 

@@ -74,7 +74,7 @@ export function NetworkSettings({ onBack }: Props) {
   async function persistUrl(url: string) {
     const trimmed = url.trim();
     if (!trimmed) {
-      const msg = "Enter a Zebra RPC URL before saving.";
+      const msg = "Enter a full-node RPC URL before saving.";
       setError(msg);
       Alert.alert("Cannot save", msg);
       return;
@@ -102,7 +102,7 @@ export function NetworkSettings({ onBack }: Props) {
       setZebraUrl(trimmed);
       setInitialZebraUrl(trimmed);
       setNodeMode(inferNodeConnectionMode(trimmed));
-      const ok = `Zebra URL saved on the API:\n${trimmed}`;
+      const ok = `Full-node RPC URL saved on the API:\n${trimmed}`;
       setStatus(ok);
       Alert.alert("Saved", ok);
     } catch (e) {
@@ -158,7 +158,7 @@ export function NetworkSettings({ onBack }: Props) {
             () =>
               reject(
                 new Error(
-                  "Test timed out. The API could not reach that Zebrad (127.0.0.1 only works if Zebrad runs on the same machine as the API).",
+                  "Test timed out. The API could not reach that node (127.0.0.1 only works if Zebrad/Zakura runs on the same machine as the API).",
                 ),
               ),
             20000,
@@ -166,11 +166,11 @@ export function NetworkSettings({ onBack }: Props) {
         ),
       ]);
       setStatus(res.message);
-      Alert.alert(res.ok ? "Zebra OK" : "Zebra test", res.message);
+      Alert.alert(res.ok ? "Node OK" : "Node test", res.message);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Connection test failed";
       setError(msg);
-      Alert.alert("Zebra test failed", msg);
+      Alert.alert("Node test failed", msg);
     } finally {
       setLoading(false);
     }
@@ -185,23 +185,24 @@ export function NetworkSettings({ onBack }: Props) {
         <SettingsBackButton onPress={onBack} />
         <Text style={styles.title}>Network & Node</Text>
         <Text style={styles.subtitle}>
-          This sets the Zebrad URL on your API server (not on the phone). Local
-          node means the API machine’s localhost — only works if Zebrad runs
-          next to that API.
+          This sets the full-node RPC URL on your API server (not on the phone).
+          Use Zebrad or Zakura JSON-RPC (same port). Local node means the API
+          machine’s localhost — only works if the node runs next to that API.
         </Text>
         {apiIsHosted ? (
           <View style={styles.banner}>
             <Text style={styles.bannerText}>
               You are on the Nozy hosted API. http://127.0.0.1 here is the
               DigitalOcean box, not your phone or home PC. To use your node,
-              switch Mobile connection to your own API that sits next to Zebrad.
+              switch Mobile connection to your own API that sits next to
+              Zebrad/Zakura.
             </Text>
           </View>
         ) : null}
         <Card>
           <Text style={styles.meta}>Network: {network || "…"}</Text>
           <Select
-            label="Node type (API server → Zebrad)"
+            label="Node type (API server → Zebrad/Zakura)"
             value={nodeMode}
             options={[
               { value: "local", label: "Local / own node (recommended)" },
@@ -212,14 +213,14 @@ export function NetworkSettings({ onBack }: Props) {
           {nodeMode === "public" ? (
             <View style={styles.banner}>
               <Text style={styles.bannerText}>
-                Public Zebrad: the operator may log server-side sync and
-                broadcast timing. Nym smolmix only helps when submit goes to a
-                remote node you do not control.
+                Public node: the operator may log server-side sync and broadcast
+                timing. Nym smolmix only helps when submit goes to a remote node
+                you do not control.
               </Text>
             </View>
           ) : null}
           <Input
-            label="Zebra RPC URL"
+            label="Full node RPC URL (Zebrad or Zakura)"
             value={zebraUrl}
             onChangeText={setZebraUrl}
             autoCapitalize="none"

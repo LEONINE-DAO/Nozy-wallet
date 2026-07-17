@@ -2,7 +2,7 @@
 
 ## `nozy test-zebra`
 
-Verify JSON-RPC to Zebrad (or Crosslink if configured).
+Verify JSON-RPC to Zebrad, **Zakura**, or Crosslink (if configured). Detects node kind from `getnetworkinfo` and probes `z_gettreestate` at tip.
 
 ```bash
 nozy test-zebra

@@ -1,8 +1,8 @@
 # Zebra Node Setup
 
-NozyWallet is an Orchard wallet — **not** a Zcash consensus node. For sync, broadcast, and treestate you need a running **[Zebrad](https://github.com/ZcashFoundation/zebra)** instance with JSON-RPC enabled.
+NozyWallet is an Orchard wallet — **not** a Zcash consensus node. For sync, broadcast, and treestate you need a running **[Zebrad](https://github.com/ZcashFoundation/zebra)** or **[Zakura](https://zakura.com/)** instance with JSON-RPC enabled.
 
-For a full operator guide (lectures, papers, Windows + WSL checklists), see **[Zebrad ↔ NozyWallet connectivity](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md)** in the repo docs.
+For a full operator guide (lectures, papers, Windows + WSL checklists), see **[Zebrad ↔ NozyWallet connectivity](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md)** in the repo docs. For **Zakura**, see **[Zakura ↔ NozyWallet connectivity](../../../docs/reference/ZAKURA_NOZYWALLET_CONNECTIVITY.md)** and the [Zakura book chapter](zakura-node.md).
 
 ---
 

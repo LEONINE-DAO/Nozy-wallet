@@ -23,7 +23,7 @@ Common fields:
 
 | Variable | Overrides |
 |----------|-----------|
-| `ZEBRA_RPC_URL` | Primary Zebrad RPC URL |
+| `ZEBRA_RPC_URL` | Primary full-node RPC URL (Zebrad or Zakura) |
 | `LIGHTWALLETD_GRPC` | lightwalletd gRPC endpoint |
 
 ## CLI
@@ -42,7 +42,7 @@ nozy config --use-remote http://vps:8232
 
 ## Backend selection
 
-Default: **Zebrad** JSON-RPC. Optional Crosslink backend via `nozy config` flags — see `nozy config --help` in your build.
+Default: **Zebrad** or **Zakura** JSON-RPC (Zebra-fork compatible). Optional Crosslink backend via `nozy config` flags — see `nozy config --help` in your build.
 
 ## UTF-8 BOM note
 
@@ -55,4 +55,6 @@ Configured `zebra_url` is trusted for broadcast and chain tip. Optional `trusted
 ## Related
 
 - [Zebra Node Setup](zebra-node.md)
-- [Connectivity reference](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md)
+- [Zakura Node Setup](zakura-node.md)
+- [Zebrad connectivity reference](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md)
+- [Zakura connectivity reference](../../../docs/reference/ZAKURA_NOZYWALLET_CONNECTIVITY.md)
