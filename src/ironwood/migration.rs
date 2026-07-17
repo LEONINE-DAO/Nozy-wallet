@@ -318,9 +318,7 @@ fn canonical_125_denominations(mut amount_zat: u64) -> Vec<MigrationDenomination
 /// Active canonical ladder (Shielded Labs `{1,2,5}×10^k` by default).
 fn canonical_denominations(amount_zat: u64) -> Vec<MigrationDenomination> {
     match selected_amount_timing_algorithm() {
-        AmountTimingAlgorithm::Zip318PowerOfTen => {
-            canonical_power_of_ten_denominations(amount_zat)
-        }
+        AmountTimingAlgorithm::Zip318PowerOfTen => canonical_power_of_ten_denominations(amount_zat),
         AmountTimingAlgorithm::Zooko125 => canonical_125_denominations(amount_zat),
     }
 }

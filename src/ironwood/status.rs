@@ -163,10 +163,8 @@ pub fn display_ironwood_status(status: &IronwoodWalletStatus) {
             .map(|h| h.to_string())
             .unwrap_or_else(|| "not configured for this network".to_string())
     );
-    let notices = super::ironwood_user_notices(
-        status.ironwood_active,
-        status.orchard_notes_unspent,
-    );
+    let notices =
+        super::ironwood_user_notices(status.ironwood_active, status.orchard_notes_unspent);
     println!("   Notice: {}", notices.activation_notice);
     for warning in &notices.migration_privacy_warnings {
         println!("   Privacy: {warning}");

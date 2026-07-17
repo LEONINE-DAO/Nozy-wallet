@@ -228,7 +228,7 @@ pub use orchard_tx::{
 #[cfg(feature = "native")]
 pub use paths::{
     get_wallet_base_dir, get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir,
-    get_wallet_data_path, set_mobile_wallet_root,
+    get_wallet_data_path,
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;
@@ -278,9 +278,8 @@ pub use wallet_profiles::{
 };
 #[cfg(feature = "native")]
 pub use wallet_sync::{
-    notes_cache_checkpoint_height, resolve_scan_range, sync_wallet_notes, ScanRange,
-    WalletSyncError, WalletSyncOptions, WalletSyncPhase, WalletSyncResult,
-    DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
+    resolve_scan_range, sync_wallet_notes, ScanRange, WalletSyncError, WalletSyncOptions,
+    WalletSyncPhase, WalletSyncResult, DEFAULT_INCREMENTAL_BATCH, MAINNET_DEFAULT_SCAN_START,
 };
 #[cfg(feature = "native")]
 pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
@@ -288,5 +287,5 @@ pub use zeaking::{IndexStats, IndexedBlock, IndexedTransaction, Zeaking};
 pub use zeaking_adapter::{ZebraBlockParser, ZebraBlockSource};
 #[cfg(feature = "native")]
 pub use zebra_integration::{
-    ChainNodeKind, OrchardPoolStats, ShieldedPoolStats, ZebraClient, ZebraConnectionMode,
+    OrchardPoolStats, ShieldedPoolStats, ZebraClient, ZebraConnectionMode,
 };

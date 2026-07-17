@@ -49,7 +49,8 @@ pub const NU6_3_MAINNET_ACTIVATION_TARGET: &str = "2026-07-28";
 pub const NU6_3_MAINNET_ACTIVATION_HEIGHT: u32 = 3_428_143;
 
 /// Pre-activation / freeze notice for wallet UIs (PSA ask #1).
-pub const IRONWOOD_ACTIVATION_FREEZE_NOTICE: &str = "Ironwood activates at mainnet block 3,428,143 \
+pub const IRONWOOD_ACTIVATION_FREEZE_NOTICE: &str =
+    "Ironwood activates at mainnet block 3,428,143 \
 (target 2026-07-28). At that height, Orchard spends are frozen except Orchard→Ironwood migration. \
 Unmigrated Orchard funds may be temporarily unavailable for normal sends until migrated.";
 
@@ -99,8 +100,7 @@ pub fn ironwood_user_notices(
     } else if !ironwood_active && orchard_funds_at_risk {
         IRONWOOD_ACTIVATION_FREEZE_NOTICE.to_string()
     } else if ironwood_active {
-        "Ironwood is active. New shielded sends use the Ironwood pool."
-            .to_string()
+        "Ironwood is active. New shielded sends use the Ironwood pool.".to_string()
     } else {
         IRONWOOD_ACTIVATION_FREEZE_NOTICE.to_string()
     };

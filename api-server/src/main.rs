@@ -15,7 +15,6 @@ mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
-mod wallet_profile_handlers;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -73,22 +72,6 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/wallet/restore", post(handlers::restore_wallet))
         .route("/api/wallet/unlock", post(handlers::unlock_wallet))
         .route("/api/wallet/status", get(handlers::get_wallet_status))
-        .route(
-            "/api/wallet/profiles",
-            get(wallet_profile_handlers::get_network_wallet_status),
-        )
-        .route(
-            "/api/wallet/profiles/switch",
-            post(wallet_profile_handlers::switch_wallet_profile),
-        )
-        .route(
-            "/api/wallet/profiles/configure-network",
-            post(wallet_profile_handlers::configure_network_wallet),
-        )
-        .route(
-            "/api/wallet/profiles/testnet",
-            post(wallet_profile_handlers::create_or_restore_testnet_wallet),
-        )
         .route(
             "/api/ironwood/status",
             get(ironwood_handlers::get_ironwood_status),

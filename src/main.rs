@@ -1592,7 +1592,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!(
                 "🔗 Testing {} node connection...",
                 match config.backend {
-                    nozy::BackendKind::Zebra => "Zebra-family",
+                    nozy::BackendKind::Zebra => "Zebra",
                     nozy::BackendKind::Crosslink => "Crosslink",
                 }
             );
@@ -1603,28 +1603,22 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 Ok(_) => {
                     println!();
                     println!("🎉 Connection successful!");
-                    let node_kind = client.detect_chain_node_kind().await;
+                    let backend_name = match config.backend {
+                        nozy::BackendKind::Zebra => "Zebra",
+                        nozy::BackendKind::Crosslink => "Crosslink",
+                    };
                     let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
                     if is_local {
                         println!(
                             "✅ NozyWallet is connected to your local {} node",
-                            node_kind.label()
+                            backend_name
                         );
                     } else {
                         println!(
                             "✅ NozyWallet is connected to the remote {} node",
-                            node_kind.label()
+                            backend_name
                         );
                     }
-
-                    match client.probe_wallet_treestate().await {
-                        Ok(()) => println!("✅ Wallet RPC probe: z_gettreestate (Orchard) OK"),
-                        Err(e) => {
-                            println!("⚠️  Wallet RPC probe failed: {}", e);
-                            println!("   Shielded sync/send need z_gettreestate at chain tip.");
-                        }
-                    }
-
                     println!("✅ Ready to sync and send transactions!");
 
                     match client.get_network_info().await {
@@ -1634,9 +1628,6 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             }
                             if let Some(blocks) = info.get("blocks") {
                                 println!("   Blocks: {:?}", blocks);
-                            }
-                            if let Some(subver) = info.get("subversion") {
-                                println!("   Subversion: {:?}", subver);
                             }
                         }
                         Err(_) => {}
@@ -1649,10 +1640,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     let is_local = test_url.contains("127.0.0.1") || test_url.contains("localhost");
                     if is_local {
                         println!("💡 Troubleshooting steps for local node:");
-                        println!("   1. Make sure Zebrad or Zakurad is running on this PC");
+                        println!("   1. Make sure the node is running on this PC");
                         println!("   2. Check if RPC is enabled in the node config");
-                        println!("   3. Zakura: disable cookie auth for lightwalletd, or set ZAKURA_RPC_COOKIE");
-                        println!("   4. Verify it is listening on {}", test_url);
+                        println!("   3. Verify it is listening on {}", test_url);
                     } else {
                         println!("💡 Troubleshooting steps for remote node:");
                         println!("   1. Check if the remote node is accessible");

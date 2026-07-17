@@ -112,6 +112,15 @@ pub struct PrivacyNetworkConfig {
     /// goes through the Nym smolmix helper subprocess. Local/LAN URLs stay direct.
     #[serde(default = "default_false")]
     pub broadcast_via_nym_mixnet: bool,
+
+    /// User attestation that system-wide NymVPN/Tor protects remote Zebrad egress
+    /// (safer migration Priority 1). Default off — prefer local node.
+    #[serde(default = "default_false")]
+    pub attest_private_network: bool,
+
+    /// Bypass safer-migration network privacy checks (explicit clearnet). Default off.
+    #[serde(default = "default_false")]
+    pub force_clearnet: bool,
 }
 
 fn default_true() -> bool {
@@ -144,6 +153,8 @@ impl Default for PrivacyNetworkConfig {
             preferred_network: default_preferred_network(),
             require_privacy_network: true,
             broadcast_via_nym_mixnet: false,
+            attest_private_network: false,
+            force_clearnet: false,
         }
     }
 }
