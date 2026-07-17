@@ -170,9 +170,8 @@ pub async fn get_ironwood_status(
         blockers.push("Zebra RPC is unreachable from API settings.".to_string());
     }
     if activation_height.is_none() {
-        blockers.push(
-            "NU6.3 activation height is not configured for this network yet.".to_string(),
-        );
+        blockers
+            .push("NU6.3 activation height is not configured for this network yet.".to_string());
     } else if !ironwood_active {
         blockers.push(format!(
             "Ironwood activates at height {} (target {}). Until then Orchard works normally; \
