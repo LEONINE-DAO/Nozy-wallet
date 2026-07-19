@@ -43,7 +43,7 @@
     "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.1.18",
     "typescript": "^5.2.2",
-    "vite": "^6.4.2",
+    "vite": "^8.1.5",
     "zustand": "^5.0.9"
   }
 }
