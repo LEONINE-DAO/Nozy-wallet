@@ -63,29 +63,29 @@ const surfaces: Surface[] = [
   {
     icon: ShieldCheck,
     title: "Browser extension",
-    tagline: "The community-shaped path — privacy-first, in your browser.",
+    tagline: "Sweet chili public beta — shielded Orchard wallet in Chrome, Brave, and Edge.",
     status: "preview",
-    statusLabel: "Contributor preview",
+    statusLabel: "Public beta",
     bullets: [
-      "MV3 + WASM Orchard wallet",
-      "Compact sync via local companion API",
-      "Zips ship alongside desktop beta releases",
+      "MV3 + WASM Orchard wallet (local keys)",
+      "Optional companion API for lightwalletd sync",
+      "Load unpacked from the Sweet chili zip (0.1.7)",
     ],
-    primary: { label: "Extension docs", href: PATHS.extension, external: true },
-    secondary: { label: "Companion setup", href: PATHS.extensionCompanion },
+    primary: { label: "Get extension beta", href: PATHS.extensionRelease, external: true },
+    secondary: { label: "Install & companion docs", href: PATHS.extension },
   },
   {
     icon: ShieldKeyholeMinimalistic,
     title: "Web app",
     tagline: "Full dashboard in the browser — extension + companion, keys stay yours.",
-    status: "soon",
-    statusLabel: "Coming soon",
+    status: "preview",
+    statusLabel: "Early preview",
     bullets: [
-      "Send, receive, and sync without installing desktop",
-      "Pairs with the extension and nozywallet-api",
+      "Unlock / create / restore against nozywallet-api",
+      "Balance + sync-to-tip from companion status",
       "Privacy chains added as modules, not an everything-wallet",
     ],
-    primary: { label: "Web app plan", href: PATHS.webApp, external: true },
+    primary: { label: "Web app docs", href: PATHS.webApp, external: true },
     secondary: { label: "Enhancement roadmap", href: PATHS.enhancementRoadmap },
   },
   {
@@ -93,21 +93,21 @@ const surfaces: Surface[] = [
     title: "Mobile",
     tagline: "Expo companion — wallet on phone, sync via your API.",
     status: "soon",
-    statusLabel: "In development",
+    statusLabel: "Beta coming soon",
     bullets: [
-      "Connects to nozywallet-api on PC or VPS + Zebrad/Zakura",
-      "Business / Sell mode on the roadmap",
-      "App Store and Play when ready",
+      "Connects to nozywallet-api on PC or VPS + Zebrad",
+      "Store listing prep in progress (not on Play / App Store yet)",
+      "Same Orchard-first stack as desktop and extension",
     ],
-    primary: { label: "Mobile repo", href: PATHS.mobile, external: true },
-    secondary: { label: "VPS deploy guide", href: PATHS.operatorDeploy },
+    primary: { label: "Mobile page", href: PATHS.mobilePage },
+    secondary: { label: "Mobile repo", href: PATHS.mobile },
   },
   {
     icon: QuestionCircle,
     title: "Operator API",
     tagline: "Localhost companion for extension, mobile, and automation.",
     status: "preview",
-    statusLabel: "In development",
+    statusLabel: "Available",
     bullets: [
       "HTTP wrapper around the Rust wallet core",
       "LWD compact sync routes for the extension",
@@ -117,7 +117,6 @@ const surfaces: Surface[] = [
     secondary: { label: "VPS deploy", href: PATHS.operatorDeploy },
   },
 ];
-
 function SurfaceCard({ surface }: { surface: Surface }) {
   const Icon = surface.icon;
   return (
@@ -185,7 +184,10 @@ const ProductSurfaces = () => {
             NozyWallet is community-shaped for privacy-native daily use: extension and web app for
             daily flows, CLI and desktop for operators, mobile when you are on the go.{" "}
             <strong className="text-zinc-800 font-semibold">CLI Lite is live for mainnet</strong>;
-            Desktop beta.2 is out for early testers. Other privacy chains ship as modules when ready.
+            the <strong className="text-zinc-800 font-semibold">browser extension is in public beta</strong>;
+            Desktop beta is out for early testers;{" "}
+            <strong className="text-zinc-800 font-semibold">mobile beta is coming soon</strong>.
+            Other privacy chains ship as modules when ready.
           </p>
         </div>
 

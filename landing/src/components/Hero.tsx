@@ -17,7 +17,7 @@ const Hero = () => {
       <div className="max-w-7xl mx-auto px-6 text-center relative z-10">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-xs font-medium text-yellow-700 mb-8 animate-fade-in-up">
           <ShieldKeyholeMinimalistic size={14} />
-          <span>CLI Lite · Desktop beta · Orchard ZEC</span>
+          <span>CLI Lite · Extension beta · Desktop beta · Orchard ZEC</span>
         </div>
 
         <h1 className="text-5xl lg:text-7xl font-bold tracking-tight mb-4 leading-tight text-zinc-900">
@@ -31,7 +31,8 @@ const Hero = () => {
 
         <p className="max-w-2xl mx-auto text-lg text-zinc-600 mb-10 leading-relaxed">
           NozyWallet is a self-custodial privacy wallet — Orchard ZEC first, shielded by default.
-          CLI Lite is mainnet-ready; Desktop beta.2 is out for early testers while Ironwood lands.
+          CLI Lite is mainnet-ready; the browser extension (Sweet chili) is in public beta;
+          Desktop beta is out for early testers; mobile beta is coming soon.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -46,18 +47,18 @@ const Hero = () => {
             Download CLI Lite
           </a>
           <a
-            href="#products"
-            className="w-full sm:w-auto px-8 py-4 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-semibold transition-all shadow-md flex items-center justify-center gap-2"
-          >
-            See all surfaces
-          </a>
-          <a
-            href="https://leonine-dao.github.io/Nozy-wallet/book/"
+            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.7"
             target="_blank"
             rel="noopener noreferrer"
+            className="w-full sm:w-auto px-8 py-4 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-semibold transition-all shadow-md flex items-center justify-center gap-2"
+          >
+            Get extension beta
+          </a>
+          <a
+            href="#products"
             className="w-full sm:w-auto px-8 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-semibold transition-all border border-zinc-200 hover:border-zinc-300"
           >
-            View Documentation
+            See all surfaces
           </a>
         </div>
 

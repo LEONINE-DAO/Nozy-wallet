@@ -4,6 +4,7 @@ import Footer from "./components/Footer";
 import Home from "./pages/Home";
 import Privacy from "./pages/Privacy";
 import Security from "./pages/Security";
+import Mobile from "./pages/Mobile";
 import { Analytics } from "@vercel/analytics/react";
 
 /** Matches vite.config.ts `base` (GitHub Pages: /Nozy-wallet/) */
@@ -18,18 +19,10 @@ function App() {
           <Header />
           <main>
             <Routes>
-              <Route
-                path="/"
-                element={<Home />}
-              />
-              <Route
-                path="/privacy"
-                element={<Privacy />}
-              />
-              <Route
-                path="/security"
-                element={<Security />}
-              />
+              <Route path="/" element={<Home />} />
+              <Route path="/privacy" element={<Privacy />} />
+              <Route path="/security" element={<Security />} />
+              <Route path="/mobile" element={<Mobile />} />
             </Routes>
           </main>
           <Footer />
