@@ -40,12 +40,12 @@ const Header = () => {
         isMenuOpen ? "bg-white" : "backdrop-blur-md bg-white/70"
       }`}
     >
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-28 flex items-center justify-between relative z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 h-20 flex items-center justify-between relative z-50">
         <Link to="/" className="flex items-center shrink-0">
           <img
             src={logoUrl}
             alt="NozyWallet"
-            className="h-24 sm:h-[6.75rem] w-auto rounded-lg"
+            className="h-11 sm:h-14 w-auto max-w-[220px] sm:max-w-[280px] object-contain object-left"
           />
         </Link>
 
@@ -57,6 +57,12 @@ const Header = () => {
           >
             Products
           </a>
+          <Link
+            to="/mobile"
+            className="hover:text-yellow-600 transition-colors cursor-pointer"
+          >
+            Mobile
+          </Link>
           <a
             href="#features"
             onClick={(e) => handleNavClick(e, "features")}
@@ -119,6 +125,13 @@ const Header = () => {
             >
               Products
             </a>
+            <Link
+              to="/mobile"
+              onClick={() => setIsMenuOpen(false)}
+              className="text-lg font-semibold text-zinc-800 hover:text-yellow-600 transition-colors py-3 border-b border-zinc-100"
+            >
+              Mobile
+            </Link>
             <a
               href="#features"
               onClick={(e) => handleNavClick(e, "features")}

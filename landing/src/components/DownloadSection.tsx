@@ -20,8 +20,9 @@ const DownloadSection = () => {
         </h2>
         <p className="text-zinc-600 text-center max-w-2xl mx-auto mb-12">
           <strong>CLI Lite</strong> is production-ready for mainnet.{" "}
-          <strong>Desktop beta</strong> is available for early testers (Ironwood WIP).
-          Extension and mobile stay contributor / roadmap for now.
+          <strong>Browser extension</strong> (Sweet chili) is in public beta.{" "}
+          <strong>Desktop beta</strong> is available for early testers.{" "}
+          <strong>Mobile beta</strong> is coming soon.
         </p>
 
         <div className={`${card} mb-6 border-yellow-200 bg-yellow-50/30`}>
@@ -118,40 +119,56 @@ const DownloadSection = () => {
         </div>
 
         <div className="grid md:grid-cols-2 gap-6 mb-6">
-          <div className={`${card} border-dashed border-zinc-300 bg-zinc-50/80`}>
-            <h3 className="font-semibold text-lg text-zinc-900 mb-1">
-              Browser extension (preview)
-            </h3>
+          <div className={`${card} border-amber-200 bg-amber-50/40`}>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h3 className="font-semibold text-lg text-zinc-900">
+                Browser extension — Sweet chili
+              </h3>
+              <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-900 border-amber-500/25">
+                Public beta · 0.1.7
+              </span>
+            </div>
             <p className="text-sm text-zinc-600 mb-4">
-              MV3 + WASM wallet in{" "}
-              <code className="text-xs bg-zinc-100 px-1 rounded">browser-extension/</code>.
-              Contributor builds ship with desktop beta releases; companion API required.
+              Chrome, Brave, and Edge (load unpacked). Optional local{" "}
+              <code className="text-xs bg-zinc-100 px-1 rounded">nozywallet-api</code>{" "}
+              companion for lightwalletd sync. Store listing in progress.
             </p>
+            <a
+              href={PATHS.extensionRelease}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex w-full items-center justify-center rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold py-3 transition-colors mb-2"
+            >
+              Download extension zip →
+            </a>
             <a
               href={PATHS.extension}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex w-full items-center justify-center rounded-xl border border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800 font-medium py-3 transition-colors"
+              className="inline-flex w-full items-center justify-center text-sm font-medium text-yellow-700 hover:underline"
             >
-              Extension docs on GitHub →
+              Install guide &amp; companion docs
             </a>
           </div>
 
           <div className={`${card} border-dashed border-zinc-300 bg-zinc-50/80`}>
-            <h3 className="font-semibold text-lg text-zinc-900 mb-1">
-              iPhone &amp; Android (coming soon)
-            </h3>
+            <div className="flex flex-wrap items-center gap-2 mb-2">
+              <h3 className="font-semibold text-lg text-zinc-900">
+                iPhone &amp; Android
+              </h3>
+              <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border bg-zinc-100 text-zinc-600 border-zinc-200">
+                Beta coming soon
+              </span>
+            </div>
             <p className="text-sm text-zinc-600 mb-4">
-              Expo companion for App Store / Play is on the roadmap. Until then, use CLI Lite
-              or Desktop beta on a machine you control.
+              Expo companion for App Store / Play is in store prep — not listed yet.
+              Until then, use CLI Lite, Desktop beta, or the browser extension.
             </p>
             <a
-              href={PATHS.mobile}
-              target="_blank"
-              rel="noopener noreferrer"
+              href={PATHS.mobilePage}
               className="inline-flex w-full items-center justify-center rounded-xl border border-zinc-300 bg-white hover:bg-zinc-100 text-zinc-800 font-medium py-3 transition-colors"
             >
-              Mobile repo on GitHub →
+              Mobile preview page →
             </a>
           </div>
         </div>
