@@ -32,7 +32,8 @@ Tauri-based desktop application for NozyWallet.
 ### Production Build
 
 ```bash
-# Regenerate app icons from landing/src/assets/logo.png (Windows)
+# Regenerate app icons from landing/src/assets/logo-icon.png (Windows)
+# First refresh brand PNGs: python ../scripts/apply-official-logo.py
 npm run icons
 
 cargo tauri build
@@ -80,8 +81,13 @@ When **Nozy desktop** or **`nozywallet-api`** is running, extensions can sync co
 | `lwd_chain_tip` | optional URL → tip height |
 | `lwd_sync_compact` | `{ start, end?, lightwalletdUrl?, dbPath?, resume? }` → range + blocks written |
 | `lwd_sync_compact_to_tip` | `{ lightwalletdUrl?, dbPath?, startFloor?, persistProgressEvery? }` → tip + `alreadyAtTip` + range stats |
+| `get_nym_dvpn_sync_status` | optional public LWD URL → readiness (helper, mnemonic env, local vs remote) |
+| `set_sync_via_nym_dvpn` | `{ enabled }` → writes `privacy_network.sync_via_nym_dvpn` |
+| `run_nym_dvpn_sync_probe` | `{ lightwalletd_url?, blocks? }` → spawn `nym-dvpn-lwd-spike` (opt-in; needs `MNEMONIC`) |
 
 Default lightwalletd URL: env `LIGHTWALLETD_GRPC` or `http://127.0.0.1:9067`.
+
+**Nym dVPN sync (Settings → Network privacy):** opt-in subprocess probe for remote public LWD. Build `tools/nym-dvpn-lwd-spike`, set `MNEMONIC` (and optionally `NOZY_NYM_DVPN_BIN`) in the shell that launches desktop. Local `:9067` stays direct.
 
 **HTTP API** (if you run `nozywallet-api`): see [`api-server`](../api-server) routes `/api/lwd/*`.
 
@@ -128,7 +134,7 @@ The **Ironwood** nav tab wraps the same core path as CLI `nozy ironwood plan|mig
 2. **Start migration** — prebuild next turnstile (when readiness is `ready-to-prebuild`)  
 3. **Broadcast** — submit in-window (needs local Zebrad / Tor / Advanced attestation)
 
-**Testnet check:** Ironwood testnet wallet profile + WSL Zebrad with Ironwood RPC; sync to tip; open Ironwood tab. If status says note split required, run `nozy ironwood split` in the CLI first (split UI is not in this MVP).
+**Testnet check:** Ironwood testnet wallet profile + WSL Zebrad with Ironwood RPC; sync to tip; open Ironwood tab. If status says note split required, use **Split notes** on the Ironwood tab (or `nozy ironwood split`).
 
 ## Keystone hardware wallet (mainnet)
 

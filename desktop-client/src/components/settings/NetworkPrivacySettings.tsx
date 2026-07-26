@@ -1,11 +1,16 @@
+import { useCallback, useEffect, useState } from "react";
 import { Button } from "../Button";
 import { Shield } from "@solar-icons/react";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useSettingsStore } from "../../store/settingsStore";
+import { api } from "../../lib/api";
+import type { NymDvpnSyncProbeResult, NymDvpnSyncStatus } from "../../lib/types";
 
 const NYM_VPN_URL = "https://nym.com/vpn";
 const NYM_GITHUB = "https://github.com/nymtech/nym";
 const NYM_VPN_GITHUB = "https://github.com/nymtech/nym-vpn-client";
+const ZCASH_SDK_NYM = "https://zcash-sdk.nym.com/";
+const DEFAULT_PUBLIC_LWD = "https://zec.rocks:443";
 
 interface NetworkPrivacySettingsProps {
   onBack: () => void;
@@ -19,6 +24,59 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
     (s) => s.setAttestPrivateNetworkForMigration
   );
 
+  const [dvpnStatus, setDvpnStatus] = useState<NymDvpnSyncStatus | null>(null);
+  const [dvpnBusy, setDvpnBusy] = useState(false);
+  const [dvpnError, setDvpnError] = useState<string | null>(null);
+  const [probeResult, setProbeResult] = useState<NymDvpnSyncProbeResult | null>(null);
+  const [publicLwd, setPublicLwd] = useState(DEFAULT_PUBLIC_LWD);
+
+  const refreshDvpn = useCallback(async () => {
+    setDvpnError(null);
+    try {
+      const { data } = await api.getNymDvpnSyncStatus(publicLwd.trim() || undefined);
+      setDvpnStatus(data);
+    } catch (e) {
+      setDvpnError(e instanceof Error ? e.message : String(e));
+    }
+  }, [publicLwd]);
+
+  useEffect(() => {
+    void refreshDvpn();
+  }, [refreshDvpn]);
+
+  const onToggleDvpn = async (enabled: boolean) => {
+    setDvpnBusy(true);
+    setDvpnError(null);
+    setProbeResult(null);
+    try {
+      await api.setSyncViaNymDvpn(enabled);
+      await refreshDvpn();
+    } catch (e) {
+      setDvpnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDvpnBusy(false);
+    }
+  };
+
+  const onRunProbe = async () => {
+    setDvpnBusy(true);
+    setDvpnError(null);
+    setProbeResult(null);
+    try {
+      await api.setSyncViaNymDvpn(true);
+      const { data } = await api.runNymDvpnSyncProbe({
+        lightwalletdUrl: publicLwd.trim() || DEFAULT_PUBLIC_LWD,
+        blocks: 100,
+      });
+      setProbeResult(data);
+      await refreshDvpn();
+    } catch (e) {
+      setDvpnError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDvpnBusy(false);
+    }
+  };
+
   const openNymVpn = () => {
     window.open(NYM_VPN_URL, "_blank", "noopener,noreferrer");
   };
@@ -29,6 +87,10 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
 
   const openNymVpnRepo = () => {
     window.open(NYM_VPN_GITHUB, "_blank", "noopener,noreferrer");
+  };
+
+  const openSdk = () => {
+    window.open(ZCASH_SDK_NYM, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -69,6 +131,118 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
             connect to nodes or dApps, and timing patterns. A local node plus optional Nym/Tor
             reduces IP linkage during sync and migration broadcast.
           </p>
+          <Button variant="outline" onClick={openSdk}>
+            Nym × Zcash wallet guidance
+          </Button>
+        </div>
+
+        <div className="p-4 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700">
+          <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">
+            Nym dVPN — compact sync (desktop)
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+            For <strong>remote</strong> lightwalletd compact sync, Harry/Mark recommend 2-hop
+            dVPN (not the mixnet). Local <code className="text-xs">:9067</code> stays direct —
+            a Nym exit cannot reach loopback/LAN. This toggle uses a{" "}
+            <strong>subprocess helper</strong> (same pattern as smolmix) so we never link Nym
+            into the desktop binary.
+          </p>
+
+          <label className="flex cursor-pointer items-start gap-3 mb-4">
+            <input
+              type="checkbox"
+              className="mt-1 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              checked={!!dvpnStatus?.requested}
+              disabled={dvpnBusy}
+              onChange={(e) => void onToggleDvpn(e.target.checked)}
+            />
+            <span>
+              <span className="block text-sm font-semibold text-gray-900 dark:text-gray-100">
+                Enable Nym dVPN sync helper (opt-in)
+              </span>
+              <span className="mt-1 block text-xs leading-5 text-gray-600 dark:text-gray-400">
+                Writes <code className="text-xs">privacy_network.sync_via_nym_dvpn</code>. Does
+                not replace local Zebrad for Ironwood broadcast.
+              </span>
+            </span>
+          </label>
+
+          <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+            Public lightwalletd URL (for probe)
+          </label>
+          <input
+            type="text"
+            className="w-full mb-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-900 px-3 py-2 text-sm"
+            value={publicLwd}
+            onChange={(e) => setPublicLwd(e.target.value)}
+            onBlur={() => void refreshDvpn()}
+            disabled={dvpnBusy}
+          />
+
+          <div className="flex flex-wrap gap-2 mb-3">
+            <Button variant="outline" onClick={() => void refreshDvpn()} disabled={dvpnBusy}>
+              Refresh status
+            </Button>
+            <Button variant="primary" onClick={() => void onRunProbe()} disabled={dvpnBusy}>
+              {dvpnBusy ? "Running…" : "Run 100-block dVPN probe"}
+            </Button>
+          </div>
+
+          {dvpnStatus && (
+            <ul className="text-xs text-gray-600 dark:text-gray-400 space-y-1 mb-3 list-disc list-inside">
+              <li>
+                Helper:{" "}
+                {dvpnStatus.helper_ok
+                  ? dvpnStatus.helper_path ?? "ok"
+                  : dvpnStatus.helper_error ?? "missing"}
+              </li>
+              <li>
+                MNEMONIC env: {dvpnStatus.mnemonic_env_ok ? "set" : "not set (required for probe)"}
+              </li>
+              <li>
+                LWD local/LAN: {dvpnStatus.lwd_url_local ? "yes (refused for dVPN)" : "no"}
+              </li>
+              <li>Would use dVPN: {dvpnStatus.would_use_dvpn ? "yes" : "no"}</li>
+            </ul>
+          )}
+
+          {dvpnStatus?.notes?.length ? (
+            <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1 mb-3">
+              {dvpnStatus.notes.map((n) => (
+                <p key={n}>{n}</p>
+              ))}
+            </div>
+          ) : null}
+
+          {dvpnError && (
+            <p className="text-sm text-red-600 dark:text-red-400 mb-2">{dvpnError}</p>
+          )}
+
+          {probeResult && (
+            <pre className="text-xs whitespace-pre-wrap max-h-48 overflow-auto rounded-lg bg-gray-100 dark:bg-gray-900 p-3 border border-gray-200 dark:border-gray-700">
+              {probeResult.ok ? "PASS" : "FAIL"}
+              {probeResult.timed_out ? " (timed out)" : ""}
+              {"\n"}
+              {probeResult.stdout_tail || probeResult.stderr_tail}
+            </pre>
+          )}
+
+          <ol className="list-decimal list-inside text-sm text-gray-600 dark:text-gray-300 space-y-1 mt-3">
+            <li>
+              Build helper:{" "}
+              <code className="text-xs">
+                cd tools/nym-dvpn-lwd-spike && cargo build --release
+              </code>
+            </li>
+            <li>
+              Set <code className="text-xs">NOZY_NYM_DVPN_BIN</code> if needed; set funded{" "}
+              <code className="text-xs">MNEMONIC</code> in the shell that launches desktop.
+            </li>
+            <li>Disconnect consumer NymVPN app while probing.</li>
+          </ol>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Tracking: issue #146 · docs/reference/NYM_DVPN_SYNC_CASE_BREAKDOWN.md
+          </p>
         </div>
 
         <div className="p-4 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700">
@@ -76,7 +250,7 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
           <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
             <strong>NymVPN</strong> routes traffic through the Nym mixnet (or a fast 2-hop
             WireGuard mode). Useful for general metadata protection; for migration, prefer local
-            Zebrad first.
+            Zebrad first. Consumer app ≠ SDK ticketbooks.
           </p>
           <div className="flex flex-wrap gap-3">
             <Button variant="primary" onClick={openNymVpn}>

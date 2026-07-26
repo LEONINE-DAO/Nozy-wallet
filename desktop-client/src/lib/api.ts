@@ -14,6 +14,8 @@ import {
   BalanceResponse,
   SendTransactionRequest,
   ConfigResponse,
+  NymDvpnSyncStatus,
+  NymDvpnSyncProbeResult,
   SetZebraUrlRequest,
   SetThemeRequest,
   ProvingStatusResponse,
@@ -350,6 +352,31 @@ export const walletApi = {
   setZebraUrl: async (data: SetZebraUrlRequest) => {
     await invoke("set_zebra_url", { request: data });
     return { data: null };
+  },
+
+  getNymDvpnSyncStatus: async (lightwalletdUrl?: string): Promise<{ data: NymDvpnSyncStatus }> => {
+    const result = await invoke<NymDvpnSyncStatus>("get_nym_dvpn_sync_status", {
+      lightwalletdUrl: lightwalletdUrl ?? null,
+    });
+    return { data: result };
+  },
+
+  setSyncViaNymDvpn: async (enabled: boolean) => {
+    await invoke("set_sync_via_nym_dvpn", { request: { enabled } });
+    return { data: null };
+  },
+
+  runNymDvpnSyncProbe: async (opts?: {
+    lightwalletdUrl?: string;
+    blocks?: number;
+  }): Promise<{ data: NymDvpnSyncProbeResult }> => {
+    const result = await invoke<NymDvpnSyncProbeResult>("run_nym_dvpn_sync_probe", {
+      request: {
+        lightwalletd_url: opts?.lightwalletdUrl ?? null,
+        blocks: opts?.blocks ?? null,
+      },
+    });
+    return { data: result };
   },
 
   setTheme: async (_data: SetThemeRequest) => {

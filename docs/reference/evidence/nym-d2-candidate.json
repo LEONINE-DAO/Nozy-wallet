@@ -1,0 +1,12 @@
+{
+  "generated_at_unix": 1785039986,
+  "issue": 147,
+  "steps": [
+    {
+      "detail": "candidate exit-reachable target https://example.com:18232 → 2606:4700:10::6814:179a:18232",
+      "id": "D2b-reachability",
+      "result": "PASS"
+    }
+  ],
+  "tool": "nym-smolmix-broadcast-spike"
+}

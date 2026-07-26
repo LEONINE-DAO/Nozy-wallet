@@ -111,3 +111,8 @@ docs/grant/
 docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
 
 book/book/
+
+# Local Nym spike credential / runtime data (never commit)
+/nym-dvpn-lwd-spike-data/
+/nym-smolmix-broadcast-spike-data/
+/*-spike-data/

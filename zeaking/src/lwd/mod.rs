@@ -13,7 +13,9 @@ mod store;
 mod sync;
 
 pub use block_source::LightwalletdBlockSource;
-pub use client::{connect_lightwalletd, LwdClient};
+pub use client::{
+    connect_lightwalletd, connect_lightwalletd_with_connector, normalize_lwd_uri, LwdClient,
+};
 pub use compact_orchard::orchard_cmx_bytes_from_compact_block;
 pub use store::LwdCompactStore;
 pub use sync::{

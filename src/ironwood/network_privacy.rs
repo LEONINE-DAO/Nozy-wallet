@@ -95,6 +95,8 @@ pub struct MigrationNetworkPrivacyOpts {
     pub force_clearnet: bool,
     /// Config `privacy_network.broadcast_via_nym_mixnet` (env also checked).
     pub broadcast_via_nym_mixnet: bool,
+    /// Skip randomized delay + tip-sync guard (tests / emergency only).
+    pub skip_broadcast_hygiene: bool,
 }
 
 /// Assess whether migration broadcast may proceed under Priority 1 policy.
@@ -342,6 +344,9 @@ pub fn amount_timing_status() -> AmountTimingStatus {
             "Memoryless randomized timing (Appendix A) and consolidation rounds are the next \
              cover-traffic steps; ZIP 318 power-of-ten remains a compatibility ladder."
                 .to_string(),
+            "Baseline hygiene (Nym guidance): obfuscate sync start heights, delay broadcasts, \
+             and never submit immediately after catching tip — transport alone cannot do this."
+                .to_string(),
         ],
     }
 }
@@ -367,6 +372,7 @@ pub struct SaferMigrationStatusSnapshot {
     pub amount_timing_active: String,
     pub amount_timing_planned: String,
     pub amount_timing_notes: Vec<String>,
+    pub baseline_hygiene_notes: Vec<String>,
 }
 
 /// Build Priorities 1–3 status for UI surfaces.
@@ -383,6 +389,7 @@ pub async fn safer_migration_status_snapshot(
         crate::ironwood::migration::ZIP318_DEFAULT_K_MAX,
     );
     let amount = amount_timing_status();
+    let hygiene_cfg = crate::config::load_config().baseline_hygiene;
 
     SaferMigrationStatusSnapshot {
         network_privacy_allowed: privacy.allowed,
@@ -403,6 +410,9 @@ pub async fn safer_migration_status_snapshot(
         amount_timing_active: amount.active.label().to_string(),
         amount_timing_planned: amount.planned.label().to_string(),
         amount_timing_notes: amount.notes,
+        baseline_hygiene_notes: crate::ironwood::baseline_hygiene::baseline_hygiene_status_notes(
+            &hygiene_cfg,
+        ),
     }
 }
 
@@ -446,6 +456,7 @@ mod tests {
                 attest_private_network: true,
                 force_clearnet: false,
                 broadcast_via_nym_mixnet: false,
+                skip_broadcast_hygiene: false,
             },
         )
         .await;
@@ -466,6 +477,7 @@ mod tests {
                 attest_private_network: false,
                 force_clearnet: true,
                 broadcast_via_nym_mixnet: false,
+                skip_broadcast_hygiene: false,
             },
         )
         .await;

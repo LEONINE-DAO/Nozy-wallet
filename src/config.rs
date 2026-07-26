@@ -54,6 +54,14 @@ pub struct WalletConfig {
     #[serde(default)]
     pub privacy_network: PrivacyNetworkConfig,
 
+    /// Nym × Zcash baseline hygiene (start-height obfuscation, broadcast delay).
+    #[serde(default)]
+    pub baseline_hygiene: crate::ironwood::baseline_hygiene::BaselineHygieneConfig,
+
+    /// Unix seconds when sync last caught chain tip (tip-coupled broadcast guard).
+    #[serde(default)]
+    pub last_tip_sync_unix: Option<u64>,
+
     #[serde(default)]
     pub zk_verification: crate::monero_zk_verifier::types::ZkVerificationConfig,
 
@@ -113,6 +121,11 @@ pub struct PrivacyNetworkConfig {
     #[serde(default = "default_false")]
     pub broadcast_via_nym_mixnet: bool,
 
+    /// When true (or `NOZY_SYNC_VIA_NYM_DVPN=1`), compact-block sync probes may use the
+    /// Nym dVPN helper subprocess (`nym-dvpn-lwd-spike`). Local LWD is refused (C4).
+    #[serde(default = "default_false")]
+    pub sync_via_nym_dvpn: bool,
+
     /// User attestation that system-wide NymVPN/Tor protects remote Zebrad egress
     /// (safer migration Priority 1). Default off — prefer local node.
     #[serde(default = "default_false")]
@@ -153,6 +166,7 @@ impl Default for PrivacyNetworkConfig {
             preferred_network: default_preferred_network(),
             require_privacy_network: true,
             broadcast_via_nym_mixnet: false,
+            sync_via_nym_dvpn: false,
             attest_private_network: false,
             force_clearnet: false,
         }
@@ -213,6 +227,8 @@ impl Default for WalletConfig {
             backend: default_backend(),
             protocol: default_protocol(),
             privacy_network: PrivacyNetworkConfig::default(),
+            baseline_hygiene: crate::ironwood::baseline_hygiene::BaselineHygieneConfig::default(),
+            last_tip_sync_unix: None,
             zk_verification: crate::monero_zk_verifier::types::ZkVerificationConfig::default(),
             secret_network: SecretNetworkConfig::default(),
             swap: SwapConfig::default(),
@@ -429,6 +445,13 @@ pub fn save_config(config: &WalletConfig) -> NozyResult<()> {
 pub fn update_last_scan_height(height: u32) -> NozyResult<()> {
     let mut config = load_config();
     config.last_scan_height = Some(height);
+    save_config(&config)
+}
+
+/// Record wall-clock when wallet sync reached chain tip (baseline hygiene tip guard).
+pub fn update_last_tip_sync_unix(unix_secs: u64) -> NozyResult<()> {
+    let mut config = load_config();
+    config.last_tip_sync_unix = Some(unix_secs);
     save_config(&config)
 }
 

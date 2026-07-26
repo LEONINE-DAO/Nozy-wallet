@@ -12,6 +12,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 
+use serde::Serialize;
 use tokio::io::AsyncWriteExt;
 use tokio::process::Command;
 
@@ -90,8 +91,75 @@ pub fn resolve_helper_bin() -> NozyResult<PathBuf> {
     Err(NozyError::InvalidOperation(format!(
         "{ENV_FLAG} is set for remote broadcast, but helper binary `{name}` was not found. \
          Build it (`cd tools/nym-smolmix-broadcast-spike && cargo build --release`) and set \
-         {ENV_BIN} to the full path. See docs/reference/NYM_IP_PRIVACY_CASE_BREAKDOWN.md D2c."
+         {ENV_BIN} to the full path. See docs/reference/NYM_MIXNET_BROADCAST_CASE_BREAKDOWN.md D2c."
     )))
+}
+
+/// Operator-facing readiness for D2b/D2c (no tunnel; instant).
+#[derive(Debug, Clone, Serialize)]
+pub struct MixnetBroadcastReadiness {
+    pub requested: bool,
+    pub zebra_url_local: bool,
+    pub would_use_mixnet: bool,
+    pub helper_ok: bool,
+    pub helper_path: Option<String>,
+    pub helper_error: Option<String>,
+    pub notes: Vec<String>,
+}
+
+pub fn assess_mixnet_broadcast_readiness(
+    zebra_url: &str,
+    config_flag: bool,
+) -> MixnetBroadcastReadiness {
+    let requested = mixnet_broadcast_requested(config_flag);
+    let zebra_url_local = ZebraClient::url_is_local(zebra_url);
+    let mut notes = Vec::new();
+
+    let (helper_ok, helper_path, helper_error) = match resolve_helper_bin() {
+        Ok(p) => (true, Some(p.display().to_string()), None),
+        Err(e) => (false, None, Some(e.to_string())),
+    };
+
+    if !requested {
+        notes.push(
+            "Mixnet broadcast not requested (set privacy_network.broadcast_via_nym_mixnet or \
+             NOZY_BROADCAST_VIA_NYM_MIXNET=1)."
+                .to_string(),
+        );
+    }
+    if zebra_url_local {
+        notes.push(
+            "Zebra URL is local/LAN — submits stay on Case A1 direct path even if mixnet is enabled."
+                .to_string(),
+        );
+    } else if requested && helper_ok {
+        notes.push(
+            "Remote URL + helper present — sendrawtransaction will use Nym smolmix subprocess. \
+             Target must be exit-reachable (D2b)."
+                .to_string(),
+        );
+    } else if requested && !helper_ok {
+        notes.push(
+            "Mixnet broadcast requested for a remote URL, but helper binary is missing."
+                .to_string(),
+        );
+    }
+
+    notes.push(
+        "Live D2b/D2c proof: build spike, run --dry-reachability / --rpc-probe / --sendraw-stdin \
+         with an exit-reachable Zebrad. See docs/reference/NYM_MIXNET_BROADCAST_CASE_BREAKDOWN.md."
+            .to_string(),
+    );
+
+    MixnetBroadcastReadiness {
+        requested,
+        zebra_url_local,
+        would_use_mixnet: requested && !zebra_url_local && helper_ok,
+        helper_ok,
+        helper_path,
+        helper_error,
+        notes,
+    }
 }
 
 async fn broadcast_via_helper(zebra_url: &str, raw_tx_hex: &str) -> NozyResult<String> {
@@ -211,5 +279,21 @@ mod tests {
     #[test]
     fn mixnet_requested_from_config_alone() {
         assert!(mixnet_broadcast_requested(true));
+    }
+
+    #[test]
+    fn readiness_local_never_would_use_mixnet() {
+        let r = assess_mixnet_broadcast_readiness("http://127.0.0.1:8232", true);
+        assert!(r.requested);
+        assert!(r.zebra_url_local);
+        assert!(!r.would_use_mixnet);
+    }
+
+    #[tokio::test]
+    async fn local_url_skips_helper_even_when_enabled() {
+        let out = maybe_broadcast_via_nym_mixnet("http://127.0.0.1:18232", "deadbeef", true)
+            .await
+            .unwrap();
+        assert!(out.is_none());
     }
 }

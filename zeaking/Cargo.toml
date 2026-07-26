@@ -19,6 +19,9 @@ lightwalletd = [
     "dep:tonic-prost",
     "dep:prost",
     "dep:rusqlite",
+    "dep:http",
+    "dep:tower",
+    "dep:hyper",
 ]
 
 [dependencies]
@@ -30,10 +33,13 @@ async-trait = "0.1"
 hex = "0.4"
 
 tokio = { version = "1.0", features = ["rt-multi-thread", "macros", "sync"], optional = true }
-tonic = { version = "0.14", optional = true, default-features = false, features = ["transport", "codegen"] }
+tonic = { version = "0.14", optional = true, default-features = false, features = ["transport", "codegen", "tls-ring", "tls-webpki-roots"] }
 tonic-prost = { version = "0.14", optional = true }
 prost = { version = "0.14", optional = true }
 rusqlite = { version = "0.39", features = ["bundled"], optional = true }
+http = { version = "1", optional = true }
+tower = { version = "0.5", optional = true, default-features = false }
+hyper = { version = "1", optional = true, default-features = false }
 
 [build-dependencies]
 tonic-prost-build = "0.14"

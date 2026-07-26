@@ -1,0 +1,4 @@
+# Align with Nym SDK tooling where possible; pin for reproducible spike builds.
+[toolchain]
+channel = "1.88.0"
+components = ["rustfmt", "clippy"]

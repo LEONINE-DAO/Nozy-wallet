@@ -117,7 +117,9 @@ pub async fn orchard_only_send_blocker(
     }
 }
 
-/// Block legacy Orchard-only send builders (Keystone / co-sign) when Ironwood is active.
+/// Block legacy Orchard-only hardware send builders when Ironwood is active and the
+/// wallet still holds Orchard notes that must migrate first. Ironwood Keystone PCZT
+/// sends are supported when the wallet has Ironwood notes.
 pub async fn legacy_hardware_send_blocker(
     zebra: &ZebraClient,
     chain_tip: u32,
@@ -128,18 +130,14 @@ pub async fn legacy_hardware_send_blocker(
     if !get_blockchain_info_reports_ironwood_active(&info, chain_tip) {
         return Ok(None);
     }
-    if ironwood_notes_unspent_zat > 0 && orchard_notes_unspent_zat == 0 {
-        return Ok(Some(
-            "Ironwood (NU6.3) is active and this wallet holds Ironwood notes only. \
-             Hardware signing (Keystone) for Ironwood sends is not supported yet; \
-             use software Send (`nozy send` or the desktop app)."
-                .to_string(),
-        ));
+    if ironwood_notes_unspent_zat > 0 {
+        // Ironwood Keystone PCZT path is available.
+        return Ok(None);
     }
     if orchard_notes_unspent_zat > 0 {
         return Ok(Some(
-            "Orchard notes remain after Ironwood activation. Run `nozy ironwood migrate` \
-             before sending from a hardware wallet."
+            "Orchard notes remain after Ironwood activation. Run Ironwood Plan → Migrate → Broadcast \
+             (or `nozy ironwood migrate`) before sending from a hardware wallet."
                 .to_string(),
         ));
     }

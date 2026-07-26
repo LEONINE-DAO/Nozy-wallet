@@ -11,6 +11,7 @@ pub mod privacy;
 pub mod safe_display;
 #[cfg(feature = "native")]
 pub mod secret_keys;
+pub mod signed_message;
 pub mod traits;
 pub mod transactions;
 pub mod version_info;
@@ -62,6 +63,7 @@ pub mod note_sync;
 pub mod notes;
 #[cfg(feature = "native")]
 pub mod nu6_1_check;
+pub mod nym_dvpn_sync;
 #[cfg(feature = "native")]
 pub mod nym_mixnet_broadcast;
 #[cfg(feature = "native")]
@@ -151,30 +153,32 @@ pub use cli_helpers::{
     scan_notes_for_sending, wallet_balance_snapshot, zebra_connect_api_code, WalletBalanceSnapshot,
 };
 #[cfg(feature = "native")]
-pub use config::{load_config, save_config, update_last_scan_height, WalletConfig};
+pub use config::{
+    load_config, save_config, update_last_scan_height, update_last_tip_sync_unix, WalletConfig,
+};
 #[cfg(feature = "native")]
 pub use config::{BackendKind, Protocol};
 #[cfg(feature = "native")]
 pub use ironwood::{
     amount_timing_status, assess_migration_cover_traffic, assess_migration_network_privacy,
-    assess_orchard_migration_readiness, build_schedule_from_plan, display_ironwood_status,
-    execute_orchard_migration, execute_orchard_migration_broadcast, execute_orchard_note_split,
-    fetch_pool_balances, flatten_canonical_denomination_zatoshis, ironwood_migration_schedule_path,
-    ironwood_user_notices, is_ironwood_active, load_orchard_migration_schedule,
-    note_requires_canonical_split, nu6_3_activation_height, orchard_only_send_blocker,
-    plan_orchard_migration, plan_orchard_migration_at, plan_orchard_note_split_outputs,
-    presigned_transfer_broadcastable, previous_zip318_anchor_boundary,
-    refresh_orchard_migration_schedule_at, require_migration_network_privacy,
-    safer_migration_status_snapshot, save_orchard_migration_plan_at,
-    save_orchard_migration_schedule, select_zooko_round_amount, selected_amount_timing_algorithm,
-    validate_orchard_migration_schedule, AmountTimingAlgorithm, IronwoodUserNotices,
-    IronwoodWalletStatus, MigrationBroadcastResult, MigrationExecutionResult,
-    MigrationNetworkPrivacyOpts, MigrationPlanSummary, MigrationReadinessReport,
-    MigrationReadinessState, MigrationSchedule, MigrationScheduleValidation,
-    MigrationScheduledTransfer, MigrationTransferStatus, OrchardNoteSplitResult,
-    PreparedMigrationTransaction, SaferMigrationStatusSnapshot, IRONWOOD_ACTIVATION_FREEZE_NOTICE,
-    IRONWOOD_MIGRATION_PRIVACY_WARNINGS, MIGRATION_SCHEDULE_VERSION,
-    NU6_3_MAINNET_ACTIVATION_HEIGHT, NU6_3_MAINNET_ACTIVATION_TARGET,
+    assess_orchard_migration_readiness, baseline_hygiene_status_notes, build_schedule_from_plan,
+    display_ironwood_status, execute_orchard_migration, execute_orchard_migration_broadcast,
+    execute_orchard_note_split, fetch_pool_balances, flatten_canonical_denomination_zatoshis,
+    ironwood_migration_schedule_path, ironwood_user_notices, is_ironwood_active,
+    load_orchard_migration_schedule, note_requires_canonical_split, nu6_3_activation_height,
+    orchard_only_send_blocker, plan_orchard_migration, plan_orchard_migration_at,
+    plan_orchard_note_split_outputs, presigned_transfer_broadcastable,
+    previous_zip318_anchor_boundary, refresh_orchard_migration_schedule_at,
+    require_migration_network_privacy, safer_migration_status_snapshot,
+    save_orchard_migration_plan_at, save_orchard_migration_schedule, select_zooko_round_amount,
+    selected_amount_timing_algorithm, validate_orchard_migration_schedule, AmountTimingAlgorithm,
+    BaselineHygieneConfig, IronwoodUserNotices, IronwoodWalletStatus, MigrationBroadcastResult,
+    MigrationExecutionResult, MigrationNetworkPrivacyOpts, MigrationPlanSummary,
+    MigrationReadinessReport, MigrationReadinessState, MigrationSchedule,
+    MigrationScheduleValidation, MigrationScheduledTransfer, MigrationTransferStatus,
+    OrchardNoteSplitResult, PreparedMigrationTransaction, SaferMigrationStatusSnapshot,
+    IRONWOOD_ACTIVATION_FREEZE_NOTICE, IRONWOOD_MIGRATION_PRIVACY_WARNINGS,
+    MIGRATION_SCHEDULE_VERSION, NU6_3_MAINNET_ACTIVATION_HEIGHT, NU6_3_MAINNET_ACTIVATION_TARGET,
     NU6_3_MAINNET_DEPLOYMENT_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
     NU6_3_TESTNET_DEPLOYMENT_TARGET, ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD,
     ZIP318_DEFAULT_K_MAX, ZIP318_TRANSFER_EXPIRY_BLOCKS, ZOOKO_RESIDUAL_ABANDON_ZAT,

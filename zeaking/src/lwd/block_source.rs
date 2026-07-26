@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use tokio::sync::Mutex;
 
-use super::client::{connect_lightwalletd, LwdClient};
+use super::client::{connect_lightwalletd, connect_lightwalletd_with_connector, LwdClient};
 use super::proto::{BlockId, CompactBlock, CompactTx};
 use super::sync::chain_tip_height;
 use crate::error::{ZeakingError, ZeakingResult};
@@ -68,6 +68,21 @@ pub struct LightwalletdBlockSource {
 impl LightwalletdBlockSource {
     pub async fn connect(grpc_uri: &str) -> ZeakingResult<Self> {
         let c = connect_lightwalletd(grpc_uri).await?;
+        Ok(Self {
+            client: Arc::new(Mutex::new(c)),
+        })
+    }
+
+    /// Same as [`Self::connect`], but dials via a tonic connector (e.g. Nym smoldvpn).
+    pub async fn connect_with_connector<C>(grpc_uri: &str, connector: C) -> ZeakingResult<Self>
+    where
+        C: tower::Service<http::Uri> + Send + 'static,
+        C::Response: hyper::rt::Read + hyper::rt::Write + Send + Unpin + 'static,
+        C::Future: Send + 'static,
+        C::Error: Into<Box<dyn std::error::Error + Send + Sync>> + Send + Sync + 'static,
+        Box<dyn std::error::Error + Send + Sync>: From<C::Error>,
+    {
+        let c = connect_lightwalletd_with_connector(grpc_uri, connector).await?;
         Ok(Self {
             client: Arc::new(Mutex::new(c)),
         })

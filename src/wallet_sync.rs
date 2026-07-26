@@ -2,7 +2,9 @@
 //!
 //! See [`docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md`](../docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md).
 
-use crate::config::{load_config, update_last_scan_height, WalletConfig};
+use crate::config::{
+    load_config, update_last_scan_height, update_last_tip_sync_unix, WalletConfig,
+};
 use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use crate::notes::{
@@ -220,7 +222,7 @@ pub(crate) fn apply_empty_cache_backfill(
 }
 
 /// Highest known height from cached notes (discovery block or witness tip).
-pub(crate) fn notes_cache_checkpoint_height(
+pub fn notes_cache_checkpoint_height(
     notes: &[crate::notes::SerializableOrchardNote],
 ) -> Option<u32> {
     notes
@@ -295,6 +297,55 @@ pub(crate) fn apply_cached_notes_resume(
         range.scan_end = range.scan_start.saturating_add(batch).min(range.chain_tip);
     } else if options.scan_to_tip && options.end_height.is_none() {
         range.scan_end = range.chain_tip;
+    }
+}
+
+/// Nym baseline hygiene (V3): rewind auto-resume starts with overlap + checkpoint snap.
+///
+/// Skipped when the operator set an explicit `--start-height` (deterministic debug windows).
+pub(crate) fn apply_start_height_obfuscation(
+    range: &mut ScanRange,
+    config: &WalletConfig,
+    options: &WalletSyncOptions,
+) {
+    if options.start_height.is_some() {
+        return;
+    }
+    if range.scan_start > range.scan_end {
+        return;
+    }
+    let floor = default_first_scan_start(config);
+    let mut rng = rand::thread_rng();
+    let Some(obf) = crate::ironwood::baseline_hygiene::maybe_obfuscate_scan_start(
+        range.scan_start,
+        floor,
+        &config.baseline_hygiene,
+        &mut rng,
+    ) else {
+        return;
+    };
+    if obf.obfuscated_start >= range.scan_start {
+        return;
+    }
+    tracing::info!(
+        true_start = obf.true_start,
+        obfuscated_start = obf.obfuscated_start,
+        overlap_blocks = obf.overlap_blocks,
+        "baseline hygiene: obfuscated sync start height"
+    );
+    range.scan_start = obf.obfuscated_start;
+}
+
+fn record_tip_sync_if_caught_up(scan_end: u32, chain_tip: u32) {
+    if scan_end < chain_tip {
+        return;
+    }
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    if let Err(e) = update_last_tip_sync_unix(now) {
+        tracing::warn!(error = %e, "failed to persist last_tip_sync_unix");
     }
 }
 
@@ -426,6 +477,7 @@ pub async fn sync_wallet_notes(
     })?;
     apply_empty_cache_backfill(&mut range, &config, &options, &notes_before);
     apply_cached_notes_resume(&mut range, &config, &options, &notes_before);
+    apply_start_height_obfuscation(&mut range, &config, &options);
 
     let ctx = SyncRangeContext::from_range(&range);
     let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
@@ -515,6 +567,7 @@ pub async fn sync_wallet_notes(
         )
     })?;
     let _ = crate::wallet_profiles::touch_active_profile_scan_height(range.scan_end);
+    record_tip_sync_if_caught_up(range.scan_end, range.chain_tip);
 
     let new_notes_in_scan = cached_notes.len().saturating_sub(total_before);
     let blocks_scanned = range
@@ -624,10 +677,24 @@ async fn finish_caught_up_sync(
     }
 
     let notes_after_repair = reload_wallet_notes()?;
-    let last_scan_height = config.last_scan_height.unwrap_or(range.chain_tip);
+    // When notes exist but config never recorded a scan height (common after
+    // profile/network switches), persist a checkpoint so UI progress is not stuck at 0%.
+    let last_scan_height = if let Some(h) = config.last_scan_height {
+        h
+    } else {
+        let checkpoint = notes_cache_checkpoint_height(&notes_after_repair)
+            .unwrap_or(range.chain_tip)
+            .min(range.chain_tip);
+        let _ = update_last_scan_height(checkpoint);
+        let _ = crate::wallet_profiles::touch_active_profile_scan_height(checkpoint);
+        checkpoint
+    };
     let witness_lag_after = max_serialized_witness_lag_blocks(&notes_after_repair, range.chain_tip);
     let scan_caught_up = last_scan_height >= range.chain_tip;
     let already_synced = scan_caught_up && witness_lag_after <= MAX_SEND_WITNESS_LAG_BLOCKS;
+    if scan_caught_up {
+        record_tip_sync_if_caught_up(last_scan_height, range.chain_tip);
+    }
 
     Ok(WalletSyncResult {
         balance_zatoshis: wallet_unspent_balance_zatoshis(&notes_after_repair),
@@ -909,5 +976,41 @@ mod tests {
         merge_scanned_notes(&mut cached, &scanned);
         assert_eq!(cached.len(), 1);
         assert_eq!(cached[0].value, 250_000);
+    }
+
+    #[test]
+    fn start_height_obfuscation_rewinds_auto_resume() {
+        use rand::rngs::StdRng;
+        use rand::SeedableRng;
+
+        let config = test_config(Some(3_050_000), "mainnet");
+        let opts = WalletSyncOptions::default();
+        let mut range = resolve_scan_range(&config, &opts, 3_060_000).unwrap();
+        assert_eq!(range.scan_start, 3_050_001);
+        let mut rng = StdRng::seed_from_u64(99);
+        let obf = crate::ironwood::baseline_hygiene::obfuscate_scan_start(
+            range.scan_start,
+            MAINNET_DEFAULT_SCAN_START,
+            128,
+            256,
+            &mut rng,
+        );
+        assert!(obf.obfuscated_start <= range.scan_start);
+        range.scan_start = obf.obfuscated_start;
+        assert!(range.scan_start >= MAINNET_DEFAULT_SCAN_START);
+    }
+
+    #[test]
+    fn start_height_obfuscation_skips_explicit_start() {
+        let config = test_config(Some(3_050_000), "mainnet");
+        let opts = WalletSyncOptions {
+            start_height: Some(3_055_000),
+            scan_to_tip: true,
+            ..WalletSyncOptions::default()
+        };
+        let mut range = resolve_scan_range(&config, &opts, 3_060_000).unwrap();
+        let before = range.scan_start;
+        apply_start_height_obfuscation(&mut range, &config, &opts);
+        assert_eq!(range.scan_start, before);
     }
 }
