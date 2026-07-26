@@ -11,7 +11,6 @@ pub mod privacy;
 pub mod safe_display;
 #[cfg(feature = "native")]
 pub mod secret_keys;
-pub mod signed_message;
 pub mod traits;
 pub mod transactions;
 pub mod version_info;
@@ -63,6 +62,7 @@ pub mod note_sync;
 pub mod notes;
 #[cfg(feature = "native")]
 pub mod nu6_1_check;
+#[cfg(feature = "native")]
 pub mod nym_dvpn_sync;
 #[cfg(feature = "native")]
 pub mod nym_mixnet_broadcast;
