@@ -8,7 +8,7 @@ Public **marketing / product hub** at GitHub Pages root (`https://leonine-dao.gi
 |-------|--------|-----|
 | **Launchpad** | `landing/` — Vite + React + Tailwind | Already wired in `.github/workflows/pages.yml`; fast static deploy |
 | **User docs** | `book/` (mdBook) at `/book/` | Long-form guides separate from marketing |
-| **Wallet core** | Rust `nozy` + `zeaking` | Orchard prove/sync; never duplicate in JS |
+| **Wallet core** | Rust `nozy` + `zeaking` | Orchard + Ironwood prove/sync; never duplicate in JS |
 | **Super wallet (future)** | Extension (MV3 + WASM) + `nozywallet-api` + **web app** SPA | Community-shaped: keys in extension/companion, not in a random website |
 | **Not using** | Keplr SDK, Cosmos Kit, Next.js for launchpad | Wrong chain family; Vite is enough for static hub |
 
@@ -30,10 +30,10 @@ npm run build   # → landing/dist/
 
 ## Site sections
 
-- **Hero** — privacy super wallet positioning, ZEC-first
-- **Products** (`#products`) — Keplr-style surface cards (extension, web app, CLI, desktop, mobile, API)
+- **Hero** — Orchard + Ironwood shielded ZEC positioning
+- **Products** (`#products`) — surface cards (extension, web app, CLI, desktop, mobile, API)
 - **Download** (`#download`) — production CLI binaries from GitHub Releases
-- **Features / FAQ / About** — existing content
+- **Features / FAQ / About** — privacy, Ironwood FAQ, CTA
 
 ## Real wallet surfaces
 

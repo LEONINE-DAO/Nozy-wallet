@@ -2,11 +2,15 @@
 
 ## What is NozyWallet?
 
-A shielded-first Zcash wallet built around Orchard and Zebrad. See [What is Nozy?](../nozy/what-is-nozy.md).
+A shielded-first Zcash wallet built around Orchard, Ironwood (NU6.3), and Zebrad. See [What is Nozy?](../nozy/what-is-nozy.md) and [Why Ironwood?](../features/ironwood.md).
 
 ## Does it support transparent ZEC?
 
-No. Orchard shielded only.
+No. Shielded Orchard / Ironwood only.
+
+## What is Ironwood and why did Nozy change?
+
+Taylor Hornby (Shielded Labs) found a soundness bug in Orchard’s proof circuit. Ironwood seals the old pool and restores verifiable supply. Nozy migrates with the network. Full story: [Why Ironwood?](../features/ironwood.md).
 
 ## CLI vs desktop vs extension?
 

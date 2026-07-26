@@ -39,9 +39,9 @@ const surfaces: Surface[] = [
     status: "live",
     statusLabel: "Mainnet ready",
     bullets: [
-      "Orchard-first sends and sync (Nozy Lite)",
-      "ZIP-317 fees, NU6.2 mainnet",
-      "Ops helpers: health, status --json, optional Nym broadcast",
+      "Shielded sends and sync — Orchard + Ironwood (Nozy Lite)",
+      "Ironwood plan / migrate / broadcast (NU6.3)",
+      "ZIP-317 fees · ops helpers · optional Nym broadcast",
     ],
     primary: { label: "Get CLI Lite", href: "#download" },
     secondary: { label: "Latest release", href: REPO_RELEASES },
@@ -63,11 +63,11 @@ const surfaces: Surface[] = [
   {
     icon: ShieldCheck,
     title: "Browser extension",
-    tagline: "Sweet chili public beta — shielded Orchard wallet in Chrome, Brave, and Edge.",
+    tagline: "Sweet chili public beta — shielded ZEC in Chrome, Brave, and Edge.",
     status: "preview",
     statusLabel: "Public beta",
     bullets: [
-      "MV3 + WASM Orchard wallet (local keys)",
+      "MV3 + WASM shielded wallet (local keys)",
       "Optional companion API for lightwalletd sync",
       "Load unpacked from the Sweet chili zip (0.1.7)",
     ],
@@ -97,7 +97,7 @@ const surfaces: Surface[] = [
     bullets: [
       "Connects to nozywallet-api on PC or VPS + Zebrad",
       "Store listing prep in progress (not on Play / App Store yet)",
-      "Same Orchard-first stack as desktop and extension",
+      "Same Orchard + Ironwood stack as desktop and extension",
     ],
     primary: { label: "Mobile page", href: PATHS.mobilePage },
     secondary: { label: "Mobile repo", href: PATHS.mobile },
@@ -183,9 +183,10 @@ const ProductSurfaces = () => {
           <p className="text-zinc-600 text-lg leading-relaxed">
             NozyWallet is community-shaped for privacy-native daily use: extension and web app for
             daily flows, CLI and desktop for operators, mobile when you are on the go.{" "}
-            <strong className="text-zinc-800 font-semibold">CLI Lite is live for mainnet</strong>;
-            the <strong className="text-zinc-800 font-semibold">browser extension is in public beta</strong>;
-            Desktop beta is out for early testers;{" "}
+            <strong className="text-zinc-800 font-semibold">CLI Lite is live for mainnet</strong> with
+            Orchard + Ironwood (NU6.3) migrate tooling; the{" "}
+            <strong className="text-zinc-800 font-semibold">browser extension is in public beta</strong>;
+            Desktop beta ships Ironwood Plan / Migrate / Broadcast;{" "}
             <strong className="text-zinc-800 font-semibold">mobile beta is coming soon</strong>.
             Other privacy chains ship as modules when ready.
           </p>
@@ -194,7 +195,7 @@ const ProductSurfaces = () => {
         <div className="flex flex-wrap justify-center gap-2 mb-12">
           <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/25 text-sm font-medium text-yellow-900">
             <span className="w-2 h-2 rounded-full bg-yellow-500" />
-            Zcash (Orchard) — supported
+            Zcash (Orchard + Ironwood) — supported
           </span>
           <span className="inline-flex items-center px-4 py-2 rounded-full bg-zinc-100 border border-zinc-200 text-sm text-zinc-500">
             Namada · Penumbra — planned

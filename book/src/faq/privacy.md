@@ -2,7 +2,7 @@
 
 ## Are my transactions private?
 
-Orchard shielded transactions hide amount, sender, and receiver on the public ledger. NozyWallet does not add transparent leakage by design.
+Orchard and Ironwood shielded transactions hide amount, sender, and receiver on the public ledger. NozyWallet does not add transparent leakage by design. **Migration** (Orchard → Ironwood turnstile) is different: amounts are public by design — see [Why Ironwood?](../features/ironwood.md).
 
 ## Does NozyWallet phone home?
 
@@ -22,9 +22,10 @@ Advanced / future documentation — default UI is spend/receive focused, not ful
 
 ## Zcash vs Monero privacy model?
 
-Nozy targets **Monero-like default privacy** using Zcash Orchard — see [Privacy model](../nozy/privacy-model.md).
+Nozy targets **Monero-like default privacy** using Zcash Orchard / Ironwood — see [Privacy model](../nozy/privacy-model.md).
 
 ## Related
 
+- [Why Ironwood?](../features/ironwood.md)
 - [Security Questions](security.md)
 - [Absolute Privacy](../features/absolute-privacy.md)

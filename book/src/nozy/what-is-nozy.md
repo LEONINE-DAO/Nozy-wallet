@@ -2,11 +2,11 @@
 
 ***
 
-NozyWallet is a privacy-first Zcash wallet built for the Orchard protocol. It focuses on making every transaction private by default and removing the choice—or the mistake—of using transparent addresses.
+NozyWallet is a privacy-first Zcash wallet for the **Orchard** and **Ironwood** (NU6.3) shielded pools. It focuses on making every transaction private by default and removing the choice—or the mistake—of using transparent addresses.
 
 #### In one sentence
 
-NozyWallet is a Zcash wallet designed around **your own Zebrad node**, with shielded-only transactions and no transparent support—Monero-level privacy on the ledger, with a stack you can verify instead of a vendor you must trust.
+NozyWallet is a Zcash wallet designed around **your own Zebrad node**, with shielded-only transactions (Orchard today, Ironwood after NU6.3) and no transparent support—Monero-level privacy on the ledger, with a stack you can verify instead of a vendor you must trust.
 
 ***
 
@@ -14,7 +14,7 @@ NozyWallet is a Zcash wallet designed around **your own Zebrad node**, with shie
 
 Most Zcash wallets support both transparent and shielded transactions. That flexibility means users can accidentally leak information on the chain. Nozy removes that risk: you cannot send or receive on transparent addresses.
 
-But **ledger privacy and infrastructure privacy are not the same thing.** Orchard hides sender, receiver, and amount from the public blockchain. A third-party node operator can still learn *when* you sync, *when* you broadcast, and often *which IP* asked—unless you control the node yourself. Nozy is built for people who want both: **cryptographic privacy on-chain** and **minimal trust off-chain.**
+But **ledger privacy and infrastructure privacy are not the same thing.** Orchard and Ironwood hide sender, receiver, and amount from the public blockchain. A third-party node operator can still learn *when* you sync, *when* you broadcast, and often *which IP* asked—unless you control the node yourself. Nozy is built for people who want both: **cryptographic privacy on-chain** and **minimal trust off-chain.**
 
 ***
 
@@ -22,10 +22,10 @@ But **ledger privacy and infrastructure privacy are not the same thing.** Orchar
 
 | Layer | What it protects | How Nozy helps |
 |-------|------------------|----------------|
-| **On-chain (Orchard)** | Sender, receiver, amount on the public ledger | Shielded-only; zero-knowledge proofs; no transparent addresses |
+| **On-chain (Orchard / Ironwood)** | Sender, receiver, amount on the public ledger | Shielded-only; zero-knowledge proofs; no transparent addresses; Ironwood migrate after NU6.3 |
 | **Infrastructure (your node)** | Who you are when you sync, scan, and broadcast | Zebrad-first design; local witness derivation; you choose the RPC endpoint |
 
-Orchard gives you the first layer. **Running your own Zebrad node** is how you take the second layer seriously.
+Orchard and Ironwood give you the first layer. **Running your own Zebrad node** is how you take the second layer seriously.
 
 ***
 
@@ -47,7 +47,7 @@ That is not the same as reading your Orchard notes—they usually cannot decrypt
 
 **What your own node does *not* magically fix** (so the statement stays true):
 
-- **Ledger privacy** still comes from Orchard math, not from Zebrad alone.
+- **Ledger privacy** still comes from Orchard / Ironwood math, not from Zebrad alone.
 - **Network identity** — Your node still talks to the P2P network; use Tor/VPN if you need IP-level hiding ([Privacy Networks](../privacy-networks/overview.md)).
 - **lightwalletd** — If you use a *remote* lightwalletd for compact sync, that service can see which block ranges you request. Prefer local lightwalletd paired with your Zebrad, or accept that trade-off.
 - **Recipients, exchanges, and OPSEC** — KYC, address reuse, and device compromise are separate from node choice.
@@ -71,7 +71,7 @@ Nozy sits in that tradition:
 - **Selective revelation** — You choose who sees your balance (you); the chain does not broadcast amounts or addresses in the clear.
 - **Skepticism of benevolent intermediaries** — Keys stay on your device; the node you run (or explicitly trust) replaces an opaque hosted backend.
 
-We are not relics of the 1990s—Orchard and Zebrad are modern—but the **threat model is the same**: if you want privacy in an open society, you build systems that do not require trusting strangers with your financial metadata.
+We are not relics of the 1990s—Orchard, Ironwood, and Zebrad are modern—but the **threat model is the same**: if you want privacy in an open society, you build systems that do not require trusting strangers with your financial metadata.
 
 More in [Manifesto](manifesto.md) and [Philosophy](philosophy.md).
 
@@ -79,8 +79,9 @@ More in [Manifesto](manifesto.md) and [Philosophy](philosophy.md).
 
 #### What you get
 
-- **Shielded-only** — Every send and receive uses Orchard; no transparent t-addresses.
-- **Zebrad-first** — Built for JSON-RPC to **your** full node; local Orchard witness derivation (not “trust the server’s witness”).
+- **Shielded-only** — Every send and receive uses Orchard / Ironwood; no transparent t-addresses.
+- **Zebrad-first** — Built for JSON-RPC to **your** full node; local shielded witness derivation (not “trust the server’s witness”).
+- **Ironwood-ready** — NU6.3 migrate / split / broadcast tooling so Orchard notes move into the Ironwood pool after activation. Newcomers: [Why Ironwood?](../features/ironwood.md).
 - **Self-custodial** — Mnemonic and keys stay on your device; no custodian can move your funds.
 - **Verifiable stack** — Open source wallet + open source node; you can audit what runs, not just what marketing claims.
 - **Multi-surface** — Desktop (Tauri), CLI, api-server companion, and mobile FFI—one Rust core, same privacy stance.

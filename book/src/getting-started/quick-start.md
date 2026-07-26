@@ -121,7 +121,7 @@ A: No! You can use a public Zebra node. Configure the node URL in settings if ne
 A: Depends on blockchain height. Recent blocks (last 1000) take ~1-2 minutes. Full sync takes longer.
 
 **Q: Can I use transparent addresses?**  
-A: No. NozyWallet only supports shielded (Orchard) addresses for complete privacy.
+A: No. NozyWallet only supports shielded (Orchard / Ironwood) addresses for complete privacy. For why Ironwood exists, see [Why Ironwood?](../features/ironwood.md).
 
 **Q: What if I lose my mnemonic?**  
 A: Without your mnemonic phrase, you cannot recover your wallet. Always backup your mnemonic securely!

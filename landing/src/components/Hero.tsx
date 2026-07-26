@@ -17,7 +17,7 @@ const Hero = () => {
       <div className="max-w-7xl mx-auto px-6 text-center relative z-10">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-xs font-medium text-yellow-700 mb-8 animate-fade-in-up">
           <ShieldKeyholeMinimalistic size={14} />
-          <span>CLI Lite · Extension beta · Desktop beta · Orchard ZEC</span>
+          <span>CLI Lite · Extension beta · Desktop beta · Orchard + Ironwood</span>
         </div>
 
         <h1 className="text-5xl lg:text-7xl font-bold tracking-tight mb-4 leading-tight text-zinc-900">
@@ -30,8 +30,9 @@ const Hero = () => {
         </p>
 
         <p className="max-w-2xl mx-auto text-lg text-zinc-600 mb-10 leading-relaxed">
-          NozyWallet is a self-custodial privacy wallet — Orchard ZEC first, shielded by default.
-          CLI Lite is mainnet-ready; the browser extension (Sweet chili) is in public beta;
+          NozyWallet is a self-custodial privacy wallet for shielded ZEC — Orchard and
+          Ironwood (NU6.3), shielded by default. CLI Lite is mainnet-ready with Ironwood
+          migrate tooling; the browser extension (Sweet chili) is in public beta;
           Desktop beta is out for early testers; mobile beta is coming soon.
         </p>
 
@@ -64,9 +65,9 @@ const Hero = () => {
 
         <div className="mt-20 pt-10 border-t border-zinc-200 grid grid-cols-1 sm:grid-cols-3 gap-8">
           <div className="flex flex-col items-center gap-2">
-            <span className="text-3xl font-bold text-zinc-900">Orchard</span>
+            <span className="text-3xl font-bold text-zinc-900">Orchard · Ironwood</span>
             <span className="text-sm text-zinc-500 uppercase tracking-wider">
-              Shielded by default
+              Shielded pools
             </span>
           </div>
           <div className="flex flex-col items-center gap-2">

@@ -35,7 +35,7 @@ const STEPS = [
   {
     n: "03",
     title: "Sync & send",
-    body: "Watch Orchard balance update, receive with a unified address, send shielded ZEC.",
+    body: "Watch shielded balance update, receive with a unified address, send Orchard or Ironwood ZEC.",
   },
 ] as const;
 
@@ -54,7 +54,7 @@ const FAQS = [
   },
   {
     q: "How does this relate to desktop?",
-    a: "Same Orchard-first wallet family. Desktop and CLI are for operators at a keyboard; mobile is for the same stack when you are away from home — ideally still talking to your own API.",
+    a: "Same Orchard + Ironwood wallet family. Desktop and CLI are for operators at a keyboard; mobile is for the same stack when you are away from home — ideally still talking to your own API.",
   },
 ] as const;
 
@@ -109,9 +109,9 @@ const Mobile = () => {
             <span>in your pocket.</span>
           </h1>
           <p className="mobile-hero-sub">
-            NozyWallet Mobile is a privacy companion — Orchard balance, receive,
-            and send from your phone, synced through an API and Zebrad you
-            control.
+            NozyWallet Mobile is a privacy companion — Orchard and Ironwood
+            balance, receive, and send from your phone, synced through an API
+            and Zebrad you control.
           </p>
           <div className="mobile-hero-ctas">
             <a href="#get-app" className="mobile-btn mobile-btn-primary">
@@ -147,7 +147,7 @@ const Mobile = () => {
             Keep operators at the keyboard on CLI or Desktop. Take the same
             shielded stack with you — phone talks HTTPS to your API, API talks
             JSON-RPC to Zebrad. Not a copy of someone else’s air-gap story —
-            a Nozy companion built for Orchard.
+            a Nozy companion built for Orchard and Ironwood.
           </p>
           <div className="mobile-pair-split">
             <div>
