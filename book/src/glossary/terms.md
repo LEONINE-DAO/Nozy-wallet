@@ -60,6 +60,9 @@ A wallet that can generate multiple addresses from a single seed phrase. All add
 ### I2P (Invisible Internet Project)
 A privacy network that provides anonymous communication. NozyWallet can be configured to route transactions through I2P for additional privacy.
 
+### Ironwood
+Zcash’s next shielded pool (network upgrade **NU6.3**). Built to restore **verifiable circulating-supply soundness** after the Orchard circuit issue: seal the old Orchard pool, use a corrected circuit in a new pool, and move value through a **turnstile**. NozyWallet supports Ironwood scan, migrate, and post-activation sends. See [Why Ironwood?](../features/ironwood.md).
+
 ## K
 
 ### Keystone
@@ -88,12 +91,15 @@ A unit of value in Zcash's shielded pools. Notes contain encrypted information a
 A cryptographic value that proves a note has been spent without revealing which note was spent. Prevents double-spending while maintaining privacy.
 
 ### NU 6.1 (Network Upgrade 6.1)
-The latest Zcash network upgrade, activated at block 3,146,400 (November 23, 2025). NozyWallet is fully compatible with NU 6.1 and protocol version 170140.
+Zcash network upgrade activated at block 3,146,400 (November 23, 2025). Protocol version 170140.
+
+### NU 6.3 (Ironwood)
+Network upgrade that activates **Ironwood**: seals the legacy Orchard pool and introduces the Ironwood shielded pool for verifiable supply soundness. Mainnet target height **3,428,143** (2026-07-28). See [Why Ironwood?](../features/ironwood.md).
 
 ## O
 
 ### Orchard
-Zcash's newest and most efficient shielded pool. Orchard provides better performance and scalability than earlier shielded designs. NozyWallet uses exclusively Orchard addresses.
+Zcash’s Halo 2 shielded pool used before Ironwood (NU6.3). Orchard hides sender, receiver, and amount. In 2026 a circuit soundness bug was found (see [Why Ironwood?](../features/ironwood.md)); after Ironwood activates, ordinary Orchard activity is sealed and value migrates via turnstile into Ironwood.
 
 ## P
 
@@ -174,7 +180,7 @@ Zcash can be used as a standard unit for pricing and valuing goods, services, an
 ## Privacy-Specific Terms
 
 ### Shielded Pool
-A collection of notes that use the same privacy protocol within a given shielded pool. NozyWallet uses the Orchard pool exclusively.
+A collection of notes that use the same privacy protocol within a given shielded pool. NozyWallet uses the Orchard and Ironwood pools (no transparent pool for user sends).
 
 ### Note Commitment Tree
 A Merkle tree structure that commits to all notes in a shielded pool. Allows verification without revealing specific notes.

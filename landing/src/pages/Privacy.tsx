@@ -1,4 +1,4 @@
-const LAST_UPDATED = "July 16, 2026";
+const LAST_UPDATED = "July 20, 2026";
 
 const Privacy = () => {
   return (
@@ -14,9 +14,10 @@ const Privacy = () => {
           <p>
             This policy describes how <strong>NozyWallet</strong> (developed by
             LEONINE DAO) handles information when you use our website, desktop
-            app, mobile app, CLI, or related documentation. NozyWallet is an
-            open-source Orchard / Ironwood (shielded) Zcash wallet. We do not
-            operate a custodial exchange and we do not hold your funds.
+            app, mobile app, browser extension, CLI, or related documentation.
+            NozyWallet is an open-source Orchard / Ironwood (shielded) Zcash
+            wallet. We do not operate a custodial exchange and we do not hold
+            your funds.
           </p>
           <p>
             Contact:{" "}
@@ -26,6 +27,15 @@ const Privacy = () => {
             >
               support@leoninedao.org
             </a>
+            . Security / vulnerability reports:{" "}
+            <a
+              href="mailto:Nozywallet.support@leoninedao.org"
+              className="text-yellow-700 hover:underline"
+            >
+              Nozywallet.support@leoninedao.org
+            </a>{" "}
+            (responsible disclosure — do not post exploits publicly before
+            coordination).
           </p>
         </section>
 
@@ -105,7 +115,7 @@ const Privacy = () => {
 
         <section>
           <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
-            4. Desktop app and CLI
+            4. Desktop app, browser extension, and CLI
           </h2>
           <p>
             Desktop and command-line builds run wallet logic locally or against a
@@ -113,6 +123,21 @@ const Privacy = () => {
             under your user profile unless you choose a remote API deployment.
             The same on-chain / off-chain distinction applies: your Zebrad
             operator (often you) may see RPC and sync metadata.
+          </p>
+          <p className="mt-4">
+            <strong>Browser extension (Chrome / Edge / Brave):</strong> Orchard /
+            Ironwood crypto runs as WASM inside the extension. Your mnemonic stays in the
+            extension service worker and, when a background scan is active, in
+            browser <em>session</em> storage only (cleared on lock). Pending dApp
+            approvals are kept in session storage so they survive a service-worker
+            restart (about five minutes). The optional local companion API (
+            <code>nozywallet-api</code> on loopback only) is used for sync/send and
+            never receives your seed; if you set an API key, it is stored in session
+            storage for that browser session. Permanent host access is limited to
+            localhost companion ports; broader hosts (Zebrad RPC / dApp pages) require
+            an explicit optional permission grant. Sites must ask you to connect —
+            connect is not silent. Optional USD price display may call CoinGecko from
+            the popup (no wallet identifiers are sent).
           </p>
         </section>
 
@@ -164,6 +189,10 @@ const Privacy = () => {
             <li>
               <strong>Block explorers</strong> — when you open transaction links
               from the app
+            </li>
+            <li>
+              <strong>CoinGecko (optional)</strong> — browser extension popup may
+              fetch a ZEC/USD rate for display; no addresses or keys are included
             </li>
           </ul>
           <p className="mt-4">

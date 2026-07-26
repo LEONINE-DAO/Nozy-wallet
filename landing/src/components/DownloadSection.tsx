@@ -35,8 +35,9 @@ const DownloadSection = () => {
             </span>
           </div>
           <p className="text-sm text-zinc-600 mb-4">
-            Orchard-first <code className="text-xs bg-zinc-100 px-1 rounded">nozy</code> binary.
-            Pair with your own <strong>zebrad</strong> or <strong>Zakura</strong> + <strong>lightwalletd</strong>.
+            Shielded-first <code className="text-xs bg-zinc-100 px-1 rounded">nozy</code> binary —
+            Orchard + Ironwood (NU6.3) migrate / split / send. Pair with your own{" "}
+            <strong>zebrad</strong> or <strong>Zakura</strong> + <strong>lightwalletd</strong>.
             On Linux / macOS run{" "}
             <code className="text-xs bg-zinc-100 px-1 rounded">chmod +x</code> after download.
           </p>
@@ -81,12 +82,12 @@ const DownloadSection = () => {
               Desktop — Hot Lemon beta.2
             </h3>
             <span className="text-xs font-semibold uppercase tracking-wide px-2 py-0.5 rounded-full border bg-amber-500/10 text-amber-900 border-amber-500/25">
-              Beta · Ironwood WIP
+              Beta · Ironwood migrate
             </span>
           </div>
           <p className="text-sm text-zinc-600 mb-4">
-            Tauri GUI for operators and early testers. GA waits until Ironwood is official.
-            Prefer CLI Lite for production mainnet today.
+            Tauri GUI for operators and early testers — Ironwood Plan / Split / Migrate / Broadcast.
+            GA waits until Ironwood is official. Prefer CLI Lite for production mainnet today.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-3">
             <a

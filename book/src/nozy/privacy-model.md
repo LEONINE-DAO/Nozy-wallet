@@ -6,20 +6,20 @@ Nozy’s privacy has **two parts**: what the **chain** hides, and what **your in
 
 ***
 
-#### What Orchard hides (on-chain)
+#### What Orchard / Ironwood hide (on-chain)
 
 - **Sender** — Your address and identity are not visible on the chain.
 - **Receiver** — The recipient’s address is hidden.
 - **Amount** — The value of the transaction is hidden.
 - **Linkability** — Observers cannot tie transactions together from ledger data alone.
 
-Zero-knowledge proofs let the network verify validity without learning who sent, who received, or how much.
+Zero-knowledge proofs let the network verify validity without learning who sent, who received, or how much. Ironwood (NU6.3) continues that model in a new shielded pool; Nozy migrates Orchard notes via turnstile Plan / Split / Migrate / Broadcast.
 
 ***
 
 #### What a third-party node can still see (off-chain)
 
-Even with perfect Orchard math, a **remote RPC operator** is not blind to *you as a user*. They may log:
+Even with perfect Orchard / Ironwood math, a **remote RPC operator** is not blind to *you as a user*. They may log:
 
 | Signal | Risk |
 |--------|------|
@@ -35,9 +35,9 @@ That is why the privacy model treats **your own Zebrad** as part of the product�
 #### How Nozy keeps ledger privacy strong
 
 - **Shielded-only** — No transparent addresses; no accidental public sends.
-- **Orchard-only** — Current shielded pool; no legacy transparent-first flows.
+- **Orchard + Ironwood** — Current and next shielded pools; no legacy transparent-first flows.
 - **Local cryptography** — Decryption, scanning, and proving on your device; keys are not sent to a server for spending.
-- **Local witnesses** — Orchard spend witnesses are derived on the wallet using treestate from RPC—not served as a trusted “witness API” by the node. Your node supplies **facts about the chain**; your wallet supplies **secrets**.
+- **Local witnesses** — Shielded spend witnesses are derived on the wallet using treestate from RPC—not served as a trusted “witness API” by the node. Your node supplies **facts about the chain**; your wallet supplies **secrets**.
 
 ***
 

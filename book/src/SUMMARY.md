@@ -23,6 +23,7 @@
 - [Absolute Privacy](features/absolute-privacy.md)
 - [Performance & Speed](features/performance.md)
 - [Security Features](features/security.md)
+- [Why Ironwood? (Orchard → NU6.3)](features/ironwood.md)
 - [NU 6.1 Support](features/nu61-support.md)
 
 # User Guide

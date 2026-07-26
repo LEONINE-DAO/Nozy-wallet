@@ -55,9 +55,9 @@ const Features = () => {
       icon: ShieldCheck,
       title: "Absolute Privacy",
       description:
-        "Your financial data is yours alone. NozyWallet enforces privacy by default, making every transaction untraceable.",
+        "Your financial data is yours alone. NozyWallet enforces privacy by default across Orchard and Ironwood — every send is shielded.",
       points: [
-        "Shielded-by-default architecture",
+        "Orchard and Ironwood shielded pools",
         "Sender, receiver, and amount hidden",
         "Cryptographically proven privacy",
       ],

@@ -56,12 +56,17 @@ const FAQ = () => {
     {
       question: "Why choose NozyWallet?",
       answer:
-        "NozyWallet is the first Zcash wallet built directly on Zebra (the Rust full node). It's fully private by default—shielded-only, no transparent addresses—so you get Monero-level privacy with Zcash speed and efficiency.",
+        "NozyWallet is a shielded-first Zcash wallet built for Zebrad (the Rust full node). Orchard and Ironwood (NU6.3) — no transparent addresses — so you get Monero-level privacy with Zcash speed and efficiency.",
     },
     {
-      question: "How does Orchard privacy work?",
+      question: "What is Ironwood?",
       answer:
-        "Orchard uses zero-knowledge proofs (zkSNARKs) to hide sender, receiver, and amount. It's cryptographically proven, not probabilistic.",
+        "Ironwood is Zcash’s next shielded pool (NU6.3). After activation, new sends route through Ironwood; existing Orchard notes migrate via turnstile Plan / Split / Migrate / Broadcast. Nozy ships that tooling in CLI Lite and Desktop beta.",
+    },
+    {
+      question: "How does Orchard / Ironwood privacy work?",
+      answer:
+        "Both pools use zero-knowledge proofs (zkSNARKs / Halo 2) to hide sender, receiver, and amount. Privacy is cryptographically proven, not probabilistic. Ironwood continues that model with a new commitment tree after NU6.3.",
     },
   ];
 

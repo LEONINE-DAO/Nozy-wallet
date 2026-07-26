@@ -16,7 +16,7 @@ const About = () => {
         </h2>
 
         <p className="text-xl text-zinc-400 max-w-2xl mx-auto mb-12">
-          Download NozyWallet today. Privacy by default. No compromises.
+          Download NozyWallet today — Orchard and Ironwood, shielded by default. No compromises.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
