@@ -164,6 +164,7 @@ pub struct IronwoodSaferMigrationResponse {
     pub amount_timing_active: String,
     pub amount_timing_planned: String,
     pub amount_timing_notes: Vec<String>,
+    pub baseline_hygiene_notes: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -281,7 +282,7 @@ pub async fn get_ironwood_status(
     }
     if plan.zip318.note_split_required {
         blockers.push(
-            "ZIP 318 note splitting is required before Migrate. Run `nozy ironwood split` in the CLI, then return here."
+            "ZIP 318 note splitting is required before Migrate. Use Split notes on this Ironwood tab (or CLI `nozy ironwood split`)."
                 .to_string(),
         );
     }
@@ -314,6 +315,7 @@ pub async fn get_ironwood_status(
             attest_private_network: request.attest_private_network,
             force_clearnet: request.force_clearnet,
             broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
+            skip_broadcast_hygiene: false,
         },
     )
     .await;
@@ -404,6 +406,7 @@ pub async fn get_ironwood_status(
             amount_timing_active: safer.amount_timing_active,
             amount_timing_planned: safer.amount_timing_planned,
             amount_timing_notes: safer.amount_timing_notes,
+            baseline_hygiene_notes: safer.baseline_hygiene_notes,
         },
     })
 }

@@ -83,6 +83,8 @@ pub struct IronwoodBroadcastRequest {
     pub dry_run: bool,
     #[serde(default)]
     pub wait_confirm: bool,
+    #[serde(default)]
+    pub skip_broadcast_hygiene: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -283,6 +285,7 @@ pub async fn ironwood_broadcast(
         attest_private_network: request.attest_private_network,
         force_clearnet: request.force_clearnet,
         broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
+        skip_broadcast_hygiene: request.skip_broadcast_hygiene,
     };
 
     let result = execute_orchard_migration_broadcast(

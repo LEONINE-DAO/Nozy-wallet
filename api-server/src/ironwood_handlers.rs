@@ -3,14 +3,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::handlers::{error_response_with_code, load_wallet_with_password};
 use nozy::{
-    execute_orchard_migration, execute_orchard_migration_broadcast, execute_orchard_note_split,
-    fetch_pool_balances, ironwood::ironwood_software_send_available, ironwood_user_notices,
-    is_ironwood_active, load_config, load_orchard_migration_schedule, load_wallet_notes,
-    nu6_3_activation_height, plan_orchard_migration_at, plan_orchard_note_split_outputs,
-    previous_zip318_anchor_boundary, safer_migration_status_snapshot,
-    save_orchard_migration_plan_at, scan_notes_for_sending, shielded_pool::ShieldedPool,
-    MigrationNetworkPrivacyOpts, MigrationReadinessState, ZebraClient,
-    NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
+    assess_orchard_migration_readiness, execute_orchard_migration,
+    execute_orchard_migration_broadcast, execute_orchard_note_split, fetch_pool_balances,
+    ironwood::ironwood_software_send_available, ironwood_user_notices, is_ironwood_active,
+    load_config, load_orchard_migration_schedule, load_wallet_notes,
+    max_serialized_witness_lag_blocks, nu6_3_activation_height, plan_orchard_migration_at,
+    plan_orchard_note_split_outputs, previous_zip318_anchor_boundary,
+    safer_migration_status_snapshot, save_orchard_migration_plan_at, scan_notes_for_sending,
+    shielded_pool::ShieldedPool, MigrationNetworkPrivacyOpts, MigrationReadinessState, ZebraClient,
+    MAX_SEND_WITNESS_LAG_BLOCKS, NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
 };
 
 #[derive(Debug, Serialize)]
@@ -33,6 +34,7 @@ pub struct IronwoodSaferMigrationResponse {
     pub amount_timing_active: String,
     pub amount_timing_planned: String,
     pub amount_timing_notes: Vec<String>,
+    pub baseline_hygiene_notes: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -56,6 +58,9 @@ pub struct IronwoodStatusResponse {
     pub zip318_note_split_required: bool,
     pub next_anchor_bucket_height: Option<u32>,
     pub migration_enabled: bool,
+    pub readiness_state: String,
+    pub ready_to_prebuild: bool,
+    pub ready_to_broadcast: bool,
     pub blockers: Vec<String>,
     pub activation_notice: String,
     pub migration_privacy_warnings: Vec<String>,
@@ -100,6 +105,7 @@ fn privacy_opts_from_config(config: &nozy::WalletConfig) -> MigrationNetworkPriv
         attest_private_network: config.privacy_network.attest_private_network,
         force_clearnet: config.privacy_network.force_clearnet,
         broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
+        skip_broadcast_hygiene: false,
     }
 }
 
@@ -184,7 +190,13 @@ pub async fn get_ironwood_status(
     }
     if ironwood_active && orchard_wallet_zat > 0 {
         blockers.push(
-            "Orchard notes remain — run Ironwood Plan → Migrate → Broadcast from the app."
+            "Orchard notes remain — run Ironwood Plan → Split (if required) → Migrate → Broadcast."
+                .to_string(),
+        );
+    }
+    if plan.zip318.note_split_required {
+        blockers.push(
+            "ZIP 318 note splitting is required before Migrate. POST /api/ironwood/split (or desktop Split notes)."
                 .to_string(),
         );
     }
@@ -227,6 +239,31 @@ pub async fn get_ironwood_status(
         blockers.push(format!("Cover traffic: {warning}"));
     }
 
+    let tip_for_readiness = chain_tip.unwrap_or(migration_schedule_tip);
+    let schedule = load_orchard_migration_schedule().ok().flatten();
+    let witness_lag = max_serialized_witness_lag_blocks(&notes, tip_for_readiness);
+    let readiness = assess_orchard_migration_readiness(
+        ironwood_active,
+        tip_for_readiness,
+        &plan,
+        schedule.as_ref(),
+        Some(witness_lag),
+        Some(MAX_SEND_WITNESS_LAG_BLOCKS),
+    );
+    for b in &readiness.blockers {
+        if !blockers.iter().any(|existing| existing == b) {
+            blockers.push(b.clone());
+        }
+    }
+    let readiness_state = readiness.state;
+    let ready_to_prebuild = readiness_state == MigrationReadinessState::ReadyToPrebuild;
+    let ready_to_broadcast = matches!(
+        readiness_state,
+        MigrationReadinessState::ReadyToBroadcast
+            | MigrationReadinessState::PresignedWaitingForBroadcast
+    );
+    let migration_enabled = ironwood_active || (is_testnet && ironwood_rpc_detected);
+
     let ironwood_send_enabled =
         ironwood_software_send_available(ironwood_active, ironwood_wallet_zat);
     let wallet_ready = ironwood_active
@@ -254,7 +291,10 @@ pub async fn get_ironwood_status(
         zip318_transfer_count: plan.zip318.total_transfer_count,
         zip318_note_split_required: plan.zip318.note_split_required,
         next_anchor_bucket_height: chain_tip.and(plan.zip318.next_anchor_bucket_height),
-        migration_enabled: true,
+        migration_enabled,
+        readiness_state: readiness_state.label().to_string(),
+        ready_to_prebuild,
+        ready_to_broadcast,
         blockers,
         activation_notice: notices.activation_notice,
         migration_privacy_warnings: notices.migration_privacy_warnings,
@@ -278,6 +318,7 @@ pub async fn get_ironwood_status(
             amount_timing_active: safer.amount_timing_active,
             amount_timing_planned: safer.amount_timing_planned,
             amount_timing_notes: safer.amount_timing_notes,
+            baseline_hygiene_notes: safer.baseline_hygiene_notes,
         },
     }))
 }
@@ -546,6 +587,8 @@ pub struct IronwoodBroadcastRequest {
     pub dry_run: bool,
     #[serde(default)]
     pub wait_confirm: bool,
+    #[serde(default)]
+    pub skip_broadcast_hygiene: Option<bool>,
 }
 
 #[derive(Debug, Serialize)]
@@ -577,6 +620,7 @@ pub async fn ironwood_broadcast(
             .force_clearnet
             .unwrap_or(config.privacy_network.force_clearnet),
         broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
+        skip_broadcast_hygiene: payload.skip_broadcast_hygiene.unwrap_or(false),
     };
 
     let result = execute_orchard_migration_broadcast(

@@ -7883,6 +7883,8 @@ dependencies = [
  "async-trait",
  "chrono",
  "hex",
+ "http",
+ "hyper",
  "prost",
  "rusqlite",
  "serde",
@@ -7892,6 +7894,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tower",
 ]
 
 [[package]]
