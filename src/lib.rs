@@ -11,6 +11,7 @@ pub mod privacy;
 pub mod safe_display;
 #[cfg(feature = "native")]
 pub mod secret_keys;
+pub mod signed_message;
 pub mod traits;
 pub mod transactions;
 pub mod version_info;
