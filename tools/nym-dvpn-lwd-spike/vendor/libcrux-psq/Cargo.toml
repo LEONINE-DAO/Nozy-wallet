@@ -101,7 +101,7 @@ version = "=0.0.7"
 features = ["codec"]
 
 [dependencies.libcrux-ml-dsa]
-version = "=0.0.8"
+version = "=0.0.9"
 features = ["codec"]
 
 [dependencies.libcrux-ml-kem]
