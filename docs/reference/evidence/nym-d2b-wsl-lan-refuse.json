@@ -1,0 +1,12 @@
+{
+  "generated_at_unix": 1785040369,
+  "issue": 147,
+  "steps": [
+    {
+      "detail": "refused local/private target http://172.20.199.206:8232 (Case A1 / E5 — not a mixnet bug)",
+      "id": "D2b-reachability",
+      "result": "N/A"
+    }
+  ],
+  "tool": "nym-smolmix-broadcast-spike"
+}

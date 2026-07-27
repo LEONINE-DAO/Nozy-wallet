@@ -81,10 +81,10 @@ zeaking = { path = "../zeaking", features = ["lightwalletd"] }
 
 API (under `zeaking::lwd`):
 
-- `connect_lightwalletd`, `LwdClient` — gRPC connection
+- `connect_lightwalletd`, `connect_lightwalletd_with_connector`, `normalize_lwd_uri`, `LwdClient` — gRPC connection (custom connector = Nym smoldvpn / issue #146 C5)
 - `LwdCompactStore` — SQLite (`compact_blocks`, `sync_meta`; extend for witnesses as needed)
 - `sync_compact_range`, `sync_compact_range_with_options`, `sync_compact_to_tip`, `sync_compact_to_tip_with_options`, `chain_tip_height`, `requested_start_height_for_tip_sync` — download compact ranges into the store; “to tip” syncs from next missing height with resume-safe semantics
-- `LightwalletdBlockSource` — use with `Zeaking::new(..., LightwalletdBlockSource::connect(uri).await?, ...)` to index from compact data
+- `LightwalletdBlockSource` — use with `Zeaking::new(..., LightwalletdBlockSource::connect(uri).await?, ...)`; also `connect_with_connector` for tunnel dialers
 
 Protos are vendored under `proto/` (Zcash MIT license).
 

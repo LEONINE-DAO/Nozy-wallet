@@ -119,6 +119,7 @@ export interface IronwoodSaferMigrationStatus {
   amount_timing_active: string;
   amount_timing_planned: string;
   amount_timing_notes: string[];
+  baseline_hygiene_notes: string[];
 }
 
 export interface IronwoodStatusRequest {
@@ -245,6 +246,29 @@ export interface ConfigResponse {
   theme: string;
 }
 
+export interface NymDvpnSyncStatus {
+  requested: boolean;
+  lwd_url: string;
+  lwd_url_local: boolean;
+  would_use_dvpn: boolean;
+  helper_ok: boolean;
+  helper_path: string | null;
+  helper_error: string | null;
+  mnemonic_env_ok: boolean;
+  notes: string[];
+}
+
+export interface NymDvpnSyncProbeResult {
+  ok: boolean;
+  exit_code: number | null;
+  helper_path: string;
+  lwd_url: string;
+  blocks: number;
+  stdout_tail: string;
+  stderr_tail: string;
+  timed_out: boolean;
+}
+
 export interface SetZebraUrlRequest {
   url: string;
 }
@@ -269,6 +293,7 @@ export interface SignMessageRequest {
 
 export interface SignMessageResponse {
   signature: string;
+  scheme?: string;
 }
 
 export interface AddressBookEntry {

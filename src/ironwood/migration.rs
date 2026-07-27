@@ -1511,6 +1511,8 @@ pub async fn reconcile_migration_broadcast_confirmations(
 ///
 /// Priority 1: real broadcasts require local Zebrad, detected Tor/I2P, user Nym/Tor attestation,
 /// or an explicit `--force-clearnet` override (see `network_privacy`).
+///
+/// Baseline hygiene (Nym V2): tip-sync decorrelation + randomized delay before submit.
 pub async fn execute_orchard_migration_broadcast(
     zebra_url: &str,
     ironwood_active: bool,
@@ -1575,9 +1577,21 @@ pub async fn execute_orchard_migration_broadcast(
             network_privacy,
         )
         .await;
+        let config = crate::config::load_config();
+        let tip_guard = crate::ironwood::baseline_hygiene::assess_tip_sync_guard(
+            &config.baseline_hygiene,
+            config.last_tip_sync_unix,
+            network_privacy.skip_broadcast_hygiene,
+        );
         let mut blockers = vec!["Dry run — transaction was not broadcast.".to_string()];
         blockers.extend(privacy.blockers.clone());
         blockers.extend(privacy.warnings.clone());
+        blockers.push(tip_guard.message);
+        blockers.extend(
+            crate::ironwood::baseline_hygiene::baseline_hygiene_status_notes(
+                &config.baseline_hygiene,
+            ),
+        );
         return Ok(MigrationBroadcastResult {
             sequence: transfer.sequence,
             txid: prepared_txid.clone(),
@@ -1600,6 +1614,29 @@ pub async fn execute_orchard_migration_broadcast(
     if let Some(mode) = privacy.mode {
         eprintln!("🔒 Migration network privacy: {}", mode.label());
     }
+
+    let config = crate::config::load_config();
+    let tip_guard = crate::ironwood::baseline_hygiene::require_tip_sync_guard(
+        &config.baseline_hygiene,
+        config.last_tip_sync_unix,
+        network_privacy.skip_broadcast_hygiene,
+    )?;
+    eprintln!("🧭 {}", tip_guard.message);
+
+    let delay_plan = {
+        let mut rng = rand::thread_rng();
+        crate::ironwood::baseline_hygiene::plan_broadcast_delay(
+            &config.baseline_hygiene,
+            network_privacy.skip_broadcast_hygiene,
+            &mut rng,
+        )
+    };
+    if !delay_plan.delay.is_zero() {
+        eprintln!("⏳ {}", delay_plan.reason);
+    } else {
+        eprintln!("🧭 {}", delay_plan.reason);
+    }
+    crate::ironwood::baseline_hygiene::apply_broadcast_delay(&delay_plan).await;
 
     let broadcast_txid = zebra.broadcast_transaction(raw_hex).await?;
     let txid = if broadcast_txid.is_empty() {

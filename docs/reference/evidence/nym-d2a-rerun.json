@@ -1,0 +1,12 @@
+{
+  "generated_at_unix": 1785040385,
+  "issue": 147,
+  "steps": [
+    {
+      "detail": "clearnet=2607:fb90:7de1:8d6a:d125:b77f:38c0:e819 (82.711ms); mixnet=82.221.101.117 (9.6123466s); exit differs",
+      "id": "D2a",
+      "result": "PASS"
+    }
+  ],
+  "tool": "nym-smolmix-broadcast-spike"
+}

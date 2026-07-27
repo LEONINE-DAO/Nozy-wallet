@@ -1,0 +1,45 @@
+# Isolated spike — excluded from the root Nozy workspace.
+# See README.md and https://github.com/LEONINE-DAO/Nozy-wallet/issues/147
+[package]
+name = "nym-smolmix-broadcast-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Spike: prove JSON-RPC / HTTPS egress over Nym smolmix (IP↔tx biggest win)"
+license = "MIT"
+repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
+
+[lib]
+name = "nym_smolmix_broadcast_spike"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nym-smolmix-broadcast-spike"
+path = "src/main.rs"
+
+[dependencies]
+# Pin per Mark / https://zcash-sdk.nym.com/guidance/ and nym.com/docs/developers/smolmix
+smolmix = "1.21.4"
+nym-bin-common = { version = "1.21.4", features = ["basic_tracing"] }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-util", "net"] }
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pki-types = "1"
+webpki-roots = "0.26"
+
+hyper = { version = "1", features = ["client", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+http = "1"
+bytes = "1"
+
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+serde_json = "1"
+url = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Same rustc 1.88 E0716 workaround as tools/nym-dvpn-lwd-spike.
+[patch.crates-io]
+libcrux-psq = { path = "../nym-dvpn-lwd-spike/vendor/libcrux-psq" }

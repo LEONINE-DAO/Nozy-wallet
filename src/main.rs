@@ -398,6 +398,11 @@ pub enum IronwoodCommand {
             help = "Allow clearnet broadcast to a remote node (discouraged; IP may link to migration)"
         )]
         force_clearnet: bool,
+        #[arg(
+            long,
+            help = "Skip baseline hygiene delay + tip-sync guard (tests / emergency only)"
+        )]
+        skip_broadcast_hygiene: bool,
     },
     #[command(
         about = "Split one Orchard note into canonical ZIP 318 denominations (send-to-self)"
@@ -518,6 +523,9 @@ pub enum PrivacyNetworkCommand {
     TestTor,
     TestI2p,
     GetIp,
+    /// Show Nym smolmix broadcast helper readiness (D2c) without opening a tunnel.
+    #[command(name = "nym-mixnet")]
+    NymMixnet,
 }
 
 #[derive(Subcommand)]
@@ -2520,6 +2528,51 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!("❌ No privacy network available");
                     }
                 }
+                PrivacyNetworkCommand::NymMixnet => {
+                    let readiness = nozy::nym_mixnet_broadcast::assess_mixnet_broadcast_readiness(
+                        &config.zebra_url,
+                        config.privacy_network.broadcast_via_nym_mixnet,
+                    );
+                    println!("🌀 Nym smolmix broadcast readiness (issue #147 / D2c)");
+                    println!("{}", "=".repeat(60));
+                    println!(
+                        "  Requested: {}",
+                        if readiness.requested { "yes" } else { "no" }
+                    );
+                    println!("  Zebra URL: {}", config.zebra_url);
+                    println!(
+                        "  Local/LAN: {}",
+                        if readiness.zebra_url_local {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
+                    println!(
+                        "  Would use mixnet on next remote submit: {}",
+                        if readiness.would_use_mixnet {
+                            "yes"
+                        } else {
+                            "no"
+                        }
+                    );
+                    match (&readiness.helper_path, &readiness.helper_error) {
+                        (Some(p), _) => println!("  Helper: {p}"),
+                        (_, Some(e)) => println!("  Helper: missing ({e})"),
+                        _ => println!("  Helper: unknown"),
+                    }
+                    for note in &readiness.notes {
+                        println!("  Note: {note}");
+                    }
+                    println!();
+                    println!(
+                        "  Live proof: cd tools/nym-smolmix-broadcast-spike && cargo build --release"
+                    );
+                    println!(
+                        "  Then: --dry-reachability / --ip-relocate / --rpc-probe --zebra <public>"
+                    );
+                    println!("  Docs: docs/reference/NYM_MIXNET_BROADCAST_CASE_BREAKDOWN.md");
+                }
             }
         }
 
@@ -3652,6 +3705,18 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!("      Note: {note}");
                     }
 
+                    println!("   Baseline hygiene (Nym × Zcash Layer-2 duties):");
+                    for note in
+                        nozy::ironwood::baseline_hygiene_status_notes(&config.baseline_hygiene)
+                    {
+                        println!("      {note}");
+                    }
+                    if let Some(ts) = config.last_tip_sync_unix {
+                        println!("      Last tip-sync unix: {ts}");
+                    } else {
+                        println!("      Last tip-sync unix: (none recorded yet)");
+                    }
+
                     println!();
                     match readiness.state {
                         MigrationReadinessState::PlanningOnly => {
@@ -3792,6 +3857,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     wait_confirm,
                     attest_private_network,
                     force_clearnet,
+                    skip_broadcast_hygiene,
                 } => {
                     if !ironwood_active {
                         return Err(NozyError::InvalidOperation(format!(
@@ -3819,6 +3885,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         attest_private_network,
                         force_clearnet,
                         broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
+                        skip_broadcast_hygiene,
                     };
                     let result = execute_orchard_migration_broadcast(
                         &config.zebra_url,

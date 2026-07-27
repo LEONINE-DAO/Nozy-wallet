@@ -2,10 +2,18 @@
 //!
 //! See `docs/reference/IRONWOOD_WALLET_READINESS.md` for the full implementation plan.
 
+pub mod baseline_hygiene;
 pub mod migration;
 pub mod network_privacy;
 pub mod status;
 
+pub use baseline_hygiene::{
+    apply_broadcast_delay, assess_tip_sync_guard, baseline_hygiene_status_notes,
+    maybe_obfuscate_scan_start, obfuscate_scan_start, plan_broadcast_delay, require_tip_sync_guard,
+    BaselineHygieneConfig, BroadcastDelayPlan, ObfuscatedStart, TipSyncGuardResult,
+    DEFAULT_BROADCAST_DELAY_MAX_SECS, DEFAULT_BROADCAST_DELAY_MIN_SECS,
+    DEFAULT_CHECKPOINT_SPACING_BLOCKS, DEFAULT_MAX_OVERLAP_BLOCKS, DEFAULT_MIN_SECS_AFTER_TIP_SYNC,
+};
 pub use migration::{
     assess_orchard_migration_readiness, build_schedule_from_plan, execute_orchard_migration,
     execute_orchard_migration_broadcast, execute_orchard_note_split,

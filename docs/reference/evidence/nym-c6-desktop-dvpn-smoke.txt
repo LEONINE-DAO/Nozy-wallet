@@ -1,0 +1,46 @@
+﻿NozyWallet Nym dVPN C6 desktop smoke — PASS (2026-07-26 18:07:55 -05:00)
+============================================================
+
+Result: PASS
+Exit code: 0
+Timed out: False
+Helper path: c:\Users\User\NozyWallet\tools\nym-dvpn-lwd-spike\target\release\nym-dvpn-lwd-spike.exe
+Helper args: --blocks 100 --lwd https://zec.rocks:443 (same as nym_dvpn_sync spawn)
+Blocks: 100
+MNEMONIC: set (len=70) — words not recorded
+NOZY_SYNC_VIA_NYM_DVPN: 1
+nym-vpnd: stopped before probe (Stop-Process -Name nym-vpnd -Force); note: may auto-restart via NymVPN service
+
+--- stdout/stderr (redacted) ---
+NozyWallet nym-dvpn-lwd-spike (issue #146)
+lightwalletd: https://zec.rocks:443
+real IP (no tunnel): 172.56.71.49 (Atlanta, US) ΓÇö AS21928 T-Mobile USA, Inc.
+
+syncing last 100 blocks from https://zec.rocks:443 directly ΓÇª
+  direct: 100 blocks in 0.23s (444 blocks/s)
+
+provisioning a two-hop tunnel ΓÇª
+nym network: mainnet (set NETWORK_NAME+NYM_API to override, e.g. sandbox.env)
+  entry gateway:
+    identity : JAkTnWGXcXxfVJF2Pok2BDci7ce9WiYfrpAVrE39cwr5
+    moniker  : PhantomGate KR
+    node id  : 2749
+    country  : KR
+    ip       : 85.155.176.81
+  exit gateway:
+    identity : 9UuvMCcecxNNTAhtRQPvc28XSRGWS4ny1DfMj1ninUrN
+    moniker  : NymCats Finland-24
+    node id  : 2916
+    country  : FI
+    ip       : 185.100.86.129
+IP through the tunnel: 185.100.86.129 (Helsinki, FI) ΓÇö AS200651 FlokiNET ehf
+
+syncing last 100 blocks from https://zec.rocks:443 through the tunnel ΓÇª
+  tunnel: 100 blocks in 1.83s (55 blocks/s)
+
+comparison:
+  direct: 100 blocks in 0.23s (444 blocks/s)
+  tunnel: 100 blocks in 1.83s (55 blocks/s)
+  tunnel took 8.10x the direct time
+PASS: synced 100 blocks inside and outside the tunnel
+

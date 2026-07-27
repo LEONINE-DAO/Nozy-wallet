@@ -18,6 +18,8 @@
 | [`BUSINESS_ZEC_ZNS_TODO.md`](BUSINESS_ZEC_ZNS_TODO.md) | **Business & POS + ZNS** — phased backlog (vendor Sell mode, name resolve) |
 | [`BUSINESS_ZEC_ZNS_PHASE0_DECISIONS.md`](BUSINESS_ZEC_ZNS_PHASE0_DECISIONS.md) | Phase 0 locked decisions (profile model, indexer URLs, MVP criteria) |
 | [`GITHUB_ISSUE_DRAFT_BUSINESS_ZNS.md`](GITHUB_ISSUE_DRAFT_BUSINESS_ZNS.md) | Paste-ready GitHub issue for maintainer alignment |
+| [`GITHUB_ISSUE_DRAFT_ZNS_PHASE2.md`](GITHUB_ISSUE_DRAFT_ZNS_PHASE2.md) | Phase 2: ZNS resolve + Business name link (claim gated) |
+| [`GITHUB_ISSUE_DRAFT_MERCHANT_NATIVE_3B.md`](GITHUB_ISSUE_DRAFT_MERCHANT_NATIVE_3B.md) | Phase 3b: native merchant invoices |
 | [`journal/README.md`](journal/README.md) | **Development journal** — local-only (lecture / research; **not in git**) |
 | [`ENHANCEMENT_ROADMAP.md`](../ENHANCEMENT_ROADMAP.md) | **Product roadmap** — web app, mobile, extension, multichain |
 | [`web-app/README.md`](../web-app/README.md) | **Web app** — browser dashboard (starting) |

@@ -1,0 +1,49 @@
+# Isolated spike — excluded from the root Nozy workspace.
+# See README.md and https://github.com/LEONINE-DAO/Nozy-wallet/issues/146
+[package]
+name = "nym-dvpn-lwd-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "Spike: Zcash lightwalletd compact sync over Nym smoldvpn (2-hop)"
+license = "MIT"
+repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
+
+[[bin]]
+name = "nym-dvpn-lwd-spike"
+path = "src/main.rs"
+
+[dependencies]
+# Mark (2026-07): feature/nym-sdk-dvpn retired — use develop `smoldvpn` (+ session).
+smoldvpn = { git = "https://github.com/nymtech/nym.git", branch = "develop" }
+nym-sdk-session = { git = "https://github.com/nymtech/nym.git", branch = "develop" }
+nym-crypto = { git = "https://github.com/nymtech/nym.git", branch = "develop" }
+nym-network-defaults = { git = "https://github.com/nymtech/nym.git", branch = "develop" }
+
+# Do NOT path-dep `zeaking` here: Nym sqlx + zeaking rusqlite both `links = "sqlite3"`.
+# Product hook is `zeaking::lwd::connect_lightwalletd_with_connector` (C5); this spike
+# proves the same Endpoint::connect_with_connector pattern with hand-rolled prost.
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-util", "net", "sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+rustls-pki-types = "1"
+webpki-roots = "0.26"
+
+tonic = { version = "0.14", features = ["transport"] }
+tonic-prost = "0.14"
+prost = { version = "0.14", features = ["derive"] }
+hyper = { version = "1", features = ["client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+tower = { version = "0.5", features = ["util"] }
+http = "1"
+
+futures = "0.3"
+serde_json = "1"
+bip39 = "2"
+thiserror = "2"
+pin-project = "1"
+
+[patch.crates-io]
+libcrux-psq = { path = "vendor/libcrux-psq" }

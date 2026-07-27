@@ -16,12 +16,15 @@
     "@vercel/analytics": "^1.6.1",
     "react": "19.2.7",
     "react-dom": "19.2.7",
+    "react-router": "8.3.0",
     "react-router-dom": "^7.12.0",
     "tailwindcss": "^4.3.2"
   },
   "overrides": {
     "react": "19.2.7",
-    "react-dom": "19.2.7"
+    "react-dom": "19.2.7",
+    "react-router": "8.3.0",
+    "brace-expansion": "5.0.8"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
@@ -33,7 +36,6 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "eslint-plugin-react-refresh": "^0.5.2",
     "globals": "^17.6.0",
-    "mv": "^2.1.1",
     "rimraf": "^6.1.2",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.46.4",

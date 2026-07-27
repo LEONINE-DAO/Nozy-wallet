@@ -3394,10 +3394,12 @@ dependencies = [
  "ed25519-dalek",
  "futures",
  "groth16",
+ "group",
  "hex",
  "incrementalmerkletree",
  "indicatif",
  "orchard",
+ "pasta_curves",
  "pczt",
  "prost",
  "prost-types",
@@ -7883,6 +7885,8 @@ dependencies = [
  "async-trait",
  "chrono",
  "hex",
+ "http",
+ "hyper",
  "prost",
  "rusqlite",
  "serde",
@@ -7892,6 +7896,7 @@ dependencies = [
  "tonic",
  "tonic-prost",
  "tonic-prost-build",
+ "tower",
 ]
 
 [[package]]
