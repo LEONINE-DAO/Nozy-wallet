@@ -1,0 +1,31 @@
+[package]
+name = "nym-kkt"
+description = "Key transport protocol for the Nym network (vendored: libcrux-chacha20poly1305 0.0.8 for GHSA-hc3c-63hc-2r9f)"
+version = "1.21.5-rc.1"
+authors = ["Georgio Nicolas <georgio@nymtech.net>"]
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/nymtech/nym"
+homepage = "https://nymtech.net"
+publish = false
+
+[dependencies]
+thiserror = "2.0"
+num_enum = "0.7.5"
+strum = "0.28.0"
+
+nym-crypto = { git = "https://github.com/nymtech/nym.git", branch = "develop", version = "=1.21.5-rc.1", features = ["hashing"] }
+nym-kkt-ciphersuite = { path = "../nym-kkt-ciphersuite", features = ["digests"] }
+nym-kkt-context = { path = "../nym-kkt-context" }
+nym-pemstore = { git = "https://github.com/nymtech/nym.git", branch = "develop", version = "=1.21.5-rc.1" }
+
+libcrux-kem = "0.0.7"
+libcrux-ecdh = { version = "0.0.6", features = ["codec"] }
+# Security: GHSA-hc3c-63hc-2r9f — upstream nym workspace still pins 0.0.7 (^0.0.7 cannot select 0.0.8).
+libcrux-chacha20poly1305 = "=0.0.8"
+
+rand09 = { package = "rand", version = "=0.9.2" }
+zeroize = { version = "1.7.0", features = ["zeroize_derive"] }
+
+libcrux-psq = { version = "0.0.8", features = ["classic-mceliece"] }
+libcrux-ml-kem = "0.0.8"

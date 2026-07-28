@@ -1,0 +1,15 @@
+[package]
+name = "nym-kkt-context"
+description = "Context types for Nym KKT (vendored with nym-kkt for GHSA-hc3c-63hc-2r9f)"
+version = "1.21.5-rc.1"
+authors = ["Georgio Nicolas <georgio@nymtech.net>"]
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/nymtech/nym"
+homepage = "https://nymtech.net"
+publish = false
+
+[dependencies]
+num_enum = "0.7.5"
+thiserror = "2.0"
+nym-kkt-ciphersuite = { path = "../nym-kkt-ciphersuite" }

@@ -1,0 +1,23 @@
+[package]
+name = "nym-kkt-ciphersuite"
+description = "Nym KKT ciphersuite (vendored with nym-kkt for GHSA-hc3c-63hc-2r9f)"
+version = "1.21.5-rc.1"
+authors = ["Georgio Nicolas <georgio@nymtech.net>"]
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/nymtech/nym"
+homepage = "https://nymtech.net"
+publish = false
+
+[dependencies]
+thiserror = "2.0"
+num_enum = "0.7.5"
+strum = "0.28.0"
+strum_macros = "0.28.0"
+semver = "1"
+
+blake3 = { version = "1", optional = true }
+libcrux-sha3 = { version = "0.0.8", optional = true }
+
+[features]
+digests = ["blake3", "libcrux-sha3"]
