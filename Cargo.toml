@@ -178,7 +178,6 @@ secret-network = ["dep:cosmrs", "dep:tendermint"]
 members = ["zeaking", "api-server", "zeaking-ffi"]
 exclude = [
     "desktop-client/src-tauri",
-    "wasm-poc",
     "browser-extension/wasm-core",
     "tools/nym-dvpn-lwd-spike",
     "tools/nym-smolmix-broadcast-spike",
