@@ -101,7 +101,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/transaction/history",
             get(handlers::get_transaction_history),
         )
-        .route("/api/transaction/:txid", get(handlers::get_transaction))
+        .route("/api/transaction/{txid}", get(handlers::get_transaction))
         .route(
             "/api/transaction/check-confirmations",
             post(handlers::check_transaction_confirmations),
@@ -113,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/address-book", get(handlers::list_address_book))
         .route("/api/address-book", post(handlers::add_address_book_entry))
         .route(
-            "/api/address-book/:name",
+            "/api/address-book/{name}",
             delete(handlers::remove_address_book_entry),
         )
         .route(
@@ -129,7 +129,7 @@ async fn main() -> anyhow::Result<()> {
             post(handlers::test_zebra_connection),
         )
         .route("/api/chain/block-count", get(handlers::chain_block_count))
-        .route("/api/chain/block/:height", get(handlers::chain_block))
+        .route("/api/chain/block/{height}", get(handlers::chain_block))
         .route(
             "/api/transaction/broadcast",
             post(handlers::broadcast_raw_transaction),
