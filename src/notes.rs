@@ -435,6 +435,8 @@ pub fn release_wallet_notes_by_nullifier_hex(nullifier_hexes: &[String]) -> Nozy
     for note in &mut notes {
         if note.spent && targets.contains(&note.nullifier_bytes) {
             note.spent = false;
+            // Clear spend tag so reconcile cannot re-lock from a stale `spent_in_txid`.
+            note.spent_in_txid = None;
             released += 1;
         }
     }
@@ -448,20 +450,50 @@ pub fn release_wallet_notes_by_nullifier_hex(nullifier_hexes: &[String]) -> Nozy
 
 /// Ensure local `notes.json` reflects outbound sends recorded in `sent_transactions.json`
 /// and notes already tagged with `spent_in_txid`.
+///
+/// Only **Pending** and **Confirmed** sent records may lock notes. Expired/Failed sends
+/// release their inputs **unless** another Pending/Confirmed record still claims them
+/// (e.g. speed-up replacement), so available balance / Ironwood unspent notes recover.
 #[cfg(feature = "native")]
 pub fn reconcile_wallet_spends_from_local_state() -> NozyResult<usize> {
-    use crate::transaction_history::SentTransactionStorage;
+    use crate::transaction_history::{SentTransactionStorage, TransactionStatus};
+    use std::collections::HashSet;
 
     let mut marked = 0usize;
     if let Ok(storage) = SentTransactionStorage::new() {
-        for record in storage.get_all_transactions() {
+        let records = storage.get_all_transactions();
+        let claimed: HashSet<String> = records
+            .iter()
+            .filter(|r| {
+                matches!(
+                    r.status,
+                    TransactionStatus::Pending | TransactionStatus::Confirmed
+                )
+            })
+            .flat_map(|r| r.spent_note_ids.iter().cloned())
+            .collect();
+
+        for record in &records {
             if record.spent_note_ids.is_empty() {
                 continue;
             }
-            marked += mark_wallet_notes_spent_by_nullifier_hex(
-                &record.spent_note_ids,
-                Some(&record.txid),
-            )?;
+            match record.status {
+                TransactionStatus::Pending | TransactionStatus::Confirmed => {
+                    marked += mark_wallet_notes_spent_by_nullifier_hex(
+                        &record.spent_note_ids,
+                        Some(&record.txid),
+                    )?;
+                }
+                TransactionStatus::Expired | TransactionStatus::Failed => {
+                    let releasable: Vec<String> = record
+                        .spent_note_ids
+                        .iter()
+                        .filter(|nf| !claimed.contains(nf.as_str()))
+                        .cloned()
+                        .collect();
+                    let _ = release_wallet_notes_by_nullifier_hex(&releasable);
+                }
+            }
         }
     }
 
