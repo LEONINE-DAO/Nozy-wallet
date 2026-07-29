@@ -21,3 +21,7 @@ zeaking = { path = "../../zeaking", features = ["lightwalletd"] }
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
+
+# Keep in sync with root Cargo.toml [patch.crates-io] for ark-relations.
+[patch.crates-io]
+ark-relations = { path = "../../vendor/ark-relations-0.3.0" }

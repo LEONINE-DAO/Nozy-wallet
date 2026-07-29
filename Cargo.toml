@@ -78,7 +78,7 @@ clap = { version = "4.6", features = ["derive", "env"], optional = true }
 dialoguer = { version = "0.12", optional = true }
 indicatif = { version = "0.17", optional = true }
 # Nozy Lite live status TUI
-ratatui = { version = "0.29", optional = true }
+ratatui = { version = "0.30", optional = true }
 crossterm = { version = "0.28", optional = true }
 
 # Tracing subscriber (native-only, has OS deps)
@@ -195,6 +195,8 @@ zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68d
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 pczt = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+# SECURITY: drop ark-relations → tracing-subscriber 0.2 (Dependabot).
+ark-relations = { path = "vendor/ark-relations-0.3.0" }
 
 [[bin]]
 name = "nozy"
