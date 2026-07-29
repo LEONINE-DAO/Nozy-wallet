@@ -566,8 +566,9 @@ pub async fn sync_wallet_notes(
             chain_tip_opt,
         )
     })?;
-    let _ = crate::wallet_profiles::touch_active_profile_scan_height(range.scan_end);
-    record_tip_sync_if_caught_up(range.scan_end, range.chain_tip);
+    let checkpoint = load_config().last_scan_height.unwrap_or(range.scan_end);
+    let _ = crate::wallet_profiles::touch_active_profile_scan_height(checkpoint);
+    record_tip_sync_if_caught_up(checkpoint, range.chain_tip);
 
     let new_notes_in_scan = cached_notes.len().saturating_sub(total_before);
     let blocks_scanned = range
@@ -589,7 +590,7 @@ pub async fn sync_wallet_notes(
         scan_end: range.scan_end,
         chain_tip: range.chain_tip,
         blocks_scanned,
-        last_scan_height: range.scan_end,
+        last_scan_height: checkpoint,
         already_synced: false,
     })
 }

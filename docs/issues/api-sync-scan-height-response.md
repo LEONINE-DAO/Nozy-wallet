@@ -49,7 +49,7 @@ Also documented in `api-server/FRONTEND_DEVELOPER_GUIDE.md`. The short line in `
 | `"start_height": N` without `"end_height"` | Scans **N → chain tip** in one request (can be very long; watch proxy/API timeouts). |
 | `"start_height": N, "end_height": M` | Scans inclusive range **N–M** only (**recommended** for controlled rescans). |
 
-After a successful sync, the server updates `last_scan_height` to the end of the scanned range.
+After a successful sync, `last_scan_height` advances to the end of the scanned range (**never regresses**: a lower `end_height` rescan will not wipe a higher tip checkpoint).
 
 ---
 
