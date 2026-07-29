@@ -7,6 +7,12 @@ export const REPO_RELEASES = `${REPO}/releases/latest`;
 export const EXTENSION_RELEASE =
   `${REPO}/releases/tag/extension-v0.1.7`;
 
+export const IRONWOOD_ZODL = "https://ironwood.zodl.com/";
+export const IRONWOOD_CIPHERSCAN = "https://cipherscan.app/ironwood";
+export const ZIP_318 = "https://zips.z.cash/zip-0318";
+export const ZIP_258 = "https://zips.z.cash/zip-0258";
+export const IRONWOOD_SHIELDED_LABS = "https://shieldedlabs.net/ironwood/";
+
 export const PATHS = {
   enhancementRoadmap: `${REPO}/blob/master/ENHANCEMENT_ROADMAP.md`,
   webApp: `${REPO}/blob/master/web-app/README.md`,
@@ -23,5 +29,7 @@ export const PATHS = {
   apiServer: `${REPO}/tree/master/api-server`,
   operatorDeploy: `${REPO}/blob/master/nozy-mobile/VPS-DEPLOY.md`,
   multichainRfc: `${REPO}/blob/master/docs/rfcs/MULTICHAIN_PRIVACY_CHAINS_RFC.md`,
+  ironwoodReadiness: `${REPO}/blob/master/docs/reference/IRONWOOD_WALLET_READINESS.md`,
+  ironwoodPage: "/ironwood",
 } as const;
 

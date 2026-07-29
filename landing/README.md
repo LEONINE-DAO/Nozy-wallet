@@ -28,9 +28,25 @@ Build (CI uses this):
 npm run build   # → landing/dist/
 ```
 
+Vite `base` defaults to `/Nozy-wallet/` for GitHub Pages. On Vercel, `VERCEL=1` forces `base: "/"`. Override with `VITE_BASE=/` if needed.
+
+## Vercel (Ironwood dashboard + live stats)
+
+Deploy this folder as a Vercel project (Root Directory: `landing`).
+
+1. Import the repo in Vercel → set **Root Directory** to `landing`.
+2. Add env var **`ZEBRA_RPC_URL`** (server-only) to a reachable mainnet Zebrad JSON-RPC URL, e.g. `http://host:8232`.
+3. Deploy. Open `/ironwood` for the Nozy Ironwood migration dashboard.
+4. `/api/ironwood-stats` proxies `getblockcount` + `getblockchaininfo` (`valuePools` orchard/ironwood) with a short cache TTL. No wallet secrets.
+
+Without `ZEBRA_RPC_URL`, the page still renders activation constants, ZIP 318 education, and Nozy migrate steps; live pool % shows offline with links to ZODL / CipherScan.
+
+Local Vite: set `ZEBRA_RPC_URL` and run `npm run dev` — `/api/ironwood-stats` is served by a Vite middleware (same shape as the Vercel function). Without it, the dashboard still loads with offline pool copy.
+
 ## Site sections
 
 - **Hero** — Orchard + Ironwood shielded ZEC positioning
+- **Ironwood** (`/ironwood`) — network migration dashboard + Nozy ZIP 318 operator path
 - **Products** (`#products`) — surface cards (extension, web app, CLI, desktop, mobile, API)
 - **Download** (`#download`) — production CLI binaries from GitHub Releases
 - **Features / FAQ / About** — privacy, Ironwood FAQ, CTA

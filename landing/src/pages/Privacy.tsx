@@ -3,12 +3,12 @@ const LAST_UPDATED = "July 20, 2026";
 const Privacy = () => {
   return (
     <div className="max-w-4xl mx-auto px-6 py-24 my-24">
-      <h1 className="text-4xl font-bold text-zinc-900 mb-2">Privacy Policy</h1>
-      <p className="text-sm text-zinc-500 mb-10">Last updated: {LAST_UPDATED}</p>
+      <h1 className="text-4xl font-bold text-[#f5f0e6] mb-2">Privacy Policy</h1>
+      <p className="text-sm text-[#a39a88] mb-10">Last updated: {LAST_UPDATED}</p>
 
-      <div className="prose prose-zinc max-w-none space-y-10 text-zinc-600">
+      <div className="prose prose-invert max-w-none space-y-10 text-[#a39a88]">
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             1. Who we are
           </h2>
           <p>
@@ -22,17 +22,17 @@ const Privacy = () => {
           <p>
             Contact:{" "}
             <a
-              href="mailto:support@leoninedao.org"
-              className="text-yellow-700 hover:underline"
+              href="mailto:support.team@nozywallet.com"
+              className="text-[#c8ccd4] hover:underline"
             >
-              support@leoninedao.org
+              support.team@nozywallet.com
             </a>
             . Security / vulnerability reports:{" "}
             <a
-              href="mailto:Nozywallet.support@leoninedao.org"
-              className="text-yellow-700 hover:underline"
+              href="mailto:support.team@nozywallet.com"
+              className="text-[#c8ccd4] hover:underline"
             >
-              Nozywallet.support@leoninedao.org
+              support.team@nozywallet.com
             </a>{" "}
             (responsible disclosure — do not post exploits publicly before
             coordination).
@@ -40,7 +40,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             2. On-chain vs off-chain privacy (Orchard/Ironwood vs API/node
             logging)
           </h2>
@@ -62,7 +62,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             3. NozyWallet Mobile (companion app)
           </h2>
           <p>
@@ -114,7 +114,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             4. Desktop app, browser extension, and CLI
           </h2>
           <p>
@@ -142,7 +142,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             5. What we collect
           </h2>
           <p>
@@ -169,7 +169,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             6. Third-party services
           </h2>
           <p>You may choose to connect NozyWallet to:</p>
@@ -202,7 +202,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             7. Security
           </h2>
           <ul className="list-disc pl-6 space-y-2">
@@ -222,7 +222,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             8. Children
           </h2>
           <p>
@@ -233,7 +233,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             9. Your choices
           </h2>
           <ul className="list-disc pl-6 space-y-2">
@@ -250,7 +250,7 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             10. Changes to this policy
           </h2>
           <p>
@@ -261,14 +261,14 @@ const Privacy = () => {
         </section>
 
         <section>
-          <h2 className="text-2xl font-semibold text-zinc-900 mb-4">
+          <h2 className="text-2xl font-semibold text-[#f5f0e6] mb-4">
             11. More detail
           </h2>
           <p>
             Technical privacy architecture:{" "}
             <a
               href="https://leonine-dao.github.io/Nozy-wallet/book/nozy/privacy-model.html"
-              className="text-yellow-700 hover:underline"
+              className="text-[#c8ccd4] hover:underline"
               target="_blank"
               rel="noopener noreferrer"
             >
