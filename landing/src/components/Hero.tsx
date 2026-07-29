@@ -1,5 +1,4 @@
-import logoUrl from "../assets/logo-transparent.png";
-import logoMark from "../assets/logo-mark.png";
+import BrandLogo from "./BrandLogo";
 
 const Hero = () => {
   return (
@@ -15,11 +14,12 @@ const Hero = () => {
       />
 
       <div className="relative z-10 w-full max-w-6xl mx-auto px-6 py-28 lg:py-32">
-        <img
-          src={logoUrl}
-          alt="NozyWallet"
-          className="h-14 sm:h-16 lg:h-20 w-auto object-contain object-left mb-8 animate-fade-in-up"
-        />
+        <div className="mb-8 animate-fade-in-up">
+          <BrandLogo
+            markClassName="h-12 w-12 sm:h-14 sm:w-14"
+            className="text-2xl sm:text-3xl"
+          />
+        </div>
 
         <h1 className="font-display font-extrabold tracking-tight text-[#f5f0e6] text-[clamp(2.75rem,8vw,5.5rem)] leading-[0.95] mb-6 animate-fade-in-up">
           Shielded ZEC.
@@ -47,7 +47,7 @@ const Hero = () => {
         </div>
 
         <div className="mt-12 flex items-center gap-3 text-sm text-[#a39a88] animate-fade-in-up">
-          <img src={logoMark} alt="" className="h-7 w-7 opacity-80" />
+          <BrandLogo showWordmark={false} markClassName="h-7 w-7" alt="" />
           <span>Orchard · Ironwood · open source Rust core</span>
         </div>
       </div>

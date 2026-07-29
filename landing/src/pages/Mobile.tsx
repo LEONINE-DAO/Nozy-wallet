@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import logoUrl from "../assets/logo-mark.png";
+import logoUrl from "../assets/logo-mark-clean.png";
 
 const VALUES = [
   {
