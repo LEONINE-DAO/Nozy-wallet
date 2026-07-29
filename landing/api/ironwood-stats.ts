@@ -1,4 +1,14 @@
-import type { VercelRequest, VercelResponse } from "@vercel/node";
+/** Minimal Vercel serverless types — avoid depending on `@vercel/node` (heavy vulnerable transitive tree). */
+type VercelRequest = {
+  method?: string;
+};
+
+type VercelResponse = {
+  setHeader: (name: string, value: string) => void;
+  status: (code: number) => VercelResponse;
+  json: (body: unknown) => void;
+  end: () => void;
+};
 
 const ACTIVATION_HEIGHT = 3_428_143;
 
