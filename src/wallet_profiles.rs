@@ -140,7 +140,11 @@ fn persist_profile_fields(
         profile.zebra_url = Some(url.to_string());
     }
     if let Some(height) = last_scan_height {
-        profile.last_scan_height = height;
+        profile.last_scan_height = match (profile.last_scan_height, height) {
+            (_, None) => None,
+            (None, Some(h)) => Some(h),
+            (Some(prev), Some(h)) => Some(prev.max(h)),
+        };
     }
 
     save_manifest(base, manifest)

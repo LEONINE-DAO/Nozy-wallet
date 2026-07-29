@@ -423,6 +423,14 @@ mod config_tests {
         config.ensure_trusted_zebra_url("https://vps.example.com:8232");
         assert_eq!(config.trusted_zebra_urls.len(), 1);
     }
+
+    #[test]
+    fn last_scan_height_is_monotonic() {
+        assert_eq!(monotonic_last_scan_height(None, 100), 100);
+        assert_eq!(monotonic_last_scan_height(Some(50), 100), 100);
+        assert_eq!(monotonic_last_scan_height(Some(200), 100), 200);
+        assert_eq!(monotonic_last_scan_height(Some(100), 100), 100);
+    }
 }
 
 pub fn save_config(config: &WalletConfig) -> NozyResult<()> {
@@ -444,8 +452,25 @@ pub fn save_config(config: &WalletConfig) -> NozyResult<()> {
 
 pub fn update_last_scan_height(height: u32) -> NozyResult<()> {
     let mut config = load_config();
-    config.last_scan_height = Some(height);
+    // Never regress: chunked start_height/end_height rescans must not wipe a
+    // higher tip checkpoint (see Gilmore / docs/issues/api-sync-scan-height-response.md).
+    let next = match config.last_scan_height {
+        Some(prev) => prev.max(height),
+        None => height,
+    };
+    if config.last_scan_height == Some(next) {
+        return Ok(());
+    }
+    config.last_scan_height = Some(next);
     save_config(&config)
+}
+
+/// Compute the monotonic scan checkpoint (pure helper for tests and callers).
+pub fn monotonic_last_scan_height(previous: Option<u32>, scanned_end: u32) -> u32 {
+    match previous {
+        Some(prev) => prev.max(scanned_end),
+        None => scanned_end,
+    }
 }
 
 /// Record wall-clock when wallet sync reached chain tip (baseline hygiene tip guard).
