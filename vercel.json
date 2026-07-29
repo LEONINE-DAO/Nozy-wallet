@@ -1,9 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "npm install --prefix landing",
-  "buildCommand": "npm run build --prefix landing",
+  "buildCommand": "npm run build",
   "outputDirectory": "landing/dist",
-  "framework": "vite",
+  "framework": null,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
