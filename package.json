@@ -1,0 +1,9 @@
+{
+  "name": "nozywallet-site",
+  "private": true,
+  "description": "Vercel entry — builds the marketing site in landing/",
+  "scripts": {
+    "build": "npm install --prefix landing && npm run build --prefix landing",
+    "vercel-build": "npm run build"
+  }
+}
