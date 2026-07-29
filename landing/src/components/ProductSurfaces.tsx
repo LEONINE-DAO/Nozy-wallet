@@ -7,11 +7,9 @@ import {
   QuestionCircle,
 } from "@solar-icons/react";
 import { PATHS, REPO_RELEASES } from "../lib/links";
-
-type Status = "live" | "preview" | "soon";
-
 import type { ComponentType, SVGProps } from "react";
 
+type Status = "live" | "preview" | "soon";
 type IconComponent = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
 
 type Surface = {
@@ -26,22 +24,22 @@ type Surface = {
 };
 
 const statusStyles: Record<Status, string> = {
-  live: "bg-emerald-500/10 text-emerald-800 border-emerald-500/25",
-  preview: "bg-amber-500/10 text-amber-900 border-amber-500/25",
-  soon: "bg-zinc-100 text-zinc-600 border-zinc-200",
+  live: "text-emerald-300 border-emerald-500/30 bg-emerald-500/10",
+  preview: "text-[#c8ccd4] border-[#c8ccd4]/30 bg-[#c8ccd4]/10",
+  soon: "text-[#a39a88] border-[rgba(245,240,230,0.15)] bg-white/5",
 };
 
 const surfaces: Surface[] = [
   {
     icon: Bolt,
     title: "CLI Lite",
-    tagline: "Production-ready shielded ZEC on your own Zebrad or Zakura + lightwalletd.",
+    tagline: "Production shielded ZEC on your own Zebrad + lightwalletd.",
     status: "live",
-    statusLabel: "Mainnet ready",
+    statusLabel: "Mainnet",
     bullets: [
-      "Shielded sends and sync — Orchard + Ironwood (Nozy Lite)",
-      "Ironwood plan / migrate / broadcast (NU6.3)",
-      "ZIP-317 fees · ops helpers · optional Nym broadcast",
+      "Orchard + Ironwood sync and send",
+      "Ironwood plan / migrate / broadcast",
+      "ZIP-317 fees · ops helpers",
     ],
     primary: { label: "Get CLI Lite", href: "#download" },
     secondary: { label: "Latest release", href: REPO_RELEASES },
@@ -49,96 +47,97 @@ const surfaces: Surface[] = [
   {
     icon: LockPassword,
     title: "Desktop",
-    tagline: "Tauri GUI — Hot Lemon beta with Ironwood readiness tooling.",
+    tagline: "Native wallet UI — sync, send, history, settings. No in-app browser.",
     status: "preview",
-    statusLabel: "Beta.2",
+    statusLabel: "Beta",
     bullets: [
-      "Windows / macOS / Linux builds published",
-      "Ironwood migrate / split / broadcast UI",
-      "GA deferred until Ironwood is official",
+      "Windows Tauri app (wallet-only)",
+      "Ironwood readiness + migrate tools",
+      "Same disk profile as CLI / companion",
     ],
-    primary: { label: "Download desktop beta", href: "#download" },
+    primary: { label: "Download desktop", href: "#download" },
     secondary: { label: "Desktop source", href: PATHS.desktop },
   },
   {
     icon: ShieldCheck,
     title: "Browser extension",
-    tagline: "Sweet chili public beta — shielded ZEC in Chrome, Brave, and Edge.",
+    tagline: "Shielded ZEC in Chrome, Brave, and Edge — for sites and dApps.",
     status: "preview",
     statusLabel: "Public beta",
     bullets: [
-      "MV3 + WASM shielded wallet (local keys)",
-      "Optional companion API for lightwalletd sync",
-      "Load unpacked from the Sweet chili zip (0.1.7)",
+      "MV3 + WASM local keys",
+      "Optional companion API sync",
+      "Connect / sign / send approvals",
     ],
-    primary: { label: "Get extension beta", href: PATHS.extensionRelease, external: true },
-    secondary: { label: "Install & companion docs", href: PATHS.extension },
+    primary: { label: "Get extension", href: PATHS.extensionRelease, external: true },
+    secondary: { label: "Install docs", href: PATHS.extension },
   },
   {
     icon: ShieldKeyholeMinimalistic,
-    title: "Web app",
-    tagline: "Full dashboard in the browser — extension + companion, keys stay yours.",
+    title: "Web companion",
+    tagline: "Optional dashboard against your local API — keys stay yours.",
     status: "preview",
-    statusLabel: "Early preview",
+    statusLabel: "Preview",
     bullets: [
-      "Unlock / create / restore against nozywallet-api",
-      "Balance + sync-to-tip from companion status",
-      "Privacy chains added as modules, not an everything-wallet",
+      "Unlock against nozywallet-api",
+      "Balance + sync status",
+      "Not a custodial web wallet",
     ],
     primary: { label: "Web app docs", href: PATHS.webApp, external: true },
-    secondary: { label: "Enhancement roadmap", href: PATHS.enhancementRoadmap },
+    secondary: { label: "Roadmap", href: PATHS.enhancementRoadmap },
   },
   {
     icon: Download,
     title: "Mobile",
-    tagline: "Expo companion — wallet on phone, sync via your API.",
+    tagline: "Phone companion — wallet on device, sync via your API.",
     status: "soon",
-    statusLabel: "Beta coming soon",
+    statusLabel: "Coming soon",
     bullets: [
-      "Connects to nozywallet-api on PC or VPS + Zebrad",
-      "Store listing prep in progress (not on Play / App Store yet)",
-      "Same Orchard + Ironwood stack as desktop and extension",
+      "Expo companion + API",
+      "Store listings in progress",
+      "Same Orchard stack",
     ],
     primary: { label: "Mobile page", href: PATHS.mobilePage },
     secondary: { label: "Mobile repo", href: PATHS.mobile },
   },
   {
     icon: QuestionCircle,
-    title: "Operator API",
-    tagline: "Localhost companion for extension, mobile, and automation.",
+    title: "Companion API",
+    tagline: "Localhost bridge for extension, mobile, and automation.",
     status: "preview",
     statusLabel: "Available",
     bullets: [
-      "HTTP wrapper around the Rust wallet core",
-      "LWD compact sync routes for the extension",
-      "Run on your machine or a VPS you control",
+      "HTTP wrapper around Rust core",
+      "LWD compact sync routes",
+      "Run on your machine",
     ],
-    primary: { label: "api-server docs", href: PATHS.apiServer, external: true },
-    secondary: { label: "VPS deploy", href: PATHS.operatorDeploy },
+    primary: { label: "API docs", href: PATHS.apiServer, external: true },
+    secondary: { label: "Deploy guide", href: PATHS.operatorDeploy },
   },
 ];
+
 function SurfaceCard({ surface }: { surface: Surface }) {
   const Icon = surface.icon;
   return (
-    <article className="flex flex-col rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm hover:border-yellow-300/60 hover:shadow-md transition-all">
-      <div className="flex items-start justify-between gap-3 mb-4">
-        <div className="w-11 h-11 rounded-xl bg-yellow-500/10 border border-yellow-500/20 flex items-center justify-center shrink-0">
-          <Icon className="text-yellow-700" size={22} />
+    <article className="nw-panel flex flex-col p-6 hover:border-[#c8ccd4]/35 transition-colors">
+      <div className="flex items-start justify-between gap-3 mb-5">
+        <div className="w-11 h-11 border border-[rgba(245,240,230,0.12)] bg-[#c8ccd4]/10 flex items-center justify-center shrink-0">
+          <Icon className="text-[#c8ccd4]" size={22} />
         </div>
         <span
-          className={`text-xs font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full border ${statusStyles[surface.status]}`}
+          className={`text-[10px] font-semibold uppercase tracking-[0.14em] px-2.5 py-1 border ${statusStyles[surface.status]}`}
         >
           {surface.statusLabel}
         </span>
       </div>
 
-      <h3 className="text-lg font-bold text-zinc-900 mb-1">{surface.title}</h3>
-      <p className="text-sm text-zinc-600 mb-4 leading-relaxed">{surface.tagline}</p>
+      <h3 className="font-display text-xl font-bold text-[#f5f0e6] mb-2">{surface.title}</h3>
+      <p className="text-sm text-[#a39a88] mb-5 leading-relaxed">{surface.tagline}</p>
 
-      <ul className="space-y-2 mb-6 flex-1">
+      <ul className="space-y-2.5 mb-6 flex-1">
         {surface.bullets.map((line) => (
-          <li key={line} className="flex gap-2 text-sm text-zinc-600">
-            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 mt-2 shrink-0" />
+          <li key={line} className="flex gap-2.5 text-sm text-[#a39a88]">
+            <span className="w-1 h-1 rounded-full bg-[#c8ccd4] mt-2 shrink-0" />
             {line}
           </li>
         ))}
@@ -149,7 +148,7 @@ function SurfaceCard({ surface }: { surface: Surface }) {
           href={surface.primary.href}
           target={surface.primary.external ? "_blank" : undefined}
           rel={surface.primary.external ? "noopener noreferrer" : undefined}
-          className="text-center rounded-xl bg-zinc-900 hover:bg-zinc-800 text-white font-semibold py-2.5 text-sm transition-colors"
+          className="nw-btn nw-btn-primary !py-2.5 text-sm"
         >
           {surface.primary.label}
         </a>
@@ -158,7 +157,7 @@ function SurfaceCard({ surface }: { surface: Surface }) {
             href={surface.secondary.href}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-center text-sm font-medium text-yellow-700 hover:text-yellow-800 hover:underline"
+            className="text-center text-sm font-medium text-[#c8ccd4] hover:underline"
           >
             {surface.secondary.label} →
           </a>
@@ -170,39 +169,20 @@ function SurfaceCard({ surface }: { surface: Surface }) {
 
 const ProductSurfaces = () => {
   return (
-    <section id="products" className="py-24 bg-white border-t border-zinc-100 scroll-mt-24">
+    <section id="products" className="py-24 border-t border-[rgba(245,240,230,0.12)] scroll-mt-24">
       <div className="max-w-7xl mx-auto px-6">
-        <div className="text-center max-w-3xl mx-auto mb-6">
-          <p className="text-xs font-semibold uppercase tracking-widest text-yellow-700 mb-3">
-            ZEC today · privacy multichain later
-          </p>
-          <h2 className="text-3xl lg:text-5xl font-bold text-zinc-900 mb-4">
-            One super wallet,{" "}
-            <span className="text-gradient-primary">many surfaces</span>
+        <div className="max-w-2xl mb-14">
+          <p className="nw-kicker mb-4">Surfaces</p>
+          <h2 className="font-display text-3xl lg:text-5xl font-bold text-[#f5f0e6] mb-4 tracking-tight">
+            One core. Right tool for the job.
           </h2>
-          <p className="text-zinc-600 text-lg leading-relaxed">
-            NozyWallet is community-shaped for privacy-native daily use: extension and web app for
-            daily flows, CLI and desktop for operators, mobile when you are on the go.{" "}
-            <strong className="text-zinc-800 font-semibold">CLI Lite is live for mainnet</strong> with
-            Orchard + Ironwood (NU6.3) migrate tooling; the{" "}
-            <strong className="text-zinc-800 font-semibold">browser extension is in public beta</strong>;
-            Desktop beta ships Ironwood Plan / Migrate / Broadcast;{" "}
-            <strong className="text-zinc-800 font-semibold">mobile beta is coming soon</strong>.
-            Other privacy chains ship as modules when ready.
+          <p className="text-[#a39a88] text-lg leading-relaxed">
+            Desktop and CLI are wallet functions. The extension is for the open web.
+            Mobile connects when you are away from the desk.
           </p>
         </div>
 
-        <div className="flex flex-wrap justify-center gap-2 mb-12">
-          <span className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-yellow-500/10 border border-yellow-500/25 text-sm font-medium text-yellow-900">
-            <span className="w-2 h-2 rounded-full bg-yellow-500" />
-            Zcash (Orchard + Ironwood) — supported
-          </span>
-          <span className="inline-flex items-center px-4 py-2 rounded-full bg-zinc-100 border border-zinc-200 text-sm text-zinc-500">
-            Namada · Penumbra — planned
-          </span>
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
           {surfaces.map((surface) => (
             <SurfaceCard key={surface.title} surface={surface} />
           ))}

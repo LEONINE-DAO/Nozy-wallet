@@ -1,41 +1,38 @@
-import { Download } from "@solar-icons/react";
-
 const About = () => {
   return (
     <section
       id="about"
-      className="py-24 bg-zinc-900 text-white relative overflow-hidden"
+      className="py-24 border-t border-[rgba(245,240,230,0.12)] relative overflow-hidden scroll-mt-24"
     >
-      <div className="absolute top-0 right-0 w-1/2 h-full bg-yellow-500/5 blur-3xl rounded-full translate-x-1/2" />
-      <div className="absolute bottom-0 left-0 w-1/2 h-full bg-zinc-800/20 blur-3xl rounded-full -translate-x-1/2" />
+      <div
+        className="pointer-events-none absolute inset-0 opacity-70"
+        style={{
+          background:
+            "radial-gradient(ellipse at 70% 40%, rgba(200,205,212,0.12), transparent 55%)",
+        }}
+        aria-hidden
+      />
 
-      <div className="max-w-7xl mx-auto px-6 relative z-10 text-center">
-        <h2 className="text-4xl lg:text-5xl font-bold mb-8">
-          Experience Monero-Level Privacy with{" "}
-          <span className="text-yellow-500">Zcash Speed</span>
+      <div className="max-w-3xl mx-auto px-6 relative z-10">
+        <p className="nw-kicker mb-4">About</p>
+        <h2 className="font-display text-3xl lg:text-5xl font-bold text-[#f5f0e6] mb-6 tracking-tight">
+          Privacy is a right, not a privilege.
         </h2>
-
-        <p className="text-xl text-zinc-400 max-w-2xl mx-auto mb-12">
-          Download NozyWallet today — Orchard and Ironwood, shielded by default. No compromises.
+        <p className="text-lg text-[#a39a88] leading-relaxed mb-10">
+          NozyWallet is an open-source, shielded-first Zcash wallet. Self-custody,
+          Orchard-first design, and a clear split between wallet surfaces and the open web.
         </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-6">
-          <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="bg-yellow-500 hover:bg-yellow-400 text-zinc-900 px-8 py-4 rounded-xl font-bold text-lg transition-all shadow-lg hover:shadow-yellow-500/20 flex items-center gap-3"
-          >
-            <Download size={24} />
-            Download For Windows
+        <div className="flex flex-col sm:flex-row gap-3">
+          <a href="#download" className="nw-btn nw-btn-primary">
+            Download
           </a>
           <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet#readme"
+            href="https://leonine-dao.github.io/Nozy-wallet/book/nozy/manifesto.html"
             target="_blank"
             rel="noopener noreferrer"
-            className="bg-white/10 hover:bg-white/20 text-white px-8 py-4 rounded-xl font-bold text-lg transition-all border border-white/10"
+            className="nw-btn nw-btn-ghost"
           >
-            Read The Manifesto
+            Read the manifesto
           </a>
         </div>
       </div>

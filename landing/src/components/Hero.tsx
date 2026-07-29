@@ -1,87 +1,54 @@
-import { AltArrowDown, ShieldKeyholeMinimalistic } from "@solar-icons/react";
+import logoUrl from "../assets/logo-transparent.png";
+import logoMark from "../assets/logo-mark.png";
 
 const Hero = () => {
   return (
-    <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden bg-white">
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full max-w-7xl pointer-events-none">
-        <div
-          className="absolute top-20 left-20 w-72 h-72 bg-yellow-400/20 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "4s" }}
-        ></div>
-        <div
-          className="absolute bottom-20 right-20 w-96 h-96 bg-amber-200/40 rounded-full blur-3xl animate-pulse"
-          style={{ animationDuration: "7s" }}
-        ></div>
-      </div>
+    <section className="relative min-h-[100svh] flex items-center overflow-hidden">
+      {/* Soft vignette so text stays readable over the starfield */}
+      <div
+        className="pointer-events-none absolute inset-0"
+        aria-hidden
+        style={{
+          background:
+            "radial-gradient(ellipse at 30% 40%, rgba(12,11,9,0.35), transparent 55%), linear-gradient(to bottom, rgba(12,11,9,0.2), rgba(12,11,9,0.75))",
+        }}
+      />
 
-      <div className="max-w-7xl mx-auto px-6 text-center relative z-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-yellow-500/10 border border-yellow-500/20 text-xs font-medium text-yellow-700 mb-8 animate-fade-in-up">
-          <ShieldKeyholeMinimalistic size={14} />
-          <span>CLI Lite · Extension beta · Desktop beta · Orchard + Ironwood</span>
-        </div>
+      <div className="relative z-10 w-full max-w-6xl mx-auto px-6 py-28 lg:py-32">
+        <img
+          src={logoUrl}
+          alt="NozyWallet"
+          className="h-14 sm:h-16 lg:h-20 w-auto object-contain object-left mb-8 animate-fade-in-up"
+        />
 
-        <h1 className="text-5xl lg:text-7xl font-bold tracking-tight mb-4 leading-tight text-zinc-900">
-          <span className="block">Your gateway to</span>
-          <span className="text-gradient-primary">shielded value.</span>
+        <h1 className="font-display font-extrabold tracking-tight text-[#f5f0e6] text-[clamp(2.75rem,8vw,5.5rem)] leading-[0.95] mb-6 animate-fade-in-up">
+          Shielded ZEC.
+          <br />
+          <span className="text-gradient-primary">Yours alone.</span>
         </h1>
 
-        <p className="text-base lg:text-lg text-zinc-500 italic mb-8 tracking-wide">
-          “Private by default.”
+        <p className="max-w-xl text-lg sm:text-xl text-[#a39a88] leading-relaxed mb-10 animate-fade-in-up">
+          Self-custodial Orchard wallet — private by default. CLI for operators,
+          desktop for day-to-day, extension for the open web.
         </p>
 
-        <p className="max-w-2xl mx-auto text-lg text-zinc-600 mb-10 leading-relaxed">
-          NozyWallet is a self-custodial privacy wallet for shielded ZEC — Orchard and
-          Ironwood (NU6.3), shielded by default. CLI Lite is mainnet-ready with Ironwood
-          migrate tooling; the browser extension (Sweet chili) is in public beta;
-          Desktop beta is out for early testers; mobile beta is coming soon.
-        </p>
-
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-          <a
-            href="#download"
-            className="w-full sm:w-auto px-8 py-4 bg-yellow-500 hover:bg-yellow-400 text-white rounded-xl font-bold transition-all shadow-lg shadow-yellow-500/20 flex items-center justify-center gap-2 group"
-          >
-            <AltArrowDown
-              size={20}
-              className="group-hover:translate-y-1 transition-transform"
-            />
+        <div className="flex flex-col sm:flex-row flex-wrap gap-3 animate-fade-in-up">
+          <a href="#download" className="nw-btn nw-btn-primary">
             Download CLI Lite
           </a>
           <a
             href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.7"
             target="_blank"
             rel="noopener noreferrer"
-            className="w-full sm:w-auto px-8 py-4 bg-zinc-900 hover:bg-zinc-800 text-white rounded-xl font-semibold transition-all shadow-md flex items-center justify-center gap-2"
+            className="nw-btn nw-btn-ghost"
           >
             Get extension beta
           </a>
-          <a
-            href="#products"
-            className="w-full sm:w-auto px-8 py-4 bg-zinc-100 hover:bg-zinc-200 text-zinc-900 rounded-xl font-semibold transition-all border border-zinc-200 hover:border-zinc-300"
-          >
-            See all surfaces
-          </a>
         </div>
 
-        <div className="mt-20 pt-10 border-t border-zinc-200 grid grid-cols-1 sm:grid-cols-3 gap-8">
-          <div className="flex flex-col items-center gap-2">
-            <span className="text-3xl font-bold text-zinc-900">Orchard · Ironwood</span>
-            <span className="text-sm text-zinc-500 uppercase tracking-wider">
-              Shielded pools
-            </span>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <span className="text-3xl font-bold text-zinc-900">Self-custody</span>
-            <span className="text-sm text-zinc-500 uppercase tracking-wider">
-              Your keys
-            </span>
-          </div>
-          <div className="flex flex-col items-center gap-2">
-            <span className="text-3xl font-bold text-zinc-900">Open source</span>
-            <span className="text-sm text-zinc-500 uppercase tracking-wider">
-              Auditable Rust core
-            </span>
-          </div>
+        <div className="mt-12 flex items-center gap-3 text-sm text-[#a39a88] animate-fade-in-up">
+          <img src={logoMark} alt="" className="h-7 w-7 opacity-80" />
+          <span>Orchard · Ironwood · open source Rust core</span>
         </div>
       </div>
     </section>

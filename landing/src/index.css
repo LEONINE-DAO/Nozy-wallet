@@ -1,42 +1,40 @@
 @import "tailwindcss";
 
 @theme {
-  --color-primary: #D4AF37; /* Gold */
-  --color-primary-hover: #B5952F; /* Darker Gold */
-  --color-secondary: #18181b; /* Zinc 900 (Black) */
-  --color-background: #ffffff; /* White */
-  --color-surface: #f4f4f5; /* Zinc 100 */
-  --font-family-sans: 'Inter', sans-serif;
-  
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
+  --color-primary: #c8ccd4;
+  --color-primary-50: #f4f5f7;
+  --color-primary-100: #e8eaed;
+  --color-primary-200: #d8dce3;
+  --color-primary-300: #c8ccd4;
+  --color-primary-400: #b0b5c0;
+  --color-primary-500: #8b919c;
+  --color-primary-600: #6e7480;
+  --color-primary-700: #555a64;
+  --color-primary-800: #3d4148;
+  --color-primary-900: #26282d;
+  --color-primary-hover: #e8eaed;
+  --color-ink: #0c0b09;
+  --color-paper: #f5f0e6;
+  --color-muted: #a39a88;
+  --color-line: rgba(245, 240, 230, 0.12);
+  --font-family-sans: "Outfit", "Segoe UI", sans-serif;
+  --font-family-display: "Syne", "Segoe UI", sans-serif;
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: dark;
+  --nw-bg: #0c0b09;
+  --nw-ink: #f5f0e6;
+  --nw-muted: #a39a88;
+  --nw-silver: #c8ccd4;
+  --nw-silver-dim: #8b919c;
+  --nw-line: rgba(245, 240, 230, 0.12);
 }
 
 body {
   font-family: var(--font-family-sans);
-  background-color: var(--color-background);
-  color: #18181b;
+  background-color: var(--nw-bg);
+  color: var(--nw-ink);
   overflow-x: hidden;
 }
 
@@ -44,29 +42,21 @@ html {
   scroll-behavior: smooth;
 }
 
-.glass-panel {
-  background: rgba(255, 255, 255, 0.7);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(0, 0, 0, 0.05);
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.02);
-}
-
-.text-gradient {
-  background: linear-gradient(135deg, #18181b 0%, #52525b 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+.font-display {
+  font-family: var(--font-family-display);
 }
 
 .text-gradient-primary {
-  background: linear-gradient(135deg, #D4AF37 0%, #F59E0B 100%);
+  background: linear-gradient(135deg, #c8ccd4 0%, #e8eaed 55%, #a8adb8 100%);
   -webkit-background-clip: text;
+  background-clip: text;
   -webkit-text-fill-color: transparent;
 }
 
 @keyframes fade-in-up {
   from {
     opacity: 0;
-    transform: translateY(20px);
+    transform: translateY(18px);
   }
   to {
     opacity: 1;
@@ -74,17 +64,144 @@ html {
   }
 }
 
-.animate-fade-in-up {
-  animation: fade-in-up 0.8s ease-out forwards;
+@keyframes grid-drift {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(24px);
+  }
 }
 
-/* —— Mobile product page (remixed companion landing) —— */
+@keyframes silver-breathe {
+  from {
+    opacity: 0.55;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0.9;
+    transform: scale(1.06);
+  }
+}
+
+.animate-fade-in-up {
+  animation: fade-in-up 0.85s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+.animate-fade-in-up-delay {
+  opacity: 0;
+  animation: fade-in-up 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.15s forwards;
+}
+
+.animate-fade-in-up-delay-2 {
+  opacity: 0;
+  animation: fade-in-up 0.85s cubic-bezier(0.22, 1, 0.36, 1) 0.3s forwards;
+}
+
+/* —— Page loader —— */
+@keyframes nw-loader-pulse {
+  0%,
+  100% {
+    opacity: 0.7;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+
+.nw-loader-pulse {
+  animation: nw-loader-pulse 1.4s ease-in-out infinite;
+}
+
+.nw-loader-stars {
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(
+      1px 1px at 20% 30%,
+      rgba(232, 234, 237, 0.7),
+      transparent
+    ),
+    radial-gradient(1px 1px at 70% 20%, rgba(232, 234, 237, 0.5), transparent),
+    radial-gradient(1.5px 1.5px at 40% 70%, rgba(232, 234, 237, 0.6), transparent),
+    radial-gradient(1px 1px at 85% 55%, rgba(232, 234, 237, 0.45), transparent),
+    radial-gradient(1px 1px at 15% 80%, rgba(232, 234, 237, 0.55), transparent);
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nw-loader-pulse {
+    animation: none;
+  }
+  .animate-fade-in-up,
+  .animate-fade-in-up-delay,
+  .animate-fade-in-up-delay-2 {
+    animation: none;
+    opacity: 1;
+  }
+}
+
+/* Shared launchpad surfaces */
+.nw-kicker {
+  font-size: 0.75rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--nw-silver);
+}
+
+.nw-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.95rem 1.55rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  text-decoration: none;
+  border-radius: 0.2rem;
+  transition: transform 0.2s ease, background 0.2s ease, color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.nw-btn:hover {
+  transform: translateY(-2px);
+}
+
+.nw-btn-primary {
+  background: var(--nw-silver);
+  color: #0c0b09;
+}
+
+.nw-btn-primary:hover {
+  background: #e8eaed;
+}
+
+.nw-btn-ghost {
+  background: transparent;
+  color: var(--nw-ink);
+  border: 1px solid var(--nw-line);
+}
+
+.nw-btn-ghost:hover {
+  border-color: var(--nw-silver);
+  color: var(--nw-silver);
+}
+
+.nw-panel {
+  border: 1px solid var(--nw-line);
+  background: rgba(245, 240, 230, 0.03);
+  border-radius: 0.35rem;
+}
+
+/* —— Mobile product page (kept) —— */
 .mobile-page {
   --m-bg: #0c0b09;
   --m-ink: #f5f0e6;
   --m-muted: #a39a88;
-  --m-gold: #e8b923;
-  --m-gold-dim: #b8921a;
+  --m-silver: #c8ccd4;
+  --m-silver-dim: #8b919c;
   --m-line: rgba(245, 240, 230, 0.12);
   --m-display: "Syne", "Segoe UI", sans-serif;
   --m-body: "Outfit", "Segoe UI", sans-serif;
@@ -109,7 +226,7 @@ html {
   font-size: 0.75rem;
   letter-spacing: 0.22em;
   text-transform: uppercase;
-  color: var(--m-gold);
+  color: var(--m-silver);
   margin: 0 0 1rem;
 }
 
@@ -146,7 +263,7 @@ html {
   height: 55%;
   background: radial-gradient(
     ellipse at 50% 0%,
-    rgba(232, 185, 35, 0.28),
+    rgba(200, 205, 212, 0.22),
     transparent 65%
   );
   animation: mobile-glow 8s ease-in-out infinite alternate;
@@ -200,7 +317,7 @@ html {
 }
 
 .mobile-hero-title span {
-  color: var(--m-gold);
+  color: var(--m-silver);
 }
 
 .mobile-hero-sub {
@@ -235,12 +352,12 @@ html {
 }
 
 .mobile-btn-primary {
-  background: var(--m-gold);
+  background: var(--m-silver);
   color: #0c0b09;
 }
 
 .mobile-btn-primary:hover {
-  background: #f0c94a;
+  background: #e8eaed;
 }
 
 .mobile-btn-ghost {
@@ -250,8 +367,8 @@ html {
 }
 
 .mobile-btn-ghost:hover {
-  border-color: var(--m-gold);
-  color: var(--m-gold);
+  border-color: var(--m-silver);
+  color: var(--m-silver);
 }
 
 .mobile-values {
@@ -321,7 +438,7 @@ html {
   font-family: var(--m-display);
   font-size: 1.25rem;
   margin: 0 0 0.75rem;
-  color: var(--m-gold);
+  color: var(--m-silver);
 }
 
 .mobile-pair-split ul {
@@ -340,7 +457,7 @@ html {
 .mobile-pair-plus {
   font-family: var(--m-display);
   font-size: 2.5rem;
-  color: var(--m-gold-dim);
+  color: var(--m-silver-dim);
   text-align: center;
   line-height: 1;
   padding-top: 0.5rem;
@@ -366,7 +483,7 @@ html {
   font-family: var(--m-display);
   font-size: 1.75rem;
   font-weight: 700;
-  color: var(--m-gold);
+  color: var(--m-silver);
   line-height: 1;
 }
 
@@ -411,7 +528,7 @@ html {
 
 .mobile-faq-chevron {
   transition: transform 0.25s ease;
-  color: var(--m-gold);
+  color: var(--m-silver);
   font-size: 1.25rem;
 }
 
@@ -462,7 +579,7 @@ html {
 }
 
 .mobile-get-links a {
-  color: var(--m-gold);
+  color: var(--m-silver);
   text-decoration: none;
   font-weight: 500;
 }
