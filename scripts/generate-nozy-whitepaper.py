@@ -82,8 +82,17 @@ def add_formula(doc, text):
 
 
 def cover_page(doc):
-    for _ in range(4):
-        doc.add_paragraph()
+    logo_path = REPO_ROOT / "docs" / "reference" / "NozyWallet_Whitepaper_logo.png"
+    if logo_path.is_file():
+        p_logo = doc.add_paragraph()
+        p_logo.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p_logo.add_run()
+        run.add_picture(str(logo_path), width=Inches(2.6))
+        p_logo.paragraph_format.space_after = Pt(12)
+    else:
+        for _ in range(2):
+            doc.add_paragraph()
+
     title = doc.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r = title.add_run("NozyWallet")
@@ -96,7 +105,7 @@ def cover_page(doc):
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r2 = sub.add_run(
         "White Paper\n"
-        "Architecture, Shielded Pools, Network Privacy, and Mainnet Operation"
+        "Architecture, Shielded Pools, Network Privacy, Zcash Names, and Mainnet Operation"
     )
     r2.font.size = Pt(14)
     r2.font.name = "Calibri"
@@ -779,8 +788,7 @@ def export_markdown(doc):
     lines = [
         "# NozyWallet White Paper",
         "",
-        "_Open `docs/NozyWallet_Whitepaper.docx` in Word or LibreOffice for the formatted version. "
-        "Regenerate with `python scripts/generate-nozy-whitepaper.py`._",
+        "![NozyWallet logo](NozyWallet_Whitepaper_logo.png)",
         "",
     ]
     for p in doc.paragraphs:

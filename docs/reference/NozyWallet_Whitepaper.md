@@ -1,6 +1,6 @@
 # NozyWallet White Paper
 
-_Open `docs/NozyWallet_Whitepaper.docx` in Word or LibreOffice for the formatted version. Regenerate with `python scripts/generate-nozy-whitepaper.py`._
+![NozyWallet logo](NozyWallet_Whitepaper_logo.png)
 
 ---
 

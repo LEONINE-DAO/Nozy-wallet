@@ -8,7 +8,7 @@
       name="description"
       content="NozyWallet white paper: architecture, Ironwood, Nym network privacy, Zcash Names, and mainnet operation."
     />
-    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="icon" type="image/png" href="./logo.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -154,6 +154,22 @@
         overflow-y: hidden;
         padding: 0.35rem 0;
       }
+      .cover {
+        text-align: center;
+        margin: 0 0 2rem;
+      }
+      .cover img {
+        width: min(100%, 22rem);
+        height: auto;
+        display: block;
+        margin: 0 auto 1.25rem;
+      }
+      #content > p:first-child img {
+        display: block;
+        width: min(100%, 22rem);
+        height: auto;
+        margin: 0.5rem auto 1.5rem;
+      }
     </style>
   </head>
   <body>
@@ -173,6 +189,9 @@
       </nav>
     </div>
     <main>
+      <div class="cover">
+        <img src="./logo.png" alt="NozyWallet" width="352" height="352" />
+      </div>
       <p id="status">Loading white paper…</p>
       <article id="content" hidden></article>
     </main>
@@ -186,7 +205,12 @@
         try {
           const res = await fetch("./whitepaper.md", { cache: "no-cache" });
           if (!res.ok) throw new Error("HTTP " + res.status);
-          const md = await res.text();
+          let md = await res.text();
+          // Cover logo is rendered above; drop the markdown logo line to avoid a double image.
+          md = md.replace(
+            /^!\[[^\]]*\]\(NozyWallet_Whitepaper_logo\.png\)\s*\n+/m,
+            "",
+          );
           marked.setOptions({ gfm: true, breaks: false });
           content.innerHTML = marked.parse(md);
           content.hidden = false;
