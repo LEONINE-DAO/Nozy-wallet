@@ -1023,7 +1023,10 @@ mod tests {
         }
 
         let mut cached = vec![note(1, 2_000_000)];
-        merge_scanned_notes(&mut cached, &[note(1, 2_000_000), note(2, 2_000_000), note(3, 480_000)]);
+        merge_scanned_notes(
+            &mut cached,
+            &[note(1, 2_000_000), note(2, 2_000_000), note(3, 480_000)],
+        );
         assert_eq!(cached.len(), 3, "equal-value twins must both be kept");
         let values: Vec<u64> = cached.iter().map(|n| n.value).collect();
         assert_eq!(values.iter().filter(|&&v| v == 2_000_000).count(), 2);

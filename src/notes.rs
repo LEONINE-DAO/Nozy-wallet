@@ -717,7 +717,10 @@ pub fn note_cache_integrity(notes: &[SerializableOrchardNote]) -> NoteCacheInteg
 }
 
 #[cfg(feature = "native")]
-fn merge_note_scan_fields(existing: &mut SerializableOrchardNote, new_note: &SerializableOrchardNote) {
+fn merge_note_scan_fields(
+    existing: &mut SerializableOrchardNote,
+    new_note: &SerializableOrchardNote,
+) {
     existing.spent = existing.spent || new_note.spent;
     if new_note.rho_bytes.is_some() {
         existing.nullifier_bytes = new_note.nullifier_bytes.clone();

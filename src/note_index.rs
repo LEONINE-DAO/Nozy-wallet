@@ -318,7 +318,8 @@ impl NoteIndex {
         rho_bytes: Option<&[u8]>,
         rseed_bytes: Option<&[u8]>,
     ) -> bool {
-        let Some(idx) = self.find_unspent_identity_index(txid, block_height, value, rho_bytes) else {
+        let Some(idx) = self.find_unspent_identity_index(txid, block_height, value, rho_bytes)
+        else {
             return false;
         };
 
