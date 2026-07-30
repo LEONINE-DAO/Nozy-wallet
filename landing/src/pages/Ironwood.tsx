@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import logoMarkUrl from "../assets/logo-mark.png";
+import logoMarkUrl from "../assets/logo-mark-clean.png";
 import {
   IRONWOOD_CIPHERSCAN,
   IRONWOOD_ZODL,

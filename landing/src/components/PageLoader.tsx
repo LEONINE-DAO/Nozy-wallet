@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import logoMark from "../assets/logo-mark.png";
+import BrandLogo from "./BrandLogo";
 
 type Props = {
   onDone?: () => void;
@@ -58,14 +58,9 @@ export default function PageLoader({ onDone }: Props) {
     >
       <div className="nw-loader-stars" aria-hidden />
 
-      <img
-        src={logoMark}
-        alt=""
-        className="h-16 w-16 mb-6 nw-loader-pulse"
-      />
-      <p className="font-display text-2xl font-bold tracking-tight text-[#f5f0e6] mb-8">
-        NozyWallet
-      </p>
+      <div className="mb-8 nw-loader-pulse">
+        <BrandLogo markClassName="h-16 w-16" className="text-2xl" />
+      </div>
 
       <div className="w-48 h-[2px] bg-[rgba(245,240,230,0.12)] overflow-hidden">
         <div
