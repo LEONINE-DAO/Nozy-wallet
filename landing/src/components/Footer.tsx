@@ -35,6 +35,12 @@ const Footer = () => {
             >
               GitHub
             </a>
+            <a
+              href="/whitepaper/"
+              className="text-[#a39a88] hover:text-[#c8ccd4] transition-colors"
+            >
+              White paper
+            </a>
             <Link to="/mobile" className="text-[#a39a88] hover:text-[#c8ccd4] transition-colors">
               Mobile
             </Link>

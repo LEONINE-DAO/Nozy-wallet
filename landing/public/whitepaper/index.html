@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NozyWallet White Paper</title>
+    <meta
+      name="description"
+      content="NozyWallet white paper: architecture, Ironwood, Nym network privacy, Zcash Names, and mainnet operation."
+    />
+    <link rel="icon" type="image/png" href="/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600&family=Syne:wght@700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css"
+    />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0c0b09;
+        --text: #c8c2b4;
+        --heading: #f5f0e6;
+        --muted: #a39a88;
+        --silver: #c8ccd4;
+        --border: rgba(245, 240, 230, 0.12);
+        --code-bg: rgba(245, 240, 230, 0.06);
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        font-family: Outfit, system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.65;
+      }
+      .top {
+        border-bottom: 1px solid var(--border);
+        padding: 1rem 1.5rem;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem 1.25rem;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .top a {
+        color: var(--silver);
+        text-decoration: none;
+        font-size: 0.9rem;
+      }
+      .top a:hover {
+        color: var(--heading);
+      }
+      .brand {
+        font-family: Syne, sans-serif;
+        font-weight: 800;
+        color: var(--heading);
+        letter-spacing: -0.02em;
+      }
+      main {
+        max-width: 46rem;
+        margin: 0 auto;
+        padding: 2.5rem 1.5rem 5rem;
+      }
+      #status {
+        color: var(--muted);
+        font-size: 0.9rem;
+      }
+      #content h1 {
+        font-family: Syne, sans-serif;
+        font-weight: 800;
+        color: var(--heading);
+        font-size: clamp(1.75rem, 4vw, 2.4rem);
+        line-height: 1.15;
+        letter-spacing: -0.03em;
+        margin: 0 0 1rem;
+      }
+      #content h2 {
+        font-family: Syne, sans-serif;
+        font-weight: 700;
+        color: var(--heading);
+        font-size: 1.35rem;
+        margin: 2.75rem 0 0.85rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--border);
+      }
+      #content h3 {
+        color: var(--heading);
+        font-size: 1.05rem;
+        margin: 1.75rem 0 0.6rem;
+      }
+      #content p,
+      #content li {
+        margin: 0.65rem 0;
+      }
+      #content a {
+        color: var(--silver);
+      }
+      #content hr {
+        border: none;
+        border-top: 1px solid var(--border);
+        margin: 2rem 0;
+      }
+      #content code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 0.88em;
+        background: var(--code-bg);
+        padding: 0.12em 0.35em;
+        border-radius: 0.25rem;
+      }
+      #content pre {
+        background: var(--code-bg);
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        padding: 1rem 1.1rem;
+        overflow-x: auto;
+        font-size: 0.85rem;
+      }
+      #content pre code {
+        background: none;
+        padding: 0;
+      }
+      #content table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+        margin: 1rem 0 1.5rem;
+      }
+      #content th,
+      #content td {
+        border: 1px solid var(--border);
+        padding: 0.5rem 0.65rem;
+        text-align: left;
+        vertical-align: top;
+      }
+      #content th {
+        color: var(--heading);
+        background: var(--code-bg);
+      }
+      #content blockquote {
+        margin: 1rem 0;
+        padding: 0.25rem 0 0.25rem 1rem;
+        border-left: 3px solid var(--silver);
+        color: var(--muted);
+      }
+      .katex-display {
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0.35rem 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="top">
+      <a class="brand" href="https://nozywallet.com/">NozyWallet</a>
+      <nav>
+        <a href="https://nozywallet.com/">Home</a>
+        ·
+        <a href="https://nozywallet.com/ironwood">Ironwood</a>
+        ·
+        <a href="./whitepaper.md">Raw Markdown</a>
+        ·
+        <a
+          href="https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/docs/reference/NozyWallet_Whitepaper.md"
+          >GitHub</a
+        >
+      </nav>
+    </div>
+    <main>
+      <p id="status">Loading white paper…</p>
+      <article id="content" hidden></article>
+    </main>
+    <script src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+    <script>
+      (async () => {
+        const status = document.getElementById("status");
+        const content = document.getElementById("content");
+        try {
+          const res = await fetch("./whitepaper.md", { cache: "no-cache" });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          const md = await res.text();
+          marked.setOptions({ gfm: true, breaks: false });
+          content.innerHTML = marked.parse(md);
+          content.hidden = false;
+          status.hidden = true;
+          renderMathInElement(content, {
+            delimiters: [
+              { left: "\\[", right: "\\]", display: true },
+              { left: "\\(", right: "\\)", display: false },
+              { left: "$$", right: "$$", display: true },
+              { left: "$", right: "$", display: false },
+            ],
+            throwOnError: false,
+          });
+        } catch (err) {
+          status.textContent =
+            "Could not load white paper. Try the GitHub link above. (" +
+            (err && err.message ? err.message : "error") +
+            ")";
+        }
+      })();
+    </script>
+  </body>
+</html>

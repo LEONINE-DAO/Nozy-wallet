@@ -5,6 +5,11 @@
   "outputDirectory": "landing/dist",
   "framework": "vite",
   "rewrites": [
+    {
+      "source": "/",
+      "has": [{ "type": "host", "value": "whitepaper.nozywallet.com" }],
+      "destination": "/whitepaper/index.html"
+    },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/((?!api/).*)", "destination": "/index.html" }
   ]
