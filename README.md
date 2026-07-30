@@ -1,4 +1,4 @@
-﻿# NozyWallet
+# NozyWallet
 
 **Orchard-first Zcash wallet** — **CLI production release** today; desktop app, browser extension, and companion API in active development. This repository is a **wallet and companion services**, not a consensus node.
 
