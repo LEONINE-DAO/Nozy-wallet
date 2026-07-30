@@ -2,6 +2,7 @@
 
 use crate::error::{NozyError, NozyResult};
 use crate::fee_policy::{pilot_expiry_height, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS};
+use crate::ironwood::IronwoodAwareMainNetwork;
 use crate::ironwood_tree_codec::{
     ironwood_incremental_witness_from_bytes, ironwood_incremental_witness_to_bytes,
 };
@@ -25,7 +26,7 @@ use pczt::roles::{
 use zcash_address::unified::{Container, Encoding};
 use zcash_primitives::transaction::builder::{BuildConfig, Builder};
 use zcash_primitives::transaction::fees::{transparent::InputSize, FeeRule};
-use zcash_protocol::consensus::{BlockHeight, MainNetwork, NetworkType, Parameters, TestNetwork};
+use zcash_protocol::consensus::{BlockHeight, NetworkType, Parameters, TestNetwork};
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 
@@ -300,7 +301,7 @@ pub async fn build_single_ironwood_spend(
         }
 
         let pczt = match network_type {
-            NetworkType::Main => build_pczt_for_network!(MainNetwork)?,
+            NetworkType::Main => build_pczt_for_network!(IronwoodAwareMainNetwork)?,
             NetworkType::Test | NetworkType::Regtest => build_pczt_for_network!(TestNetwork)?,
         };
 

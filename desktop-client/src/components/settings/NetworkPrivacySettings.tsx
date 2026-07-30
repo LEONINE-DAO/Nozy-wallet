@@ -3,7 +3,7 @@ import { Button } from "../Button";
 import { Shield } from "@solar-icons/react";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useSettingsStore } from "../../store/settingsStore";
-import { api } from "../../lib/api";
+import { walletApi } from "../../lib/api";
 import type { NymDvpnSyncProbeResult, NymDvpnSyncStatus } from "../../lib/types";
 
 const NYM_VPN_URL = "https://nym.com/vpn";
@@ -33,7 +33,7 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
   const refreshDvpn = useCallback(async () => {
     setDvpnError(null);
     try {
-      const { data } = await api.getNymDvpnSyncStatus(publicLwd.trim() || undefined);
+      const { data } = await walletApi.getNymDvpnSyncStatus(publicLwd.trim() || undefined);
       setDvpnStatus(data);
     } catch (e) {
       setDvpnError(e instanceof Error ? e.message : String(e));
@@ -49,7 +49,7 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
     setDvpnError(null);
     setProbeResult(null);
     try {
-      await api.setSyncViaNymDvpn(enabled);
+      await walletApi.setSyncViaNymDvpn(enabled);
       await refreshDvpn();
     } catch (e) {
       setDvpnError(e instanceof Error ? e.message : String(e));
@@ -63,8 +63,8 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
     setDvpnError(null);
     setProbeResult(null);
     try {
-      await api.setSyncViaNymDvpn(true);
-      const { data } = await api.runNymDvpnSyncProbe({
+      await walletApi.setSyncViaNymDvpn(true);
+      const { data } = await walletApi.runNymDvpnSyncProbe({
         lightwalletdUrl: publicLwd.trim() || DEFAULT_PUBLIC_LWD,
         blocks: 100,
       });

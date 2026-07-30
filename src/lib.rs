@@ -220,7 +220,8 @@ pub use note_sync::{NoteSyncManager, SyncResult};
 #[cfg(feature = "native")]
 pub use notes::{
     load_spendable_notes_from_wallet, load_wallet_notes, mark_wallet_notes_spent_by_nullifier_hex,
-    mark_wallet_notes_spent_from_spendables, merge_scanned_notes,
+    mark_wallet_notes_spent_from_spendables, merge_scanned_notes, missing_scanned_nullifiers_after_merge,
+    note_cache_integrity, NoteCacheIntegrity,
     reconcile_wallet_spends_from_local_state, release_wallet_notes_by_nullifier_hex,
     save_wallet_notes, wallet_unspent_balance_zatoshis, NoteScanResult, NoteScanner, OrchardNote,
     SerializableOrchardNote, SpendableNote,

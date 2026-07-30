@@ -242,23 +242,73 @@ impl NoteIndex {
         false
     }
 
+    /// Resolve an unspent note when nullifier index lookup failed.
+    /// Prefer an exact `rho` match when several equal-value notes share a tx.
+    fn find_unspent_identity_index(
+        &self,
+        txid: &str,
+        block_height: u32,
+        value: u64,
+        rho_bytes: Option<&[u8]>,
+    ) -> Option<usize> {
+        let mut candidates: Vec<usize> = self
+            .notes
+            .iter()
+            .enumerate()
+            .filter(|(_, note)| {
+                !note.spent
+                    && note.txid == txid
+                    && note.block_height == block_height
+                    && note.value == value
+            })
+            .map(|(idx, _)| idx)
+            .collect();
+
+        if candidates.is_empty() {
+            return None;
+        }
+        if candidates.len() == 1 {
+            return Some(candidates[0]);
+        }
+        if let Some(rho) = rho_bytes {
+            if let Some(idx) = candidates.iter().copied().find(|&idx| {
+                self.notes[idx]
+                    .rho_bytes
+                    .as_deref()
+                    .is_some_and(|stored| stored == rho)
+            }) {
+                return Some(idx);
+            }
+            // Ambiguous equal-value twins without a stored rho match — refuse to guess.
+            return None;
+        }
+        // No rho to disambiguate: keep legacy first-match only when unique would have applied;
+        // with multiple candidates, guessing marks the wrong twin spent.
+        if candidates.len() > 1 {
+            return None;
+        }
+        candidates.pop()
+    }
+
     pub fn tag_spent_in_txid_by_identity(
         &mut self,
         txid: &str,
         block_height: u32,
         value: u64,
         broadcast_txid: &str,
+        rho_bytes: Option<&[u8]>,
     ) -> bool {
-        for note in &mut self.notes {
-            if note.txid == txid && note.block_height == block_height && note.value == value {
-                note.spent_in_txid = Some(broadcast_txid.to_string());
-                return true;
-            }
+        if let Some(idx) = self.find_unspent_identity_index(txid, block_height, value, rho_bytes) {
+            self.notes[idx].spent_in_txid = Some(broadcast_txid.to_string());
+            return true;
         }
         false
     }
 
     /// Match spent note by on-chain identity when nullifier index lookup fails.
+    ///
+    /// When ZIP 318 (or any send) creates multiple equal-value notes in one tx, matching on
+    /// `(txid, height, value)` alone is ambiguous — prefer `rho` when provided.
     pub fn mark_note_spent_by_spend_metadata(
         &mut self,
         txid: &str,
@@ -268,18 +318,7 @@ impl NoteIndex {
         rho_bytes: Option<&[u8]>,
         rseed_bytes: Option<&[u8]>,
     ) -> bool {
-        let mut found_idx = None;
-        for (idx, note) in self.notes.iter().enumerate() {
-            if note.spent {
-                continue;
-            }
-            if note.txid == txid && note.block_height == block_height && note.value == value {
-                found_idx = Some(idx);
-                break;
-            }
-        }
-
-        let Some(idx) = found_idx else {
+        let Some(idx) = self.find_unspent_identity_index(txid, block_height, value, rho_bytes) else {
             return false;
         };
 

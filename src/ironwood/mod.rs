@@ -43,7 +43,9 @@ pub use status::{
     legacy_hardware_send_blocker, orchard_only_send_blocker, IronwoodWalletStatus,
     PoolBalanceSummary, ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD,
 };
-use zcash_protocol::consensus::{NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK};
+use zcash_protocol::consensus::{
+    BlockHeight, NetworkType, NetworkUpgrade, Parameters, MAIN_NETWORK, TEST_NETWORK,
+};
 
 /// Target from the ZF/ZODL miner timeline circulated July 2026.
 pub const NU6_3_TESTNET_DEPLOYMENT_TARGET: &str = "2026-07-01";
@@ -55,6 +57,26 @@ pub const NU6_3_MAINNET_ACTIVATION_TARGET: &str = "2026-07-28";
 /// Mainnet Ironwood / NU6.3 activation height (ecosystem PSA).
 /// Used when `zcash_protocol` has not yet pinned `NetworkUpgrade::Nu6_3`.
 pub const NU6_3_MAINNET_ACTIVATION_HEIGHT: u32 = 3_428_143;
+
+/// Mainnet consensus params with PSA NU6.3 height filled in.
+///
+/// Upstream `MainNetwork` still reports `Nu6_3 => None`, so V6 Ironwood builders
+/// return `IronwoodBuilderNotAvailable` after real mainnet activation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct IronwoodAwareMainNetwork;
+
+impl Parameters for IronwoodAwareMainNetwork {
+    fn network_type(&self) -> NetworkType {
+        NetworkType::Main
+    }
+
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match nu {
+            NetworkUpgrade::Nu6_3 => Some(BlockHeight::from_u32(NU6_3_MAINNET_ACTIVATION_HEIGHT)),
+            other => MAIN_NETWORK.activation_height(other),
+        }
+    }
+}
 
 /// Pre-activation / freeze notice for wallet UIs (PSA ask #1).
 pub const IRONWOOD_ACTIVATION_FREEZE_NOTICE: &str =
@@ -85,6 +107,24 @@ pub fn nu6_3_activation_height(testnet: bool) -> Option<u32> {
 
 pub fn is_ironwood_active(height: u32, testnet: bool) -> bool {
     nu6_3_activation_height(testnet).is_some_and(|activation| height >= activation)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use zcash_protocol::consensus::BranchId;
+
+    #[test]
+    fn ironwood_aware_mainnet_activates_nu6_3_at_psa_height() {
+        let h = BlockHeight::from_u32(NU6_3_MAINNET_ACTIVATION_HEIGHT);
+        assert!(IronwoodAwareMainNetwork.is_nu_active(NetworkUpgrade::Nu6_3, h));
+        assert_eq!(
+            BranchId::for_height(&IronwoodAwareMainNetwork, h),
+            BranchId::Nu6_3
+        );
+        // Upstream MainNetwork still lacks Nu6_3 — this is why we need the overlay.
+        assert!(!MAIN_NETWORK.is_nu_active(NetworkUpgrade::Nu6_3, h));
+    }
 }
 
 /// User-facing activation + privacy copy for status panels.
