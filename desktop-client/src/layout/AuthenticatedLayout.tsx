@@ -22,8 +22,6 @@ import { useWalletAutoSync } from "../hooks/useWalletAutoSync";
 import { balanceFromResponse } from "../lib/syncHelpers";
 import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
 import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
-import { OrchardPoolBanner } from "../components/OrchardPoolBanner";
-
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
@@ -217,7 +215,6 @@ export function AuthenticatedLayout() {
         ) : (
           <>
             <div className="absolute top-0 left-0 w-full h-64 bg-linear-to-b from-primary-50/70 to-transparent pointer-events-none" />
-            {activeTab === "home" && <OrchardPoolBanner />}
             <div className="relative z-10 flex-1 min-h-0 overflow-y-auto">
               <div className="container mx-auto px-8 pt-8 pb-24 max-w-6xl">
                 {activeTab === "home" && <HomePage onNavigate={setActiveTab} />}

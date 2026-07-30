@@ -196,6 +196,11 @@ pub enum Commands {
         json: bool,
     },
 
+    #[command(
+        about = "Audit notes.json so equal-value ZIP 318 twins are not hidden (nullifier integrity)"
+    )]
+    NotesDoctor,
+
     #[command(about = "Manage local wallet profiles")]
     Profile {
         #[command(subcommand)]
@@ -852,6 +857,27 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         }
                     }
                     println!("   Last scanned height: {}", result.last_scan_height);
+                    if let Ok(notes) = nozy::load_wallet_notes() {
+                        let report = nozy::note_cache_integrity(&notes);
+                        if report.duplicate_nullifier_groups > 0 {
+                            println!(
+                                "   ⚠️  Note cache has {} duplicate nullifier group(s) — run `nozy notes-doctor`",
+                                report.duplicate_nullifier_groups
+                            );
+                        } else if report.equal_value_unspent_groups > 0 {
+                            println!(
+                                "   ✅ Equal-value note groups preserved: {} (ZIP 318 twins kept; +{} extra notes)",
+                                report.equal_value_unspent_groups,
+                                report.equal_value_unspent_extra_notes
+                            );
+                        }
+                        if report.empty_nullifier_notes > 0 {
+                            println!(
+                                "   ⚠️  {} note(s) missing nullifiers — run `nozy notes-doctor`",
+                                report.empty_nullifier_notes
+                            );
+                        }
+                    }
                     if result.chain_tip > result.last_scan_height {
                         let behind = result.chain_tip - result.last_scan_height;
                         println!(
@@ -1261,6 +1287,55 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     println!("\n   ⚠️  Run 'sync' to update your balance.");
                 }
             }
+        }
+
+        Commands::NotesDoctor => {
+            use nozy::{load_wallet_notes, note_cache_integrity};
+
+            let notes = match load_wallet_notes() {
+                Ok(n) => n,
+                Err(e) => {
+                    eprintln!("❌ Failed to load notes.json: {e}");
+                    return Ok(());
+                }
+            };
+            let report = note_cache_integrity(&notes);
+            println!("🩺 Notes doctor (nullifier / ZIP 318 twin audit)");
+            println!("{}", "=".repeat(50));
+            println!("   Total notes:              {}", report.total_notes);
+            println!("   Unspent notes:            {}", report.unspent_notes);
+            println!(
+                "   Unspent balance:          {:.8} ZEC",
+                report.unspent_zatoshis as f64 / 100_000_000.0
+            );
+            println!(
+                "   Empty nullifiers:         {}",
+                report.empty_nullifier_notes
+            );
+            println!(
+                "   Duplicate nullifier groups: {}",
+                report.duplicate_nullifier_groups
+            );
+            println!(
+                "   Equal-value unspent groups: {} (+{} twin/extra notes)",
+                report.equal_value_unspent_groups, report.equal_value_unspent_extra_notes
+            );
+            println!();
+            if report.duplicate_nullifier_groups > 0 {
+                println!("   ❌ Duplicate nullifiers in cache — restore from backup or re-scan.");
+            } else if report.empty_nullifier_notes > 0 {
+                println!(
+                    "   ⚠️  Some notes lack nullifiers. Re-scan their heights:\n      nozy sync --start-height <height> --to-tip"
+                );
+            } else {
+                println!("   ✅ No collapsed-twin hazard detected in the current cache.");
+                println!(
+                    "   💡 After ZIP 318 splits, equal-value groups > 0 means twins were kept."
+                );
+            }
+            println!(
+                "\n   If balance looks low after a split, rebuild from the split height:\n      nozy sync --start-height <split_height> --to-tip"
+            );
         }
 
         Commands::Profile { command } => match command {

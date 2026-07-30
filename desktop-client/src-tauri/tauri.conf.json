@@ -19,7 +19,8 @@
         "center": true,
         "visible": true,
         "resizable": true,
-        "focus": true
+        "focus": true,
+        "backgroundColor": "#0c0b09"
       }
     ],
     "security": {

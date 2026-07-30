@@ -322,7 +322,7 @@ impl From<&OrchardNote> for SerializableOrchardNote {
 /// Mark notes spent in `notes.json` immediately after broadcast.
 ///
 /// Matches by canonical nullifier and, for legacy rows with a wrong stored nullifier,
-/// by `(txid, block_height, value)` from the notes that were actually spent.
+/// by `(txid, block_height, value)` **plus `rho`** when equal-value twins share a tx.
 #[cfg(feature = "native")]
 pub fn mark_wallet_notes_spent_from_spendables(
     spent: &[SpendableNote],
@@ -368,6 +368,7 @@ pub fn mark_wallet_notes_spent_from_spendables(
                     sn.orchard_note.block_height,
                     sn.orchard_note.value,
                     txid,
+                    Some(sn.orchard_note.note.rho().to_bytes().as_slice()),
                 );
             }
             marked += 1;
@@ -557,6 +558,10 @@ pub fn mark_wallet_notes_spent_by_nullifier_hex(
 }
 
 /// Merge notes discovered during a scan into an existing cache.
+///
+/// Identity is **nullifier** (and `note_bytes` when nullifiers are empty). Never key on
+/// `(txid, height, value)` alone — ZIP 318 splits routinely emit multiple equal-value
+/// notes in one transaction; collapsing those twins under-reports balance.
 #[cfg(feature = "native")]
 pub fn merge_scanned_notes(
     existing: &mut Vec<SerializableOrchardNote>,
@@ -564,44 +569,183 @@ pub fn merge_scanned_notes(
 ) {
     use std::collections::HashSet;
 
-    let existing_nullifiers: HashSet<Vec<u8>> =
-        existing.iter().map(|n| n.nullifier_bytes.clone()).collect();
+    let mut existing_nullifiers: HashSet<Vec<u8>> = existing
+        .iter()
+        .filter(|n| !n.nullifier_bytes.is_empty())
+        .map(|n| n.nullifier_bytes.clone())
+        .collect();
+    let mut existing_note_bytes: HashSet<Vec<u8>> = existing
+        .iter()
+        .filter(|n| !n.note_bytes.is_empty())
+        .map(|n| n.note_bytes.clone())
+        .collect();
 
     for new_note in new_notes {
-        if let Some(existing) = existing.iter_mut().find(|n| {
-            n.txid == new_note.txid
-                && n.block_height == new_note.block_height
-                && n.value == new_note.value
-        }) {
-            existing.spent = existing.spent || new_note.spent;
-            if new_note.rho_bytes.is_some() {
-                existing.nullifier_bytes = new_note.nullifier_bytes.clone();
-                existing.rho_bytes = new_note.rho_bytes.clone();
-                existing.rseed_bytes = new_note.rseed_bytes.clone();
-            }
-            if new_note
-                .orchard_incremental_witness_hex
-                .as_ref()
-                .is_some_and(|w| !w.is_empty())
+        if !new_note.nullifier_bytes.is_empty() {
+            if let Some(row) = existing
+                .iter_mut()
+                .find(|n| n.nullifier_bytes == new_note.nullifier_bytes)
             {
-                existing.orchard_incremental_witness_hex =
-                    new_note.orchard_incremental_witness_hex.clone();
-                existing.orchard_witness_tip_height = new_note.orchard_witness_tip_height;
+                merge_note_scan_fields(row, new_note);
+                continue;
             }
-            if new_note
-                .ironwood_incremental_witness_hex
-                .as_ref()
-                .is_some_and(|w| !w.is_empty())
-            {
-                existing.ironwood_incremental_witness_hex =
-                    new_note.ironwood_incremental_witness_hex.clone();
-                existing.ironwood_witness_tip_height = new_note.ironwood_witness_tip_height;
+            if existing_nullifiers.contains(&new_note.nullifier_bytes) {
+                continue;
             }
+            existing_nullifiers.insert(new_note.nullifier_bytes.clone());
+            if !new_note.note_bytes.is_empty() {
+                existing_note_bytes.insert(new_note.note_bytes.clone());
+            }
+            existing.push(new_note.clone());
             continue;
         }
-        if !existing_nullifiers.contains(&new_note.nullifier_bytes) {
+
+        // Legacy / incomplete rows without a nullifier: fall back to note ciphertext bytes.
+        if !new_note.note_bytes.is_empty() {
+            if let Some(row) = existing
+                .iter_mut()
+                .find(|n| !n.note_bytes.is_empty() && n.note_bytes == new_note.note_bytes)
+            {
+                merge_note_scan_fields(row, new_note);
+                continue;
+            }
+            if existing_note_bytes.contains(&new_note.note_bytes) {
+                continue;
+            }
+            existing_note_bytes.insert(new_note.note_bytes.clone());
             existing.push(new_note.clone());
+            continue;
         }
+
+        // No nullifier and no note bytes — cannot safely identity-merge; keep the row.
+        existing.push(new_note.clone());
+    }
+}
+
+/// Nullifiers present in `scanned` but missing from `existing` after a merge (should be empty).
+#[cfg(feature = "native")]
+pub fn missing_scanned_nullifiers_after_merge(
+    existing: &[SerializableOrchardNote],
+    scanned: &[SerializableOrchardNote],
+) -> Vec<Vec<u8>> {
+    use std::collections::HashSet;
+
+    let have: HashSet<&[u8]> = existing
+        .iter()
+        .filter(|n| !n.nullifier_bytes.is_empty())
+        .map(|n| n.nullifier_bytes.as_slice())
+        .collect();
+
+    let mut missing = Vec::new();
+    let mut seen = HashSet::new();
+    for note in scanned {
+        if note.nullifier_bytes.is_empty() {
+            continue;
+        }
+        if !have.contains(note.nullifier_bytes.as_slice())
+            && seen.insert(note.nullifier_bytes.clone())
+        {
+            missing.push(note.nullifier_bytes.clone());
+        }
+    }
+    missing
+}
+
+/// Snapshot of note-cache hazards that historically hid ZEC (collapsed twins, empty ids).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NoteCacheIntegrity {
+    pub total_notes: usize,
+    pub unspent_notes: usize,
+    pub unspent_zatoshis: u64,
+    pub empty_nullifier_notes: usize,
+    pub duplicate_nullifier_groups: usize,
+    /// Groups of unspent notes that share (txid, height, value) with distinct nullifiers.
+    /// Count ≥ 2 is **healthy** for ZIP 318; the bug was dropping these to 1.
+    pub equal_value_unspent_groups: usize,
+    pub equal_value_unspent_extra_notes: usize,
+}
+
+#[cfg(feature = "native")]
+pub fn note_cache_integrity(notes: &[SerializableOrchardNote]) -> NoteCacheIntegrity {
+    use std::collections::{HashMap, HashSet};
+
+    let unspent: Vec<&SerializableOrchardNote> = notes.iter().filter(|n| !n.spent).collect();
+    let unspent_zatoshis = unspent.iter().map(|n| n.value).sum();
+
+    let empty_nullifier_notes = notes
+        .iter()
+        .filter(|n| n.nullifier_bytes.is_empty())
+        .count();
+
+    let mut by_nf: HashMap<&[u8], usize> = HashMap::new();
+    for note in notes {
+        if note.nullifier_bytes.is_empty() {
+            continue;
+        }
+        *by_nf.entry(note.nullifier_bytes.as_slice()).or_insert(0) += 1;
+    }
+    let duplicate_nullifier_groups = by_nf.values().filter(|&&c| c > 1).count();
+
+    let mut by_value_key: HashMap<(String, u32, u64), HashSet<Vec<u8>>> = HashMap::new();
+    for note in &unspent {
+        if note.nullifier_bytes.is_empty() {
+            continue;
+        }
+        by_value_key
+            .entry((note.txid.clone(), note.block_height, note.value))
+            .or_default()
+            .insert(note.nullifier_bytes.clone());
+    }
+    let mut equal_value_unspent_groups = 0usize;
+    let mut equal_value_unspent_extra_notes = 0usize;
+    for nfs in by_value_key.values() {
+        if nfs.len() >= 2 {
+            equal_value_unspent_groups += 1;
+            equal_value_unspent_extra_notes += nfs.len() - 1;
+        }
+    }
+
+    NoteCacheIntegrity {
+        total_notes: notes.len(),
+        unspent_notes: unspent.len(),
+        unspent_zatoshis,
+        empty_nullifier_notes,
+        duplicate_nullifier_groups,
+        equal_value_unspent_groups,
+        equal_value_unspent_extra_notes,
+    }
+}
+
+#[cfg(feature = "native")]
+fn merge_note_scan_fields(
+    existing: &mut SerializableOrchardNote,
+    new_note: &SerializableOrchardNote,
+) {
+    existing.spent = existing.spent || new_note.spent;
+    if new_note.rho_bytes.is_some() {
+        existing.nullifier_bytes = new_note.nullifier_bytes.clone();
+        existing.rho_bytes = new_note.rho_bytes.clone();
+        existing.rseed_bytes = new_note.rseed_bytes.clone();
+    }
+    if new_note
+        .orchard_incremental_witness_hex
+        .as_ref()
+        .is_some_and(|w| !w.is_empty())
+    {
+        existing.orchard_incremental_witness_hex = new_note.orchard_incremental_witness_hex.clone();
+        existing.orchard_witness_tip_height = new_note.orchard_witness_tip_height;
+    }
+    if new_note
+        .ironwood_incremental_witness_hex
+        .as_ref()
+        .is_some_and(|w| !w.is_empty())
+    {
+        existing.ironwood_incremental_witness_hex =
+            new_note.ironwood_incremental_witness_hex.clone();
+        existing.ironwood_witness_tip_height = new_note.ironwood_witness_tip_height;
+    }
+    if existing.spent_in_txid.is_none() {
+        existing.spent_in_txid = new_note.spent_in_txid.clone();
     }
 }
 

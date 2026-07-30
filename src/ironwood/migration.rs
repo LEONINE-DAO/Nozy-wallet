@@ -27,7 +27,9 @@ use std::fs;
 use std::path::PathBuf;
 use zcash_primitives::transaction::builder::{BuildConfig, Builder};
 use zcash_primitives::transaction::fees::{transparent::InputSize, FeeRule};
-use zcash_protocol::consensus::{BlockHeight, MainNetwork, NetworkType, Parameters, TestNetwork};
+use zcash_protocol::consensus::{BlockHeight, NetworkType, Parameters, TestNetwork};
+
+use super::IronwoodAwareMainNetwork;
 use zcash_protocol::memo::MemoBytes;
 use zcash_protocol::value::Zatoshis;
 
@@ -1223,7 +1225,7 @@ async fn build_migration_transaction_for_transfer(
     }
 
     let pczt = match network {
-        NetworkType::Main => build_pczt_for_network!(MainNetwork)?,
+        NetworkType::Main => build_pczt_for_network!(IronwoodAwareMainNetwork)?,
         NetworkType::Test | NetworkType::Regtest => build_pczt_for_network!(TestNetwork)?,
     };
 
@@ -1913,7 +1915,7 @@ async fn build_orchard_split_transaction(
     }
 
     let pczt = match network {
-        NetworkType::Main => build_split_pczt!(MainNetwork),
+        NetworkType::Main => build_split_pczt!(IronwoodAwareMainNetwork),
         NetworkType::Test | NetworkType::Regtest => build_split_pczt!(TestNetwork),
     };
 

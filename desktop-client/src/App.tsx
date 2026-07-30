@@ -40,8 +40,8 @@ function AppToaster() {
         },
         success: {
           iconTheme: {
-            primary: "#d4af37",
-            secondary: "white",
+            primary: "#c8ccd4",
+            secondary: "#0c0b09",
           },
         },
       }}

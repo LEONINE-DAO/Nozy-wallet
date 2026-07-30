@@ -518,6 +518,24 @@ pub async fn sync_wallet_notes(
         })?;
     let mut cached_notes = notes_before;
     merge_scanned_notes(&mut cached_notes, &scan_result.notes);
+    let missing_nfs =
+        crate::notes::missing_scanned_nullifiers_after_merge(&cached_notes, &scan_result.notes);
+    if !missing_nfs.is_empty() {
+        return Err(WalletSyncError::with_range(
+            WalletSyncPhase::Persist,
+            NozyError::Storage(format!(
+                "sync merge dropped {} scanned note nullifier(s); refusing to persist a \
+                 under-counted cache (ZIP 318 equal-value twins must all be kept). \
+                 Re-run with a current nozy binary: `nozy sync --start-height {} --to-tip`.",
+                missing_nfs.len(),
+                range.scan_start
+            )),
+            None,
+            scan_start,
+            scan_end,
+            chain_tip_opt,
+        ));
+    }
     if cached_notes.is_empty() && total_before > 0 {
         return Err(WalletSyncError::with_range(
             WalletSyncPhase::Persist,
@@ -977,6 +995,112 @@ mod tests {
         merge_scanned_notes(&mut cached, &scanned);
         assert_eq!(cached.len(), 1);
         assert_eq!(cached[0].value, 250_000);
+    }
+
+    #[test]
+    fn merge_keeps_equal_value_zip318_twin_notes() {
+        use crate::notes::{merge_scanned_notes, SerializableOrchardNote};
+
+        fn note(nf: u8, value: u64) -> SerializableOrchardNote {
+            SerializableOrchardNote {
+                note_bytes: vec![nf],
+                value,
+                address_bytes: vec![0; 43],
+                nullifier_bytes: vec![nf; 32],
+                block_height: 3_428_651,
+                txid: "9b3b2f81".to_string(),
+                spent: false,
+                memo: vec![],
+                orchard_incremental_witness_hex: None,
+                orchard_witness_tip_height: None,
+                ironwood_incremental_witness_hex: None,
+                ironwood_witness_tip_height: None,
+                rho_bytes: Some(vec![nf; 32]),
+                rseed_bytes: None,
+                spent_in_txid: None,
+                pool: crate::shielded_pool::ShieldedPool::Orchard,
+            }
+        }
+
+        let mut cached = vec![note(1, 2_000_000)];
+        merge_scanned_notes(
+            &mut cached,
+            &[note(1, 2_000_000), note(2, 2_000_000), note(3, 480_000)],
+        );
+        assert_eq!(cached.len(), 3, "equal-value twins must both be kept");
+        let values: Vec<u64> = cached.iter().map(|n| n.value).collect();
+        assert_eq!(values.iter().filter(|&&v| v == 2_000_000).count(), 2);
+        assert_eq!(values.iter().filter(|&&v| v == 480_000).count(), 1);
+        let nullifiers: std::collections::HashSet<_> =
+            cached.iter().map(|n| n.nullifier_bytes.clone()).collect();
+        assert_eq!(nullifiers.len(), 3);
+    }
+
+    #[test]
+    fn merge_refuses_to_drop_scanned_nullifiers() {
+        use crate::notes::{
+            merge_scanned_notes, missing_scanned_nullifiers_after_merge, SerializableOrchardNote,
+        };
+
+        fn note(nf: u8, value: u64) -> SerializableOrchardNote {
+            SerializableOrchardNote {
+                note_bytes: vec![nf],
+                value,
+                address_bytes: vec![0; 43],
+                nullifier_bytes: vec![nf; 32],
+                block_height: 3_428_651,
+                txid: "9b3b2f81".to_string(),
+                spent: false,
+                memo: vec![],
+                orchard_incremental_witness_hex: None,
+                orchard_witness_tip_height: None,
+                ironwood_incremental_witness_hex: None,
+                ironwood_witness_tip_height: None,
+                rho_bytes: Some(vec![nf; 32]),
+                rseed_bytes: None,
+                spent_in_txid: None,
+                pool: crate::shielded_pool::ShieldedPool::Orchard,
+            }
+        }
+
+        let scanned = vec![note(1, 2_000_000), note(2, 2_000_000)];
+        let mut cached = Vec::new();
+        merge_scanned_notes(&mut cached, &scanned);
+        assert!(missing_scanned_nullifiers_after_merge(&cached, &scanned).is_empty());
+        assert_eq!(cached.len(), 2);
+    }
+
+    #[test]
+    fn note_cache_integrity_counts_equal_value_twins() {
+        use crate::notes::{note_cache_integrity, SerializableOrchardNote};
+
+        fn note(nf: u8, value: u64) -> SerializableOrchardNote {
+            SerializableOrchardNote {
+                note_bytes: vec![nf],
+                value,
+                address_bytes: vec![0; 43],
+                nullifier_bytes: vec![nf; 32],
+                block_height: 1,
+                txid: "abc".to_string(),
+                spent: false,
+                memo: vec![],
+                orchard_incremental_witness_hex: None,
+                orchard_witness_tip_height: None,
+                ironwood_incremental_witness_hex: None,
+                ironwood_witness_tip_height: None,
+                rho_bytes: None,
+                rseed_bytes: None,
+                spent_in_txid: None,
+                pool: crate::shielded_pool::ShieldedPool::Orchard,
+            }
+        }
+
+        let notes = vec![note(1, 100), note(2, 100), note(3, 50)];
+        let report = note_cache_integrity(&notes);
+        assert_eq!(report.equal_value_unspent_groups, 1);
+        assert_eq!(report.equal_value_unspent_extra_notes, 1);
+        assert_eq!(report.unspent_zatoshis, 250);
+        assert_eq!(report.duplicate_nullifier_groups, 0);
     }
 
     #[test]

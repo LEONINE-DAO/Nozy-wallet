@@ -1,7 +1,7 @@
-# Generate Tauri desktop icons from the canonical NozyWallet logo.
-# Source: landing/src/assets/logo.png (yellow zebra + "Nozy wallet")
+# Generate Tauri desktop icons from the canonical NozyWallet mark.
+# Default: landing logo-mark-clean (same mark as nozywallet.com BrandLogo).
 param(
-    [string]$LogoPath = (Join-Path $PSScriptRoot "..\landing\src\assets\logo.png"),
+    [string]$LogoPath = (Join-Path $PSScriptRoot "..\landing\src\assets\logo-mark-clean.png"),
     [string]$IconsDir = (Join-Path $PSScriptRoot "..\desktop-client\src-tauri\icons"),
     [string]$PublicLogo = (Join-Path $PSScriptRoot "..\desktop-client\public\logo.png"),
     [string]$AssetsLogo = (Join-Path $PSScriptRoot "..\assets\logo.png"),
@@ -18,7 +18,11 @@ New-Item -ItemType Directory -Force -Path (Split-Path $PublicLogo) | Out-Null
 New-Item -ItemType Directory -Force -Path (Split-Path $AssetsLogo) | Out-Null
 
 Copy-Item $LogoPath $PublicLogo -Force
-Copy-Item $LogoPath $AssetsLogo -Force
+try {
+    Copy-Item $LogoPath $AssetsLogo -Force
+} catch {
+    Write-Warning "Could not update $AssetsLogo (file in use): $_"
+}
 
 $logoResolved = (Resolve-Path $LogoPath).Path
 Push-Location $DesktopClient
