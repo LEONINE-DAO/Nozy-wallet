@@ -541,11 +541,19 @@ pub fn validate_orchard_migration_schedule(
         .iter()
         .map(|transfer| transfer.value_zat)
         .sum();
-    if scheduled_total != schedule.total_zatoshis {
-        errors.push(format!(
-            "Scheduled transfer total {} zat does not match schedule total {} zat",
-            scheduled_total, schedule.total_zatoshis
-        ));
+    // Zooko `{1,2,5}×10^k` may abandon residuals below 0.001 ZEC; transfer sum can
+    // therefore be strictly less than wallet Orchard total without being invalid.
+    match schedule.total_zatoshis.checked_sub(scheduled_total) {
+        Some(residual) if residual < ZOOKO_RESIDUAL_ABANDON_ZAT => {}
+        Some(residual) => errors.push(format!(
+            "Scheduled transfer total {scheduled_total} zat leaves residual {residual} zat \
+             (>= abandon threshold {ZOOKO_RESIDUAL_ABANDON_ZAT}); schedule total is {}",
+            schedule.total_zatoshis
+        )),
+        None => errors.push(format!(
+            "Scheduled transfer total {scheduled_total} zat exceeds schedule total {} zat",
+            schedule.total_zatoshis
+        )),
     }
     if transfer_count_by_value(&schedule.transfers)
         != denomination_count_by_value(&plan.zip318.denomination_transfers)
@@ -2175,6 +2183,47 @@ mod tests {
         assert!(validation.valid, "{:?}", validation.errors);
         assert_eq!(validation.expired_transfer_count, 2);
         assert_eq!(validation.stale_presigned_count, 1);
+    }
+
+    #[test]
+    fn schedule_validation_allows_zooko_abandoned_residual() {
+        // 0.0227 ZEC → 0.02 + 0.002 canonical; 0.0007 ZEC residual abandoned.
+        let total_zatoshis = 2_270_000u64;
+        let denomination_transfers = canonical_denominations(total_zatoshis);
+        let scheduled_transfers =
+            schedule_canonical_transfers(&denomination_transfers, 3_429_981, ZIP318_DEFAULT_K_MAX);
+        let scheduled_total: u64 = scheduled_transfers.iter().map(|t| t.value_zat).sum();
+        assert_eq!(scheduled_total, 2_200_000);
+
+        let plan = MigrationPlanSummary {
+            orchard_notes_to_migrate: 1,
+            total_zatoshis,
+            transfers: vec![MigrationTransfer {
+                nullifier_hex: "cc".repeat(32),
+                value_zat: total_zatoshis,
+                block_height: 100,
+                txid: "tx-residual".to_string(),
+            }],
+            ironwood_active: true,
+            zip318: Zip318ScheduleSummary {
+                note_split_required: false,
+                anchor_bucket_interval_blocks: ZIP318_ANCHOR_BUCKET_INTERVAL_BLOCKS,
+                k_max: ZIP318_DEFAULT_K_MAX,
+                denomination_transfers,
+                total_transfer_count: scheduled_transfers.len() as u32,
+                next_anchor_bucket_height: scheduled_transfers
+                    .first()
+                    .map(|transfer| transfer.anchor_bucket_height),
+                scheduled_transfers,
+            },
+        };
+        let schedule = build_schedule_from_plan(&plan, 3_429_981);
+        let validation = validate_orchard_migration_schedule(&schedule, &plan, 3_429_981);
+        assert!(
+            validation.valid,
+            "expected valid schedule with abandoned residual; errors: {:?}",
+            validation.errors
+        );
     }
 
     #[test]

@@ -11,6 +11,24 @@
 
 - **Desktop co-signing:** file-based group co-sign UI deferred; Keystone is the supported hardware path for this beta.
 
+## [2.4.2] — Nozy Lite (CLI) (2026-07-30)
+
+Ironwood (NU6.3) mainnet + Nym × Zcash network-privacy hygiene in official CLI binaries.
+
+### Added
+
+- **Nym × Ironwood network privacy (PR #178):** baseline hygiene (start-height obfuscation, migrate-broadcast delay, tip-sync decorrelation); opt-in mixnet broadcast / dVPN sync spikes; desktop Settings → Network privacy. Case A1 local/LAN Zebrad stays direct.
+- **Ironwood mainnet readiness:** plan / preflight / migrate / broadcast path for Orchard → Ironwood turnstile after NU6.3 activation.
+
+### Fixed
+
+- **ZIP 318 schedule validation:** allow Zooko `{1,2,5}×10^k` abandoned residual below 0.001 ZEC so `ironwood migrate` is not blocked when transfer sum is intentionally less than Orchard total.
+
+### Notes
+
+- **CLI remains the production surface.** Desktop / extension / mobile stay beta or in-progress; do not claim store publication or a third-party audit.
+- Nym helpers remain **opt-in** — not a marketed “full Nym integration” claim.
+
 ## [2.4.1.1] — Nozy Lite (CLI) (2026-07-11)
 
 Patch on **v2.4.1**. Crate SemVer remains **2.4.1**; `nozy --version` reports **2.4.1.1 (Nozy Lite (CLI))**.
