@@ -2190,11 +2190,8 @@ mod tests {
         // 0.0227 ZEC → 0.02 + 0.002 canonical; 0.0007 ZEC residual abandoned.
         let total_zatoshis = 2_270_000u64;
         let denomination_transfers = canonical_denominations(total_zatoshis);
-        let scheduled_transfers = schedule_canonical_transfers(
-            &denomination_transfers,
-            3_429_981,
-            ZIP318_DEFAULT_K_MAX,
-        );
+        let scheduled_transfers =
+            schedule_canonical_transfers(&denomination_transfers, 3_429_981, ZIP318_DEFAULT_K_MAX);
         let scheduled_total: u64 = scheduled_transfers.iter().map(|t| t.value_zat).sum();
         assert_eq!(scheduled_total, 2_200_000);
 
