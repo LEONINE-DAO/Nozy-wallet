@@ -11,9 +11,10 @@
 
 - **Desktop co-signing:** file-based group co-sign UI deferred; Keystone is the supported hardware path for this beta.
 
-## [2.4.2] — Nozy Lite (CLI) (2026-07-30)
+## [2.4.2] — Teriyaki Hot (CLI) (2026-07-30)
 
-Ironwood (NU6.3) mainnet + Nym × Zcash network-privacy hygiene in official CLI binaries.
+Ironwood (NU6.3) mainnet + Nym × Zcash network-privacy hygiene in official CLI binaries.  
+`nozy --version` reports **2.4.2 (Teriyaki Hot (CLI))** (Nozy Lite ops surface).
 
 ### Added
 
