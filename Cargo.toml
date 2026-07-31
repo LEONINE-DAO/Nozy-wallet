@@ -178,7 +178,7 @@ wasm = ["getrandom/js"]
 secret-network = ["dep:cosmrs", "dep:tendermint"]
 
 [workspace]
-members = ["zeaking", "api-server", "zeaking-ffi"]
+members = ["zeaking", "api-server", "zeaking-ffi", "nozy-ffi"]
 exclude = [
     "desktop-client/src-tauri",
     "browser-extension/wasm-core",
