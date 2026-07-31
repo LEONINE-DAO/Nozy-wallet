@@ -43,6 +43,29 @@ export function HomePage({ onNavigate }: HomePageProps) {
   const [copied, setCopied] = useState(false);
   const [fiatRate, setFiatRate] = useState<number | null>(null);
   const [ironwoodNotice, setIronwoodNotice] = useState<string | null>(null);
+  const [legacyStatus, setLegacyStatus] = useState<{
+    unspent_zec: number;
+    fee_zec: number;
+    message: string;
+  } | null>(null);
+  const [legacyBusy, setLegacyBusy] = useState(false);
+
+  const refreshLegacyStatus = async () => {
+    try {
+      const res = await walletApi.getSaplingStatus();
+      if (res.data.has_legacy_balance) {
+        setLegacyStatus({
+          unspent_zec: res.data.unspent_zec,
+          fee_zec: res.data.fee_zec,
+          message: res.data.message,
+        });
+      } else {
+        setLegacyStatus(null);
+      }
+    } catch {
+      setLegacyStatus(null);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -64,6 +87,32 @@ export function HomePage({ onNavigate }: HomePageProps) {
     };
   }, []);
 
+  useEffect(() => {
+    void refreshLegacyStatus();
+  }, []);
+
+  const handleMoveLegacy = async () => {
+    if (legacyBusy) return;
+    setLegacyBusy(true);
+    const toastId = toast.loading("Moving legacy funds into shielded balance…");
+    try {
+      await walletApi.scanSapling({ full: false });
+      const res = await walletApi.shieldSapling({});
+      toast.success(res.data.message, { id: toastId });
+      await refreshLegacyStatus();
+      try {
+        const bal = await walletApi.getBalance();
+        useWalletStore.getState().setBalance(bal.data.balance);
+      } catch {
+        /* balance refresh best-effort */
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg || "Could not move legacy funds", { id: toastId });
+    } finally {
+      setLegacyBusy(false);
+    }
+  };
   useEffect(() => {
     if (!useLiveFiatPrice && customFiatPerZec != null) {
       setFiatRate(customFiatPerZec);
@@ -131,6 +180,27 @@ export function HomePage({ onNavigate }: HomePageProps) {
                   onClick={() => onNavigate("ironwood")}
                 >
                   Open Ironwood
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {legacyStatus && (
+            <div className="rounded-2xl border border-emerald-300/80 dark:border-emerald-700/50 bg-emerald-50/90 dark:bg-emerald-950/30 px-4 py-3 text-sm text-emerald-950 dark:text-emerald-100">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <p className="leading-6">
+                  <span className="font-semibold">Legacy funds: </span>
+                  {showBalance
+                    ? `${legacyStatus.unspent_zec.toFixed(8)} ZEC available to move into your shielded balance (fee ~${legacyStatus.fee_zec.toFixed(8)} ZEC).`
+                    : "Funds available to move into your shielded balance."}
+                </p>
+                <Button
+                  variant="outline"
+                  className="shrink-0"
+                  disabled={legacyBusy}
+                  onClick={() => void handleMoveLegacy()}
+                >
+                  {legacyBusy ? "Moving…" : "Move to shielded"}
                 </Button>
               </div>
             </div>

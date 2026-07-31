@@ -180,6 +180,11 @@ pub async fn lwd_sync_compact_to_tip(
     let stats = zeaking::lwd::sync_compact_to_tip_with_options(&mut client, &store, tip_opts)
         .await
         .map_err(zeaking_err)?;
+    // Quiet legacy scan when the desktop session is already unlocked (match CLI).
+    if let Ok(wallet) = crate::session::load_session_wallet(None).await {
+        let seed = wallet.get_mnemonic_object().to_seed("");
+        let _ = nozy::scan_sapling_wallet_from_compact_store(&seed, &store, None, false);
+    }
     Ok(LwdSyncToTipResponse {
         chain_tip: stats.chain_tip,
         already_at_tip: stats.already_at_tip,
