@@ -37,6 +37,11 @@ import {
   IronwoodSplitResponse,
   IronwoodBroadcastRequest,
   IronwoodBroadcastResponse,
+  SaplingStatusResponse,
+  SaplingScanRequest,
+  SaplingScanResponse,
+  SaplingShieldRequest,
+  SaplingShieldResponse,
   PrepareCosignRequest,
   PrepareCosignResponse,
   SignCosignRequest,
@@ -179,6 +184,25 @@ export const walletApi = {
     request: IronwoodBroadcastRequest = {}
   ): Promise<{ data: IronwoodBroadcastResponse }> => {
     const result = await invoke<IronwoodBroadcastResponse>("ironwood_broadcast", { request });
+    return { data: result };
+  },
+
+  getSaplingStatus: async (): Promise<{ data: SaplingStatusResponse }> => {
+    const result = await invoke<SaplingStatusResponse>("get_sapling_status");
+    return { data: result };
+  },
+
+  scanSapling: async (
+    request: SaplingScanRequest = {}
+  ): Promise<{ data: SaplingScanResponse }> => {
+    const result = await invoke<SaplingScanResponse>("scan_sapling", { request });
+    return { data: result };
+  },
+
+  shieldSapling: async (
+    request: SaplingShieldRequest = {}
+  ): Promise<{ data: SaplingShieldResponse }> => {
+    const result = await invoke<SaplingShieldResponse>("shield_sapling", { request });
     return { data: result };
   },
 
