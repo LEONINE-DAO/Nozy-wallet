@@ -319,6 +319,14 @@ pub enum Commands {
         command: LwdCommand,
     },
 
+    #[command(
+        about = "Quiet Sapling legacy helpers (address / status / shield-to-Orchard when ready)"
+    )]
+    Sapling {
+        #[command(subcommand)]
+        command: SaplingCommand,
+    },
+
     #[command(about = "Manage saved addresses in your address book")]
     AddressBook {
         #[command(subcommand)]
@@ -510,6 +518,26 @@ pub enum LwdCommand {
             help = "Rescan from the start of the compact cache (ignore progress)"
         )]
         full: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SaplingCommand {
+    #[command(
+        about = "Print this wallet's Sapling payment address (zs1… / ztestsapling…) for legacy inbound tests"
+    )]
+    Address,
+    #[command(about = "Show Sapling note / rseed readiness (Phase 4 spend prep)")]
+    Status,
+    #[command(
+        about = "Shield Sapling notes into Orchard (Phase 4 — requires witnesses; not ready yet)"
+    )]
+    Shield {
+        #[arg(
+            long,
+            help = "Report what would be shielded without building a transaction"
+        )]
+        dry_run: bool,
     },
 }
 
@@ -2369,6 +2397,63 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         bal as f64 / 100_000_000.0,
                         notes.iter().filter(|n| !n.spent).count()
                     );
+                }
+            }
+        }
+
+        Commands::Sapling { command } => {
+            let (wallet, _) = load_wallet().await?;
+            let network = if config.network.eq_ignore_ascii_case("testnet") {
+                zcash_protocol::consensus::NetworkType::Test
+            } else {
+                zcash_protocol::consensus::NetworkType::Main
+            };
+            match command {
+                SaplingCommand::Address => {
+                    let addr = wallet.generate_sapling_payment_address(0, 0, network)?;
+                    println!("{addr}");
+                    println!("\n💡 Legacy Sapling deposit address (quiet compatibility).");
+                    println!("   Prefer your unified receive address for normal deposits.");
+                    println!("   After a Sapling deposit confirms:");
+                    println!("     nozy lwd sync-to-tip");
+                    println!("     nozy lwd scan-sapling --full");
+                    println!("     nozy sapling status");
+                }
+                SaplingCommand::Status => {
+                    let notes = nozy::load_sapling_notes().unwrap_or_default();
+                    let unspent: Vec<_> = notes.iter().filter(|n| !n.spent).collect();
+                    let with_rseed = unspent
+                        .iter()
+                        .filter(|n| nozy::sapling_note_has_rseed(n))
+                        .count();
+                    let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
+                    println!("Sapling legacy status");
+                    println!("   Unspent notes: {}", unspent.len());
+                    println!("   With rseed (reconstructible): {with_rseed}");
+                    println!("   Unspent: {:.8} ZEC", bal as f64 / 100_000_000.0);
+                    println!("   Witnesses: not built yet (Phase 4 follow-up)");
+                    println!("   Shield: not ready until Sapling Merkle witnesses exist");
+                }
+                SaplingCommand::Shield { dry_run } => {
+                    let notes = nozy::load_sapling_notes().unwrap_or_default();
+                    let candidates: Vec<_> = notes
+                        .iter()
+                        .filter(|n| !n.spent && nozy::sapling_note_has_rseed(n))
+                        .collect();
+                    let total: u64 = candidates.iter().map(|n| n.value).sum();
+                    if dry_run {
+                        println!(
+                            "Dry run: {} reconstructible Sapling note(s), {:.8} ZEC",
+                            candidates.len(),
+                            total as f64 / 100_000_000.0
+                        );
+                    }
+                    return Err(NozyError::InvalidOperation(
+                        "Sapling shield-to-Orchard is not ready yet: notes need Sapling Merkle \
+                         witnesses (Zebra JSON-RPC path) and Groth16 proving params. \
+                         rseed persistence + `nozy sapling status` are in place; spend lands next."
+                            .into(),
+                    ));
                 }
             }
         }

@@ -251,9 +251,10 @@ pub use sapling_keys::{
 };
 #[cfg(feature = "native")]
 pub use sapling_scan::{
-    load_sapling_notes, load_sapling_scan_progress, sapling_unspent_balance_zatoshis,
-    save_sapling_notes, scan_sapling_wallet_from_compact_store, SaplingScanProgress,
-    SaplingScanStats, SerializableSaplingNote, SAPLING_NOTES_FILE,
+    load_sapling_notes, load_sapling_scan_progress, reconstruct_sapling_note,
+    sapling_note_has_rseed, sapling_unspent_balance_zatoshis, save_sapling_notes,
+    scan_sapling_wallet_from_compact_store, SaplingScanProgress, SaplingScanStats,
+    SerializableSaplingNote, SAPLING_NOTES_FILE,
 };
 #[cfg(feature = "secret-network")]
 pub use secret::{
