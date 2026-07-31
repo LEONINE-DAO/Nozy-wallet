@@ -88,6 +88,8 @@ pub mod proving;
 #[cfg(feature = "native")]
 pub mod rpc_test;
 #[cfg(feature = "native")]
+pub mod sapling_keys;
+#[cfg(feature = "native")]
 pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
@@ -240,6 +242,11 @@ pub use paths::{
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;
+#[cfg(feature = "native")]
+pub use sapling_keys::{
+    derive_sapling_account_keys, derive_sapling_extsk, encode_sapling_payment_address,
+    SaplingAccountKeys, NOZY_ZIP32_COIN_TYPE,
+};
 #[cfg(feature = "secret-network")]
 pub use secret::{
     SecretRpcClient, SecretTransactionRecord, SecretTransactionStatus, SecretTransactionStorage,
