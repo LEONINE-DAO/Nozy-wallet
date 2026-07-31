@@ -91,8 +91,10 @@ mod tests {
         let cmu: Vec<u8> = (1u8..33).collect();
         let epk: Vec<u8> = (2u8..34).collect();
         let nf: Vec<u8> = (3u8..35).collect();
-        let mut tx = CompactTx::default();
-        tx.hash = vec![9u8; 32];
+        let mut tx = CompactTx {
+            hash: vec![9u8; 32],
+            ..Default::default()
+        };
         tx.spends.push(CompactSaplingSpend { nf: nf.clone() });
         tx.outputs.push(CompactSaplingOutput {
             cmu: cmu.clone(),
