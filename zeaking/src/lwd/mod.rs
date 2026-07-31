@@ -9,6 +9,7 @@ pub mod proto {
 mod block_source;
 mod client;
 mod compact_orchard;
+mod compact_sapling;
 mod store;
 mod sync;
 
@@ -17,6 +18,10 @@ pub use client::{
     connect_lightwalletd, connect_lightwalletd_with_connector, normalize_lwd_uri, LwdClient,
 };
 pub use compact_orchard::orchard_cmx_bytes_from_compact_block;
+pub use compact_sapling::{
+    sapling_slice_from_compact_block, SaplingCompactBlockSlice, SaplingCompactOutputBytes,
+    SaplingCompactTxSlice,
+};
 pub use store::LwdCompactStore;
 pub use sync::{
     chain_tip_height, compact_sync_progress_height, prune_stale_compact_cache,

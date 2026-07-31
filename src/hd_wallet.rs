@@ -137,7 +137,8 @@ impl HDWallet {
         let orchard_address: OrchardAddress =
             orchard_fvk.address_at(diversifier_index, Scope::External);
 
-        self.create_unified_address(orchard_address, network)
+        let sapling_raw = self.sapling_receiver_bytes(secure_seed.as_bytes(), account)?;
+        self.create_unified_address(orchard_address, sapling_raw.as_ref(), network)
     }
 
     pub fn generate_multiple_addresses(
@@ -161,27 +162,50 @@ impl HDWallet {
             })?;
 
         let orchard_fvk = FullViewingKey::from(&orchard_sk);
+        let sapling_raw = self.sapling_receiver_bytes(secure_seed.as_bytes(), account)?;
 
         for i in 0..count {
             let diversifier_index = DiversifierIndex::from(start_index + i);
             let orchard_address: OrchardAddress =
                 orchard_fvk.address_at(diversifier_index, Scope::External);
-            let unified_address = self.create_unified_address(orchard_address, network)?;
+            let unified_address =
+                self.create_unified_address(orchard_address, sapling_raw.as_ref(), network)?;
             addresses.push(unified_address);
         }
 
         Ok(addresses)
     }
 
+    /// Account-default Sapling payment address bytes for UA receivers (Phase 3).
+    ///
+    /// Uses the first valid ZIP-32 diversifier at/after index 0 for `account`. Native
+    /// builds only — non-native stays Orchard-only.
+    #[cfg(feature = "native")]
+    fn sapling_receiver_bytes(&self, seed: &[u8], account: u32) -> NozyResult<Option<[u8; 43]>> {
+        let keys = crate::sapling_keys::derive_sapling_account_keys(seed, account, 0)?;
+        Ok(Some(keys.payment_address.to_bytes()))
+    }
+
+    #[cfg(not(feature = "native"))]
+    fn sapling_receiver_bytes(&self, _seed: &[u8], _account: u32) -> NozyResult<Option<[u8; 43]>> {
+        Ok(None)
+    }
+
     fn create_unified_address(
         &self,
         orchard_address: OrchardAddress,
+        sapling_payment_address: Option<&[u8; 43]>,
         network: NetworkType,
     ) -> NozyResult<String> {
-        // Orchard-only unified addresses (ZIP-316 single receiver).
+        // Phase 3: Orchard + Sapling unified addresses (ZIP-316). Sapling is quiet
+        // legacy compatibility so older wallets can pay this UA; scan (Phase 2) can
+        // show those deposits. Prefer Orchard when sending.
         let orchard_raw = orchard_address.to_raw_address_bytes();
-        let orchard_receiver = Receiver::Orchard(orchard_raw);
-        let ua = UnifiedAddress::try_from_items(vec![orchard_receiver]).map_err(|e| {
+        let mut items = vec![Receiver::Orchard(orchard_raw)];
+        if let Some(sapling_raw) = sapling_payment_address {
+            items.push(Receiver::Sapling(*sapling_raw));
+        }
+        let ua = UnifiedAddress::try_from_items(items).map_err(|e| {
             NozyError::InvalidOperation(format!("Failed to create Unified Address: {:?}", e))
         })?;
         Ok(ua.encode(&network))
