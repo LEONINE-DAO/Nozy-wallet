@@ -14,12 +14,16 @@ The MV3 extension does **not** embed `zeaking`, gRPC, or SQLite. For **lightwall
 ## Localhost HTTP (recommended)
 
 1. Run **`nozywallet-api`** from the Nozy-wallet repo (default bind: `http://127.0.0.1:3000`). Set `LIGHTWALLETD_GRPC` if lightwalletd is not on `http://127.0.0.1:9067`.
+   - **Windows + WSL footgun:** if lightwalletd listens inside WSL, `127.0.0.1:9067` on the Windows host will not reach it. Point `LIGHTWALLETD_GRPC` at the WSL IP (e.g. `http://172.x.x.x:9067`).
 2. The extension calls:
    - `GET /health`
    - `GET /api/lwd/info`
    - `GET /api/lwd/chain-tip`
    - `POST /api/lwd/sync/compact`
    - `POST /api/lwd/sync/compact-to-tip`
+   - `GET /api/sapling/status` — quiet legacy balance (companion wallet data dir)
+   - `POST /api/sapling/scan` — scan compact cache for legacy notes
+   - `POST /api/sapling/shield` — move legacy notes into Orchard/Ironwood (not in wasm-core)
 3. **Manifest**: `host_permissions` includes `http://127.0.0.1:3000/*` (and broader patterns as needed). This works in **Google Chrome** and **Microsoft Edge** (Chromium).
 
 ### Service worker API
@@ -33,8 +37,13 @@ Messages to the background (`NOZY_REQUEST`):
 | `companion_lwd_chain_tip` | `{ baseUrl?, lightwalletd_url? }` | Tip height via companion |
 | `companion_lwd_sync_compact` | `{ baseUrl?, start, end?, lightwalletd_url?, db_path?, resume? }` | Sync on **desktop** DB |
 | `companion_lwd_sync_compact_to_tip` | `{ baseUrl?, lightwalletd_url?, db_path?, start_floor?, persist_progress_every? }` | Sync from next missing height through tip |
+| `companion_sapling_status` | `{ baseUrl? }` | Quiet legacy unspent balance from companion notes |
+| `companion_sapling_scan` | `{ baseUrl?, password?, start_floor?, full? }` | Scan companion LWD compact for legacy notes |
+| `companion_sapling_shield` | `{ baseUrl?, password?, dry_run?, no_broadcast? }` | Move legacy funds into shielded Orchard (HTTP only; no wasm Groth16) |
 
 Default `baseUrl` is `http://127.0.0.1:3000`. Override per-call for non-default ports.
+
+The popup **API** tab shows a quiet “Legacy funds / Move to shielded” notice **only** when companion status reports unspent legacy balance &gt; 0 (shared nozy data dir via api-server — not the in-extension WASM wallet).
 
 ## Native messaging (optional)
 

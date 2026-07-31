@@ -34,6 +34,9 @@ import {
   companionLwdInfo,
   companionLwdSyncCompact,
   companionLwdSyncCompactToTip,
+  companionSaplingScan,
+  companionSaplingShield,
+  companionSaplingStatus,
   companionSpeedUpTransaction,
   companionStatus
 } from "./companion-api.js";
@@ -1814,6 +1817,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                   params.persist_progress_every !== null
                     ? Number(params.persist_progress_every)
                     : undefined
+              })
+            )
+          );
+          return;
+        case "companion_sapling_status":
+          sendResponse(ok(await companionSaplingStatus(params.baseUrl)));
+          return;
+        case "companion_sapling_scan":
+          sendResponse(
+            ok(
+              await companionSaplingScan(params.baseUrl, {
+                password: params.password,
+                start_floor: params.start_floor,
+                full: params.full === true
+              })
+            )
+          );
+          return;
+        case "companion_sapling_shield":
+          sendResponse(
+            ok(
+              await companionSaplingShield(params.baseUrl, {
+                password: params.password,
+                dry_run: params.dry_run === true,
+                no_broadcast: params.no_broadcast === true
               })
             )
           );
