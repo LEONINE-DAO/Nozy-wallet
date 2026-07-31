@@ -41,6 +41,12 @@ pub struct SerializableSaplingNote {
     /// Absent on notes scanned before this field existed — rescan to populate.
     #[serde(default)]
     pub rseed_bytes: Option<Vec<u8>>,
+    /// Serialized Sapling `IncrementalWitness` (hex). Built via LWD compact + Zebra treestate.
+    #[serde(default)]
+    pub sapling_incremental_witness_hex: Option<String>,
+    /// Chain tip height the witness was last advanced to.
+    #[serde(default)]
+    pub sapling_witness_tip_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -212,6 +218,8 @@ pub fn try_decrypt_sapling_compact_output(
         spent: false,
         spent_in_txid: None,
         rseed_bytes: rseed_bytes_from_note(&note),
+        sapling_incremental_witness_hex: None,
+        sapling_witness_tip_height: None,
     }))
 }
 
@@ -224,15 +232,29 @@ fn merge_discovered_note(
         .find(|n| n.nullifier_bytes == new_note.nullifier_bytes)
     {
         if !existing.spent {
-            // Prefer newer discovery; keep rseed if the new record somehow lacks it.
+            // Prefer newer discovery; keep rseed / witnesses if the new record somehow lacks them.
             let keep_rseed = new_note.rseed_bytes.is_none() && existing.rseed_bytes.is_some();
             let rseed = if keep_rseed {
                 existing.rseed_bytes.clone()
             } else {
                 new_note.rseed_bytes.clone()
             };
+            let keep_wit = new_note.sapling_incremental_witness_hex.is_none()
+                && existing.sapling_incremental_witness_hex.is_some();
+            let wit = if keep_wit {
+                existing.sapling_incremental_witness_hex.clone()
+            } else {
+                new_note.sapling_incremental_witness_hex.clone()
+            };
+            let wit_tip = if keep_wit {
+                existing.sapling_witness_tip_height
+            } else {
+                new_note.sapling_witness_tip_height
+            };
             *existing = new_note;
             existing.rseed_bytes = rseed;
+            existing.sapling_incremental_witness_hex = wit;
+            existing.sapling_witness_tip_height = wit_tip;
         }
         return;
     }
@@ -509,6 +531,8 @@ mod tests {
             spent: false,
             spent_in_txid: None,
             rseed_bytes: None,
+            sapling_incremental_witness_hex: None,
+            sapling_witness_tip_height: None,
         }];
         let mut set = HashSet::new();
         set.insert([9u8; 32]);

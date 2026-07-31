@@ -145,10 +145,7 @@ pub fn parse_z_gettreestate_pool(
 
     let (anchor, commitment_count) = if let Some(ref state) = final_state {
         let tree = crate::orchard_tree_codec::orchard_commitment_tree_from_final_state(state)?;
-        let root = tree.root();
-        let count = tree.size() as u64;
-        let anchor_bytes = root.to_bytes();
-        (anchor_bytes, count)
+        (tree.root().to_bytes(), tree.size() as u64)
     } else if let Some(a) = anchor_from_root {
         (a, 0)
     } else {
@@ -159,6 +156,94 @@ pub fn parse_z_gettreestate_pool(
 
     Ok(ShieldedTreestateParsed {
         pool,
+        height,
+        anchor,
+        commitment_count,
+        final_state,
+    })
+}
+
+/// Parse `z_gettreestate` JSON `result` into Sapling treestate fields.
+///
+/// Sapling `finalState` must not be decoded with the Orchard tree codec.
+pub fn parse_z_gettreestate_sapling(result: &Value) -> NozyResult<ShieldedTreestateParsed> {
+    let height = result
+        .get("height")
+        .and_then(|h| h.as_u64())
+        .ok_or_else(|| {
+            NozyError::InvalidOperation("z_gettreestate: missing or invalid height".to_string())
+        })? as u32;
+
+    let pool_id = "sapling";
+    let pool_value = result.get(pool_id).ok_or_else(|| {
+        NozyError::InvalidOperation(format!("z_gettreestate: missing {pool_id} field"))
+    })?;
+
+    let commitments = pool_value.get("commitments").unwrap_or(pool_value);
+    let null = Value::Null;
+    let final_state = first_hex_field([
+        (
+            commitments.get("finalState").unwrap_or(&null),
+            format!("{pool_id}.commitments.finalState"),
+        ),
+        (
+            commitments.get("final_state").unwrap_or(&null),
+            format!("{pool_id}.commitments.final_state"),
+        ),
+        (
+            pool_value.get("finalState").unwrap_or(&null),
+            format!("{pool_id}.finalState"),
+        ),
+        (
+            pool_value.get("final_state").unwrap_or(&null),
+            format!("{pool_id}.final_state"),
+        ),
+    ])?;
+
+    let anchor_from_root = first_hex_field([
+        (
+            commitments.get("finalRoot").unwrap_or(&null),
+            format!("{pool_id}.commitments.finalRoot"),
+        ),
+        (
+            commitments.get("final_root").unwrap_or(&null),
+            format!("{pool_id}.commitments.final_root"),
+        ),
+        (
+            commitments.get("root").unwrap_or(&null),
+            format!("{pool_id}.commitments.root"),
+        ),
+        (
+            pool_value.get("finalRoot").unwrap_or(&null),
+            format!("{pool_id}.finalRoot"),
+        ),
+        (
+            pool_value.get("final_root").unwrap_or(&null),
+            format!("{pool_id}.final_root"),
+        ),
+        (
+            pool_value.get("root").unwrap_or(&null),
+            format!("{pool_id}.root"),
+        ),
+    ])?
+    .filter(|b| !b.is_empty())
+    .map(|b| hex32_to_anchor(&b))
+    .transpose()?;
+
+    let (anchor, commitment_count) = if let Some(ref state) = final_state {
+        let tree = crate::sapling_tree_codec::sapling_commitment_tree_from_final_state(state)?;
+        (tree.root().to_bytes(), tree.size() as u64)
+    } else if let Some(a) = anchor_from_root {
+        (a, 0)
+    } else {
+        return Err(NozyError::InvalidOperation(format!(
+            "z_gettreestate: {pool_id} pool has neither finalState nor finalRoot"
+        )));
+    };
+
+    Ok(ShieldedTreestateParsed {
+        // Stored as Orchard for the shared parsed type; callers use dedicated Sapling APIs.
+        pool: ShieldedPool::Orchard,
         height,
         anchor,
         commitment_count,

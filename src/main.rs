@@ -530,7 +530,7 @@ pub enum SaplingCommand {
     #[command(about = "Show Sapling note / rseed readiness (Phase 4 spend prep)")]
     Status,
     #[command(
-        about = "Shield Sapling notes into Orchard (Phase 4 — requires witnesses; not ready yet)"
+        about = "Shield Sapling notes into Orchard/Ironwood (Phase 4 — LWD witnesses + Groth16)"
     )]
     Shield {
         #[arg(
@@ -538,6 +538,8 @@ pub enum SaplingCommand {
             help = "Report what would be shielded without building a transaction"
         )]
         dry_run: bool,
+        #[arg(long, help = "Build and prove but do not broadcast")]
+        no_broadcast: bool,
     },
 }
 
@@ -2426,16 +2428,42 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         .iter()
                         .filter(|n| nozy::sapling_note_has_rseed(n))
                         .count();
+                    let with_witness = unspent
+                        .iter()
+                        .filter(|n| nozy::sapling_note_ready_to_shield(n))
+                        .count();
                     let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
+                    let fee = nozy::sapling_shield_fee_zatoshis();
                     println!("Sapling legacy status");
                     println!("   Unspent notes: {}", unspent.len());
                     println!("   With rseed (reconstructible): {with_rseed}");
+                    println!("   Ready to shield (rseed + witness): {with_witness}");
                     println!("   Unspent: {:.8} ZEC", bal as f64 / 100_000_000.0);
-                    println!("   Witnesses: not built yet (Phase 4 follow-up)");
-                    println!("   Shield: not ready until Sapling Merkle witnesses exist");
+                    println!(
+                        "   Shield fee (estimate): {:.8} ZEC",
+                        fee as f64 / 100_000_000.0
+                    );
+                    if with_witness > 0 {
+                        println!("   Next: nozy sapling shield");
+                    } else if with_rseed > 0 {
+                        println!(
+                            "   Next: ensure LWD compact covers note heights, then \
+                             `nozy sapling shield` (builds witnesses via Zebra JSON-RPC)"
+                        );
+                    } else {
+                        println!("   Next: nozy lwd sync-to-tip && nozy lwd scan-sapling");
+                    }
                 }
-                SaplingCommand::Shield { dry_run } => {
-                    let notes = nozy::load_sapling_notes().unwrap_or_default();
+                SaplingCommand::Shield {
+                    dry_run,
+                    no_broadcast,
+                } => {
+                    use nozy::fee_policy::PilotSendOptions;
+                    use nozy::paths::get_wallet_data_dir;
+                    use nozy::sapling_keys::derive_sapling_account_keys;
+
+                    let mut notes = nozy::load_sapling_notes().unwrap_or_default();
+                    let fee = nozy::sapling_shield_fee_zatoshis();
                     let candidates: Vec<_> = notes
                         .iter()
                         .filter(|n| !n.spent && nozy::sapling_note_has_rseed(n))
@@ -2443,17 +2471,75 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     let total: u64 = candidates.iter().map(|n| n.value).sum();
                     if dry_run {
                         println!(
-                            "Dry run: {} reconstructible Sapling note(s), {:.8} ZEC",
+                            "Dry run: {} reconstructible Sapling note(s), {:.8} ZEC (fee ~{:.8})",
                             candidates.len(),
-                            total as f64 / 100_000_000.0
+                            total as f64 / 100_000_000.0,
+                            fee as f64 / 100_000_000.0
                         );
+                        return Ok(());
                     }
-                    return Err(NozyError::InvalidOperation(
-                        "Sapling shield-to-Orchard is not ready yet: notes need Sapling Merkle \
-                         witnesses (Zebra JSON-RPC path) and Groth16 proving params. \
-                         rseed persistence + `nozy sapling status` are in place; spend lands next."
-                            .into(),
-                    ));
+                    if candidates.is_empty() {
+                        return Err(NozyError::InvalidOperation(
+                            "No reconstructible Sapling notes — run `nozy lwd scan-sapling` after a deposit"
+                                .into(),
+                        ));
+                    }
+
+                    let db_path = get_wallet_data_dir().join("lwd_compact.sqlite");
+                    let store = zeaking::lwd::LwdCompactStore::open(&db_path).map_err(|e| {
+                        NozyError::Storage(format!("open {}: {e}", db_path.display()))
+                    })?;
+                    let zebra_client = ZebraClient::from_config(&config);
+                    let seed = wallet.get_mnemonic_object().to_seed("");
+                    let keys = derive_sapling_account_keys(&seed, 0, 0)?;
+                    let expiry = PilotSendOptions::for_send().expiry_delta_blocks;
+
+                    println!("Building Sapling → shielded shield (Groth16 + Halo2)…");
+                    let built = nozy::build_sapling_shield_to_self(
+                        &zebra_client,
+                        &store,
+                        &seed,
+                        &keys.extsk,
+                        &mut notes,
+                        network,
+                        expiry,
+                    )
+                    .await?;
+                    nozy::save_sapling_notes(&notes)?;
+
+                    println!("✅ Shield transaction built");
+                    println!("   TXID: {}", built.txid);
+                    println!(
+                        "   Shielded value: {:.8} ZEC",
+                        built.shielded_value_zatoshis as f64 / 100_000_000.0
+                    );
+                    println!(
+                        "   Fee: {:.8} ZEC",
+                        built.fee_zatoshis as f64 / 100_000_000.0
+                    );
+                    println!("   Expiry height: {}", built.expiry_height);
+
+                    if no_broadcast {
+                        println!("   (--no-broadcast) not sent to node");
+                        return Ok(());
+                    }
+
+                    let txid = zebra_client
+                        .broadcast_transaction_bytes(&built.raw_transaction)
+                        .await?;
+                    // Mark spent locally so balance updates before compact rescan.
+                    if let Some(note) = notes
+                        .iter_mut()
+                        .find(|n| hex::encode(&n.nullifier_bytes) == built.spent_nullifier_hex)
+                    {
+                        note.spent = true;
+                        note.spent_in_txid = Some(txid.clone());
+                    }
+                    nozy::save_sapling_notes(&notes)?;
+                    println!("✅ Broadcast: {txid}");
+                    println!(
+                        "   Rescan Orchard/Ironwood with `nozy sync` to see the shielded note."
+                    );
                 }
             }
         }
