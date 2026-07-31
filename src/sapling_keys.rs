@@ -1,8 +1,8 @@
 //! Sapling ZIP-32 key derivation for quiet legacy-wallet compatibility.
 //!
-//! Phase 1 only: derive account Sapling keys from the same HD seed Nozy uses for
-//! Orchard. **Do not** put Sapling receivers in generated Unified Addresses until
-//! Sapling scan (Phase 2) can show deposits.
+//! Derive account Sapling keys from the same HD seed Nozy uses for Orchard.
+//! Phase 3 embeds the account Sapling payment address in generated Unified
+//! Addresses (with Orchard). Do not market Sapling in the UI.
 
 use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
@@ -104,7 +104,7 @@ pub fn encode_sapling_payment_address(
 }
 
 impl HDWallet {
-    /// Phase 1 helper: Sapling account keys from this wallet's seed (not used for UA yet).
+    /// Sapling account keys from this wallet's seed (embedded in receive UAs since Phase 3).
     pub fn derive_sapling_account_keys(
         &self,
         account: u32,
@@ -115,7 +115,7 @@ impl HDWallet {
         derive_sapling_account_keys(secure_seed.as_bytes(), account, diversifier_start)
     }
 
-    /// Phase 1 helper: encoded Sapling payment address for tests / future scan wiring.
+    /// Encoded Sapling payment address (`zs1…` / `ztestsapling…`) for tests / diagnostics.
     pub fn generate_sapling_payment_address(
         &self,
         account: u32,
@@ -182,11 +182,12 @@ mod tests {
     }
 
     #[test]
-    fn orchard_ua_generation_unchanged_orchard_only() {
-        // Guardrail: Phase 1 must not flip receive UAs to include Sapling.
+    fn receive_ua_includes_orchard_and_sapling() {
+        // Phase 3: receive UAs advertise Orchard + Sapling so legacy wallets can pay in.
         use zcash_address::unified::{Container, Encoding, Receiver};
 
-        let ua = test_wallet()
+        let wallet = test_wallet();
+        let ua = wallet
             .generate_orchard_address(0, 0, NetworkType::Main)
             .unwrap();
         assert!(ua.starts_with("u1"));
@@ -199,7 +200,19 @@ mod tests {
             .items()
             .iter()
             .any(|i| matches!(i, Receiver::Sapling(_)));
-        assert!(has_orchard);
-        assert!(!has_sapling, "Phase 1 must keep generated UAs Orchard-only");
+        assert!(has_orchard, "UA must keep Orchard receiver");
+        assert!(has_sapling, "Phase 3 UA must include Sapling receiver");
+
+        // Sapling receiver bytes must match account-0 payment address derivation.
+        let keys = wallet.derive_sapling_account_keys(0, 0).unwrap();
+        let sapling_item = address
+            .items()
+            .into_iter()
+            .find_map(|i| match i {
+                Receiver::Sapling(b) => Some(b),
+                _ => None,
+            })
+            .expect("sapling receiver");
+        assert_eq!(sapling_item, keys.payment_address.to_bytes());
     }
 }
