@@ -2242,18 +2242,17 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 NozyError::Storage(format!("Failed to create wallet data dir: {}", e))
             })?;
 
-            let mut client = zeaking::lwd::connect_lightwalletd(&lwd_url)
-                .await
-                .map_err(|e| NozyError::InvalidOperation(format!("lightwalletd: {}", e)))?;
-            let tip = zeaking::lwd::chain_tip_height(&mut client)
-                .await
-                .map_err(|e| NozyError::InvalidOperation(format!("chain tip: {}", e)))?;
-
             let store = zeaking::lwd::LwdCompactStore::open(&db_path)
                 .map_err(|e| NozyError::Storage(format!("open {}: {}", db_path.display(), e)))?;
 
             match command {
                 LwdCommand::Prune => {
+                    let mut client = zeaking::lwd::connect_lightwalletd(&lwd_url)
+                        .await
+                        .map_err(|e| NozyError::InvalidOperation(format!("lightwalletd: {}", e)))?;
+                    let tip = zeaking::lwd::chain_tip_height(&mut client)
+                        .await
+                        .map_err(|e| NozyError::InvalidOperation(format!("chain tip: {}", e)))?;
                     let before = store
                         .max_compact_height()
                         .map_err(|e| NozyError::Storage(format!("max compact height: {}", e)))?;
@@ -2281,6 +2280,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
                 LwdCommand::SyncToTip { start_floor } => {
+                    let mut client = zeaking::lwd::connect_lightwalletd(&lwd_url)
+                        .await
+                        .map_err(|e| NozyError::InvalidOperation(format!("lightwalletd: {}", e)))?;
                     let stats = zeaking::lwd::sync_compact_to_tip_with_options(
                         &mut client,
                         &store,
@@ -2339,6 +2341,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
                 LwdCommand::ScanSapling { start_floor, full } => {
+                    // Local compact cache only — no lightwalletd connection required.
                     let (wallet, _) = load_wallet().await?;
                     let seed = wallet.get_mnemonic_object().to_seed("");
                     let (notes, scan) = nozy::scan_sapling_wallet_from_compact_store(
