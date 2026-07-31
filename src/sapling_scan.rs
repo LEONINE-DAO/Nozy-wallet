@@ -1,8 +1,8 @@
-//! Sapling compact-block scan (Phase 2 — quiet legacy compatibility).
+//! Sapling compact-block scan (Phase 2+) and spend material for Phase 4.
 //!
-//! Decrypts LWD `CompactSaplingOutput`s with the wallet IVK, persists notes, and
-//! marks spends from compact nullifiers. **Does not** change generated Unified
-//! Addresses (Phase 3).
+//! Decrypts LWD `CompactSaplingOutput`s with the wallet IVK, persists notes
+//! (including ZIP-212 `rseed` for later spends), and marks spends from compact
+//! nullifiers. Generated UAs include Sapling since Phase 3.
 
 use crate::error::{NozyError, NozyResult};
 use crate::paths::get_wallet_data_dir;
@@ -11,7 +11,8 @@ use sapling::note::ExtractedNoteCommitment;
 use sapling::note_encryption::{
     try_sapling_compact_note_decryption, CompactOutputDescription, Zip212Enforcement,
 };
-use sapling::Nullifier;
+use sapling::value::NoteValue;
+use sapling::{Note, Nullifier, PaymentAddress, Rseed};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
@@ -36,6 +37,16 @@ pub struct SerializableSaplingNote {
     pub spent: bool,
     #[serde(default)]
     pub spent_in_txid: Option<String>,
+    /// ZIP 212 `rseed` (32 bytes). Required to reconstruct the note for spending (Phase 4).
+    /// Absent on notes scanned before this field existed — rescan to populate.
+    #[serde(default)]
+    pub rseed_bytes: Option<Vec<u8>>,
+    /// Serialized Sapling `IncrementalWitness` (hex). Built via LWD compact + Zebra treestate.
+    #[serde(default)]
+    pub sapling_incremental_witness_hex: Option<String>,
+    /// Chain tip height the witness was last advanced to.
+    #[serde(default)]
+    pub sapling_witness_tip_height: Option<u32>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,6 +154,42 @@ fn nullifier_bytes(nf: &Nullifier) -> Vec<u8> {
     nf.as_ref().to_vec()
 }
 
+fn rseed_bytes_from_note(note: &Note) -> Option<Vec<u8>> {
+    match note.rseed() {
+        Rseed::AfterZip212(bytes) => Some(bytes.to_vec()),
+        Rseed::BeforeZip212(_) => None,
+    }
+}
+
+/// True when the note has ZIP-212 rseed persisted (reconstructible). Witnesses are separate.
+pub fn sapling_note_has_rseed(note: &SerializableSaplingNote) -> bool {
+    note.rseed_bytes.as_ref().is_some_and(|b| b.len() == 32)
+}
+
+/// Reconstruct a Sapling `Note` from persisted fields (needs `rseed_bytes`).
+pub fn reconstruct_sapling_note(note: &SerializableSaplingNote) -> NozyResult<Note> {
+    let rseed_raw = note.rseed_bytes.as_ref().ok_or_else(|| {
+        NozyError::InvalidOperation(
+            "Sapling note missing rseed (rescan with Phase 4+ to persist spend material)".into(),
+        )
+    })?;
+    let rseed_arr: [u8; 32] = rseed_raw
+        .as_slice()
+        .try_into()
+        .map_err(|_| NozyError::InvalidOperation("Sapling rseed must be 32 bytes".into()))?;
+    let addr_arr: [u8; 43] = note.address_bytes.as_slice().try_into().map_err(|_| {
+        NozyError::InvalidOperation("Sapling address_bytes must be 43 bytes".into())
+    })?;
+    let address = PaymentAddress::from_bytes(&addr_arr).ok_or_else(|| {
+        NozyError::InvalidOperation("Invalid Sapling payment address bytes".into())
+    })?;
+    Ok(Note::from_parts(
+        address,
+        NoteValue::from_raw(note.value),
+        Rseed::AfterZip212(rseed_arr),
+    ))
+}
+
 /// Try decrypting one compact Sapling output; returns a serializable note when it belongs to `keys`.
 pub fn try_decrypt_sapling_compact_output(
     keys: &SaplingAccountKeys,
@@ -170,6 +217,9 @@ pub fn try_decrypt_sapling_compact_output(
         position,
         spent: false,
         spent_in_txid: None,
+        rseed_bytes: rseed_bytes_from_note(&note),
+        sapling_incremental_witness_hex: None,
+        sapling_witness_tip_height: None,
     }))
 }
 
@@ -182,7 +232,29 @@ fn merge_discovered_note(
         .find(|n| n.nullifier_bytes == new_note.nullifier_bytes)
     {
         if !existing.spent {
+            // Prefer newer discovery; keep rseed / witnesses if the new record somehow lacks them.
+            let keep_rseed = new_note.rseed_bytes.is_none() && existing.rseed_bytes.is_some();
+            let rseed = if keep_rseed {
+                existing.rseed_bytes.clone()
+            } else {
+                new_note.rseed_bytes.clone()
+            };
+            let keep_wit = new_note.sapling_incremental_witness_hex.is_none()
+                && existing.sapling_incremental_witness_hex.is_some();
+            let wit = if keep_wit {
+                existing.sapling_incremental_witness_hex.clone()
+            } else {
+                new_note.sapling_incremental_witness_hex.clone()
+            };
+            let wit_tip = if keep_wit {
+                existing.sapling_witness_tip_height
+            } else {
+                new_note.sapling_witness_tip_height
+            };
             *existing = new_note;
+            existing.rseed_bytes = rseed;
+            existing.sapling_incremental_witness_hex = wit;
+            existing.sapling_witness_tip_height = wit_tip;
         }
         return;
     }
@@ -425,6 +497,10 @@ mod tests {
         assert_eq!(discovered.position, 7);
         assert!(!discovered.spent);
         assert_eq!(discovered.nullifier_bytes.len(), 32);
+        assert!(sapling_note_has_rseed(&discovered));
+        let rebuilt = reconstruct_sapling_note(&discovered).unwrap();
+        assert_eq!(rebuilt.value().inner(), value);
+        assert_eq!(rebuilt.cmu().to_bytes().as_slice(), out.cmu.as_slice());
     }
 
     #[test]
@@ -454,6 +530,9 @@ mod tests {
             position: 0,
             spent: false,
             spent_in_txid: None,
+            rseed_bytes: None,
+            sapling_incremental_witness_hex: None,
+            sapling_witness_tip_height: None,
         }];
         let mut set = HashSet::new();
         set.insert([9u8; 32]);

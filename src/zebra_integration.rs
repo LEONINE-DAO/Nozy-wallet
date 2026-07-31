@@ -857,6 +857,53 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
             .await
     }
 
+    /// Full Sapling treestate from `z_gettreestate` (JSON-RPC only).
+    ///
+    /// Uses the Sapling tree codec — do not route through Orchard `finalState` parsing.
+    pub async fn get_sapling_treestate_parsed(
+        &self,
+        height: u32,
+    ) -> NozyResult<crate::zebra_tree_rpc::ShieldedTreestateParsed> {
+        match self.protocol {
+            Protocol::JsonRpc => {
+                let request = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "method": "z_gettreestate",
+                    "params": [height.to_string()],
+                    "id": 1
+                });
+
+                let response: ZebraResponse<Value> = self.make_request(request).await?;
+
+                if let Some(error) = response.error {
+                    return Err(NozyError::InvalidOperation(format!(
+                        "Zebra RPC error: {} (code: {})",
+                        error.message, error.code
+                    )));
+                }
+
+                let result = response.result.ok_or_else(|| {
+                    NozyError::InvalidOperation("No z_gettreestate result".to_string())
+                })?;
+
+                crate::zebra_tree_rpc::parse_z_gettreestate_sapling(&result)
+            }
+            Protocol::Grpc => Err(NozyError::InvalidOperation(
+                "z_gettreestate requires JSON-RPC (Sapling treestate)".to_string(),
+            )),
+        }
+    }
+
+    /// Sapling tip anchor / commitment count from `z_gettreestate` (JSON-RPC only).
+    pub async fn get_sapling_tree_state(&self, height: u32) -> NozyResult<OrchardTreeState> {
+        let parsed = self.get_sapling_treestate_parsed(height).await?;
+        Ok(OrchardTreeState {
+            height: parsed.height,
+            anchor: parsed.anchor,
+            commitment_count: parsed.commitment_count,
+        })
+    }
+
     /// Full Ironwood treestate from `z_gettreestate` (JSON-RPC only).
     pub async fn get_ironwood_treestate_parsed(
         &self,

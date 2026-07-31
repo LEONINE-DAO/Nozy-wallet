@@ -92,6 +92,12 @@ pub mod sapling_keys;
 #[cfg(feature = "native")]
 pub mod sapling_scan;
 #[cfg(feature = "native")]
+pub mod sapling_tree_codec;
+#[cfg(feature = "native")]
+pub mod sapling_tx;
+#[cfg(feature = "native")]
+pub mod sapling_witness;
+#[cfg(feature = "native")]
 pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
@@ -251,9 +257,15 @@ pub use sapling_keys::{
 };
 #[cfg(feature = "native")]
 pub use sapling_scan::{
-    load_sapling_notes, load_sapling_scan_progress, sapling_unspent_balance_zatoshis,
-    save_sapling_notes, scan_sapling_wallet_from_compact_store, SaplingScanProgress,
-    SaplingScanStats, SerializableSaplingNote, SAPLING_NOTES_FILE,
+    load_sapling_notes, load_sapling_scan_progress, reconstruct_sapling_note,
+    sapling_note_has_rseed, sapling_unspent_balance_zatoshis, save_sapling_notes,
+    scan_sapling_wallet_from_compact_store, SaplingScanProgress, SaplingScanStats,
+    SerializableSaplingNote, SAPLING_NOTES_FILE,
+};
+#[cfg(feature = "native")]
+pub use sapling_tx::{
+    build_sapling_shield_to_self, refresh_sapling_witnesses_from_compact_store,
+    sapling_note_ready_to_shield, sapling_shield_fee_zatoshis, SaplingShieldBuilt,
 };
 #[cfg(feature = "secret-network")]
 pub use secret::{

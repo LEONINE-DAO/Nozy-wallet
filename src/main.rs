@@ -319,6 +319,14 @@ pub enum Commands {
         command: LwdCommand,
     },
 
+    #[command(
+        about = "Quiet Sapling legacy helpers (address / status / shield-to-Orchard when ready)"
+    )]
+    Sapling {
+        #[command(subcommand)]
+        command: SaplingCommand,
+    },
+
     #[command(about = "Manage saved addresses in your address book")]
     AddressBook {
         #[command(subcommand)]
@@ -510,6 +518,28 @@ pub enum LwdCommand {
             help = "Rescan from the start of the compact cache (ignore progress)"
         )]
         full: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum SaplingCommand {
+    #[command(
+        about = "Print this wallet's Sapling payment address (zs1… / ztestsapling…) for legacy inbound tests"
+    )]
+    Address,
+    #[command(about = "Show Sapling note / rseed readiness (Phase 4 spend prep)")]
+    Status,
+    #[command(
+        about = "Shield Sapling notes into Orchard/Ironwood (Phase 4 — LWD witnesses + Groth16)"
+    )]
+    Shield {
+        #[arg(
+            long,
+            help = "Report what would be shielded without building a transaction"
+        )]
+        dry_run: bool,
+        #[arg(long, help = "Build and prove but do not broadcast")]
+        no_broadcast: bool,
     },
 }
 
@@ -2368,6 +2398,147 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         "   Unspent: {:.8} ZEC ({} notes)",
                         bal as f64 / 100_000_000.0,
                         notes.iter().filter(|n| !n.spent).count()
+                    );
+                }
+            }
+        }
+
+        Commands::Sapling { command } => {
+            let (wallet, _) = load_wallet().await?;
+            let network = if config.network.eq_ignore_ascii_case("testnet") {
+                zcash_protocol::consensus::NetworkType::Test
+            } else {
+                zcash_protocol::consensus::NetworkType::Main
+            };
+            match command {
+                SaplingCommand::Address => {
+                    let addr = wallet.generate_sapling_payment_address(0, 0, network)?;
+                    println!("{addr}");
+                    println!("\n💡 Legacy Sapling deposit address (quiet compatibility).");
+                    println!("   Prefer your unified receive address for normal deposits.");
+                    println!("   After a Sapling deposit confirms:");
+                    println!("     nozy lwd sync-to-tip");
+                    println!("     nozy lwd scan-sapling --full");
+                    println!("     nozy sapling status");
+                }
+                SaplingCommand::Status => {
+                    let notes = nozy::load_sapling_notes().unwrap_or_default();
+                    let unspent: Vec<_> = notes.iter().filter(|n| !n.spent).collect();
+                    let with_rseed = unspent
+                        .iter()
+                        .filter(|n| nozy::sapling_note_has_rseed(n))
+                        .count();
+                    let with_witness = unspent
+                        .iter()
+                        .filter(|n| nozy::sapling_note_ready_to_shield(n))
+                        .count();
+                    let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
+                    let fee = nozy::sapling_shield_fee_zatoshis();
+                    println!("Sapling legacy status");
+                    println!("   Unspent notes: {}", unspent.len());
+                    println!("   With rseed (reconstructible): {with_rseed}");
+                    println!("   Ready to shield (rseed + witness): {with_witness}");
+                    println!("   Unspent: {:.8} ZEC", bal as f64 / 100_000_000.0);
+                    println!(
+                        "   Shield fee (estimate): {:.8} ZEC",
+                        fee as f64 / 100_000_000.0
+                    );
+                    if with_witness > 0 {
+                        println!("   Next: nozy sapling shield");
+                    } else if with_rseed > 0 {
+                        println!(
+                            "   Next: ensure LWD compact covers note heights, then \
+                             `nozy sapling shield` (builds witnesses via Zebra JSON-RPC)"
+                        );
+                    } else {
+                        println!("   Next: nozy lwd sync-to-tip && nozy lwd scan-sapling");
+                    }
+                }
+                SaplingCommand::Shield {
+                    dry_run,
+                    no_broadcast,
+                } => {
+                    use nozy::fee_policy::PilotSendOptions;
+                    use nozy::paths::get_wallet_data_dir;
+                    use nozy::sapling_keys::derive_sapling_account_keys;
+
+                    let mut notes = nozy::load_sapling_notes().unwrap_or_default();
+                    let fee = nozy::sapling_shield_fee_zatoshis();
+                    let candidates: Vec<_> = notes
+                        .iter()
+                        .filter(|n| !n.spent && nozy::sapling_note_has_rseed(n))
+                        .collect();
+                    let total: u64 = candidates.iter().map(|n| n.value).sum();
+                    if dry_run {
+                        println!(
+                            "Dry run: {} reconstructible Sapling note(s), {:.8} ZEC (fee ~{:.8})",
+                            candidates.len(),
+                            total as f64 / 100_000_000.0,
+                            fee as f64 / 100_000_000.0
+                        );
+                        return Ok(());
+                    }
+                    if candidates.is_empty() {
+                        return Err(NozyError::InvalidOperation(
+                            "No reconstructible Sapling notes — run `nozy lwd scan-sapling` after a deposit"
+                                .into(),
+                        ));
+                    }
+
+                    let db_path = get_wallet_data_dir().join("lwd_compact.sqlite");
+                    let store = zeaking::lwd::LwdCompactStore::open(&db_path).map_err(|e| {
+                        NozyError::Storage(format!("open {}: {e}", db_path.display()))
+                    })?;
+                    let zebra_client = ZebraClient::from_config(&config);
+                    let seed = wallet.get_mnemonic_object().to_seed("");
+                    let keys = derive_sapling_account_keys(&seed, 0, 0)?;
+                    let expiry = PilotSendOptions::for_send().expiry_delta_blocks;
+
+                    println!("Building Sapling → shielded shield (Groth16 + Halo2)…");
+                    let built = nozy::build_sapling_shield_to_self(
+                        &zebra_client,
+                        &store,
+                        &seed,
+                        &keys.extsk,
+                        &mut notes,
+                        network,
+                        expiry,
+                    )
+                    .await?;
+                    nozy::save_sapling_notes(&notes)?;
+
+                    println!("✅ Shield transaction built");
+                    println!("   TXID: {}", built.txid);
+                    println!(
+                        "   Shielded value: {:.8} ZEC",
+                        built.shielded_value_zatoshis as f64 / 100_000_000.0
+                    );
+                    println!(
+                        "   Fee: {:.8} ZEC",
+                        built.fee_zatoshis as f64 / 100_000_000.0
+                    );
+                    println!("   Expiry height: {}", built.expiry_height);
+
+                    if no_broadcast {
+                        println!("   (--no-broadcast) not sent to node");
+                        return Ok(());
+                    }
+
+                    let txid = zebra_client
+                        .broadcast_transaction_bytes(&built.raw_transaction)
+                        .await?;
+                    // Mark spent locally so balance updates before compact rescan.
+                    if let Some(note) = notes
+                        .iter_mut()
+                        .find(|n| hex::encode(&n.nullifier_bytes) == built.spent_nullifier_hex)
+                    {
+                        note.spent = true;
+                        note.spent_in_txid = Some(txid.clone());
+                    }
+                    nozy::save_sapling_notes(&notes)?;
+                    println!("✅ Broadcast: {txid}");
+                    println!(
+                        "   Rescan Orchard/Ironwood with `nozy sync` to see the shielded note."
                     );
                 }
             }
