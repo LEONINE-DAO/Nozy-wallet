@@ -195,6 +195,22 @@ pub async fn lwd_sync_compact_to_tip(
     let stats = zeaking::lwd::sync_compact_to_tip_with_options(&mut client, &store, tip_opts)
         .await
         .map_err(zeaking_err_response)?;
+    // Quiet Sapling scan when wallet unlocks with empty password (parity with CLI).
+    let mut sapling_scan: Option<serde_json::Value> = None;
+    if let Ok((wallet, _)) =
+        crate::handlers::load_wallet_with_password(Some(String::new())).await
+    {
+        let seed = wallet.get_mnemonic_object().to_seed("");
+        if let Ok((notes, scan)) =
+            nozy::scan_sapling_wallet_from_compact_store(&seed, &store, None, false)
+        {
+            sapling_scan = Some(serde_json::json!({
+                "notes_discovered": scan.notes_discovered,
+                "notes_marked_spent": scan.notes_marked_spent,
+                "unspent_zatoshis": nozy::sapling_unspent_balance_zatoshis(&notes),
+            }));
+        }
+    }
     Ok(ResponseJson(serde_json::json!({
         "chain_tip": stats.chain_tip,
         "already_at_tip": stats.already_at_tip,
@@ -203,5 +219,6 @@ pub async fn lwd_sync_compact_to_tip(
         "range_start_effective": stats.range_start_effective,
         "range_end": stats.range_end,
         "db_path": db.to_string_lossy(),
+        "sapling_scan": sapling_scan,
     })))
 }
