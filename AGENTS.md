@@ -28,7 +28,8 @@ Agents should **warn the user** if they are about to open a drive-by PR with no 
 | Core library + CLI | Repo root (`src/`, `Cargo.toml` package `nozy`) | Orchard-first wallet logic, `ZebraClient`, transaction building |
 | Compact sync / LWD | `zeaking/` | Workspace member; `zeaking::lwd` shared by desktop, api-server, FFI |
 | HTTP API | `api-server/` | Workspace member; localhost companion for extension |
-| Mobile bindings | `zeaking-ffi/` | Workspace member (UniFFI) |
+| Mobile LWD bindings | `zeaking-ffi/` | Workspace member (UniFFI) — LWD sync only |
+| Mobile wallet FFI | `nozy-ffi/` | Workspace member (UniFFI) — Sapling status/scan/shield-to-self; needs Zebrad + LWD |
 | Desktop UI | `desktop-client/` | Tauri app under `desktop-client/src-tauri/` (own `Cargo.toml`) |
 | Extension WASM | `browser-extension/wasm-core/` | **Excluded** from root workspace; build with its own `Cargo.toml` / `wasm-pack` as documented |
 | Book / site docs | `book/`, `landing/` | User and contributor docs |

@@ -24,6 +24,9 @@ import type {
   NetworkWalletStatusResponse,
   PrivacyNetworkResponse,
   ProvingStatusResponse,
+  SaplingScanResponse,
+  SaplingShieldResponse,
+  SaplingStatusResponse,
   SendTransactionResponse,
   SpeedUpTransactionResponse,
   SyncResponse,
@@ -443,6 +446,32 @@ export const api = {
         force_clearnet: params?.forceClearnet ?? null,
         dry_run: params?.dryRun ?? false,
         wait_confirm: params?.waitConfirm ?? false,
+      }),
+    }),
+
+  getSaplingStatus: () => request<SaplingStatusResponse>("/api/sapling/status"),
+
+  scanSapling: (params?: { password?: string; startFloor?: number; full?: boolean }) =>
+    request<SaplingScanResponse>("/api/sapling/scan", {
+      method: "POST",
+      body: JSON.stringify({
+        password: params?.password ?? null,
+        start_floor: params?.startFloor ?? null,
+        full: params?.full ?? false,
+      }),
+    }),
+
+  shieldSapling: (params?: {
+    password?: string;
+    dryRun?: boolean;
+    noBroadcast?: boolean;
+  }) =>
+    request<SaplingShieldResponse>("/api/sapling/shield", {
+      method: "POST",
+      body: JSON.stringify({
+        password: params?.password ?? null,
+        dry_run: params?.dryRun ?? false,
+        no_broadcast: params?.noBroadcast ?? false,
       }),
     }),
 

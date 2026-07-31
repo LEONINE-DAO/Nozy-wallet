@@ -3008,6 +3008,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "nozy-ffi"
+version = "0.1.0"
+dependencies = [
+ "nozy",
+ "thiserror 1.0.69",
+ "tokio",
+ "uniffi",
+ "zcash_protocol",
+ "zeaking",
+]
+
+[[package]]
 name = "nozywallet-api"
 version = "0.1.0"
 dependencies = [

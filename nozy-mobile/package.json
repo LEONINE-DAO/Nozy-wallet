@@ -25,6 +25,7 @@
     "expo-constants": "~17.0.8",
     "expo-font": "~13.0.4",
     "expo-status-bar": "~2.0.1",
+    "nozy-wallet": "file:./modules/nozy-wallet",
     "react": "18.3.1",
     "react-dom": "^18.3.1",
     "react-native": "0.76.9",
