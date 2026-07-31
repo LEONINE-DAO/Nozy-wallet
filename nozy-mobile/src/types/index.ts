@@ -266,6 +266,43 @@ export type IronwoodBroadcastResponse = {
   message: string;
 };
 
+/** Quiet Sapling legacy status (companion wallet). */
+export type SaplingStatusResponse = {
+  unspent_notes: number;
+  with_rseed: number;
+  ready_to_shield: number;
+  unspent_zatoshis: number;
+  unspent_zec: number;
+  fee_zatoshis: number;
+  fee_zec: number;
+  has_legacy_balance: boolean;
+  message: string;
+};
+
+export type SaplingScanResponse = {
+  blocks_scanned: number;
+  outputs_seen: number;
+  notes_discovered: number;
+  notes_marked_spent: number;
+  range_start: number;
+  range_end: number;
+  unspent_zatoshis: number;
+  unspent_notes: number;
+  message: string;
+};
+
+export type SaplingShieldResponse = {
+  dry_run: boolean;
+  broadcast: boolean;
+  txid: string | null;
+  shielded_value_zatoshis: number | null;
+  fee_zatoshis: number;
+  expiry_height: number | null;
+  candidate_notes: number;
+  candidate_zatoshis: number;
+  message: string;
+};
+
 export type ProvingStatusResponse = {
   spend_params: boolean;
   output_params: boolean;
