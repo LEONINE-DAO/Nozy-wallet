@@ -82,6 +82,19 @@ impl LwdCompactStore {
         Ok(v.map(|h| h as u64))
     }
 
+    pub fn min_compact_height(&self) -> ZeakingResult<Option<u64>> {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let v: Option<i64> = conn
+            .query_row("SELECT MIN(height) FROM compact_blocks", [], |r| {
+                r.get::<_, Option<i64>>(0)
+            })
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        Ok(v.map(|h| h as u64))
+    }
+
     /// Remove compact rows (and witness rows) above `tip`. Returns rows deleted from `compact_blocks`.
     /// Use when the cache contains heights from a prior network/backend that exceed the current LWD tip.
     pub fn prune_compact_blocks_above(&self, tip: u64) -> ZeakingResult<u64> {
@@ -136,6 +149,39 @@ impl LwdCompactStore {
             .optional()
             .map_err(|e| ZeakingError::Storage(e.to_string()))?;
         Ok(row)
+    }
+
+    /// Iterate stored compact blocks in `[start, end]` inclusive, ascending by height.
+    pub fn for_each_compact_block_range<F>(
+        &self,
+        start: u64,
+        end: u64,
+        mut f: F,
+    ) -> ZeakingResult<()>
+    where
+        F: FnMut(u64, &[u8]) -> ZeakingResult<()>,
+    {
+        let conn = self
+            .conn
+            .lock()
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT height, data FROM compact_blocks
+                 WHERE height >= ?1 AND height <= ?2
+                 ORDER BY height ASC",
+            )
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        let rows = stmt
+            .query_map(params![start as i64, end as i64], |r| {
+                Ok((r.get::<_, i64>(0)? as u64, r.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|e| ZeakingError::Storage(e.to_string()))?;
+        for row in rows {
+            let (height, data) = row.map_err(|e| ZeakingError::Storage(e.to_string()))?;
+            f(height, &data)?;
+        }
+        Ok(())
     }
 
     pub fn set_meta(&self, key: &str, value: &str) -> ZeakingResult<()> {

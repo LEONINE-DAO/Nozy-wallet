@@ -90,6 +90,8 @@ pub mod rpc_test;
 #[cfg(feature = "native")]
 pub mod sapling_keys;
 #[cfg(feature = "native")]
+pub mod sapling_scan;
+#[cfg(feature = "native")]
 pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
@@ -246,6 +248,12 @@ pub use rpc_test::RpcTester;
 pub use sapling_keys::{
     derive_sapling_account_keys, derive_sapling_extsk, encode_sapling_payment_address,
     SaplingAccountKeys, NOZY_ZIP32_COIN_TYPE,
+};
+#[cfg(feature = "native")]
+pub use sapling_scan::{
+    load_sapling_notes, load_sapling_scan_progress, sapling_unspent_balance_zatoshis,
+    save_sapling_notes, scan_sapling_wallet_from_compact_store, SaplingScanProgress,
+    SaplingScanStats, SerializableSaplingNote, SAPLING_NOTES_FILE,
 };
 #[cfg(feature = "secret-network")]
 pub use secret::{

@@ -21,6 +21,8 @@ pub struct LiteBalanceJson {
     pub unspent_note_count: usize,
     pub orchard_unspent_zatoshis: u64,
     pub ironwood_unspent_zatoshis: u64,
+    /// Quiet legacy Sapling unspent (omitted from confirmed totals).
+    pub sapling_unspent_zatoshis: u64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -96,6 +98,7 @@ pub fn balance_to_json() -> NozyResult<LiteBalanceJson> {
         unspent_note_count: snapshot.unspent_note_count,
         orchard_unspent_zatoshis,
         ironwood_unspent_zatoshis,
+        sapling_unspent_zatoshis: snapshot.sapling_unspent_zatoshis,
     })
 }
 
@@ -239,12 +242,22 @@ pub fn print_health_human(report: &LiteHealthReport) {
     );
     println!("lwd: {}", if report.lwd_ok { "ok" } else { "down/skip" });
     if let Some(b) = &report.balance {
-        println!(
-            "balance: available={:.8} ZEC (orchard={} zat, ironwood={} zat)",
-            b.available_zatoshis as f64 / 100_000_000.0,
-            b.orchard_unspent_zatoshis,
-            b.ironwood_unspent_zatoshis
-        );
+        if b.sapling_unspent_zatoshis > 0 {
+            println!(
+                "balance: available={:.8} ZEC (orchard={} zat, ironwood={} zat, sapling={} zat)",
+                b.available_zatoshis as f64 / 100_000_000.0,
+                b.orchard_unspent_zatoshis,
+                b.ironwood_unspent_zatoshis,
+                b.sapling_unspent_zatoshis
+            );
+        } else {
+            println!(
+                "balance: available={:.8} ZEC (orchard={} zat, ironwood={} zat)",
+                b.available_zatoshis as f64 / 100_000_000.0,
+                b.orchard_unspent_zatoshis,
+                b.ironwood_unspent_zatoshis
+            );
+        }
     }
     for c in &report.checks {
         println!("  check: {c}");
