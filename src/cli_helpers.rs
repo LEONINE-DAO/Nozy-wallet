@@ -15,6 +15,8 @@ pub struct WalletBalanceSnapshot {
     pub pending_zatoshis: u64,
     pub available_zatoshis: u64,
     pub unspent_note_count: usize,
+    /// Quiet legacy Sapling unspent (Phase 2). Not included in confirmed/available.
+    pub sapling_unspent_zatoshis: u64,
 }
 
 /// Load confirmed, pending, and available shielded balance from local wallet state.
@@ -38,6 +40,9 @@ pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
 
     let confirmed_zatoshis = wallet_unspent_balance_zatoshis(&notes);
     let unspent_note_count = notes.iter().filter(|note| !note.spent).count();
+    let sapling_unspent_zatoshis = crate::sapling_scan::load_sapling_notes()
+        .map(|n| crate::sapling_scan::sapling_unspent_balance_zatoshis(&n))
+        .unwrap_or(0);
     let (pending_zatoshis, pending_tx_ids) = SentTransactionStorage::new()
         .map(|storage| {
             let pending = storage.get_pending_transactions();
@@ -70,6 +75,7 @@ pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
         pending_zatoshis,
         available_zatoshis,
         unspent_note_count,
+        sapling_unspent_zatoshis,
     })
 }
 

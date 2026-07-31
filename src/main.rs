@@ -496,6 +496,21 @@ pub enum LwdCommand {
         )]
         start_floor: Option<u64>,
     },
+    #[command(
+        about = "Scan cached compact blocks for Sapling notes (quiet legacy compatibility; no UA change)"
+    )]
+    ScanSapling {
+        #[arg(
+            long,
+            help = "Optional lower bound for first height to scan (e.g. wallet birthday)"
+        )]
+        start_floor: Option<u64>,
+        #[arg(
+            long,
+            help = "Rescan from the start of the compact cache (ignore progress)"
+        )]
+        full: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1280,6 +1295,13 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     println!(
                         "   Available: {:.8} ZEC",
                         snapshot.available_zatoshis as f64 / 100_000_000.0
+                    );
+                }
+
+                if snapshot.sapling_unspent_zatoshis > 0 {
+                    println!(
+                        "   Sapling:   {:.8} ZEC (legacy; not spendable yet)",
+                        snapshot.sapling_unspent_zatoshis as f64 / 100_000_000.0
                     );
                 }
 
@@ -2133,6 +2155,12 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             snapshot.pending_zatoshis as f64 / 100_000_000.0
                         );
                     }
+                    if snapshot.sapling_unspent_zatoshis > 0 {
+                        println!(
+                            "   Sapling:   {:.8} ZEC (legacy; not spendable yet)",
+                            snapshot.sapling_unspent_zatoshis as f64 / 100_000_000.0
+                        );
+                    }
                 }
                 Err(e) => {
                     println!("   ❌ Failed to read balance: {}", e);
@@ -2275,6 +2303,69 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     if stats.already_at_tip {
                         println!("   Already at tip");
                     }
+
+                    // Quiet Sapling legacy scan over newly cached compact blocks (no UA change).
+                    match load_wallet().await {
+                        Ok((wallet, _)) => {
+                            let seed = wallet.get_mnemonic_object().to_seed("");
+                            match nozy::scan_sapling_wallet_from_compact_store(
+                                &seed,
+                                &store,
+                                start_floor,
+                                false,
+                            ) {
+                                Ok((notes, scan)) => {
+                                    let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
+                                    if bal > 0
+                                        || scan.notes_discovered > 0
+                                        || scan.notes_marked_spent > 0
+                                    {
+                                        println!(
+                                            "   Sapling: +{} notes, {} spent; unspent {:.8} ZEC (legacy)",
+                                            scan.notes_discovered,
+                                            scan.notes_marked_spent,
+                                            bal as f64 / 100_000_000.0
+                                        );
+                                    }
+                                }
+                                Err(e) => {
+                                    eprintln!("   Sapling scan skipped: {e}");
+                                }
+                            }
+                        }
+                        Err(_) => {
+                            // No unlocked wallet — compact sync still succeeded.
+                        }
+                    }
+                }
+                LwdCommand::ScanSapling { start_floor, full } => {
+                    let (wallet, _) = load_wallet().await?;
+                    let seed = wallet.get_mnemonic_object().to_seed("");
+                    let (notes, scan) = nozy::scan_sapling_wallet_from_compact_store(
+                        &seed,
+                        &store,
+                        start_floor,
+                        full,
+                    )?;
+                    let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
+                    println!("✅ Sapling compact scan");
+                    println!("   DB: {}", db_path.display());
+                    if scan.blocks_scanned == 0 && scan.range_start > scan.range_end {
+                        println!("   Already scanned through compact tip");
+                    } else {
+                        println!(
+                            "   Range: {} - {} ({} blocks)",
+                            scan.range_start, scan.range_end, scan.blocks_scanned
+                        );
+                    }
+                    println!("   Outputs seen: {}", scan.outputs_seen);
+                    println!("   Notes discovered: {}", scan.notes_discovered);
+                    println!("   Notes marked spent: {}", scan.notes_marked_spent);
+                    println!(
+                        "   Unspent: {:.8} ZEC ({} notes)",
+                        bal as f64 / 100_000_000.0,
+                        notes.iter().filter(|n| !n.spent).count()
+                    );
                 }
             }
         }
