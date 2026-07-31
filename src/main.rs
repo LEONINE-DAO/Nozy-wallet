@@ -3667,11 +3667,62 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             "   Next eligible transfer: #{} {} zat at bucket {}",
                             transfer.sequence, transfer.value_zat, transfer.anchor_bucket_height
                         );
+                        match nozy::propose_zip318_crossing_from_orchard_notes(
+                            transfer,
+                            &notes,
+                            migration_fee,
+                        ) {
+                            Ok(proposal) => {
+                                println!("   ZIP 318 proposal (ECC-style canonical crossing):");
+                                println!(
+                                    "      funding: {} | note {} zat @ height {} → Ironwood {} zat",
+                                    proposal.funding_mode.label(),
+                                    proposal.source_note_value_zat,
+                                    proposal.source_block_height,
+                                    proposal.ironwood_output_zat,
+                                );
+                                println!(
+                                    "      fee {} zat | change {} | expires @ {}",
+                                    proposal.fee_zat,
+                                    proposal.change_zat,
+                                    proposal.expires_at_height
+                                );
+                                println!("      source nf: {}", proposal.source_nullifier_hex);
+                            }
+                            Err(e) => {
+                                println!("   ZIP 318 proposal: not fundable yet ({e})");
+                            }
+                        }
                     } else if let Some(transfer) = readiness.next_waiting_transfer.as_ref() {
                         println!(
                             "   Next waiting transfer: #{} {} zat at bucket {}",
                             transfer.sequence, transfer.value_zat, transfer.anchor_bucket_height
                         );
+                        match nozy::propose_zip318_crossing_from_orchard_notes(
+                            transfer,
+                            &notes,
+                            migration_fee,
+                        ) {
+                            Ok(proposal) => {
+                                println!("   ZIP 318 proposal (preview; bucket not open yet):");
+                                println!(
+                                    "      funding: {} | note {} zat @ height {} → Ironwood {} zat",
+                                    proposal.funding_mode.label(),
+                                    proposal.source_note_value_zat,
+                                    proposal.source_block_height,
+                                    proposal.ironwood_output_zat,
+                                );
+                                println!(
+                                    "      fee {} zat | change {} | expires @ {}",
+                                    proposal.fee_zat,
+                                    proposal.change_zat,
+                                    proposal.expires_at_height
+                                );
+                            }
+                            Err(e) => {
+                                println!("   ZIP 318 proposal: not fundable yet ({e})");
+                            }
+                        }
                     } else if let Some(transfer) = readiness.active_presigned_transfer.as_ref() {
                         println!(
                             "   Presigned transfer: #{} {} zat (txid {})",
@@ -3863,6 +3914,12 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!("✅ Prebuilt locked V6 turnstile transaction");
                         println!("   Sequence: {}", prepared.sequence);
                         println!("   Value:    {} zat", prepared.value_zat);
+                        println!(
+                            "   Ironwood output: {} zat (fee {} zat, mode {})",
+                            prepared.ironwood_output_zat,
+                            prepared.fee_zat,
+                            prepared.funding_mode.label()
+                        );
                         println!("   TXID:     {}", prepared.txid);
                         println!("   Source:   {}", prepared.source_nullifier_hex);
                         println!("   Prepared at height: {}", prepared.prepared_at_height);
