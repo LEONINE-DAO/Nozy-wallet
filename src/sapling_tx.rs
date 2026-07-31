@@ -89,6 +89,78 @@ fn collect_sapling_cmus_from_compact(data: &[u8]) -> NozyResult<Vec<[u8; 32]>> {
     Ok(out)
 }
 
+/// Cap Zebra tip to the highest compact height we can actually replay.
+fn sapling_witness_replay_tip(store: &LwdCompactStore, zebra_tip: u32) -> NozyResult<u32> {
+    let store_max = store
+        .max_compact_height()
+        .map_err(|e| NozyError::Storage(format!("compact max: {e}")))?
+        .ok_or_else(|| {
+            NozyError::InvalidOperation(
+                "LWD compact store is empty — run `nozy lwd sync-to-tip` first".into(),
+            )
+        })?;
+    Ok(u64::from(zebra_tip).min(store_max) as u32)
+}
+
+/// Append Sapling cmus for every height in `from..=to` (inclusive). Errors on gaps.
+fn append_sapling_cmus_height_range(
+    tracker: &mut SaplingWitnessTracker,
+    store: &LwdCompactStore,
+    from: u32,
+    to: u32,
+    mut on_after_append: impl FnMut(&mut SaplingWitnessTracker, u64, [u8; 32]) -> NozyResult<()>,
+) -> NozyResult<()> {
+    if from > to {
+        return Ok(());
+    }
+    for h in from..=to {
+        let Some(blob) = store
+            .get_compact_block(u64::from(h))
+            .map_err(|e| NozyError::Storage(format!("compact read {h}: {e}")))?
+        else {
+            return Err(NozyError::InvalidOperation(format!(
+                "Missing compact block {h} in LWD store (needed for Sapling witnesses). \
+                 Run `nozy lwd sync-to-tip` so the cache is contiguous through tip."
+            )));
+        };
+        let cmus = collect_sapling_cmus_from_compact(&blob)?;
+        for cmu in cmus {
+            let node = merkle_node_from_cmu_bytes(&cmu)?;
+            tracker.append_cmu(node)?;
+            let position = (tracker.tree().size() as u64).saturating_sub(1);
+            on_after_append(tracker, position, cmu)?;
+        }
+    }
+    Ok(())
+}
+
+fn advance_witness_height_range(
+    witness: &mut crate::sapling_tree_codec::SaplingIncrementalWitness,
+    store: &LwdCompactStore,
+    from: u32,
+    to: u32,
+) -> NozyResult<()> {
+    if from > to {
+        return Ok(());
+    }
+    for h in from..=to {
+        let Some(blob) = store
+            .get_compact_block(u64::from(h))
+            .map_err(|e| NozyError::Storage(format!("compact read {h}: {e}")))?
+        else {
+            return Err(NozyError::InvalidOperation(format!(
+                "Missing compact block {h} for Sapling witness catch-up. Run `nozy lwd sync-to-tip`."
+            )));
+        };
+        let cmus = collect_sapling_cmus_from_compact(&blob)?;
+        for cmu in cmus {
+            let node = merkle_node_from_cmu_bytes(&cmu)?;
+            advance_witness_with_cmus(witness, std::iter::once(node))?;
+        }
+    }
+    Ok(())
+}
+
 /// Rebuild or advance Sapling incremental witnesses for unspent notes via LWD compact + Zebra.
 pub async fn refresh_sapling_witnesses_from_compact_store(
     zebra: &ZebraClient,
@@ -96,6 +168,9 @@ pub async fn refresh_sapling_witnesses_from_compact_store(
     notes: &mut [SerializableSaplingNote],
     tip_height: u32,
 ) -> NozyResult<u32> {
+    // Never verify against a Zebra tip we cannot replay from compact cache.
+    let tip_height = sapling_witness_replay_tip(store, tip_height)?;
+
     let need_full: Vec<usize> = notes
         .iter()
         .enumerate()
@@ -118,7 +193,25 @@ pub async fn refresh_sapling_witnesses_from_compact_store(
             .map(|&i| notes[i].block_height)
             .min()
             .unwrap_or(1);
+        if min_note_height > tip_height {
+            return Err(NozyError::InvalidOperation(format!(
+                "Sapling note height {min_note_height} is above compact tip {tip_height}; \
+                 run `nozy lwd sync-to-tip`"
+            )));
+        }
         let checkpoint = min_note_height.saturating_sub(1);
+
+        let store_min = store
+            .min_compact_height()
+            .map_err(|e| NozyError::Storage(format!("compact min: {e}")))?
+            .unwrap_or(u64::from(min_note_height));
+        if store_min > u64::from(min_note_height) {
+            return Err(NozyError::InvalidOperation(format!(
+                "LWD compact cache starts at {store_min}, but Sapling note is at {min_note_height}. \
+                 Re-sync with a lower floor, e.g. `nozy lwd sync-to-tip --start-floor {}`",
+                min_note_height.saturating_sub(1)
+            )));
+        }
 
         let parsed = zebra.get_sapling_treestate_parsed(checkpoint).await?;
         let Some(ref final_state) = parsed.final_state else {
@@ -128,60 +221,82 @@ pub async fn refresh_sapling_witnesses_from_compact_store(
         };
         let mut tracker =
             SaplingWitnessTracker::new(sapling_commitment_tree_from_final_state(final_state)?);
+        let checkpoint_size = tracker.tree().size() as u64;
 
-        let mut pending: std::collections::HashMap<[u8; 32], [u8; 32]> =
+        // Match discoveries by note position (stable).
+        let mut pending_by_pos: std::collections::HashMap<u64, [u8; 32]> =
             std::collections::HashMap::new();
         for &i in &need_full {
             let note = &notes[i];
-            let Ok(cmu) = <[u8; 32]>::try_from(note.cmu_bytes.as_slice()) else {
-                continue;
-            };
             let Ok(nf) = <[u8; 32]>::try_from(note.nullifier_bytes.as_slice()) else {
                 continue;
             };
-            pending.insert(cmu, nf);
+            if note.position < checkpoint_size {
+                return Err(NozyError::InvalidOperation(format!(
+                    "Sapling note position {} is before checkpoint tree size {checkpoint_size} \
+                     (height {}); rescan with `nozy lwd scan-sapling --full`",
+                    note.position, checkpoint
+                )));
+            }
+            pending_by_pos.insert(note.position, nf);
         }
 
-        let store_min = store
-            .min_compact_height()
-            .map_err(|e| NozyError::Storage(format!("compact min: {e}")))?
-            .unwrap_or(u64::from(checkpoint.saturating_add(1)));
-        let start = u64::from(checkpoint.saturating_add(1)).max(store_min);
-        let end = u64::from(tip_height);
-
-        if start > end {
-            return Err(NozyError::InvalidOperation(
-                "Compact store does not cover Sapling note heights; run `nozy lwd sync-to-tip` first"
-                    .into(),
-            ));
-        }
-
-        store
-            .for_each_compact_block_range(start, end, |height, data| {
-                let cmus = collect_sapling_cmus_from_compact(data)
-                    .map_err(|e| zeaking::error::ZeakingError::InvalidOperation(e.to_string()))?;
-                for cmu in cmus {
-                    let node = merkle_node_from_cmu_bytes(&cmu).map_err(|e| {
-                        zeaking::error::ZeakingError::InvalidOperation(e.to_string())
-                    })?;
-                    tracker.append_cmu(node).map_err(|e| {
-                        zeaking::error::ZeakingError::InvalidOperation(e.to_string())
-                    })?;
-                    if let Some(nf) = pending.remove(&cmu) {
-                        tracker.register_discovered_note(nf).map_err(|e| {
-                            zeaking::error::ZeakingError::InvalidOperation(e.to_string())
-                        })?;
-                    }
+        let start = checkpoint.saturating_add(1);
+        // Replay through the discovery height first and verify against Zebra — isolates
+        // catch-up gaps from a bad checkpoint / wrong note positions.
+        append_sapling_cmus_height_range(
+            &mut tracker,
+            store,
+            start,
+            min_note_height,
+            |tracker, position, _cmu| {
+                if let Some(nf) = pending_by_pos.remove(&position) {
+                    tracker.register_discovered_note(nf)?;
                 }
-                let _ = height;
                 Ok(())
-            })
-            .map_err(|e| NozyError::InvalidOperation(format!("compact iterate: {e}")))?;
+            },
+        )?;
+        {
+            let note_ts = zebra.get_sapling_treestate_parsed(min_note_height).await?;
+            let local_root = tracker.root_at_tip().to_bytes();
+            let local_size = tracker.tree().size() as u64;
+            let size_mismatch =
+                note_ts.commitment_count > 0 && local_size != note_ts.commitment_count;
+            if local_root != note_ts.anchor || size_mismatch {
+                return Err(NozyError::InvalidOperation(format!(
+                    "Sapling tree mismatch at note height {min_note_height}: \
+                     local_size={local_size} zebra_size={} local_root={} zebra_root={}. \
+                     Rescan with `nozy lwd scan-sapling --full` after a contiguous \
+                     `nozy lwd sync-to-tip --start-floor {}`.",
+                    note_ts.commitment_count,
+                    hex::encode(local_root),
+                    hex::encode(note_ts.anchor),
+                    checkpoint
+                )));
+            }
+        }
+        if min_note_height < tip_height {
+            append_sapling_cmus_height_range(
+                &mut tracker,
+                store,
+                min_note_height.saturating_add(1),
+                tip_height,
+                |_tracker, _position, _cmu| Ok(()),
+            )?;
+        }
 
-        let tip_ts = zebra.get_sapling_tree_state(tip_height).await?;
-        if tracker.root_at_tip().to_bytes() != tip_ts.anchor {
+        let tip_ts = zebra.get_sapling_treestate_parsed(tip_height).await?;
+        let local_root = tracker.root_at_tip().to_bytes();
+        let local_size = tracker.tree().size() as u64;
+        let size_mismatch = tip_ts.commitment_count > 0 && local_size != tip_ts.commitment_count;
+        if local_root != tip_ts.anchor || size_mismatch {
             return Err(NozyError::InvalidOperation(format!(
-                "Sapling witness tree root mismatch at tip {tip_height} (rescan compact / check Zebra)"
+                "Sapling witness tree mismatch at compact tip {tip_height}: \
+                 local_size={local_size} zebra_size={} local_root={} zebra_root={}. \
+                 Run `nozy lwd sync-to-tip` then retry (compact gaps after the note height).",
+                tip_ts.commitment_count,
+                hex::encode(local_root),
+                hex::encode(tip_ts.anchor)
             )));
         }
 
@@ -196,10 +311,11 @@ pub async fn refresh_sapling_witnesses_from_compact_store(
                 updated += 1;
             }
         }
-        if !pending.is_empty() {
+        if !pending_by_pos.is_empty() {
             return Err(NozyError::InvalidOperation(format!(
-                "Could not locate {} Sapling note commitment(s) in compact range {start}..={end}",
-                pending.len()
+                "Could not locate {} Sapling note(s) by position in compact range {start}..={tip_height}; \
+                 rescan with `nozy lwd scan-sapling --full`",
+                pending_by_pos.len()
             )));
         }
     }
@@ -218,26 +334,17 @@ pub async fn refresh_sapling_witnesses_from_compact_store(
         let bytes = hex::decode(witness_hex)
             .map_err(|e| NozyError::InvalidOperation(format!("sapling witness hex decode: {e}")))?;
         let mut witness = sapling_incremental_witness_from_bytes(&bytes)?;
-        for h in (stored_tip.saturating_add(1))..=tip_height {
-            let Some(blob) = store
-                .get_compact_block(u64::from(h))
-                .map_err(|e| NozyError::Storage(format!("compact read {h}: {e}")))?
-            else {
-                return Err(NozyError::InvalidOperation(format!(
-                    "Missing compact block {h} for Sapling witness catch-up"
-                )));
-            };
-            let cmus = collect_sapling_cmus_from_compact(&blob)?;
-            for cmu in cmus {
-                let node = merkle_node_from_cmu_bytes(&cmu)?;
-                advance_witness_with_cmus(&mut witness, std::iter::once(node))?;
-            }
-        }
+        advance_witness_height_range(
+            &mut witness,
+            store,
+            stored_tip.saturating_add(1),
+            tip_height,
+        )?;
         let tip_ts = zebra.get_sapling_tree_state(tip_height).await?;
         if !witness_root_matches_anchor(&witness, &tip_ts.anchor) {
-            return Err(NozyError::InvalidOperation(
-                "Sapling witness does not match z_gettreestate after catch-up".into(),
-            ));
+            return Err(NozyError::InvalidOperation(format!(
+                "Sapling witness does not match z_gettreestate after catch-up to {tip_height}"
+            )));
         }
         note.sapling_incremental_witness_hex =
             Some(hex::encode(sapling_incremental_witness_to_bytes(&witness)?));
@@ -266,30 +373,22 @@ async fn prepare_sapling_anchor_and_path(
         .map_err(|e| NozyError::InvalidOperation(format!("sapling witness hex decode: {e}")))?;
     let mut witness = sapling_incremental_witness_from_bytes(&bytes)?;
 
+    let anchor_height = sapling_witness_replay_tip(store, anchor_height)?;
     let stored_tip = note.sapling_witness_tip_height.unwrap_or(0);
     if stored_tip < anchor_height {
-        for h in (stored_tip.saturating_add(1))..=anchor_height {
-            let Some(blob) = store
-                .get_compact_block(u64::from(h))
-                .map_err(|e| NozyError::Storage(format!("compact read {h}: {e}")))?
-            else {
-                return Err(NozyError::InvalidOperation(format!(
-                    "Missing compact block {h} for Sapling witness catch-up"
-                )));
-            };
-            let cmus = collect_sapling_cmus_from_compact(&blob)?;
-            for cmu in cmus {
-                let node = merkle_node_from_cmu_bytes(&cmu)?;
-                advance_witness_with_cmus(&mut witness, std::iter::once(node))?;
-            }
-        }
+        advance_witness_height_range(
+            &mut witness,
+            store,
+            stored_tip.saturating_add(1),
+            anchor_height,
+        )?;
     }
 
     let ts = zebra.get_sapling_tree_state(anchor_height).await?;
     if !witness_root_matches_anchor(&witness, &ts.anchor) {
-        return Err(NozyError::InvalidOperation(
-            "Sapling witness does not match z_gettreestate (rebuild witnesses)".into(),
-        ));
+        return Err(NozyError::InvalidOperation(format!(
+            "Sapling witness does not match z_gettreestate at {anchor_height} (rebuild witnesses)"
+        )));
     }
     merkle_path_from_witness(&witness)
 }
@@ -348,7 +447,13 @@ pub async fn build_sapling_shield_to_self(
         .map_err(|_| NozyError::InvalidOperation("Invalid Sapling shield fee".into()))?;
     let fee_rule = FixedShieldFeeRule { fee: fee_zat };
 
-    let tip0 = zebra.get_best_block_height().await?;
+    let zebra_tip0 = zebra.get_best_block_height().await?;
+    let tip0 = sapling_witness_replay_tip(store, zebra_tip0)?;
+    if tip0 < zebra_tip0 {
+        println!(
+            "Compact cache tip {tip0} lags Zebra tip {zebra_tip0}; building Sapling witnesses to compact tip"
+        );
+    }
     refresh_sapling_witnesses_from_compact_store(zebra, store, notes, tip0).await?;
 
     let spend_note = select_shield_note(notes, fee)?.clone();
@@ -375,7 +480,8 @@ pub async fn build_sapling_shield_to_self(
             );
         }
 
-        let tip = zebra.get_best_block_height().await?;
+        let zebra_tip = zebra.get_best_block_height().await?;
+        let tip = sapling_witness_replay_tip(store, zebra_tip)?;
         let (sapling_anchor, merkle_path) =
             prepare_sapling_anchor_and_path(zebra, &spend_note, tip, store).await?;
 
