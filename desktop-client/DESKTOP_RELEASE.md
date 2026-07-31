@@ -1,7 +1,7 @@
 # Desktop v1.0.0 — Windows GA
 
-> **Deferred.** GA `desktop-v1.0.0` waits until **Ironwood is officially released**.  
-> Ship **[`DESKTOP_BETA_2_RELEASE.md`](DESKTOP_BETA_2_RELEASE.md)** / tag **`desktop-v1.0.0-beta.2`** until then.
+> **Deferred.** GA `desktop-v1.0.0` waits until product readiness for GA.  
+> Ship **[`DESKTOP_BETA_3_RELEASE.md`](DESKTOP_BETA_3_RELEASE.md)** / tag **`desktop-v1.0.0-beta.3`** (Hot Lemon Pepper Sprinkles) until then.
 
 Copy the sections below into the GitHub Release body when tagging **`desktop-v1.0.0`** (after Ironwood official).
 
