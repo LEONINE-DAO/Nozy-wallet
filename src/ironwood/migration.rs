@@ -137,6 +137,49 @@ pub struct PreparedMigrationTransaction {
     pub source_nullifier_hex: String,
     pub prepared_at_height: u32,
     pub expires_at_height: u32,
+    /// How the Orchard note funded this turnstile (always zero Ironwood change).
+    pub funding_mode: Zip318FundingMode,
+    pub ironwood_output_zat: u64,
+    pub fee_zat: u64,
+}
+
+/// How a ZIP 318 canonical crossing funds a single Ironwood action (ECC SDK 2.7+ style).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Zip318FundingMode {
+    /// Note value equals `transfer + fee`; Ironwood output is the full transfer amount.
+    ExactCover,
+    /// Note value equals the canonical transfer; fee is taken from the Ironwood output.
+    FeeFromOutput,
+}
+
+impl Zip318FundingMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::ExactCover => "exact_cover",
+            Self::FeeFromOutput => "fee_from_output",
+        }
+    }
+}
+
+/// Dry-run proposal for a ZIP 318 Orchard→Ironwood canonical crossing.
+///
+/// Mirrors ECC `proposeTransfer` shape enough to inspect funding before prebuild/broadcast.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Zip318CrossingProposal {
+    pub sequence: u32,
+    pub value_zat: u64,
+    pub source_nullifier_hex: String,
+    pub source_note_value_zat: u64,
+    pub source_block_height: u32,
+    pub ironwood_output_zat: u64,
+    pub fee_zat: u64,
+    /// Always `0` for a canonical crossing (one Ironwood action, no change output).
+    pub change_zat: u64,
+    pub funding_mode: Zip318FundingMode,
+    pub anchor_bucket_height: u32,
+    pub not_before_height: u32,
+    pub expires_at_height: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -1010,44 +1053,148 @@ fn can_cover_transfer_with_current_notes(
 struct MigrationSpendSelection<'a> {
     spend_note: &'a SpendableNote,
     ironwood_output_zat: u64,
+    funding_mode: Zip318FundingMode,
+    fee_zat: u64,
+}
+
+/// Pure ZIP 318 canonical funding picker (testable without Orchard note crypto).
+///
+/// `notes` is `(value_zat, block_height)` for unspent Orchard notes.
+/// Prefers the **oldest** eligible note (lowest height, then earliest index), matching
+/// ECC Swift/Android SDK 2.7.0-rc.4+. Only zero-change shapes are accepted so the
+/// turnstile uses one Ironwood action (no change output).
+pub fn select_canonical_zip318_funding(
+    notes: &[(u64, u32)],
+    transfer_value_zat: u64,
+    fee_zatoshis: u64,
+) -> Option<(usize, u64, Zip318FundingMode)> {
+    let mut order: Vec<usize> = (0..notes.len()).collect();
+    order.sort_by_key(|&i| (notes[i].1, i));
+
+    let needed = transfer_value_zat.saturating_add(fee_zatoshis);
+    for &i in &order {
+        if notes[i].0 == needed {
+            return Some((i, transfer_value_zat, Zip318FundingMode::ExactCover));
+        }
+    }
+
+    if transfer_value_zat > fee_zatoshis {
+        for &i in &order {
+            if notes[i].0 == transfer_value_zat {
+                return Some((
+                    i,
+                    transfer_value_zat - fee_zatoshis,
+                    Zip318FundingMode::FeeFromOutput,
+                ));
+            }
+        }
+    }
+
+    None
 }
 
 /// Pick one Orchard note for a ZIP 318 turnstile prebuild.
 ///
-/// Prefer a note with headroom for `transfer + fee`. When the wallet holds an exact canonical
-/// denomination note (e.g. 1.0 ZEC from note splitting), deduct the fee from the Ironwood output.
+/// Aligns with ECC SDK canonical crossings: oldest covering note, zero Ironwood change.
+/// Exact `transfer + fee` cover is preferred; otherwise an exact canonical denomination
+/// note funds the fee from the Ironwood output. Notes with headroom that would create
+/// Ironwood change are rejected (run note-splitting first).
 fn select_migration_spend<'a>(
     spendable_notes: &'a [SpendableNote],
     transfer_value_zat: u64,
     fee_zatoshis: u64,
 ) -> NozyResult<MigrationSpendSelection<'a>> {
-    if let Ok(spend_note) = crate::orchard_tx::select_single_spend_note(
-        spendable_notes,
-        transfer_value_zat,
-        fee_zatoshis,
-    ) {
-        return Ok(MigrationSpendSelection {
-            spend_note,
-            ironwood_output_zat: transfer_value_zat,
-        });
-    }
-
-    if let Some(spend_note) = spendable_notes
+    let candidates: Vec<(u64, u32)> = spendable_notes
         .iter()
         .filter(|note| !note.orchard_note.spent)
-        .find(|note| {
-            note.orchard_note.value == transfer_value_zat && note.orchard_note.value > fee_zatoshis
-        })
-    {
-        return Ok(MigrationSpendSelection {
-            spend_note,
-            ironwood_output_zat: transfer_value_zat.saturating_sub(fee_zatoshis),
-        });
-    }
+        .map(|note| (note.orchard_note.value, note.orchard_note.block_height))
+        .collect();
+    let unspent: Vec<&SpendableNote> = spendable_notes
+        .iter()
+        .filter(|note| !note.orchard_note.spent)
+        .collect();
 
-    Err(NozyError::InvalidOperation(format!(
-        "No Orchard note covers ZIP 318 transfer {transfer_value_zat} zat plus {fee_zatoshis} zat fee."
-    )))
+    let (idx, ironwood_output_zat, funding_mode) =
+        select_canonical_zip318_funding(&candidates, transfer_value_zat, fee_zatoshis).ok_or_else(
+            || {
+                NozyError::InvalidOperation(format!(
+                    "No Orchard note funds a zero-change ZIP 318 crossing for {transfer_value_zat} zat \
+                     (fee {fee_zatoshis} zat). Need an exact transfer+fee note or an exact canonical \
+                     denomination note; run the note-splitting phase first."
+                ))
+            },
+        )?;
+
+    Ok(MigrationSpendSelection {
+        spend_note: unspent[idx],
+        ironwood_output_zat,
+        funding_mode,
+        fee_zat: fee_zatoshis,
+    })
+}
+
+/// Propose a ZIP 318 canonical crossing without building proofs (dry-run / preflight).
+pub fn propose_zip318_crossing(
+    transfer: &MigrationScheduledTransfer,
+    spendable_notes: &[SpendableNote],
+    fee_zatoshis: u64,
+) -> NozyResult<Zip318CrossingProposal> {
+    let selection = select_migration_spend(spendable_notes, transfer.value_zat, fee_zatoshis)?;
+    Ok(Zip318CrossingProposal {
+        sequence: transfer.sequence,
+        value_zat: transfer.value_zat,
+        source_nullifier_hex: hex::encode(selection.spend_note.orchard_note.nullifier.to_bytes()),
+        source_note_value_zat: selection.spend_note.orchard_note.value,
+        source_block_height: selection.spend_note.orchard_note.block_height,
+        ironwood_output_zat: selection.ironwood_output_zat,
+        fee_zat: selection.fee_zat,
+        change_zat: 0,
+        funding_mode: selection.funding_mode,
+        anchor_bucket_height: transfer.anchor_bucket_height,
+        not_before_height: transfer.not_before_height,
+        expires_at_height: transfer
+            .not_before_height
+            .saturating_add(ZIP318_TRANSFER_EXPIRY_BLOCKS),
+    })
+}
+
+/// Propose from cached orchard note rows (no spending keys required).
+pub fn propose_zip318_crossing_from_orchard_notes(
+    transfer: &MigrationScheduledTransfer,
+    orchard_notes: &[SerializableOrchardNote],
+    fee_zatoshis: u64,
+) -> NozyResult<Zip318CrossingProposal> {
+    let unspent: Vec<&SerializableOrchardNote> = orchard_notes
+        .iter()
+        .filter(|n| !n.spent && n.pool == ShieldedPool::Orchard)
+        .collect();
+    let candidates: Vec<(u64, u32)> = unspent.iter().map(|n| (n.value, n.block_height)).collect();
+    let (idx, ironwood_output_zat, funding_mode) =
+        select_canonical_zip318_funding(&candidates, transfer.value_zat, fee_zatoshis).ok_or_else(
+            || {
+                NozyError::InvalidOperation(format!(
+                    "No Orchard note funds a zero-change ZIP 318 crossing for {} zat (fee {} zat).",
+                    transfer.value_zat, fee_zatoshis
+                ))
+            },
+        )?;
+    let note = unspent[idx];
+    Ok(Zip318CrossingProposal {
+        sequence: transfer.sequence,
+        value_zat: transfer.value_zat,
+        source_nullifier_hex: hex::encode(&note.nullifier_bytes),
+        source_note_value_zat: note.value,
+        source_block_height: note.block_height,
+        ironwood_output_zat,
+        fee_zat: fee_zatoshis,
+        change_zat: 0,
+        funding_mode,
+        anchor_bucket_height: transfer.anchor_bucket_height,
+        not_before_height: transfer.not_before_height,
+        expires_at_height: transfer
+            .not_before_height
+            .saturating_add(ZIP318_TRANSFER_EXPIRY_BLOCKS),
+    })
 }
 
 fn load_or_rebuild_orchard_migration_schedule(
@@ -1149,10 +1296,18 @@ async fn build_migration_transaction_for_transfer(
         })?;
     let spend_note = selection.spend_note;
     let ironwood_output_zat = selection.ironwood_output_zat;
+    let funding_mode = selection.funding_mode;
+    let fee_zat = selection.fee_zat;
     let total_input = spend_note.orchard_note.value;
     let change = total_input
         .saturating_sub(ironwood_output_zat)
-        .saturating_sub(fee_zatoshis);
+        .saturating_sub(fee_zat);
+    if change != 0 {
+        return Err(NozyError::InvalidOperation(format!(
+            "ZIP 318 canonical crossing requires zero Ironwood change (got {change} zat). \
+             Split notes to exact denominations before prebuilding."
+        )));
+    }
     let source_nullifier_hex = hex::encode(spend_note.orchard_note.nullifier.to_bytes());
 
     let witness_provider = crate::orchard_tx::ZebraJsonRpcOrchardWitnessProvider;
@@ -1166,7 +1321,7 @@ async fn build_migration_transaction_for_transfer(
     let transfer_value = Zatoshis::from_u64(ironwood_output_zat).map_err(|_| {
         NozyError::InvalidOperation("Invalid Ironwood migration transfer amount".to_string())
     })?;
-    let fee = Zatoshis::from_u64(fee_zatoshis)
+    let fee = Zatoshis::from_u64(fee_zat)
         .map_err(|_| NozyError::InvalidOperation("Invalid migration fee".to_string()))?;
     let fee_rule = FixedMigrationFeeRule { fee };
 
@@ -1195,22 +1350,6 @@ async fn build_migration_transaction_for_transfer(
                     MemoBytes::empty(),
                 )
                 .map_err(|e| NozyError::InvalidOperation(format!("add_ironwood_output: {e:?}")))?;
-
-            if change > 0 {
-                let change_value = Zatoshis::from_u64(change).map_err(|_| {
-                    NozyError::InvalidOperation("Invalid Ironwood change amount".to_string())
-                })?;
-                builder
-                    .add_ironwood_output::<core::convert::Infallible>(
-                        None,
-                        self_ironwood_address.clone(),
-                        change_value,
-                        MemoBytes::empty(),
-                    )
-                    .map_err(|e| {
-                        NozyError::InvalidOperation(format!("add_ironwood_output (change): {e:?}"))
-                    })?;
-            }
 
             let parts = builder
                 .build_for_pczt(rand::rngs::OsRng, &fee_rule)
@@ -1281,6 +1420,9 @@ async fn build_migration_transaction_for_transfer(
         expires_at_height: transfer
             .not_before_height
             .saturating_add(ZIP318_TRANSFER_EXPIRY_BLOCKS),
+        funding_mode,
+        ironwood_output_zat,
+        fee_zat,
     })
 }
 
@@ -1383,8 +1525,9 @@ pub async fn execute_orchard_migration(
             prepared: None,
             readiness_state: MigrationReadinessState::SplitRequired,
             blockers: vec![format!(
-                "ZIP 318 transfer #{} ({} zat) cannot be covered by one current Orchard note plus fee. \
-                 Consolidate fee-dust notes or run the note-splitting phase.",
+                "ZIP 318 transfer #{} ({} zat) has no zero-change canonical funding note \
+                 (exact transfer+fee or exact denomination for fee-from-output). \
+                 Run the note-splitting phase.",
                 transfer.sequence, transfer.value_zat
             )],
             rebuilt_transfer_windows,
@@ -2391,5 +2534,47 @@ mod tests {
         assert!(presigned_transfer_broadcastable(&transfer, 1_023).is_err());
         assert!(presigned_transfer_broadcastable(&transfer, 1_024).is_ok());
         assert!(presigned_transfer_broadcastable(&transfer, 1_281).is_err());
+    }
+
+    #[test]
+    fn canonical_funding_prefers_oldest_exact_cover() {
+        let fee = 10_000u64;
+        let transfer = 100_000_000u64;
+        // Newer exact cover vs older oversized note — only exact cover / exact denom qualify.
+        let notes = [
+            (200_000_000u64, 10u32), // headroom → rejected (would make change)
+            (transfer + fee, 50),    // exact cover, newer
+            (transfer + fee, 20),    // exact cover, older → win
+            (transfer, 5),           // fee-from-output, oldest but exact cover preferred
+        ];
+        let (idx, output, mode) =
+            select_canonical_zip318_funding(&notes, transfer, fee).expect("fundable");
+        assert_eq!(idx, 2);
+        assert_eq!(output, transfer);
+        assert_eq!(mode, Zip318FundingMode::ExactCover);
+    }
+
+    #[test]
+    fn canonical_funding_falls_back_to_fee_from_output_on_oldest_denom() {
+        let fee = 10_000u64;
+        let transfer = 100_000_000u64;
+        let notes = [
+            (transfer, 40u32),
+            (transfer, 10u32), // oldest exact denom
+            (transfer + 1, 1), // almost exact cover but not zero-change eligible
+        ];
+        let (idx, output, mode) =
+            select_canonical_zip318_funding(&notes, transfer, fee).expect("fundable");
+        assert_eq!(idx, 1);
+        assert_eq!(output, transfer - fee);
+        assert_eq!(mode, Zip318FundingMode::FeeFromOutput);
+    }
+
+    #[test]
+    fn canonical_funding_rejects_headroom_only_notes() {
+        let fee = 10_000u64;
+        let transfer = 100_000_000u64;
+        let notes = [(transfer + fee + 1, 10u32), (transfer * 2, 1u32)];
+        assert!(select_canonical_zip318_funding(&notes, transfer, fee).is_none());
     }
 }
