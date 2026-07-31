@@ -116,7 +116,9 @@ futures = { version = "0.3", optional = true }
 
 zcash_proofs = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = ["bundled-prover"] }
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false }
-zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = ["orchard", "unstable"] }
+zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = ["orchard", "sapling", "unstable"] }
+# Sapling ZIP-32 keys for quiet legacy compatibility (Phase 1+); not wired into receive UAs yet.
+sapling = { package = "sapling-crypto", version = "0.7", default-features = false, features = ["std"], optional = true }
 pczt = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", optional = true, default-features = false, features = [
     "std",
     "orchard",
@@ -161,6 +163,7 @@ native = [
     "dep:zcash_proofs",
     "dep:zcash_transparent",
     "dep:zcash_keys",
+    "dep:sapling",
     "dep:pczt",
     "dep:ur",
     # Re-enable multicore for native parallel proving performance
