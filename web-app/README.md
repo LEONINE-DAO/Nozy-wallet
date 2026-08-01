@@ -1,7 +1,18 @@
 # NozyWallet Web App
 
-**Status:** Starting — scaffold and companion integration (ZEC only).  
-**Not the launchpad:** marketing lives in [`landing/`](../landing/). This folder is the **full wallet dashboard** in the browser.
+**Status:** Merchant dashboard scaffold (Business + ZNS link + receive QR via companion API).  
+**Not the launchpad:** marketing lives in [`landing/`](../landing/).
+
+Run:
+
+```bash
+cd web-app
+npm install
+npm run dev
+```
+
+Default API: `http://127.0.0.1:3000` (`cargo run -p nozywallet-api`).
+
 
 ---
 

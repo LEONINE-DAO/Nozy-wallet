@@ -20,6 +20,40 @@ pub enum Protocol {
     Grpc,
 }
 
+/// Personal vs Business wallet role (Orchard account 0 vs 1). Same seed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum WalletRole {
+    #[default]
+    Personal,
+    Business,
+}
+
+impl WalletRole {
+    /// ZIP-32 Orchard account index: Personal 0, Business 1.
+    pub fn orchard_account(self) -> u32 {
+        match self {
+            WalletRole::Personal => 0,
+            WalletRole::Business => 1,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            WalletRole::Personal => "personal",
+            WalletRole::Business => "business",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "personal" => Some(WalletRole::Personal),
+            "business" => Some(WalletRole::Business),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletConfig {
     #[serde(default = "default_zebra_url")]
@@ -73,6 +107,18 @@ pub struct WalletConfig {
 
     #[serde(default)]
     pub keystone: crate::keystone::KeystoneWalletConfig,
+
+    /// Active Personal / Business role (defaults to Personal for existing configs).
+    #[serde(default)]
+    pub active_role: WalletRole,
+
+    /// Optional stall / brand label for Business / Sell mode (local only).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub business_display_name: Option<String>,
+
+    /// Linked Zcash name (bare, no `.zcash` suffix). Claimed externally; linked in Nozy.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub linked_zns_name: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -233,6 +279,9 @@ impl Default for WalletConfig {
             secret_network: SecretNetworkConfig::default(),
             swap: SwapConfig::default(),
             keystone: crate::keystone::KeystoneWalletConfig::default(),
+            active_role: WalletRole::Personal,
+            business_display_name: None,
+            linked_zns_name: None,
         }
     }
 }
@@ -372,6 +421,19 @@ impl WalletConfig {
         }
         self.trusted_zebra_urls.push(normalized);
     }
+
+    /// Orchard account for the active Personal/Business role.
+    pub fn active_orchard_account(&self) -> u32 {
+        self.active_role.orchard_account()
+    }
+
+    /// Normalized linked ZNS name (lowercase, no optional suffix).
+    pub fn linked_zns_display(&self) -> Option<String> {
+        self.linked_zns_name.as_ref().map(|n| {
+            let bare = n.trim().trim_end_matches(".zcash").trim_end_matches(".zec");
+            format!("{bare}.zcash")
+        })
+    }
 }
 
 /// Host:port identity for Zebra RPC URLs (scheme ignored so http/https forms match).
@@ -430,6 +492,16 @@ mod config_tests {
         assert_eq!(monotonic_last_scan_height(Some(50), 100), 100);
         assert_eq!(monotonic_last_scan_height(Some(200), 100), 200);
         assert_eq!(monotonic_last_scan_height(Some(100), 100), 100);
+    }
+
+    #[test]
+    fn wallet_role_accounts_and_defaults() {
+        assert_eq!(WalletRole::Personal.orchard_account(), 0);
+        assert_eq!(WalletRole::Business.orchard_account(), 1);
+        assert_eq!(WalletRole::parse("business"), Some(WalletRole::Business));
+        let cfg = WalletConfig::default();
+        assert_eq!(cfg.active_role, WalletRole::Personal);
+        assert!(cfg.linked_zns_name.is_none());
     }
 }
 

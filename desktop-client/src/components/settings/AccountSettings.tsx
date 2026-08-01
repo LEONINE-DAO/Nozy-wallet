@@ -15,6 +15,7 @@ import { walletApi } from "../../lib/api";
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../../utils/errors";
 import { logger } from "../../utils/logger";
+import { MerchantBusinessPanel } from "../MerchantBusinessPanel";
 
 interface AccountSettingsProps {
   onBack: () => void;
@@ -227,6 +228,10 @@ export function AccountSettings({ onBack }: AccountSettingsProps) {
               </>
             )}
           </Button>
+        </div>
+
+        <div className="rounded-2xl border border-white/50 bg-white/60 p-6 shadow-sm backdrop-blur-sm dark:border-gray-700/50 dark:bg-gray-800/60">
+          <MerchantBusinessPanel />
         </div>
 
         <div className="rounded-2xl border border-white/50 bg-white/60 p-6 shadow-sm backdrop-blur-sm dark:border-gray-700/50 dark:bg-gray-800/60">

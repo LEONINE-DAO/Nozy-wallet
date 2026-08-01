@@ -166,6 +166,7 @@ pub use cli_helpers::{
 #[cfg(feature = "native")]
 pub use config::{
     load_config, save_config, update_last_scan_height, update_last_tip_sync_unix, WalletConfig,
+    WalletRole,
 };
 #[cfg(feature = "native")]
 pub use config::{BackendKind, Protocol};

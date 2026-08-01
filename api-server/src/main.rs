@@ -15,6 +15,7 @@ mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
+mod profile_handlers;
 mod sapling_handlers;
 mod zns_handlers;
 
@@ -104,6 +105,12 @@ async fn main() -> anyhow::Result<()> {
             post(sapling_handlers::shield_sapling),
         )
         .route("/api/zns/resolve", post(zns_handlers::resolve_zns_name))
+        .route("/api/zns/link", get(zns_handlers::get_zns_link))
+        .route("/api/zns/link", post(zns_handlers::link_zns_name))
+        .route("/api/zns/link", delete(zns_handlers::unlink_zns_name))
+        .route("/api/zns/reverse", get(zns_handlers::reverse_zns_lookup))
+        .route("/api/profile", get(profile_handlers::get_profile))
+        .route("/api/profile", post(profile_handlers::update_profile))
         .route("/api/address/generate", post(handlers::generate_address))
         .route("/api/balance", get(handlers::get_balance))
         .route("/api/sync", post(handlers::sync_wallet))

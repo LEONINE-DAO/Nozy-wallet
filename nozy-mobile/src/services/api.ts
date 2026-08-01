@@ -251,6 +251,63 @@ export const api = {
       }),
     }),
 
+  getProfile: (password?: string) => {
+    const q = password ? `?password=${encodeURIComponent(password)}` : "";
+    return request<{
+      role: string;
+      orchard_account: number;
+      business_display_name?: string;
+      linked_zns_name?: string;
+      linked_zns_display?: string;
+      receive_address?: string;
+      business_address?: string;
+      personal_address?: string;
+      network: string;
+    }>(`/api/profile${q}`);
+  },
+
+  updateProfile: (params: {
+    password?: string;
+    role?: "personal" | "business";
+    business_display_name?: string;
+  }) =>
+    request<{
+      role: string;
+      orchard_account: number;
+      business_display_name?: string;
+      linked_zns_name?: string;
+      linked_zns_display?: string;
+      receive_address?: string;
+      business_address?: string;
+      personal_address?: string;
+      network: string;
+    }>("/api/profile", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
+
+  getZnsLink: () =>
+    request<{ linked: boolean; name: string | null; display: string | null }>("/api/zns/link"),
+
+  linkZnsName: (params: {
+    name: string;
+    password?: string;
+    expect_address?: string;
+  }) =>
+    request<{
+      linked: boolean;
+      name: string;
+      display: string;
+      address: string;
+      business_address: string;
+    }>("/api/zns/link", {
+      method: "POST",
+      body: JSON.stringify(params),
+    }),
+
+  unlinkZnsName: () =>
+    request<{ linked: boolean; name: null }>("/api/zns/link", { method: "DELETE" }),
+
   getTransactionHistory: () =>
     request<TransactionHistoryResponse>("/api/transaction/history"),
 

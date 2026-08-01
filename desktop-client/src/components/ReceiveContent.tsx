@@ -3,6 +3,7 @@ import QRCode from "react-qr-code";
 import { useWalletStore } from "../store/walletStore";
 import { Copy, CheckCircle } from "@solar-icons/react";
 import { Button } from "./Button";
+import { MerchantBusinessPanel } from "./MerchantBusinessPanel";
 import toast from "react-hot-toast";
 
 export function ReceiveContent() {
@@ -25,7 +26,8 @@ export function ReceiveContent() {
     <div className="space-y-8 animate-fade-in text-center">
       <div className="space-y-2">
         <p className="text-gray-500 dark:text-gray-400 text-sm">
-          Scan this QR code or copy the address below to receive funds.
+          Scan this QR code or copy the address below to receive funds. Merchants: switch to
+          Business and link a Zcash name below.
         </p>
       </div>
 
@@ -70,6 +72,10 @@ export function ReceiveContent() {
       <Button onClick={handleCopy} className="w-full" disabled={!hasAddress}>
         {copied ? "Copied to Clipboard" : "Copy Address"}
       </Button>
+
+      <div className="text-left rounded-2xl border border-gray-200 dark:border-gray-700 p-4 bg-white/60 dark:bg-gray-900/40">
+        <MerchantBusinessPanel compact />
+      </div>
     </div>
   );
 }
