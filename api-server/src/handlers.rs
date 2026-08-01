@@ -186,6 +186,9 @@ pub struct UnlockWalletRequest {
 #[derive(Debug, Deserialize)]
 pub struct GenerateAddressRequest {
     pub password: Option<String>,
+    /// Orchard account override. When omitted, uses active Personal/Business role (0/1).
+    #[serde(default)]
+    pub account: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -401,8 +404,11 @@ pub async fn generate_address(
     } else {
         zcash_protocol::consensus::NetworkType::Main
     };
+    let account = payload
+        .account
+        .unwrap_or_else(|| config.active_orchard_account());
     let address = wallet
-        .generate_orchard_address(0, 0, network)
+        .generate_orchard_address(account, 0, network)
         .map_err(|e| {
             (
                 StatusCode::INTERNAL_SERVER_ERROR,

@@ -324,6 +324,7 @@ export type RootStackParamList = {
   RestoreWallet: undefined;
   Unlock: undefined;
   Dashboard: undefined;
+  Sell: undefined;
   Send: { recipient?: string } | undefined;
   TransactionHistory: undefined;
   TransactionDetail: { txid: string };

@@ -6,7 +6,7 @@ Enhancements and product work (not bugs). Large lanes also have phased TODO docs
 
 | ID | Status | Surface | Summary | GitHub | TODO / RFC | Notes |
 |----|--------|---------|---------|--------|------------|-------|
-| FEAT-2026-001 | Planning | mobile, api-server | Business profile + ZNS + Sell mode | [#85](https://github.com/LEONINE-DAO/Nozy-wallet/issues/85) | [`BUSINESS_ZEC_ZNS_TODO.md`](../BUSINESS_ZEC_ZNS_TODO.md) | Phase 0 done |
+| FEAT-2026-001 | In progress | mobile, desktop, web-app, api-server | Business profile + ZNS link + Sell / merchant | [#85](https://github.com/LEONINE-DAO/Nozy-wallet/issues/85) | [`BUSINESS_ZEC_ZNS_TODO.md`](../BUSINESS_ZEC_ZNS_TODO.md) | Phase 1+link shipping |
 | FEAT-2026-002 | Shipped | cli, api-server | Dynamic-fee pilot (Priority Lane) | #35 | [`DYNAMIC_FEE_PHASE_A_IMPLEMENTATION.md`](../rfcs/DYNAMIC_FEE_PHASE_A_IMPLEMENTATION.md) | v2.3.0+ |
 | FEAT-2026-003 | Shipped | zeaking | Compact sync Phase 1 (resume, errors) | — | zeaking README | May 2026 |
 | FEAT-2026-004 | In progress | mobile | nozy-mobile companion app | — | nozy-mobile/README | Expo + VPS |

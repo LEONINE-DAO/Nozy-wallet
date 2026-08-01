@@ -7,6 +7,7 @@ import { KeystoneScreen } from "../screens/Keystone";
 import { MnemonicBackupScreen } from "../screens/MnemonicBackup";
 import { RestoreWalletScreen } from "../screens/RestoreWallet";
 import { SendScreen } from "../screens/Send";
+import { SellScreen } from "../screens/Sell";
 import { SettingsScreen } from "../screens/Settings";
 import { TransactionDetailScreen } from "../screens/TransactionDetail";
 import { TransactionHistoryScreen } from "../screens/TransactionHistory";
@@ -59,6 +60,7 @@ export function AppNavigator() {
         options={{ title: "NozyWallet", headerBackVisible: false }}
       />
       <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send ZEC" }} />
+      <Stack.Screen name="Sell" component={SellScreen} options={{ title: "Sell mode" }} />
       <Stack.Screen
         name="TransactionHistory"
         component={TransactionHistoryScreen}

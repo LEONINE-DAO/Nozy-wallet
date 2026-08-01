@@ -26,7 +26,9 @@ pub async fn generate_address(
             code: e.code,
         })?;
 
-    let account = request.account.unwrap_or(0);
+    let account = request
+        .account
+        .unwrap_or_else(|| nozy::load_config().active_orchard_account());
     let index = request.index.unwrap_or(0);
 
     let address = wallet

@@ -137,6 +137,81 @@ export const walletApi = {
     return { data: result };
   },
 
+  getWalletProfile: async (password?: string) => {
+    const result = await invoke<{
+      role: string;
+      orchard_account: number;
+      business_display_name: string | null;
+      linked_zns_name: string | null;
+      linked_zns_display: string | null;
+      receive_address: string | null;
+      business_address: string | null;
+      personal_address: string | null;
+      network: string;
+    }>("get_wallet_profile", { request: { password: password ?? null } });
+    return { data: result };
+  },
+
+  updateWalletProfile: async (params: {
+    password?: string;
+    role?: "personal" | "business";
+    business_display_name?: string;
+  }) => {
+    const result = await invoke<{
+      role: string;
+      orchard_account: number;
+      business_display_name: string | null;
+      linked_zns_name: string | null;
+      linked_zns_display: string | null;
+      receive_address: string | null;
+      business_address: string | null;
+      personal_address: string | null;
+      network: string;
+    }>("update_wallet_profile", {
+      request: {
+        password: params.password ?? null,
+        role: params.role ?? null,
+        business_display_name: params.business_display_name ?? null,
+      },
+    });
+    return { data: result };
+  },
+
+  getZnsLink: async () => {
+    const result = await invoke<{
+      linked: boolean;
+      name: string | null;
+      display: string | null;
+    }>("get_zns_link");
+    return { data: result };
+  },
+
+  linkZnsName: async (params: {
+    name: string;
+    resolved_address: string;
+    password?: string;
+  }) => {
+    const result = await invoke<{
+      linked: boolean;
+      name: string;
+      display: string;
+      address: string;
+      business_address: string;
+    }>("link_zns_name", {
+      request: {
+        name: params.name,
+        resolved_address: params.resolved_address,
+        password: params.password ?? null,
+      },
+    });
+    return { data: result };
+  },
+
+  unlinkZnsName: async () => {
+    const result = await invoke<{ linked: boolean; name: null }>("unlink_zns_name");
+    return { data: result };
+  },
+
   getBalance: async (): Promise<{ data: BalanceResponse }> => {
     const result = await invoke<BalanceResponse>("get_balance");
     return { data: result };

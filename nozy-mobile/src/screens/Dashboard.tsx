@@ -317,6 +317,11 @@ export function DashboardScreen({ navigation }: Props) {
             disabled={syncing}
           />
           <Button
+            label="Sell mode"
+            onPress={() => navigation.navigate("Sell")}
+            disabled={syncing}
+          />
+          <Button
             label="Transaction history"
             variant="secondary"
             onPress={() => navigation.navigate("TransactionHistory")}
