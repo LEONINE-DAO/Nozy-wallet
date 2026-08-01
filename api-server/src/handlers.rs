@@ -732,6 +732,15 @@ pub async fn get_config(
     }))
 }
 
+/// GET `/api/pilot/metrics` — local-only dynamic-fee pilot counters (no PII).
+pub async fn get_pilot_metrics(
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    let metrics = nozy::pilot_metrics::PilotMetrics::load();
+    Ok(ResponseJson(
+        serde_json::to_value(metrics).unwrap_or_default(),
+    ))
+}
+
 pub async fn set_zebra_url(
     Json(payload): Json<SetZebraUrlRequest>,
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {

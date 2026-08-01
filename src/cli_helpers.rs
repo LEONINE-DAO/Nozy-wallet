@@ -340,6 +340,9 @@ pub async fn build_and_broadcast_transaction(
         );
         tx_record.mark_broadcast();
         tx_storage.save_transaction(tx_record)?;
+        if pilot.priority {
+            crate::pilot_metrics::record_priority_send();
+        }
 
         println!("📝 Transaction saved to history - will track confirmations");
 

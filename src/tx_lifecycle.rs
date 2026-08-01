@@ -153,6 +153,7 @@ pub async fn speed_up_transaction(
     );
     tx_record.mark_broadcast();
     tx_storage.save_transaction(tx_record)?;
+    crate::pilot_metrics::record_speed_up();
 
     Ok(network_txid)
 }
