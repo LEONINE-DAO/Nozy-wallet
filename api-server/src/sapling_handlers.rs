@@ -93,10 +93,7 @@ pub async fn get_sapling_status(
 ) -> Result<ResponseJson<SaplingStatusResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
     let notes = load_sapling_notes().unwrap_or_default();
     let unspent: Vec<_> = notes.iter().filter(|n| !n.spent).collect();
-    let with_rseed = unspent
-        .iter()
-        .filter(|n| sapling_note_has_rseed(n))
-        .count();
+    let with_rseed = unspent.iter().filter(|n| sapling_note_has_rseed(n)).count();
     let ready = unspent
         .iter()
         .filter(|n| sapling_note_ready_to_shield(n))
@@ -128,9 +125,9 @@ pub async fn get_sapling_status(
 pub async fn scan_sapling(
     Json(body): Json<SaplingScanRequest>,
 ) -> Result<ResponseJson<SaplingScanResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    let (wallet, _) = load_wallet_with_password(body.password).await.map_err(|e| {
-        error_response_with_code(StatusCode::UNAUTHORIZED, e, "WALLET_AUTH")
-    })?;
+    let (wallet, _) = load_wallet_with_password(body.password)
+        .await
+        .map_err(|e| error_response_with_code(StatusCode::UNAUTHORIZED, e, "WALLET_AUTH"))?;
     let seed = wallet.get_mnemonic_object().to_seed("");
     let db = compact_db_path();
     let store = zeaking::lwd::LwdCompactStore::open(&db).map_err(|e| {
@@ -206,8 +203,8 @@ pub async fn shield_sapling(
         ));
     }
 
-    let lwd_url = std::env::var("LIGHTWALLETD_GRPC")
-        .unwrap_or_else(|_| "http://127.0.0.1:9067".to_string());
+    let lwd_url =
+        std::env::var("LIGHTWALLETD_GRPC").unwrap_or_else(|_| "http://127.0.0.1:9067".to_string());
     let db = compact_db_path();
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
