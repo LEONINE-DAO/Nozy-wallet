@@ -1,6 +1,6 @@
 [package]
 name = "nozy"
-version = "2.4.2"
+version = "2.4.3"
 edition = "2021"
 default-run = "nozy"
 description = "NozyWallet: A Orchard wallet built for Zebra, delivering the highest level of Zcash privacy through fully-shielded transactions and cutting-edge cryptographic security."
@@ -178,7 +178,7 @@ wasm = ["getrandom/js"]
 secret-network = ["dep:cosmrs", "dep:tendermint"]
 
 [workspace]
-members = ["zeaking", "api-server", "zeaking-ffi"]
+members = ["zeaking", "api-server", "zeaking-ffi", "nozy-ffi"]
 exclude = [
     "desktop-client/src-tauri",
     "browser-extension/wasm-core",

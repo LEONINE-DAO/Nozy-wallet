@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.0-beta.4] - Hot Lemon Pepper Sprinkles (Desktop) (2026-07-31)
+
+Windows desktop beta after **beta.3** (same product name). Sapling quiet legacy banner + client wiring (#205+); stacked Sapling/client features from master.
+
+### Added
+- Desktop Sapling quiet legacy status / scan / shield UI wiring
+- Release notes: `desktop-client/DESKTOP_BETA_4_RELEASE.md`; tag `desktop-v1.0.0-beta.4`
+
+### Changed
+- Desktop app version `1.0.0-beta.4` (tauri.conf.json, Cargo.toml, package.json)
+
 ## [Unreleased]
 
 ### Added

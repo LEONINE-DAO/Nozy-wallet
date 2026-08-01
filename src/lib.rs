@@ -246,7 +246,7 @@ pub use orchard_tx::{
 #[cfg(feature = "native")]
 pub use paths::{
     get_wallet_base_dir, get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir,
-    get_wallet_data_path,
+    get_wallet_data_path, with_wallet_data_dir,
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;
