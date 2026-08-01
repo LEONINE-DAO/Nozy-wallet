@@ -52,6 +52,8 @@ pub mod lite_tui;
 #[cfg(feature = "native")]
 pub mod local_analytics;
 #[cfg(feature = "native")]
+pub mod merchant_invoices;
+#[cfg(feature = "native")]
 pub mod monero;
 #[cfg(feature = "native")]
 pub mod monero_zk_verifier;
@@ -77,6 +79,8 @@ pub mod orchard_tx;
 pub mod orchard_witness;
 #[cfg(feature = "native")]
 pub mod paths;
+#[cfg(feature = "native")]
+pub mod pilot_metrics;
 #[cfg(feature = "native")]
 pub mod privacy_network;
 #[cfg(feature = "native")]
@@ -131,6 +135,10 @@ pub mod zeaking_adapter;
 pub mod zebra_integration;
 #[cfg(feature = "native")]
 pub mod zebra_tree_rpc;
+#[cfg(feature = "native")]
+pub mod zip321;
+#[cfg(feature = "native")]
+pub mod zns;
 
 // ============================================================
 // WASM-safe re-exports

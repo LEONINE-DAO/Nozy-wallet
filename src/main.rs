@@ -959,7 +959,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             let (wallet, _storage) = load_wallet().await?;
 
             let address_book = AddressBook::new()?;
-            let actual_recipient =
+            let mut actual_recipient =
                 if let Some(address) = address_book.get_address_by_name(&recipient) {
                     println!("📇 Found '{}' in address book: {}", recipient, address);
                     let _ = address_book.update_address_usage(&recipient);
@@ -967,6 +967,43 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 } else {
                     recipient.clone()
                 };
+
+            // Resolve Zcash Names (`alice` / `alice.zcash`) before address validation.
+            if nozy::zns::is_likely_zns_name(&actual_recipient) {
+                let net = if config.network == "testnet" {
+                    "testnet"
+                } else {
+                    "mainnet"
+                };
+                println!("🏷️  Resolving Zcash name “{}”…", actual_recipient);
+                match nozy::zns::resolve_name(&actual_recipient, Some(net)).await {
+                    Ok(resolved) if resolved.found => {
+                        if let Some(reg) = resolved.registration {
+                            println!(
+                                "   → {} → {}…",
+                                resolved.name,
+                                &reg.address.chars().take(16).collect::<String>()
+                            );
+                            actual_recipient = reg.address;
+                        } else {
+                            return Err(NozyError::InvalidInput(format!(
+                                "Zcash name “{}” not found on indexer",
+                                recipient
+                            )));
+                        }
+                    }
+                    Ok(_) => {
+                        return Err(NozyError::InvalidInput(format!(
+                            "Zcash name “{}” not found on indexer",
+                            recipient
+                        )));
+                    }
+                    Err(e) => {
+                        println!("❌ ZNS resolve failed: {e}");
+                        return Err(e);
+                    }
+                }
+            }
 
             use nozy::input_validation::validate_zcash_address;
             if let Err(e) = validate_zcash_address(&actual_recipient) {

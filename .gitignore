@@ -68,6 +68,7 @@ push_url_update.ps1
 !AGENTS.md
 !CONTRIBUTING.md
 !PRODUCTION_CHECKLIST.md
+!GRANT_80K_PRODUCTION_CHECKLIST.md
 !api-server/*.md
 !CROSSLINK*.md
 !*AUDIT*.md
@@ -88,9 +89,14 @@ push_url_update.ps1
 !browser-extension/CHANGELOG.md
 !browser-extension/COMPANION.md
 !browser-extension/RELEASES.md
+!browser-extension/STORE_SUBMISSION_CHECKLIST.md
 !mobile/README.md
 !docs/PILOT_MAINNET_EVIDENCE.md
 !docs/MAINNET_SEND_EXPIRY_TEST.md
+!docs/BUSINESS_ZEC_ZNS_TODO.md
+!docs/NOZY_MERCHANT_NATIVE.md
+!docs/VENDOR_VPS_SELL_GUIDE.md
+!docs/rfcs/DYNAMIC_FEE_A_PRIME_SOAK.md
 !docs/reference/
 !docs/reference/**/*.md
 !docs/assets/README.md

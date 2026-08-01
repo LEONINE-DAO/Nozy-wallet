@@ -889,12 +889,14 @@ impl SentTransactionStorage {
         current_height: u32,
     ) -> NozyResult<bool> {
         let mut updated = false;
+        let mut was_speed_up = false;
         {
             let mut transactions = self
                 .transactions
                 .lock()
                 .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))?;
             if let Some(tx) = transactions.get_mut(txid) {
+                was_speed_up = tx.speed_up_of_txid.is_some();
                 tx.mark_confirmed(block_height, block_time, current_height);
                 updated = true;
             }
@@ -902,6 +904,9 @@ impl SentTransactionStorage {
 
         if updated {
             self.save_transactions()?;
+            if was_speed_up {
+                crate::pilot_metrics::record_speed_up_confirmed();
+            }
         }
 
         Ok(updated)
@@ -1025,6 +1030,10 @@ impl SentTransactionStorage {
                 let _ = release_wallet_notes_by_nullifier_hex(&spent_note_ids);
                 expired_count += 1;
             }
+        }
+
+        if expired_count > 0 {
+            crate::pilot_metrics::record_expired_unmined(expired_count);
         }
 
         Ok(expired_count)

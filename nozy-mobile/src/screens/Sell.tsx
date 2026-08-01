@@ -135,7 +135,16 @@ export function SellScreen({ navigation }: Props) {
   }
 
   const identityLabel = linkedDisplay || businessAddress || "Switch to Business and generate address";
-  const qrPayload = businessAddress || linkedDisplay || "";
+  const amt = parseFloat(amount);
+  const qrPayload = (() => {
+    if (!businessAddress) return linkedDisplay || "";
+    if (Number.isFinite(amt) && amt > 0) {
+      const trimmed = amt.toFixed(8).replace(/\.?0+$/, "");
+      const memo = encodeURIComponent(`sell-${Date.now()}`);
+      return `zcash:${businessAddress}?amount=${trimmed}&memo=${memo}`;
+    }
+    return `zcash:${businessAddress}`;
+  })();
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
@@ -197,18 +206,27 @@ export function SellScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.card}>
-          <Text style={styles.label}>Receive (QR payload = UA)</Text>
+          <Text style={styles.label}>Receive (ZIP-321 URI for QR)</Text>
           <Text style={styles.heroName}>{identityLabel}</Text>
           {businessAddress ? (
             <Text style={styles.mono} selectable>
               {businessAddress}
             </Text>
           ) : null}
+          {qrPayload ? (
+            <Text style={styles.mono} selectable>
+              {qrPayload}
+            </Text>
+          ) : null}
+          <Text style={styles.hint}>
+            Paste the URI into a QR generator, or copy for the customer. Native on-screen QR lands with
+            the invoice API polish pass.
+          </Text>
           <TextInput
             style={styles.amount}
             value={amount}
             onChangeText={setAmount}
-            placeholder="Amount ZEC (optional display)"
+            placeholder="Amount ZEC (adds to ZIP-321 URI)"
             keyboardType="decimal-pad"
             placeholderTextColor={colors.textMuted}
           />
@@ -222,7 +240,7 @@ export function SellScreen({ navigation }: Props) {
             }}
           />
           <Button
-            label="Copy UA for QR / pay"
+            label="Copy ZIP-321 URI"
             variant="secondary"
             onPress={async () => {
               if (qrPayload) await Clipboard.setStringAsync(qrPayload);

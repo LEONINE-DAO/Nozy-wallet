@@ -11,6 +11,7 @@ use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
 mod handlers;
+mod invoice_handlers;
 mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
@@ -111,6 +112,27 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/zns/reverse", get(zns_handlers::reverse_zns_lookup))
         .route("/api/profile", get(profile_handlers::get_profile))
         .route("/api/profile", post(profile_handlers::update_profile))
+        .route(
+            "/api/business/invoices",
+            post(invoice_handlers::create_invoice),
+        )
+        .route(
+            "/api/business/invoices",
+            get(invoice_handlers::list_invoices),
+        )
+        .route(
+            "/api/business/invoices/{id}",
+            get(invoice_handlers::get_invoice),
+        )
+        .route(
+            "/api/business/invoices/{id}/qr",
+            get(invoice_handlers::get_invoice_qr),
+        )
+        .route(
+            "/api/business/invoices/{id}/cancel",
+            post(invoice_handlers::cancel_invoice),
+        )
+        .route("/api/pilot/metrics", get(handlers::get_pilot_metrics))
         .route("/api/address/generate", post(handlers::generate_address))
         .route("/api/balance", get(handlers::get_balance))
         .route("/api/sync", post(handlers::sync_wallet))

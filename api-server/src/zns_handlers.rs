@@ -1,15 +1,17 @@
 //! Zcash Name Service (ZNS) resolve proxy for companion / extension clients.
 //!
-//! Indexer JSON-RPC: https://www.zcashnames.com/docs (resolve method).
-//! Optional `.zcash` / `.zec` suffixes are stripped; they are never required.
+//! Uses `nozy::zns` for allowlisted indexer verify + shared resolve.
+//! Short TTL in-memory cache reduces indexer load.
 
 use axum::{extract::Json, http::StatusCode, response::Json as ResponseJson};
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 
 use crate::handlers::error_response;
 
-const MAINNET_URL: &str = "https://light.zcash.me/zns-mainnet-test";
-const TESTNET_URL: &str = "https://light.zcash.me/zns-testnet";
+const CACHE_TTL: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Deserialize)]
 pub struct ResolveRequest {
@@ -34,7 +36,7 @@ pub struct ZnsRegistration {
     pub last_action: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, Clone)]
 pub struct ResolveResponse {
     pub name: String,
     pub found: bool,
@@ -42,123 +44,89 @@ pub struct ResolveResponse {
     pub registration: Option<ZnsRegistration>,
 }
 
-fn normalize_zns_name(raw: &str) -> String {
-    let mut s = raw.trim().to_ascii_lowercase();
-    if let Some(stripped) = s.strip_suffix(".zcash") {
-        s = stripped.to_string();
-    } else if let Some(stripped) = s.strip_suffix(".zec") {
-        s = stripped.to_string();
+struct CacheEntry {
+    at: Instant,
+    value: ResolveResponse,
+}
+
+static RESOLVE_CACHE: Mutex<Option<HashMap<String, CacheEntry>>> = Mutex::new(None);
+
+fn cache_key(name: &str, network: Option<&str>) -> String {
+    format!("{}|{}", name, network.unwrap_or("mainnet"))
+}
+
+fn cache_get(key: &str) -> Option<ResolveResponse> {
+    let guard = RESOLVE_CACHE.lock().ok()?;
+    let map = guard.as_ref()?;
+    let entry = map.get(key)?;
+    if entry.at.elapsed() > CACHE_TTL {
+        return None;
     }
-    s
+    Some(entry.value.clone())
+}
+
+fn cache_put(key: String, value: ResolveResponse) {
+    if let Ok(mut guard) = RESOLVE_CACHE.lock() {
+        let map = guard.get_or_insert_with(HashMap::new);
+        map.insert(
+            key,
+            CacheEntry {
+                at: Instant::now(),
+                value,
+            },
+        );
+        if map.len() > 512 {
+            map.retain(|_, e| e.at.elapsed() <= CACHE_TTL);
+        }
+    }
+}
+
+fn normalize_zns_name(raw: &str) -> String {
+    nozy::zns::normalize_zns_name(raw)
 }
 
 fn is_valid_zns_name(name: &str) -> bool {
-    let len = name.len();
-    if !(1..=63).contains(&len) {
-        return false;
-    }
-    let bytes = name.as_bytes();
-    if !bytes[0].is_ascii_alphanumeric() || !bytes[len - 1].is_ascii_alphanumeric() {
-        return false;
-    }
-    name.bytes()
-        .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-')
+    nozy::zns::is_valid_zns_name(name)
 }
 
 fn indexer_url(network: Option<&str>) -> String {
-    match network.map(|s| s.trim().to_ascii_lowercase()).as_deref() {
-        Some("testnet") => {
-            std::env::var("ZNS_TESTNET_URL").unwrap_or_else(|_| TESTNET_URL.to_string())
-        }
-        _ => std::env::var("ZNS_MAINNET_URL").unwrap_or_else(|_| MAINNET_URL.to_string()),
-    }
+    nozy::zns::indexer_url(network)
 }
 
 async fn resolve_name_inner(
     name: &str,
     network: Option<&str>,
 ) -> Result<ResolveResponse, (StatusCode, ResponseJson<serde_json::Value>)> {
-    let url = indexer_url(network);
-    let body = serde_json::json!({
-        "jsonrpc": "2.0",
-        "id": 1,
-        "method": "resolve",
-        "params": [name],
+    let key = cache_key(name, network);
+    if let Some(hit) = cache_get(&key) {
+        return Ok(hit);
+    }
+
+    let resolved = nozy::zns::resolve_name(name, network).await.map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("allowlisted") || msg.contains("Invalid Zcash name") {
+            error_response(StatusCode::BAD_REQUEST, msg)
+        } else {
+            error_response(StatusCode::BAD_GATEWAY, msg)
+        }
+    })?;
+
+    let registration = resolved.registration.map(|r| ZnsRegistration {
+        name: r.name,
+        address: r.address,
+        txid: r.txid,
+        height: r.height,
+        nonce: r.nonce,
+        last_action: r.last_action,
     });
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .build()
-        .map_err(|e| {
-            error_response(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to build HTTP client: {e}"),
-            )
-        })?;
-
-    let res = client.post(url).json(&body).send().await.map_err(|e| {
-        error_response(
-            StatusCode::BAD_GATEWAY,
-            format!("ZNS indexer unreachable: {e}"),
-        )
-    })?;
-
-    if !res.status().is_success() {
-        return Err(error_response(
-            StatusCode::BAD_GATEWAY,
-            format!("ZNS indexer HTTP {}", res.status()),
-        ));
-    }
-
-    let rpc: serde_json::Value = res.json().await.map_err(|e| {
-        error_response(
-            StatusCode::BAD_GATEWAY,
-            format!("Invalid ZNS indexer response: {e}"),
-        )
-    })?;
-
-    if let Some(err) = rpc.get("error") {
-        let msg = err
-            .get("message")
-            .and_then(|m| m.as_str())
-            .unwrap_or("ZNS resolve failed");
-        return Err(error_response(StatusCode::BAD_GATEWAY, msg));
-    }
-
-    let result = rpc.get("result");
-    if result.is_none() || result == Some(&serde_json::Value::Null) {
-        return Ok(ResolveResponse {
-            name: name.to_string(),
-            found: false,
-            registration: None,
-        });
-    }
-
-    let reg: ZnsRegistration = serde_json::from_value(result.cloned().unwrap_or_default())
-        .map_err(|e| {
-            error_response(
-                StatusCode::BAD_GATEWAY,
-                format!("Unexpected ZNS registration shape: {e}"),
-            )
-        })?;
-
-    if reg.address.is_empty() {
-        return Ok(ResolveResponse {
-            name: name.to_string(),
-            found: false,
-            registration: None,
-        });
-    }
-
-    Ok(ResolveResponse {
-        name: if reg.name.is_empty() {
-            name.to_string()
-        } else {
-            reg.name.clone()
-        },
-        found: true,
-        registration: Some(reg),
-    })
+    let response = ResolveResponse {
+        name: resolved.name,
+        found: resolved.found,
+        registration,
+    };
+    cache_put(key, response.clone());
+    Ok(response)
 }
 
 /// POST `/api/zns/resolve` — proxy to the public ZNS indexer `resolve` RPC.
@@ -328,6 +296,10 @@ pub async fn reverse_zns_lookup(
     }
 
     let url = indexer_url(query.network.as_deref());
+    if let Err(e) = nozy::zns::verify_indexer_url(&url) {
+        return Err(error_response(StatusCode::BAD_REQUEST, e.to_string()));
+    }
+
     let body = serde_json::json!({
         "jsonrpc": "2.0",
         "id": 1,
@@ -391,14 +363,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn strips_optional_suffixes() {
+    fn normalize_and_validate() {
         assert_eq!(normalize_zns_name("Alice.zcash"), "alice");
         assert_eq!(normalize_zns_name("bob.zec"), "bob");
         assert_eq!(normalize_zns_name("carol"), "carol");
-    }
-
-    #[test]
-    fn validates_names() {
         assert!(is_valid_zns_name("alice"));
         assert!(is_valid_zns_name("a"));
         assert!(is_valid_zns_name("my-name"));
