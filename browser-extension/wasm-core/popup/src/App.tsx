@@ -958,12 +958,32 @@ function CompanionView() {
   const [syncStart, setSyncStart] = useState("0");
   const [syncEnd, setSyncEnd] = useState("");
   const [syncTipFloor, setSyncTipFloor] = useState("");
+  const [legacyZec, setLegacyZec] = useState<number | null>(null);
+  const [legacyFeeZec, setLegacyFeeZec] = useState(0);
+
+  const refreshLegacyStatus = async (prefsBase?: string) => {
+    try {
+      const prefs = prefsBase
+        ? { baseUrl: prefsBase }
+        : await getCompanionPrefs();
+      const s = await extensionApi.companionSaplingStatus(prefs.baseUrl);
+      if (s.has_legacy_balance && s.unspent_zec > 0) {
+        setLegacyZec(s.unspent_zec);
+        setLegacyFeeZec(s.fee_zec);
+      } else {
+        setLegacyZec(null);
+      }
+    } catch {
+      setLegacyZec(null);
+    }
+  };
 
   useEffect(() => {
     getCompanionPrefs()
       .then((p) => {
         setBaseUrl(p.baseUrl);
         setLwdUrl(p.lightwalletdUrl);
+        void refreshLegacyStatus(p.baseUrl);
       })
       .catch(() => undefined);
   }, []);
@@ -984,6 +1004,51 @@ function CompanionView() {
         Optional: run <span className="font-mono text-white/70">nozywallet-api</span> or Nozy Desktop
         for lightwalletd compact sync. Zebrad JSON-RPC in Settings is enough for scan + send.
       </p>
+      <p className="text-[10px] leading-snug text-white/40">
+        On Windows, if lightwalletd runs in WSL, set{" "}
+        <span className="font-mono text-white/55">LIGHTWALLETD_GRPC</span> on the API process (e.g.{" "}
+        <span className="font-mono text-white/55">http://&lt;wsl-ip&gt;:9067</span>), not only{" "}
+        <span className="font-mono text-white/55">127.0.0.1</span>.
+      </p>
+
+      {legacyZec !== null && (
+        <div className="rounded border border-amber-500/40 bg-amber-500/10 p-3 space-y-2">
+          <p className="text-[11px] leading-relaxed text-amber-100/90">
+            <span className="font-semibold text-amber-100">Legacy funds: </span>
+            {legacyZec.toFixed(8)} ZEC available to move into shielded balance (fee ~
+            {legacyFeeZec.toFixed(8)} ZEC). Uses the companion wallet data dir — not the in-extension
+            WASM wallet.
+          </p>
+          <button
+            type="button"
+            disabled={busy}
+            className="rounded bg-amber-500 px-3 py-1 text-xs font-medium text-black disabled:opacity-50"
+            onClick={() =>
+              run(async () => {
+                const prefs = await getCompanionPrefs();
+                const password =
+                  window.prompt("Companion wallet password (to move legacy funds)") ?? "";
+                if (!password) {
+                  setLog("Cancelled — password required to move legacy funds.");
+                  return;
+                }
+                await extensionApi.companionSaplingScan({
+                  baseUrl: prefs.baseUrl,
+                  password
+                });
+                const res = await extensionApi.companionSaplingShield({
+                  baseUrl: prefs.baseUrl,
+                  password
+                });
+                setLog(JSON.stringify(res, null, 2));
+                await refreshLegacyStatus(prefs.baseUrl);
+              })
+            }
+          >
+            Move to shielded
+          </button>
+        </div>
+      )}
 
       <div className="rounded border border-white/10 bg-white/5 p-3 space-y-2">
         <div>
@@ -1052,6 +1117,7 @@ function CompanionView() {
                   2
                 )
               );
+              await refreshLegacyStatus(prefs.baseUrl);
             })
           }
         >
@@ -1130,6 +1196,7 @@ function CompanionView() {
                 lightwalletd_url: q || undefined
               });
               setLog(JSON.stringify(res, null, 2));
+              await refreshLegacyStatus(prefs.baseUrl);
             })
           }
         >
@@ -1161,6 +1228,7 @@ function CompanionView() {
                 start_floor
               });
               setLog(JSON.stringify(res, null, 2));
+              await refreshLegacyStatus(prefs.baseUrl);
             })
           }
         >

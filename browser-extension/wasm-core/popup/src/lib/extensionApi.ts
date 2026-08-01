@@ -348,6 +348,46 @@ export const extensionApi = {
     sendMessage<Record<string, unknown>>({
       method: "companion_lwd_sync_compact_to_tip",
       params
+    }),
+
+  companionSaplingStatus: (baseUrl?: string) =>
+    sendMessage<{
+      unspent_notes: number;
+      with_rseed: number;
+      ready_to_shield: number;
+      unspent_balance_zatoshis: number;
+      unspent_zec: number;
+      fee_zatoshis: number;
+      fee_zec: number;
+      has_legacy_balance: boolean;
+    }>({ method: "companion_sapling_status", params: { baseUrl } }),
+
+  companionSaplingScan: (params?: {
+    baseUrl?: string;
+    password?: string;
+    start_floor?: number;
+    full?: boolean;
+  }) =>
+    sendMessage<Record<string, unknown>>({
+      method: "companion_sapling_scan",
+      params: params ?? {}
+    }),
+
+  companionSaplingShield: (params?: {
+    baseUrl?: string;
+    password?: string;
+    dry_run?: boolean;
+    no_broadcast?: boolean;
+  }) =>
+    sendMessage<{
+      success: boolean;
+      txid?: string | null;
+      message: string;
+      value_to_orchard_zatoshis?: number;
+      fee_zatoshis?: number;
+    }>({
+      method: "companion_sapling_shield",
+      params: params ?? {}
     })
 };
 

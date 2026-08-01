@@ -15,6 +15,7 @@ mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
+mod sapling_handlers;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -92,6 +93,9 @@ async fn main() -> anyhow::Result<()> {
             "/api/ironwood/broadcast",
             post(ironwood_handlers::ironwood_broadcast),
         )
+        .route("/api/sapling/status", get(sapling_handlers::get_sapling_status))
+        .route("/api/sapling/scan", post(sapling_handlers::scan_sapling))
+        .route("/api/sapling/shield", post(sapling_handlers::shield_sapling))
         .route("/api/address/generate", post(handlers::generate_address))
         .route("/api/balance", get(handlers::get_balance))
         .route("/api/sync", post(handlers::sync_wallet))

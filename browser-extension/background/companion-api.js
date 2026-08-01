@@ -147,3 +147,54 @@ export async function companionSpeedUpTransaction(baseUrl, body) {
   if (!r.ok) throw new Error(await readErrorBody(r));
   return r.json();
 }
+
+/**
+ * Quiet Sapling legacy status from companion wallet notes.
+ * @param {string} [baseUrl]
+ */
+export async function companionSaplingStatus(baseUrl) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/sapling/status`);
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
+
+/**
+ * Scan companion LWD compact cache for Sapling notes.
+ * @param {string} [baseUrl]
+ * @param {{ password?: string, start_floor?: number, full?: boolean }} [body]
+ */
+export async function companionSaplingScan(baseUrl, body = {}) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/sapling/scan`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      password: body.password ?? null,
+      start_floor: body.start_floor ?? null,
+      full: body.full ?? false
+    })
+  });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
+
+/**
+ * Move companion legacy Sapling notes into Orchard/Ironwood.
+ * @param {string} [baseUrl]
+ * @param {{ password?: string, dry_run?: boolean, no_broadcast?: boolean }} [body]
+ */
+export async function companionSaplingShield(baseUrl, body = {}) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/sapling/shield`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      password: body.password ?? null,
+      dry_run: body.dry_run ?? false,
+      no_broadcast: body.no_broadcast ?? false
+    })
+  });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
