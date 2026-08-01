@@ -197,9 +197,7 @@ pub async fn lwd_sync_compact_to_tip(
         .map_err(zeaking_err_response)?;
     // Quiet Sapling scan when wallet unlocks with empty password (parity with CLI).
     let mut sapling_scan: Option<serde_json::Value> = None;
-    if let Ok((wallet, _)) =
-        crate::handlers::load_wallet_with_password(Some(String::new())).await
-    {
+    if let Ok((wallet, _)) = crate::handlers::load_wallet_with_password(Some(String::new())).await {
         let seed = wallet.get_mnemonic_object().to_seed("");
         if let Ok((notes, scan)) =
             nozy::scan_sapling_wallet_from_compact_store(&seed, &store, None, false)
