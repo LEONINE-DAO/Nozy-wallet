@@ -16,6 +16,7 @@ mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
 mod sapling_handlers;
+mod zns_handlers;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -102,6 +103,7 @@ async fn main() -> anyhow::Result<()> {
             "/api/sapling/shield",
             post(sapling_handlers::shield_sapling),
         )
+        .route("/api/zns/resolve", post(zns_handlers::resolve_zns_name))
         .route("/api/address/generate", post(handlers::generate_address))
         .route("/api/balance", get(handlers::get_balance))
         .route("/api/sync", post(handlers::sync_wallet))

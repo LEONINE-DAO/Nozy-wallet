@@ -38,7 +38,8 @@ import {
   companionSaplingShield,
   companionSaplingStatus,
   companionSpeedUpTransaction,
-  companionStatus
+  companionStatus,
+  companionZnsResolve
 } from "./companion-api.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
@@ -1842,6 +1843,16 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
                 password: params.password,
                 dry_run: params.dry_run === true,
                 no_broadcast: params.no_broadcast === true
+              })
+            )
+          );
+          return;
+        case "companion_zns_resolve":
+          sendResponse(
+            ok(
+              await companionZnsResolve(params.baseUrl, {
+                name: params.name,
+                network: params.network
               })
             )
           );

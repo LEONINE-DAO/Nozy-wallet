@@ -388,7 +388,25 @@ export const extensionApi = {
     }>({
       method: "companion_sapling_shield",
       params: params ?? {}
-    })
+    }),
+
+  companionZnsResolve: (params: {
+    name: string;
+    network?: "mainnet" | "testnet";
+    baseUrl?: string;
+  }) =>
+    sendMessage<{
+      name: string;
+      found: boolean;
+      registration?: {
+        name: string;
+        address: string;
+        txid?: string;
+        height?: number;
+        nonce?: number;
+        last_action?: string;
+      };
+    }>({ method: "companion_zns_resolve", params })
 };
 
 const STORAGE_COMPANION_BASE = "nozy_companion_base_url";

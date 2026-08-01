@@ -29,7 +29,13 @@ export function progressPercent(status: SyncStatusResponse | null | undefined): 
   if (tip == null || tip === 0) return null;
   if (last == null) return 0;
   if (last >= tip) return 100;
-  return Math.min(100, Math.max(0, Math.round((last / tip) * 100)));
+  const gap = status.scan_gap_blocks ?? tip - last;
+  const raw = (last / tip) * 100;
+  // Integer rounding can hit 100% thousands of blocks early — cap while behind.
+  if (gap > 0) {
+    return Math.min(99, Math.max(0, Math.floor(raw)));
+  }
+  return Math.min(100, Math.max(0, Math.round(raw)));
 }
 
 /** Short user-facing sync line, e.g. "87% synced · 2.1M / 2.4M". */
