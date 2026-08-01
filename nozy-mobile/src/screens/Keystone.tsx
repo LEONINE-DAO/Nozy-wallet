@@ -7,10 +7,28 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import {
+  resolveSendRecipient,
+  type ZnsRegistration,
+} from "../lib/zns";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Keystone">;
+
+async function resolveRecipientOrThrow(raw: string): Promise<string> {
+  const result = await resolveSendRecipient(raw, async (name, network) => {
+    const res = await api.resolveZnsName({ name, network });
+    if (!res.found || !res.registration?.address) return null;
+    return res.registration as ZnsRegistration;
+  });
+  if (result.kind === "address") return result.address;
+  if (result.kind === "name") return result.registration.address;
+  if (result.kind === "unresolved") {
+    throw new Error(`No Zcash name registered for “${result.name}”.`);
+  }
+  throw new Error(result.message);
+}
 
 export function KeystoneScreen({ navigation }: Props) {
   const { password } = useWalletSession();
@@ -76,8 +94,9 @@ export function KeystoneScreen({ navigation }: Props) {
     setLoading(true);
     setError("");
     try {
+      const resolved = await resolveRecipientOrThrow(recipient);
       const res = await api.keystonePrepareSend({
-        recipient: recipient.trim(),
+        recipient: resolved,
         amount: parsed,
         password: password || undefined,
       });
@@ -152,7 +171,13 @@ export function KeystoneScreen({ navigation }: Props) {
         </View>
 
         <Text style={styles.section}>Prepare send (unsigned)</Text>
-        <Input label="Recipient" value={recipient} onChangeText={setRecipient} autoCapitalize="none" />
+        <Input
+          label="Recipient"
+          value={recipient}
+          onChangeText={setRecipient}
+          autoCapitalize="none"
+          placeholder="u1… or Zcash name (e.g. alice)"
+        />
         <Input label="Amount (ZEC)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
         <Button label="Prepare for Keystone" onPress={() => void prepareSend()} loading={loading} />
 

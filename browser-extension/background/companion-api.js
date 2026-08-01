@@ -198,3 +198,22 @@ export async function companionSaplingShield(baseUrl, body = {}) {
   if (!r.ok) throw new Error(await readErrorBody(r));
   return r.json();
 }
+
+/**
+ * Resolve a Zcash name via companion `/api/zns/resolve`.
+ * @param {string} [baseUrl]
+ * @param {{ name: string, network?: string }} body
+ */
+export async function companionZnsResolve(baseUrl, body) {
+  const base = normalizeCompanionBase(baseUrl);
+  const r = await fetch(`${base}/api/zns/resolve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      name: body.name,
+      network: body.network ?? "mainnet"
+    })
+  });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}

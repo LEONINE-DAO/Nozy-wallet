@@ -13,10 +13,28 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import {
+  resolveSendRecipient,
+  type ZnsRegistration,
+} from "../lib/zns";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Send">;
+
+async function resolveRecipientOrThrow(raw: string): Promise<string> {
+  const result = await resolveSendRecipient(raw, async (name, network) => {
+    const res = await api.resolveZnsName({ name, network });
+    if (!res.found || !res.registration?.address) return null;
+    return res.registration as ZnsRegistration;
+  });
+  if (result.kind === "address") return result.address;
+  if (result.kind === "name") return result.registration.address;
+  if (result.kind === "unresolved") {
+    throw new Error(`No Zcash name registered for “${result.name}”.`);
+  }
+  throw new Error(result.message);
+}
 
 export function SendScreen({ navigation, route }: Props) {
   const { password } = useWalletSession();
@@ -26,6 +44,7 @@ export function SendScreen({ navigation, route }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState("");
+  const [resolvedHint, setResolvedHint] = useState("");
 
   useEffect(() => {
     if (route.params?.recipient) {
@@ -36,6 +55,7 @@ export function SendScreen({ navigation, route }: Props) {
   async function handleSend() {
     setError("");
     setResult("");
+    setResolvedHint("");
     const parsed = parseFloat(amount);
     if (!recipient.trim() || Number.isNaN(parsed) || parsed <= 0) {
       setError("Enter a valid recipient and amount");
@@ -44,8 +64,12 @@ export function SendScreen({ navigation, route }: Props) {
 
     setLoading(true);
     try {
+      const resolved = await resolveRecipientOrThrow(recipient);
+      if (resolved !== recipient.trim()) {
+        setResolvedHint(`Resolved → ${resolved.slice(0, 16)}…`);
+      }
       const res = await api.sendTransaction({
-        recipient: recipient.trim(),
+        recipient: resolved,
         amount: parsed,
         memo: memo.trim() || undefined,
         password: password || undefined,
@@ -72,16 +96,21 @@ export function SendScreen({ navigation, route }: Props) {
       >
         <ScrollView contentContainerStyle={styles.container}>
           <Text style={styles.subtitle}>
-            Send shielded ZEC (u1 addresses). Transparent t1 addresses are not supported.
+            Send shielded ZEC to a u1… address or Zcash name (e.g. alice). Transparent addresses are
+            not supported.
           </Text>
 
           <Input
-            label="Recipient address"
+            label="Recipient"
             value={recipient}
-            onChangeText={setRecipient}
+            onChangeText={(t) => {
+              setRecipient(t);
+              setResolvedHint("");
+            }}
             autoCapitalize="none"
-            placeholder="u1..."
+            placeholder="u1… or Zcash name (e.g. alice)"
           />
+          {resolvedHint ? <Text style={styles.ok}>{resolvedHint}</Text> : null}
           <Button
             label="Pick from address book"
             variant="ghost"

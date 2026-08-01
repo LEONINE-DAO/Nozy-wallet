@@ -230,6 +230,27 @@ export const api = {
       }),
     }),
 
+  /** Resolve a Zcash name via companion proxy (POST /api/zns/resolve). */
+  resolveZnsName: (params: { name: string; network?: "mainnet" | "testnet" }) =>
+    request<{
+      name: string;
+      found: boolean;
+      registration?: {
+        name: string;
+        address: string;
+        txid?: string;
+        height?: number;
+        nonce?: number;
+        last_action?: string;
+      };
+    }>("/api/zns/resolve", {
+      method: "POST",
+      body: JSON.stringify({
+        name: params.name,
+        network: params.network ?? "mainnet",
+      }),
+    }),
+
   getTransactionHistory: () =>
     request<TransactionHistoryResponse>("/api/transaction/history"),
 

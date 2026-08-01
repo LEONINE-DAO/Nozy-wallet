@@ -36,3 +36,6 @@ nozy = { path = "../" }
 zeaking = { path = "../zeaking", features = ["lightwalletd"] }
 zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 
+# Outbound HTTP (ZNS indexer proxy)
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+

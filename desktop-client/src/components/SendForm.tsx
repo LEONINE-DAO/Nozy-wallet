@@ -21,6 +21,12 @@ import { useTokenStore } from "../store/tokenStore";
 import { walletApi } from "../lib/api";
 import { isWalletReadyForSend } from "../lib/syncHelpers";
 import type { AddressBookEntry, IronwoodDesktopStatusResponse } from "../lib/types";
+import {
+  isLikelyZnsName,
+  isUnifiedZcashAddress,
+  normalizeUnifiedAddress,
+  resolveSendRecipient,
+} from "../lib/zns";
 import { TransactionIdDetail } from "./TxExplorerLink";
 
 type BackendSendProgress = {
@@ -45,18 +51,12 @@ interface SendFormProps {
 
 const DEFAULT_AMOUNT = "0.00";
 const MAX_ZEC_DECIMALS = 8;
-const UA_MIN_LEN = 78;
-const UA_MAX_LEN = 256;
 
-function normalizeUnifiedAddress(value: string): string {
-  return value.replace(/\s+/g, "");
-}
-
-function isUnifiedZcashAddress(value: string): boolean {
-  const normalized = normalizeUnifiedAddress(value);
-  if (!normalized.startsWith("u1") && !normalized.startsWith("utest1")) return false;
-  return normalized.length >= UA_MIN_LEN && normalized.length <= UA_MAX_LEN;
-}
+type ResolvedRecipient = {
+  input: string;
+  address: string;
+  name?: string;
+};
 
 function ironwoodSendBlockReason(
   status: IronwoodDesktopStatusResponse | null,
@@ -84,8 +84,10 @@ function recipientNetworkError(
 ): string | null {
   const normalized = normalizeUnifiedAddress(recipient);
   if (!normalized) return null;
+  // ZNS names are validated on commit (amount focus / review / send), not while typing.
+  if (isLikelyZnsName(normalized)) return null;
   if (!isUnifiedZcashAddress(normalized)) {
-    return "Address must be an Orchard unified address (u1… or utest1…) at least 78 characters.";
+    return "Enter an Orchard unified address (u1… / utest1…) or a Zcash name (e.g. alice).";
   }
   if (network === "testnet" && !normalized.startsWith("utest1")) {
     return "This wallet is on testnet. Recipients must use utest1… addresses. Switch network in Settings → Wallets & Accounts if you meant mainnet.";
@@ -217,6 +219,9 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
   const [amount, setAmount] = useState(DEFAULT_AMOUNT);
   const [address, setAddress] = useState("");
+  const [resolvedRecipient, setResolvedRecipient] = useState<ResolvedRecipient | null>(null);
+  const [znsResolving, setZnsResolving] = useState(false);
+  const [znsMessage, setZnsMessage] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [memo, setMemo] = useState("");
   const [feeZec, setFeeZec] = useState(0.00015);
@@ -286,14 +291,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
   const amountValue = parseAmount(amount);
   const normalizedAddress = normalizeUnifiedAddress(address);
-  const addressValidationError = recipientNetworkError(address, activeNetwork)
-    ?? (normalizedAddress && !isUnifiedZcashAddress(normalizedAddress)
-      ? "Address must be an Orchard unified address (u1… or utest1…) at least 78 characters."
-      : null);
+  const cachedResolution =
+    resolvedRecipient && resolvedRecipient.input === address.trim() ? resolvedRecipient : null;
+  const addressValidationError = recipientNetworkError(address, activeNetwork);
 
   const reviewDisabledReason = (() => {
-    if (!normalizedAddress) return "Enter a recipient address.";
+    if (!normalizedAddress) return "Enter a recipient address or Zcash name.";
     if (addressValidationError) return addressValidationError;
+    if (znsResolving) return "Resolving Zcash name…";
     if (!Number.isFinite(amountValue) || amountValue <= 0) {
       return "Enter an amount greater than 0.";
     }
@@ -330,7 +335,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
       toast.error("Name is required");
       return;
     }
-    const networkError = recipientNetworkError(address, activeNetwork);
+    const resolved =
+      cachedResolution?.address ??
+      (isUnifiedZcashAddress(address) ? normalizeUnifiedAddress(address) : null);
+    if (!resolved) {
+      toast.error("Resolve a Zcash name or enter a unified address before saving.");
+      return;
+    }
+    const networkError = recipientNetworkError(resolved, activeNetwork);
     if (networkError) {
       toast.error(networkError);
       return;
@@ -339,7 +351,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     try {
       await walletApi.addAddressBookEntry({
         name,
-        address: address.trim(),
+        address: resolved,
         notes: saveContactNotes.trim() || undefined,
       });
       toast.success("Saved to contacts");
@@ -362,10 +374,85 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     setAmount(sanitizeAmountInput(raw));
   };
 
+  /** Resolve ZNS names on commit — not while typing the recipient field. */
+  const ensureRecipientResolved = async (): Promise<string | null> => {
+    const trimmed = address.trim();
+    if (!trimmed) {
+      setZnsMessage(null);
+      return null;
+    }
+    if (cachedResolution) {
+      return cachedResolution.address;
+    }
+    if (!isLikelyZnsName(trimmed) && isUnifiedZcashAddress(trimmed)) {
+      const ua = normalizeUnifiedAddress(trimmed);
+      setResolvedRecipient({ input: trimmed, address: ua });
+      setZnsMessage(null);
+      return ua;
+    }
+    if (!isLikelyZnsName(trimmed)) {
+      const err =
+        recipientNetworkError(trimmed, activeNetwork) ??
+        "Enter an Orchard unified address (u1…) or a Zcash name.";
+      setZnsMessage(err);
+      toast.error(err);
+      return null;
+    }
+
+    setZnsResolving(true);
+    setZnsMessage("Resolving Zcash name…");
+    try {
+      const network = activeNetwork === "testnet" ? "testnet" : "mainnet";
+      const result = await resolveSendRecipient(trimmed, network);
+      if (result.kind === "address") {
+        setResolvedRecipient({ input: trimmed, address: result.address });
+        setZnsMessage(null);
+        return result.address;
+      }
+      if (result.kind === "name") {
+        const ua = result.registration.address;
+        const netErr = recipientNetworkError(ua, activeNetwork);
+        if (netErr) {
+          setResolvedRecipient(null);
+          setZnsMessage(netErr);
+          toast.error(netErr);
+          return null;
+        }
+        setResolvedRecipient({
+          input: trimmed,
+          address: ua,
+          name: result.name,
+        });
+        setZnsMessage(`${result.name} → ${ua.slice(0, 12)}…`);
+        return ua;
+      }
+      if (result.kind === "unresolved") {
+        const msg = `No Zcash name registered for “${result.name}”.`;
+        setResolvedRecipient(null);
+        setZnsMessage(msg);
+        toast.error(msg);
+        return null;
+      }
+      setResolvedRecipient(null);
+      setZnsMessage(result.message);
+      toast.error(result.message);
+      return null;
+    } catch (e) {
+      const msg = formatErrorForDisplay(e, "Could not resolve Zcash name.");
+      setResolvedRecipient(null);
+      setZnsMessage(msg);
+      toast.error(msg);
+      return null;
+    } finally {
+      setZnsResolving(false);
+    }
+  };
+
   const handleAmountFocus = (event: React.FocusEvent<HTMLInputElement>) => {
     if (amount === DEFAULT_AMOUNT || amount === "0" || amount === "0.0") {
       event.target.select();
     }
+    void ensureRecipientResolved();
   };
 
   const handleAmountBlur = () => {
@@ -380,7 +467,9 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   };
 
   const handleProceedToReview = async () => {
-    const networkError = recipientNetworkError(address, activeNetwork);
+    const resolved = await ensureRecipientResolved();
+    if (!resolved) return;
+    const networkError = recipientNetworkError(resolved, activeNetwork);
     if (networkError) {
       toast.error(networkError);
       return;
@@ -507,11 +596,13 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   }, []);
 
   const handleKeystonePrepare = async () => {
+    const resolved = await ensureRecipientResolved();
+    if (!resolved) return;
     setIsSending(true);
     const toastId = toast.loading("Preparing Keystone PCZT…");
     startSendProgress(toastId);
     const trimmedPassword = password.trim();
-    const recipient = normalizeUnifiedAddress(address);
+    const recipient = normalizeUnifiedAddress(resolved);
     try {
       const { data } = await walletApi.keystonePrepareSend({
         recipient,
@@ -576,6 +667,8 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         setShowReview(false);
         setAmount(DEFAULT_AMOUNT);
         setAddress("");
+        setResolvedRecipient(null);
+        setZnsMessage(null);
         setMemo("");
         setPassword("");
         onSuccess?.();
@@ -597,11 +690,13 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   */
 
   const handleSend = async () => {
+    const resolved = await ensureRecipientResolved();
+    if (!resolved) return;
     setIsSending(true);
     const sendToast = toast.loading("Preparing shielded transaction…");
     startSendProgress(sendToast);
     const trimmedPassword = password.trim();
-    const recipient = normalizeUnifiedAddress(address);
+    const recipient = normalizeUnifiedAddress(resolved);
     try {
       const { data: sent } = await walletApi.sendTransaction({
         recipient,
@@ -626,6 +721,8 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         setShowReview(false);
         setAmount(DEFAULT_AMOUNT);
         setAddress("");
+        setResolvedRecipient(null);
+        setZnsMessage(null);
         setMemo("");
         setPassword("");
         onSuccess?.();
@@ -720,8 +817,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-widest pl-1">
             Recipient
           </p>
+          {cachedResolution?.name && (
+            <p className="text-sm text-gray-700 dark:text-gray-200 pl-1">
+              {cachedResolution.name}
+              <span className="text-xs text-gray-500 dark:text-gray-400"> · Zcash name</span>
+            </p>
+          )}
           <div className="bg-gray-50 dark:bg-gray-800/50 p-3 rounded-xl border border-gray-100 dark:border-gray-700/50 font-mono text-xs text-gray-600 dark:text-gray-300 break-all leading-relaxed">
-            {address}
+            {cachedResolution?.address ?? address}
           </div>
         </div>
 
@@ -927,20 +1030,42 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
         <div className="relative group">
           <Textarea
             value={address}
-            onChange={(e) => setAddress(e.target.value)}
-            placeholder="u1… or utest1… Orchard unified address"
+            onChange={(e) => {
+              setAddress(e.target.value);
+              setResolvedRecipient(null);
+              setZnsMessage(null);
+            }}
+            placeholder="u1… or Zcash name (e.g. alice)"
             rows={2}
             spellCheck={false}
             autoComplete="off"
             className="min-h-[3.5rem] font-mono"
           />
         </div>
+        <p className="text-xs text-gray-500 dark:text-gray-400 ml-1">
+          Zcash names supported — enter a name like{" "}
+          <span className="font-medium">alice</span>. Resolves when you move to amount, review, or
+          send.
+        </p>
         {activeNetwork && (
           <p className="text-xs text-gray-500 dark:text-gray-400 ml-1">
             Active network:{" "}
             <span className="font-medium text-gray-700 dark:text-gray-300">
               {activeNetwork === "testnet" ? "Testnet (utest1…)" : "Mainnet (u1…)"}
             </span>
+          </p>
+        )}
+        {(znsMessage || cachedResolution?.name) && !addressValidationError && (
+          <p
+            className={`text-sm ml-1 ${
+              cachedResolution?.name
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-gray-600 dark:text-gray-300"
+            }`}
+          >
+            {cachedResolution?.name
+              ? `${cachedResolution.name} → ${cachedResolution.address.slice(0, 16)}…`
+              : znsMessage}
           </p>
         )}
         {addressValidationError && (

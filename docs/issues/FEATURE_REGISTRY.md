@@ -12,7 +12,7 @@ Enhancements and product work (not bugs). Large lanes also have phased TODO docs
 | FEAT-2026-004 | In progress | mobile | nozy-mobile companion app | — | nozy-mobile/README | Expo + VPS |
 | FEAT-2026-005 | Planned | api-server | POST /api/config/last-scan-height | — | BUG-2026-010 follow-up | Operator ergonomics |
 | FEAT-2026-006 | Planned | api-server, cli | Business UFVK disclosure export | #85 | Phase 5 in ZNS TODO | Security review gate |
-| FEAT-2026-007 | Planned | api-server | GET /api/zns/resolve | #85 | Phase 2 | ZNS proxy |
+| FEAT-2026-007 | In progress | api-server, desktop, extension, mobile | POST /api/zns/resolve + Send name resolve | #85 | Phase 2 (resolve slice) | Claim/link/Sell later |
 | FEAT-2026-008 | Deferred | desktop | Secret / Shade primary UI | — | [`PRIVACY_DEFI_IMPLEMENTATION_TODO.md`](../PRIVACY_DEFI_IMPLEMENTATION_TODO.md) | Roadmap paused |
 
 ---

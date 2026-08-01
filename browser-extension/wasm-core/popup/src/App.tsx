@@ -10,6 +10,13 @@ import {
 } from "./lib/extensionApi";
 import { TopNav } from "./components/TopNav";
 import { useUiStore } from "./store/uiStore";
+import {
+  isLikelyZnsName,
+  isUnifiedZcashAddress,
+  normalizeUnifiedAddress,
+  resolveSendRecipient,
+  type ZnsRegistration
+} from "./lib/zns";
 
 /** Default when Zebrad runs natively on Windows (not WSL). */
 const DEFAULT_RPC = "http://127.0.0.1:8232";
@@ -281,6 +288,7 @@ function DashboardView({
 function SendView() {
   const [status, setStatus] = useState<string>("");
   const [recipient, setRecipient] = useState("");
+  const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
   const [feeZats, setFeeZats] = useState("10000");
   const [coreVersion, setCoreVersion] = useState<string>("");
@@ -306,6 +314,44 @@ function SendView() {
       .catch(() => undefined);
   }, [memo]);
 
+  async function resolveRecipientToAddress(): Promise<string | undefined> {
+    const trimmed = recipient.trim();
+    if (!trimmed) return undefined;
+    if (isUnifiedZcashAddress(trimmed)) {
+      setResolvedName(null);
+      return normalizeUnifiedAddress(trimmed);
+    }
+    if (!isLikelyZnsName(trimmed)) {
+      throw new Error("Enter a unified address (u1…) or a Zcash name (e.g. alice).");
+    }
+    const prefs = await getCompanionPrefs();
+    const result = await resolveSendRecipient(
+      trimmed,
+      async (name, network) => {
+        const res = await extensionApi.companionZnsResolve({
+          name,
+          network,
+          baseUrl: prefs.baseUrl
+        });
+        if (!res.found || !res.registration?.address) return null;
+        return res.registration as ZnsRegistration;
+      },
+      "mainnet"
+    );
+    if (result.kind === "address") {
+      setResolvedName(null);
+      return result.address;
+    }
+    if (result.kind === "name") {
+      setResolvedName(result.name);
+      return result.registration.address;
+    }
+    if (result.kind === "unresolved") {
+      throw new Error(`No Zcash name registered for “${result.name}”.`);
+    }
+    throw new Error(result.message);
+  }
+
   async function runPreflight() {
     setBusy(true);
     setPreflight(null);
@@ -315,8 +361,9 @@ function SendView() {
       if (requestedAmount <= 0) throw new Error("Enter an amount in zats");
       const fee = Math.max(0, Math.floor(Number(feeZats) || 0));
       if (fee <= 0) throw new Error("Enter a positive fee in zats (e.g. 10000)");
+      const to = await resolveRecipientToAddress();
       const result = await extensionApi.walletProveTransaction({
-        to: recipient.trim() || undefined,
+        to,
         amount: requestedAmount,
         fee,
         memo: memo || undefined
@@ -358,13 +405,23 @@ function SendView() {
       <h2 className="text-base font-semibold">Send ZEC</h2>
 
       <div>
-        <label className="mb-1 block text-xs text-white/50">Recipient address (u1…)</label>
+        <label className="mb-1 block text-xs text-white/50">
+          Recipient (u1… or Zcash name)
+        </label>
         <input
           className="w-full rounded bg-white/10 p-2 text-sm outline-none placeholder:text-white/30"
-          placeholder="Leave blank to send to own address"
+          placeholder="u1… or Zcash name (e.g. alice); blank = own address"
           value={recipient}
-          onChange={(e) => setRecipient(e.target.value)}
+          onChange={(e) => {
+            setRecipient(e.target.value);
+            setResolvedName(null);
+          }}
         />
+        {resolvedName && (
+          <p className="mt-1 text-[10px] text-emerald-300/90">
+            Resolved {resolvedName}
+          </p>
+        )}
       </div>
 
       <div>

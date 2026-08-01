@@ -24,6 +24,7 @@ The MV3 extension does **not** embed `zeaking`, gRPC, or SQLite. For **lightwall
    - `GET /api/sapling/status` — quiet legacy balance (companion wallet data dir)
    - `POST /api/sapling/scan` — scan compact cache for legacy notes
    - `POST /api/sapling/shield` — move legacy notes into Orchard/Ironwood (not in wasm-core)
+   - `POST /api/zns/resolve` — resolve Zcash names (proxy to public indexer)
 3. **Manifest**: `host_permissions` includes `http://127.0.0.1:3000/*` (and broader patterns as needed). This works in **Google Chrome** and **Microsoft Edge** (Chromium).
 
 ### Service worker API
@@ -40,6 +41,7 @@ Messages to the background (`NOZY_REQUEST`):
 | `companion_sapling_status` | `{ baseUrl? }` | Quiet legacy unspent balance from companion notes |
 | `companion_sapling_scan` | `{ baseUrl?, password?, start_floor?, full? }` | Scan companion LWD compact for legacy notes |
 | `companion_sapling_shield` | `{ baseUrl?, password?, dry_run?, no_broadcast? }` | Move legacy funds into shielded Orchard (HTTP only; no wasm Groth16) |
+| `companion_zns_resolve` | `{ name, network?, baseUrl? }` | Resolve a Zcash name via companion `POST /api/zns/resolve` |
 
 Default `baseUrl` is `http://127.0.0.1:3000`. Override per-call for non-default ports.
 
