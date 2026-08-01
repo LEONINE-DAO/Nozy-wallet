@@ -1,5 +1,27 @@
 use directories::ProjectDirs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::Mutex;
+
+/// Optional process-wide wallet data dir override (used by `nozy-ffi` on mobile).
+static WALLET_DATA_DIR_OVERRIDE: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Run `f` with [`get_wallet_data_dir`] resolving to `dir` (notes, compact DB, etc.).
+pub fn with_wallet_data_dir<T>(dir: impl AsRef<Path>, f: impl FnOnce() -> T) -> T {
+    let path = dir.as_ref().to_path_buf();
+    let _ = std::fs::create_dir_all(&path);
+    let previous = {
+        let mut guard = WALLET_DATA_DIR_OVERRIDE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        guard.replace(path)
+    };
+    let result = f();
+    let mut guard = WALLET_DATA_DIR_OVERRIDE
+        .lock()
+        .unwrap_or_else(|e| e.into_inner());
+    *guard = previous;
+    result
+}
 
 /// Root Nozy data directory (profiles manifest and per-wallet subdirectories).
 pub fn get_wallet_base_dir() -> PathBuf {
@@ -20,6 +42,11 @@ pub fn get_wallet_base_dir() -> PathBuf {
 
 /// Active wallet profile data directory (wallet.dat, notes, sync DB, etc.).
 pub fn get_wallet_data_dir() -> PathBuf {
+    if let Ok(guard) = WALLET_DATA_DIR_OVERRIDE.lock() {
+        if let Some(ref dir) = *guard {
+            return dir.clone();
+        }
+    }
     crate::wallet_profiles::active_profile_data_dir()
 }
 

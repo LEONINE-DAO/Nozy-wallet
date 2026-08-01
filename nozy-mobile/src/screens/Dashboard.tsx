@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { onDeviceMoveLegacy, onDeviceSaplingStatus } from "../services/onDeviceSapling";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList, SaplingStatusResponse, SyncResponse, WalletStatusResponse } from "../types";
 
@@ -34,7 +35,8 @@ function formatElapsed(seconds: number): string {
 }
 
 export function DashboardScreen({ navigation }: Props) {
-  const { password, clearPassword, apiUrl, autoSync } = useWalletSession();
+  const { password, clearPassword, apiUrl, autoSync, backendMode } =
+    useWalletSession();
   const [balance, setBalance] = useState(0);
   const [address, setAddress] = useState("");
   const [walletStatus, setWalletStatus] = useState<WalletStatusResponse | null>(null);
@@ -48,17 +50,24 @@ export function DashboardScreen({ navigation }: Props) {
   const [legacyStatus, setLegacyStatus] = useState<SaplingStatusResponse | null>(null);
   const [legacyBusy, setLegacyBusy] = useState(false);
   const autoSyncRan = useRef(false);
+  const onDevice = backendMode === "on_device";
 
   const loadLegacyStatus = useCallback(async () => {
     try {
+      if (onDevice) {
+        const status = await onDeviceSaplingStatus();
+        setLegacyStatus(status.has_legacy_balance ? status : null);
+        return;
+      }
       const status = await api.getSaplingStatus();
       setLegacyStatus(status.has_legacy_balance ? status : null);
     } catch {
       setLegacyStatus(null);
     }
-  }, []);
+  }, [onDevice]);
 
   const loadWalletStatus = useCallback(async () => {
+    if (onDevice) return;
     try {
       const status = await api.walletStatus();
       setWalletStatus(status);
@@ -66,11 +75,15 @@ export function DashboardScreen({ navigation }: Props) {
     } catch {
       // Status is optional if API is mid-sync
     }
-  }, []);
+  }, [onDevice]);
 
   const loadDashboard = useCallback(async () => {
     setError("");
     try {
+      if (onDevice) {
+        await loadLegacyStatus();
+        return;
+      }
       const [balanceRes, addressRes] = await Promise.all([
         api.getBalance(),
         api.generateAddress(password || undefined),
@@ -84,13 +97,19 @@ export function DashboardScreen({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, [password, loadWalletStatus, loadLegacyStatus]);
+  }, [password, loadWalletStatus, loadLegacyStatus, onDevice]);
 
   const handleMoveLegacy = useCallback(async () => {
     if (legacyBusy) return;
     setLegacyBusy(true);
     setError("");
     try {
+      if (onDevice) {
+        const message = await onDeviceMoveLegacy();
+        setSyncMessage(message);
+        await loadDashboard();
+        return;
+      }
       await api.scanSapling({ password: password || undefined });
       const res = await api.shieldSapling({ password: password || undefined });
       setSyncMessage(res.message);
@@ -100,7 +119,7 @@ export function DashboardScreen({ navigation }: Props) {
     } finally {
       setLegacyBusy(false);
     }
-  }, [legacyBusy, password, loadDashboard]);
+  }, [legacyBusy, password, loadDashboard, onDevice]);
   const runSync = useCallback(async () => {
     setSyncing(true);
     setSyncMessage("");
@@ -126,7 +145,7 @@ export function DashboardScreen({ navigation }: Props) {
       setLoading(true);
       void loadDashboard();
 
-      if (autoSync && !autoSyncRan.current) {
+      if (autoSync && !onDevice && !autoSyncRan.current) {
         autoSyncRan.current = true;
         void runSync();
       }
@@ -134,7 +153,7 @@ export function DashboardScreen({ navigation }: Props) {
       return () => {
         autoSyncRan.current = false;
       };
-    }, [autoSync, loadDashboard, runSync]),
+    }, [autoSync, loadDashboard, runSync, onDevice]),
   );
 
   useEffect(() => {
