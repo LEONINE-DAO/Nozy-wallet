@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 0.1.8 — 2026-07-31
+
+Quiet Sapling legacy via companion API (companionSaplingStatus / Scan / Shield, Companion popup UX). Refs #200 / #207.
+
 ## For maintainers — publish a GitHub Release
 
 1. **Version** — Set `version` in `manifest.json` and add a section to `CHANGELOG.md` for this release.

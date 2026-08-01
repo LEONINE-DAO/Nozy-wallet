@@ -2,6 +2,11 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 0.1.8 — 2026-07-31
+
+### Added
+- Quiet Sapling legacy funds via companion API: companionSaplingStatus / companionSaplingScan / companionSaplingShield, service-worker handlers, Companion popup UX, and COMPANION.md notes (Refs #200 / #207).
+
 ## 0.1.4 — 2026-03-20
 
 ### Added
