@@ -3,7 +3,7 @@
     "name": "NozyWallet",
     "slug": "nozy-wallet",
     "owner": "leonine-dao",
-    "version": "1.0.0",
+    "version": "1.0.0-beta.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",

@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 0.1.9 — 2026-08-02 — Sweet Chili
+
+ZNS resolve on Send; tagged with CLI v2.4.4 / Desktop beta.5. Extension WASM was out of the Aug 2026 AI-assisted self-review scope (`docs/reference/security-audit/`).
+
 ## 0.1.8 — 2026-07-31
 
 Quiet Sapling legacy via companion API (companionSaplingStatus / Scan / Shield, Companion popup UX). Refs #200 / #207.

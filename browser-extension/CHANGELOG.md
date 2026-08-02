@@ -2,6 +2,14 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 0.1.9 — 2026-08-02
+
+### Added
+- Zcash Names (ZNS) resolve on Send surfaces (with desktop/API phases).
+
+### Notes
+- Ships alongside CLI **v2.4.4** / Desktop **1.0.0-beta.5**. The August 2026 AI-assisted security self-review covered CLI + core + Desktop; **extension WASM was out of scope** for that pass — see `docs/reference/security-audit/`.
+
 ## 0.1.8 — 2026-07-31
 
 ### Added

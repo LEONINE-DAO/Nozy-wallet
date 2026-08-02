@@ -2,7 +2,7 @@
   "name": "nozy-mobile",
   "description": "NozyWallet mobile companion — private Zcash wallet via nozywallet-api",
   "license": "0BSD",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "main": "index.ts",
   "scripts": {
     "start": "expo start",
