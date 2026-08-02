@@ -701,11 +701,16 @@ mod tests {
 
         let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("load legacy");
         assert_eq!(loaded.total_balance(), 250_000);
+        loaded
+            .validate_indexes()
+            .expect("migrated index must have v2 indexes");
         let migrated = std::fs::read_to_string(&path).expect("read migrated file");
         assert!(
-            migrated.contains("nullifier_index"),
-            "migration should rewrite as v2 index"
+            !migrated.trim_start().starts_with('['),
+            "migration should rewrite off legacy array format"
         );
+        let reloaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("reload migrated");
+        assert_eq!(reloaded.total_balance(), 250_000);
 
         let _ = std::fs::remove_file(&path);
     }
@@ -724,11 +729,15 @@ mod tests {
 
         let content = std::fs::read_to_string(&path).expect("read saved");
         assert!(
-            content.contains("nullifier_index"),
-            "must stay v2 index format, not legacy array"
+            !content.trim_start().starts_with('['),
+            "must not rewrite as legacy notes array"
         );
         let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("reload");
+        loaded
+            .validate_indexes()
+            .expect("reloaded index must keep v2 indexes");
         assert_eq!(loaded.unspent_count(), 0);
+        assert_eq!(loaded.count(), 1);
 
         let _ = std::fs::remove_file(&path);
     }
