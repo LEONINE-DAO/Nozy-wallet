@@ -167,6 +167,13 @@ mod tests {
     }
 
     #[test]
+    fn estimate_preview_matches_typical_send_floor() {
+        assert_eq!(estimate_orchard_send_fee_zatoshis(None, false), 40_000);
+        assert_eq!(estimate_orchard_send_fee_zatoshis(None, true), 40_000);
+        assert_eq!(estimate_orchard_send_fee_zatoshis(Some(b"hi"), true), 40_000);
+    }
+
+    #[test]
     fn pilot_expiry_height_uses_next_block_context() {
         assert_eq!(pilot_expiry_height(100, 5), 106);
         assert_eq!(pilot_expiry_height(3385374, 5), 3385380);

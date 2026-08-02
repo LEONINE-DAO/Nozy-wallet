@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 0.1.10 — 2026-08-03 — Sweet Chili
+
+Mandatory ZIP-317 ×4 on extension WASM/prove path (closes legacy 10k default). Rebuild WASM required.
+
 ## 0.1.9 — 2026-08-02 — Sweet Chili
 
 ZNS resolve on Send; tagged with CLI v2.4.4 / Desktop beta.5. Extension WASM was out of the Aug 2026 AI-assisted self-review scope (`docs/reference/security-audit/`).

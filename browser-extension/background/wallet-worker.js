@@ -259,7 +259,8 @@ self.onmessage = async (event) => {
       const mnemonic = String(params?.mnemonic ?? "");
       const rpcEndpoint = String(params?.rpcEndpoint ?? "");
       const requestedAmount = Number(params?.amount ?? 0);
-      const requestedFee = Number(params?.fee ?? 10000);
+      // NozyWallet mandatory ZIP-317 × 4 (typical send = 40_000 zat).
+      const requestedFee = Number(params?.fee ?? 40_000);
       const memo = String(params?.memo ?? "nozy-poc");
 
       if (!rpcEndpoint) throw new Error("Missing rpcEndpoint for proving scan.");

@@ -147,7 +147,7 @@ pub mod zns;
 // ============================================================
 pub use error::{NozyError, NozyResult};
 pub use fee_policy::{
-    estimate_orchard_send_fee_zatoshis, is_expiry_consensus_error, pilot_expiry_height,
+    estimate_orchard_send_fee_zatoshis, fee_zatoshis, is_expiry_consensus_error, pilot_expiry_height,
     pilot_transaction_expired, OrchardSendFeeShape, PilotSendOptions, NOZY_WALLET_PRIORITY_FEE,
     PILOT_EXPIRY_DELTA_BLOCKS, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS, PRIORITY_MULTIPLIER,
 };

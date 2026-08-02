@@ -779,6 +779,42 @@ pub fn build_orchard_v5_tx_from_note(
         return Err(JsError::new("Spend notes and witnesses length mismatch"));
     }
 
+    // Mandatory NozyWallet fee: ZIP-317 × PRIORITY_MULTIPLIER (same as CLI/API/desktop).
+    // Callers may still pass a legacy 10_000; clamp up so extension cannot underpay.
+    let memo_opt: Option<&[u8]> = if memo.is_empty() {
+        None
+    } else {
+        Some(memo.as_bytes())
+    };
+    let spends = spend_notes.len() as u32;
+    let total_input_preview: u64 = spend_notes.iter().map(|n| n.value).sum();
+    let mut fee_zatoshis = fee_zatoshis.max(nozy::estimate_orchard_send_fee_zatoshis(
+        memo_opt, true,
+    ));
+    let mut has_change =
+        total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
+    let mut outputs = if has_change { 2u32 } else { 1 };
+    let mut shape = if spends <= 1 {
+        nozy::OrchardSendFeeShape::single_spend_send(has_change, memo_opt)
+    } else {
+        nozy::OrchardSendFeeShape {
+            orchard_actions: spends.max(outputs),
+            memo_len: memo_opt.map(|m| m.len()).unwrap_or(0),
+        }
+    };
+    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true));
+    has_change = total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
+    outputs = if has_change { 2 } else { 1 };
+    shape = if spends <= 1 {
+        nozy::OrchardSendFeeShape::single_spend_send(has_change, memo_opt)
+    } else {
+        nozy::OrchardSendFeeShape {
+            orchard_actions: spends.max(outputs),
+            memo_len: memo_opt.map(|m| m.len()).unwrap_or(0),
+        }
+    };
+    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true));
+
     let target_height_u32 = witnesses[0]
         .get("target_height")
         .and_then(|v| v.as_u64())
@@ -973,6 +1009,28 @@ pub fn build_orchard_v5_tx_from_note(
     };
 
     serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
+}
+
+/// ZIP-317 fee in zatoshis. NozyWallet always applies the priority multiplier (×4);
+/// the `priority` argument is accepted for API compatibility and ignored.
+#[wasm_bindgen]
+pub fn estimate_orchard_send_fee_zats(memo: &str, _priority: bool) -> u64 {
+    let memo_opt: Option<&[u8]> = if memo.is_empty() {
+        None
+    } else {
+        Some(memo.as_bytes())
+    };
+    nozy::estimate_orchard_send_fee_zatoshis(memo_opt, true)
+}
+
+#[wasm_bindgen]
+pub fn pilot_expiry_delta_blocks() -> u32 {
+    nozy::PILOT_EXPIRY_DELTA_BLOCKS
+}
+
+#[wasm_bindgen]
+pub fn nozy_version_display() -> String {
+    nozy::VERSION_DISPLAY.to_string()
 }
 
 #[wasm_bindgen]
