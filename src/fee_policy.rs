@@ -170,7 +170,10 @@ mod tests {
     fn estimate_preview_matches_typical_send_floor() {
         assert_eq!(estimate_orchard_send_fee_zatoshis(None, false), 40_000);
         assert_eq!(estimate_orchard_send_fee_zatoshis(None, true), 40_000);
-        assert_eq!(estimate_orchard_send_fee_zatoshis(Some(b"hi"), true), 40_000);
+        assert_eq!(
+            estimate_orchard_send_fee_zatoshis(Some(b"hi"), true),
+            40_000
+        );
     }
 
     #[test]
