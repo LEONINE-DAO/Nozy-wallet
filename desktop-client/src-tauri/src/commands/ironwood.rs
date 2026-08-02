@@ -2,7 +2,7 @@
 //! Thin wrappers around `nozy::ironwood` — same path as CLI.
 
 use crate::error::TauriError;
-use crate::session::load_session_wallet;
+use crate::session::load_wallet_for_migrate;
 use nozy::{
     assess_orchard_migration_readiness, execute_orchard_migration,
     execute_orchard_migration_broadcast, execute_orchard_note_split, is_ironwood_active,
@@ -77,13 +77,17 @@ pub struct IronwoodBroadcastRequest {
     pub password: Option<String>,
     #[serde(default)]
     pub attest_private_network: bool,
+    /// Accepted for IPC compat; ignored (F-07 — desktop never force-clearnets).
     #[serde(default)]
+    #[allow(dead_code)]
     pub force_clearnet: bool,
     #[serde(default)]
     pub dry_run: bool,
     #[serde(default)]
     pub wait_confirm: bool,
+    /// Accepted for IPC compat; ignored (F-07).
     #[serde(default)]
+    #[allow(dead_code)]
     pub skip_broadcast_hygiene: bool,
 }
 
@@ -152,8 +156,8 @@ pub async fn ironwood_split(
         )));
     }
 
-    let wallet = load_session_wallet(request.password.as_deref()).await?;
-    let spendable = scan_notes_for_sending(wallet, &config.zebra_url)
+    let wallet = load_wallet_for_migrate(request.password.as_deref()).await?;
+    let spendable = scan_notes_for_sending(&wallet, &config.zebra_url)
         .await
         .map_err(TauriError::from)?;
 
@@ -222,8 +226,8 @@ pub async fn ironwood_migrate(
     request: IronwoodMigrateRequest,
 ) -> Result<IronwoodMigrateResponse, TauriError> {
     let (config, _chain_tip, ironwood_active, _tip_for_plan) = chain_context().await?;
-    let wallet = load_session_wallet(request.password.as_deref()).await?;
-    let spendable = scan_notes_for_sending(wallet, &config.zebra_url)
+    let wallet = load_wallet_for_migrate(request.password.as_deref()).await?;
+    let spendable = scan_notes_for_sending(&wallet, &config.zebra_url)
         .await
         .map_err(TauriError::from)?;
     let result = execute_orchard_migration(&config.zebra_url, ironwood_active, &spendable)
@@ -279,13 +283,15 @@ pub async fn ironwood_broadcast(
     request: IronwoodBroadcastRequest,
 ) -> Result<IronwoodBroadcastResponse, TauriError> {
     let (config, _chain_tip, ironwood_active, _tip) = chain_context().await?;
-    let _ = load_session_wallet(request.password.as_deref()).await?;
+    let _ = load_wallet_for_migrate(request.password.as_deref()).await?;
 
+    // F-07: never accept force_clearnet / skip_broadcast_hygiene from the webview IPC.
+    // Attestation remains allowed (Settings checkbox → request bool).
     let network_privacy = MigrationNetworkPrivacyOpts {
         attest_private_network: request.attest_private_network,
-        force_clearnet: request.force_clearnet,
+        force_clearnet: false,
         broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
-        skip_broadcast_hygiene: request.skip_broadcast_hygiene,
+        skip_broadcast_hygiene: false,
     };
 
     let result = execute_orchard_migration_broadcast(

@@ -112,6 +112,20 @@ function parseAmount(value: string): number {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
+/** Exact ZEC decimal string → zatoshis (avoids f64 mul truncation). */
+function zecStringToZatoshis(value: string): number | null {
+  const cleaned = value.trim();
+  if (!cleaned || cleaned === "." || cleaned === "-") return null;
+  const match = cleaned.match(/^(\d+)(?:\.(\d{0,8}))?$/);
+  if (!match) return null;
+  const whole = match[1] ?? "0";
+  const frac = (match[2] ?? "").padEnd(8, "0").slice(0, 8);
+  const zat = BigInt(whole) * 100_000_000n + BigInt(frac || "0");
+  if (zat <= 0n) return null;
+  if (zat > 21_000_000n * 100_000_000n) return null;
+  return Number(zat);
+}
+
 type SendProgressState = {
   percent: number;
   label: string;
@@ -604,9 +618,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     const trimmedPassword = password.trim();
     const recipient = normalizeUnifiedAddress(resolved);
     try {
+      const amountZat = zecStringToZatoshis(amount);
+      if (amountZat == null) {
+        stopSendProgress();
+        setIsSending(false);
+        toast.error("Enter a valid amount (up to 8 decimal places).", { id: toastId });
+        return;
+      }
       const { data } = await walletApi.keystonePrepareSend({
         recipient,
-        amount: amountValue,
+        amount_zatoshis: amountZat,
         memo: memo || undefined,
         password: trimmedPassword || undefined,
       });
@@ -698,9 +719,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     const trimmedPassword = password.trim();
     const recipient = normalizeUnifiedAddress(resolved);
     try {
+      const amountZat = zecStringToZatoshis(amount);
+      if (amountZat == null) {
+        stopSendProgress();
+        setIsSending(false);
+        toast.error("Enter a valid amount (up to 8 decimal places).", { id: sendToast });
+        return;
+      }
       const { data: sent } = await walletApi.sendTransaction({
         recipient,
-        amount: amountValue,
+        amount_zatoshis: amountZat,
         memo: memo || undefined,
         password: trimmedPassword || undefined,
       });

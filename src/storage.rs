@@ -3,6 +3,7 @@ use crate::hd_wallet::HDWallet;
 use crate::transactions::TransactionDetails;
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+use argon2::{Algorithm, Argon2, Params, Version};
 use rand::rngs::OsRng;
 use rand::RngCore;
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,12 @@ use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+/// Legacy blob: salt(16) || nonce(12) || ciphertext (iterated SHA-256 KDF).
+const LEGACY_HEADER_LEN: usize = 28;
+/// Versioned Argon2id blob: magic(4) || salt(16) || nonce(12) || ciphertext.
+const VAULT_MAGIC_V2: &[u8; 4] = b"NZK2";
+const V2_HEADER_LEN: usize = 4 + 16 + 12;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletData {
@@ -129,7 +136,7 @@ impl WalletStorage {
         let password_hash = wallet.get_password_hash().cloned();
         let password = password.to_string();
 
-        // AES + 100k-iter KDF must not block the Tokio/Tauri async runtime.
+        // AES-GCM + Argon2id (or legacy SHA-256 decrypt) must not block the async runtime.
         tokio::task::spawn_blocking(move || {
             let storage = WalletStorage::new(data_dir);
             let mut wallet_data = WalletData::new(mnemonic);
@@ -153,7 +160,7 @@ impl WalletStorage {
         let data_dir = self.data_dir.clone();
         let password = password.to_string();
 
-        // Decrypt runs a 100k-iteration KDF; offload so IPC/status never stalls the UI.
+        // Decrypt may run Argon2id or legacy 100k-iter SHA-256; offload so IPC never stalls.
         tokio::task::spawn_blocking(move || {
             let storage = WalletStorage::new(data_dir);
             storage.load_wallet_blocking(&password)
@@ -196,10 +203,12 @@ impl WalletStorage {
     }
 
     fn encrypt_data(&self, data: &str, password: &str) -> NozyResult<String> {
+        // Empty password remains supported for legacy "no password" create UX, but Argon2id
+        // still memory-hardens the blob vs the old iterated-SHA256 empty-password key.
         let mut salt = [0u8; 16];
         OsRng.fill_bytes(&mut salt);
 
-        let key = self.derive_key_from_password(password, &salt);
+        let key = self.derive_key_argon2id(password, &salt)?;
 
         let mut nonce = [0u8; 12];
         OsRng.fill_bytes(&mut nonce);
@@ -210,7 +219,8 @@ impl WalletStorage {
             .encrypt(Nonce::from_slice(&nonce), data.as_bytes())
             .map_err(|e| NozyError::Storage(format!("Encryption failed: {}", e)))?;
 
-        let mut result = Vec::new();
+        let mut result = Vec::with_capacity(V2_HEADER_LEN + ciphertext.len());
+        result.extend_from_slice(VAULT_MAGIC_V2);
         result.extend_from_slice(&salt);
         result.extend_from_slice(&nonce);
         result.extend_from_slice(&ciphertext);
@@ -222,7 +232,16 @@ impl WalletStorage {
         let data = hex::decode(encrypted_data)
             .map_err(|e| NozyError::Storage(format!("Failed to decode hex: {}", e)))?;
 
-        if data.len() < 28 {
+        if data.len() >= V2_HEADER_LEN && data.starts_with(VAULT_MAGIC_V2) {
+            let salt = &data[4..20];
+            let nonce = &data[20..32];
+            let ciphertext = &data[32..];
+            let key = self.derive_key_argon2id(password, salt)?;
+            return self.decrypt_aes_gcm(&key, nonce, ciphertext);
+        }
+
+        // Legacy iterated-SHA256 vault (pre-F-05). Still readable; next save upgrades to NZK2.
+        if data.len() < LEGACY_HEADER_LEN {
             return Err(NozyError::Storage(
                 "Invalid encrypted data length".to_string(),
             ));
@@ -231,10 +250,17 @@ impl WalletStorage {
         let salt = &data[0..16];
         let nonce = &data[16..28];
         let ciphertext = &data[28..];
+        let key = self.derive_key_legacy_sha256(password, salt);
+        self.decrypt_aes_gcm(&key, nonce, ciphertext)
+    }
 
-        let key = self.derive_key_from_password(password, salt);
-
-        let cipher = Aes256Gcm::new_from_slice(&key)
+    fn decrypt_aes_gcm(
+        &self,
+        key: &[u8; 32],
+        nonce: &[u8],
+        ciphertext: &[u8],
+    ) -> NozyResult<String> {
+        let cipher = Aes256Gcm::new_from_slice(key)
             .map_err(|e| NozyError::Storage(format!("Failed to create cipher: {}", e)))?;
         let plaintext = cipher
             .decrypt(Nonce::from_slice(nonce), ciphertext)
@@ -248,7 +274,21 @@ impl WalletStorage {
             .map_err(|e| NozyError::Storage(format!("Invalid UTF-8: {}", e)))
     }
 
-    fn derive_key_from_password(&self, password: &str, salt: &[u8]) -> [u8; 32] {
+    /// Argon2id (F-05) — memory-hard KDF for new wallet.dat blobs (`NZK2`).
+    fn derive_key_argon2id(&self, password: &str, salt: &[u8]) -> NozyResult<[u8; 32]> {
+        // m_cost=19 MiB, t_cost=2, p=1 — interactive unlock; OWASP-adjacent defaults for 0.5.
+        let params = Params::new(19 * 1024, 2, 1, Some(32))
+            .map_err(|e| NozyError::Storage(format!("Invalid Argon2 params: {e}")))?;
+        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let mut key = [0u8; 32];
+        argon2
+            .hash_password_into(password.as_bytes(), salt, &mut key)
+            .map_err(|e| NozyError::Storage(format!("Argon2id KDF failed: {e}")))?;
+        Ok(key)
+    }
+
+    /// Legacy iterated SHA-256 (pre-F-05) — decrypt only.
+    fn derive_key_legacy_sha256(&self, password: &str, salt: &[u8]) -> [u8; 32] {
         const ITERATIONS: u32 = 100000;
 
         let mut hash = {
@@ -343,5 +383,50 @@ impl WalletStorage {
         }
 
         Ok(backups)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn vault_nzk2_roundtrip_argon2id() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        let blob = storage
+            .encrypt_data(r#"{"mnemonic":"test words only"}"#, "correct horse")
+            .expect("encrypt");
+        let raw = hex::decode(&blob).unwrap();
+        assert!(raw.starts_with(VAULT_MAGIC_V2));
+        let plain = storage
+            .decrypt_data(&blob, "correct horse")
+            .expect("decrypt");
+        assert!(plain.contains("test words only"));
+        assert!(storage.decrypt_data(&blob, "wrong").is_err());
+    }
+
+    #[test]
+    fn vault_legacy_sha256_still_decrypts() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        // Build a legacy blob with the old KDF path.
+        let password = "legacy-pass";
+        let mut salt = [0u8; 16];
+        OsRng.fill_bytes(&mut salt);
+        let key = storage.derive_key_legacy_sha256(password, &salt);
+        let mut nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce);
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), b"legacy-wallet-json".as_slice())
+            .unwrap();
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&salt);
+        raw.extend_from_slice(&nonce);
+        raw.extend_from_slice(&ciphertext);
+        let hex_blob = hex::encode(raw);
+        let plain = storage
+            .decrypt_data(&hex_blob, password)
+            .expect("legacy decrypt");
+        assert_eq!(plain, "legacy-wallet-json");
     }
 }

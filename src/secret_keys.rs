@@ -16,9 +16,8 @@ pub const SECRET_COIN_TYPE: u32 = 529;
 /// Secret Network address prefix
 pub const SECRET_ADDRESS_PREFIX: &str = "secret";
 
-#[derive(Debug, Clone)]
-pub struct SecretKeyDerivation {
-    hd_wallet: HDWallet,
+pub struct SecretKeyDerivation<'a> {
+    hd_wallet: &'a HDWallet,
 }
 
 #[derive(Debug, Clone)]
@@ -51,8 +50,8 @@ impl SecretDerivationPath {
     }
 }
 
-impl SecretKeyDerivation {
-    pub fn new(hd_wallet: HDWallet) -> Self {
+impl<'a> SecretKeyDerivation<'a> {
+    pub fn new(hd_wallet: &'a HDWallet) -> Self {
         Self { hd_wallet }
     }
 
@@ -158,7 +157,7 @@ impl HDWallet {
             index,
         };
 
-        let key_derivation = SecretKeyDerivation::new(self.clone());
+        let key_derivation = SecretKeyDerivation::new(self);
         let key_pair = key_derivation.derive_key_pair(&path)?;
 
         Ok(key_pair.address)
@@ -172,7 +171,7 @@ impl HDWallet {
             index,
         };
 
-        let key_derivation = SecretKeyDerivation::new(self.clone());
+        let key_derivation = SecretKeyDerivation::new(self);
         key_derivation.derive_key_pair(&path)
     }
 }

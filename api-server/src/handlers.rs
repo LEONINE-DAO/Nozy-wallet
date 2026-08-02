@@ -136,7 +136,9 @@ pub struct SyncResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SendTransactionRequest {
     pub recipient: String,
-    pub amount: f64,
+    /// ZEC amount (legacy). Prefer `amount_zatoshis` when available (F-12).
+    pub amount: Option<f64>,
+    pub amount_zatoshis: Option<u64>,
     pub memo: Option<String>,
     pub zebra_url: Option<String>,
     #[serde(default)]
@@ -237,6 +239,7 @@ pub(crate) async fn load_wallet_with_password(
         .load_wallet(&pwd)
         .await
         .map_err(|e| format!("Failed to load wallet: {e}. Please check your password."))?;
+    let _ = nozy::notes_vault::unlock_notes_vault(&pwd);
 
     Ok((wallet, storage))
 }
@@ -462,7 +465,7 @@ pub async fn sync_wallet(
         ..WalletSyncOptions::api_default()
     };
 
-    match sync_wallet_notes(wallet, options).await {
+    match sync_wallet_notes(&wallet, options).await {
         Ok(result) => {
             let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
             let message = if result.already_synced {
@@ -545,7 +548,9 @@ pub async fn send_transaction(
         }));
     }
 
-    if !validate_amount(payload.request.amount) {
+    if !validate_amount(payload.request.amount.unwrap_or(0.0))
+        && payload.request.amount_zatoshis.is_none()
+    {
         return Ok(ResponseJson(SendTransactionResponse {
             success: false,
             txid: None,
@@ -561,7 +566,19 @@ pub async fn send_transaction(
         .map(|m| m.trim().as_bytes().to_vec())
         .filter(|b| !b.is_empty());
 
-    let amount_zatoshis = (payload.request.amount * 100_000_000.0) as u64;
+    let amount_zatoshis = match nozy::input_validation::resolve_send_amount_zatoshis(
+        payload.request.amount_zatoshis,
+        payload.request.amount,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(ResponseJson(SendTransactionResponse {
+                success: false,
+                txid: None,
+                message: e.to_string(),
+            }));
+        }
+    };
 
     let pilot = nozy::PilotSendOptions::for_send();
     let fee_zatoshis =
@@ -589,7 +606,7 @@ pub async fn send_transaction(
         }));
     }
 
-    let spendable_notes = match scan_notes_for_sending(wallet, &zebra_url).await {
+    let spendable_notes = match scan_notes_for_sending(&wallet, &zebra_url).await {
         Ok(notes) => notes,
         Err(e) => {
             let msg = e.to_string();

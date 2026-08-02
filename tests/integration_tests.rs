@@ -152,7 +152,7 @@ async fn test_end_to_end_flow_create_scan_send() {
     println!("✅ Current block height: {}", tip_height);
 
     let start_height = tip_height.saturating_sub(100);
-    let mut scanner = NoteScanner::new(wallet, client.clone());
+    let mut scanner = NoteScanner::new(&wallet, client.clone());
 
     let (scan_result, spendable_notes) = scanner
         .scan_notes(Some(start_height), Some(tip_height))
@@ -231,7 +231,7 @@ async fn test_note_scanning() {
         .expect("Failed to get block count");
 
     let start_height = tip_height.saturating_sub(10);
-    let mut scanner = NoteScanner::new(wallet, client);
+    let mut scanner = NoteScanner::new(&wallet, client);
 
     let (result, spendable) = scanner
         .scan_notes(Some(start_height), Some(tip_height))
@@ -269,7 +269,7 @@ async fn test_sync_follows_zebra_tip() {
     println!("🧪 Initial Zebra tip height: {}", tip1);
 
     let start1 = tip1.saturating_sub(50);
-    let mut scanner1 = NoteScanner::new(wallet.clone(), client.clone());
+    let mut scanner1 = NoteScanner::new(&wallet, client.clone());
     let (_result1, _spendable1) = scanner1
         .scan_notes(Some(start1), Some(tip1))
         .await
@@ -292,7 +292,7 @@ async fn test_sync_follows_zebra_tip() {
     }
 
     let start2 = tip1.saturating_add(1);
-    let mut scanner2 = NoteScanner::new(wallet, client);
+    let mut scanner2 = NoteScanner::new(&wallet, client);
     let (_result2, _spendable2) = scanner2
         .scan_notes(Some(start2), Some(tip2))
         .await

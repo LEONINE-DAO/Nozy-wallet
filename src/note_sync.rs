@@ -2,16 +2,17 @@ use crate::error::{NozyError, NozyResult};
 use crate::hd_wallet::HDWallet;
 use crate::wallet_sync::{sync_wallet_notes, WalletSyncOptions, WalletSyncResult};
 use crate::zebra_integration::ZebraClient;
+use std::sync::Arc;
 use tokio::time::{interval, Duration};
 
 pub struct NoteSyncManager {
-    wallet: HDWallet,
+    wallet: Arc<HDWallet>,
     zebra_client: ZebraClient,
     sync_interval: Duration,
 }
 
 impl NoteSyncManager {
-    pub fn new(wallet: HDWallet, zebra_client: ZebraClient, sync_interval_secs: u64) -> Self {
+    pub fn new(wallet: Arc<HDWallet>, zebra_client: ZebraClient, sync_interval_secs: u64) -> Self {
         Self {
             wallet,
             zebra_client,
@@ -21,7 +22,7 @@ impl NoteSyncManager {
 
     pub async fn sync_once(&self) -> NozyResult<SyncResult> {
         let options = WalletSyncOptions::api_default();
-        let result = sync_wallet_notes(self.wallet.clone(), options)
+        let result = sync_wallet_notes(self.wallet.as_ref(), options)
             .await
             .map_err(|e| NozyError::NoteScanning(e.message))?;
 
@@ -34,7 +35,7 @@ impl NoteSyncManager {
     }
 
     pub fn start_background_sync(&self) -> tokio::task::JoinHandle<()> {
-        let wallet = self.wallet.clone();
+        let wallet = Arc::clone(&self.wallet);
         let zebra_client = self.zebra_client.clone();
         let interval_duration = self.sync_interval;
 

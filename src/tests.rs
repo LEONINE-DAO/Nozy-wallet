@@ -204,7 +204,7 @@ mod integration_tests {
         }
 
         // Test note scanning
-        let mut scanner = NoteScanner::new(wallet.clone(), client.clone());
+        let mut scanner = NoteScanner::new(&wallet, client.clone());
         let tip_height = client.get_block_count().await.unwrap_or(3_066_071);
         let start_height = tip_height.saturating_sub(100);
 

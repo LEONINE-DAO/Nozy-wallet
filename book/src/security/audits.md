@@ -40,14 +40,19 @@ Do **not** file public GitHub issues for undisclosed exploits. Follow [`CONTRIBU
 
 Contributors can use [`SELF_SECURITY_AUDIT_GUIDE.md`](../../../SELF_SECURITY_AUDIT_GUIDE.md) for checklist-style review (address validation, RPC trust, storage encryption, etc.).
 
+## AI-assisted prep pack (2026-08)
+
+In-repo Least Authority–**style** self-review (CLI + core + Desktop): [`docs/reference/security-audit/`](../../../docs/reference/security-audit/). Includes threat model, leads table, triaged findings, and an engagement SOW paste. **This is not a Least Authority certificate.**
+
 ## Third-party audits
 
 No independent third-party audit certificate is claimed in this book. For grant or production submissions, attach:
 
 - `cargo audit` output
 - Relevant BUG registry entries ([`docs/issues/BUG_REGISTRY.md`](../../../docs/issues/BUG_REGISTRY.md))
-- Mainnet evidence docs ([`docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md`](../../../docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md))
+- Mainnet evidence docs ([`docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md`](../../../docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md), [`MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md`](../../../docs/reference/MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md))
+- Prep findings (with honest “self-triaged” label): [`docs/reference/security-audit/FINDINGS.md`](../../../docs/reference/security-audit/FINDINGS.md)
 
 ## Roadmap
 
-Formal external audit before broad retail release is tracked on [Enhancement Roadmap](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md#8-enhanced-security-features).
+Formal external audit before broad retail release is tracked on [Enhancement Roadmap](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md#8-enhanced-security-features). Engagement brief: [`ENGAGE_LEAST_AUTHORITY.md`](../../../docs/reference/security-audit/ENGAGE_LEAST_AUTHORITY.md).

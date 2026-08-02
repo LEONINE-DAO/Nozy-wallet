@@ -70,6 +70,24 @@ async fn main() -> anyhow::Result<()> {
         .and_then(|s| s.parse().ok())
         .unwrap_or(3000);
 
+    // F-03: default loopback. Set NOZY_BIND_ADDR=0.0.0.0 only for intentional LAN/hosted.
+    // Must run before middleware captures `api_key`.
+    let bind_host = std::env::var("NOZY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
+    let bind_is_all_interfaces = bind_host == "0.0.0.0" || bind_host == "::" || bind_host == "[::]";
+    if bind_is_all_interfaces {
+        warn!(
+            "Binding to {} — API is reachable on all interfaces. Prefer 127.0.0.1 unless hosted.",
+            bind_host
+        );
+        if api_key.is_none() {
+            return Err(anyhow::anyhow!(
+                "Refusing to bind {bind_host} without NOZY_API_KEY. \
+                 Seed/restore routes must not be LAN-exposed unauthenticated. \
+                 Set NOZY_API_KEY, or use NOZY_BIND_ADDR=127.0.0.1 (default)."
+            ));
+        }
+    }
+
     let app = Router::new()
         .route("/api/wallet/exists", get(handlers::check_wallet_exists))
         .route("/api/wallet/create", post(handlers::create_wallet))
@@ -309,8 +327,14 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to load TLS configuration: {e}"))?;
 
-        let addr = SocketAddr::from(([0, 0, 0, 0], https_port));
-        info!("API server listening on https://0.0.0.0:{}", https_port);
+        let ip: std::net::IpAddr = bind_host
+            .parse()
+            .map_err(|e| anyhow::anyhow!("Invalid NOZY_BIND_ADDR '{bind_host}': {e}"))?;
+        let addr = SocketAddr::from((ip, https_port));
+        info!(
+            "API server listening on https://{}:{}",
+            bind_host, https_port
+        );
         info!("Health check: https://localhost:{}/health", https_port);
 
         let handle = axum_server::Handle::new();
@@ -331,15 +355,15 @@ async fn main() -> anyhow::Result<()> {
                 anyhow::anyhow!("Server error: {e}")
             })?;
     } else {
-        let listener = tokio::net::TcpListener::bind(format!("0.0.0.0:{http_port}"))
+        let listener = tokio::net::TcpListener::bind(format!("{bind_host}:{http_port}"))
             .await
             .map_err(|e| {
-                tracing::error!("Failed to bind to 0.0.0.0:{}: {}", http_port, e);
+                tracing::error!("Failed to bind to {}:{}: {}", bind_host, http_port, e);
                 anyhow::anyhow!(
-                    "Failed to bind to port {http_port}: {e}. Is the port already in use?"
+                    "Failed to bind to {bind_host}:{http_port}: {e}. Is the port already in use?"
                 )
             })?;
-        info!("API server listening on http://0.0.0.0:{}", http_port);
+        info!("API server listening on http://{}:{}", bind_host, http_port);
         info!("Health check: http://localhost:{}/health", http_port);
 
         axum::serve(listener, app)

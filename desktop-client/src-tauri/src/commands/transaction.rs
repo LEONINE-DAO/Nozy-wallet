@@ -51,7 +51,7 @@ async fn repair_ironwood_witnesses_by_rescan(
             code: e.code,
         })?;
     let sync_result = sync_wallet_notes(
-        wallet,
+        &wallet,
         WalletSyncOptions {
             start_height: Some(start_height),
             end_height: None,
@@ -109,7 +109,9 @@ pub struct SendTransactionResponse {
 #[derive(Debug, Deserialize)]
 pub struct SendTransactionRequest {
     pub recipient: String,
-    pub amount: f64,
+    /// ZEC amount (legacy). Prefer `amount_zatoshis` when available (F-12).
+    pub amount: Option<f64>,
+    pub amount_zatoshis: Option<u64>,
     pub memo: Option<String>,
     pub zebra_url: Option<String>,
     pub password: Option<String>,
@@ -151,14 +153,19 @@ pub async fn send_transaction(
         });
     }
 
-    if request.amount <= 0.0 || request.amount > 21_000_000.0 {
-        return Ok(SendTransactionResponse {
-            success: false,
-            txid: None,
-            message: "Invalid amount. Must be greater than 0 and less than 21,000,000 ZEC."
-                .to_string(),
-        });
-    }
+    let amount_zatoshis = match nozy::input_validation::resolve_send_amount_zatoshis(
+        request.amount_zatoshis,
+        request.amount,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(SendTransactionResponse {
+                success: false,
+                txid: None,
+                message: e.to_string(),
+            });
+        }
+    };
 
     let zebra_url = request
         .zebra_url
@@ -180,11 +187,10 @@ pub async fn send_transaction(
         "Gathering spendable Orchard notes…",
     );
 
-    let spendable_notes = scan_notes_for_sending(wallet, &zebra_url)
+    let spendable_notes = scan_notes_for_sending(&wallet, &zebra_url)
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::new(zebra_url.clone());
 
     let pilot = nozy::PilotSendOptions {
@@ -250,7 +256,7 @@ pub async fn send_transaction(
                     message: e.message,
                     code: e.code,
                 })?;
-            let spendable_notes_retry = scan_notes_for_sending(wallet_retry, &zebra_url)
+            let spendable_notes_retry = scan_notes_for_sending(&wallet_retry, &zebra_url)
                 .await
                 .map_err(|e| TauriError::from(e.to_string()))?;
             emit_send_progress(

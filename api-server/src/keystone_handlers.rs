@@ -147,7 +147,9 @@ pub async fn keystone_export_ufvk(
 #[derive(Debug, Deserialize)]
 pub struct KeystonePrepareSendRequest {
     pub recipient: String,
-    pub amount: f64,
+    /// ZEC amount (legacy). Prefer `amount_zatoshis` when available (F-12).
+    pub amount: Option<f64>,
+    pub amount_zatoshis: Option<u64>,
     pub memo: Option<String>,
     #[serde(default = "default_true")]
     pub priority: bool,
@@ -217,7 +219,7 @@ pub async fn keystone_prepare_send(
         }));
     }
 
-    if !validate_amount(payload.amount) {
+    if !validate_amount(payload.amount.unwrap_or(0.0)) && payload.amount_zatoshis.is_none() {
         return Ok(ResponseJson(KeystonePrepareResponse {
             success: false,
             message: Some("Invalid amount. Must be greater than 0.".to_string()),
@@ -229,6 +231,24 @@ pub async fn keystone_prepare_send(
         }));
     }
 
+    let amount_zatoshis = match nozy::input_validation::resolve_send_amount_zatoshis(
+        payload.amount_zatoshis,
+        payload.amount,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(ResponseJson(KeystonePrepareResponse {
+                success: false,
+                message: Some(e.to_string()),
+                summary: None,
+                action_count: None,
+                pczt_hex: None,
+                ur_frames: None,
+                ur_type: None,
+            }));
+        }
+    };
+
     let zebra_url = payload
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
@@ -237,7 +257,7 @@ pub async fn keystone_prepare_send(
         .await
         .map_err(|e| error_response(StatusCode::UNAUTHORIZED, e))?;
 
-    let spendable_notes = match scan_notes_for_sending(wallet.clone(), &zebra_url).await {
+    let spendable_notes = match scan_notes_for_sending(&wallet, &zebra_url).await {
         Ok(notes) => notes,
         Err(e) => {
             let msg = e.to_string();
@@ -254,7 +274,6 @@ pub async fn keystone_prepare_send(
         }
     };
 
-    let amount_zatoshis = (payload.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::from_config_with_url(&config, Some(&zebra_url));
     let pilot = PilotSendOptions {
         priority: payload.priority,
@@ -409,7 +428,7 @@ pub async fn keystone_complete_send(
     let pending = load_pending_send().ok().flatten();
     if let Some(prepared) = pending {
         if let Ok((wallet, _)) = load_wallet_with_password(None).await {
-            if let Ok(spendable_notes) = scan_notes_for_sending(wallet, &zebra_url).await {
+            if let Ok(spendable_notes) = scan_notes_for_sending(&wallet, &zebra_url).await {
                 if let Ok(spent_note) = select_single_spend_note(
                     &spendable_notes,
                     prepared.amount_zatoshis,

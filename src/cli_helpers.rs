@@ -153,6 +153,7 @@ pub async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
     }
 
     if let Ok(wallet) = storage.load_wallet("").await {
+        crate::notes_vault::unlock_notes_vault("")?;
         return Ok((wallet, storage));
     }
 
@@ -162,11 +163,12 @@ pub async fn load_wallet() -> NozyResult<(HDWallet, WalletStorage)> {
         .map_err(|e| NozyError::InvalidOperation(format!("Password input error: {}", e)))?;
 
     let wallet = storage.load_wallet(&password).await?;
+    crate::notes_vault::unlock_notes_vault(&password)?;
     Ok((wallet, storage))
 }
 
 pub async fn scan_notes_for_sending(
-    wallet: HDWallet,
+    wallet: &HDWallet,
     zebra_url: &str,
 ) -> NozyResult<Vec<crate::SpendableNote>> {
     use crate::notes::load_spendable_notes_from_wallet;

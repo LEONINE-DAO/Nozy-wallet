@@ -69,17 +69,25 @@ export function IronwoodReadinessCard() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<"plan" | "split" | "migrate" | "broadcast" | null>(null);
+  const [walletPassword, setWalletPassword] = useState("");
+  const [walletHasPassword, setWalletHasPassword] = useState(false);
   const attestPrivateNetworkForMigration = useSettingsStore(
     (s) => s.attestPrivateNetworkForMigration
   );
 
   const load = useCallback(async () => {
     try {
-      const res = await walletApi.getIronwoodStatus({
-        attest_private_network: attestPrivateNetworkForMigration,
-      });
+      const [res, walletStatus] = await Promise.all([
+        walletApi.getIronwoodStatus({
+          attest_private_network: attestPrivateNetworkForMigration,
+        }),
+        walletApi.getWalletStatus().catch(() => null),
+      ]);
       setStatus(res.data);
       setError(null);
+      if (walletStatus?.data) {
+        setWalletHasPassword(Boolean(walletStatus.data.has_password));
+      }
     } catch (e) {
       setError(
         formatErrorForDisplay(e, "Ironwood status unavailable. Check desktop backend and Zebra RPC.")
@@ -136,10 +144,21 @@ export function IronwoodReadinessCard() {
     }
   };
 
+  const stepUpPassword = (): string | undefined => {
+    const trimmed = walletPassword.trim();
+    if (walletHasPassword && !trimmed) {
+      toast.error("Enter your wallet password to split, migrate, or broadcast.");
+      return undefined;
+    }
+    return trimmed || undefined;
+  };
+
   const onSplit = async () => {
+    const password = stepUpPassword();
+    if (walletHasPassword && password === undefined) return;
     setBusy("split");
     try {
-      const res = await walletApi.ironwoodSplit({});
+      const res = await walletApi.ironwoodSplit({ password });
       toast.success(res.data.message);
       await load();
     } catch (e) {
@@ -150,9 +169,11 @@ export function IronwoodReadinessCard() {
   };
 
   const onMigrate = async () => {
+    const password = stepUpPassword();
+    if (walletHasPassword && password === undefined) return;
     setBusy("migrate");
     try {
-      const res = await walletApi.ironwoodMigrate({});
+      const res = await walletApi.ironwoodMigrate({ password });
       if (res.data.prepared_txid) {
         toast.success(res.data.message);
       } else if (res.data.blockers.length > 0) {
@@ -169,9 +190,12 @@ export function IronwoodReadinessCard() {
   };
 
   const onBroadcast = async () => {
+    const password = stepUpPassword();
+    if (walletHasPassword && password === undefined) return;
     setBusy("broadcast");
     try {
       const res = await walletApi.ironwoodBroadcast({
+        password,
         attest_private_network: attestPrivateNetworkForMigration,
         wait_confirm: false,
       });
@@ -220,7 +244,18 @@ export function IronwoodReadinessCard() {
           </p>
         </div>
 
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-col items-stretch gap-2 sm:items-end">
+          {walletHasPassword ? (
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={walletPassword}
+              onChange={(e) => setWalletPassword(e.target.value)}
+              placeholder="Wallet password (required to split / migrate / broadcast)"
+              className="w-full min-w-[16rem] rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-white/80 dark:bg-gray-900/60 px-3 py-2 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
+            />
+          ) : null}
+          <div className="flex flex-wrap gap-2">
           <Button
             variant="outline"
             disabled={!canSplit}
@@ -241,6 +276,7 @@ export function IronwoodReadinessCard() {
           >
             {busy === "broadcast" ? "Broadcasting…" : "Broadcast"}
           </Button>
+          </div>
         </div>
       </div>
 

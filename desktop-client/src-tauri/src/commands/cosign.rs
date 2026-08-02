@@ -25,7 +25,9 @@ fn network_from_config() -> NetworkType {
 #[derive(Debug, Deserialize)]
 pub struct PrepareCosignRequest {
     pub recipient: String,
-    pub amount: f64,
+    /// ZEC amount (legacy). Prefer `amount_zatoshis` when available (F-12).
+    pub amount: Option<f64>,
+    pub amount_zatoshis: Option<u64>,
     pub memo: Option<String>,
     pub password: Option<String>,
     pub zebra_url: Option<String>,
@@ -52,7 +54,9 @@ pub struct SignCosignResponse {
 pub struct CompleteCosignSendRequest {
     pub pczt_hex: String,
     pub recipient: String,
-    pub amount: f64,
+    /// ZEC amount (legacy). Prefer `amount_zatoshis` when available (F-12).
+    pub amount: Option<f64>,
+    pub amount_zatoshis: Option<u64>,
     pub memo: Option<String>,
     pub password: Option<String>,
     pub zebra_url: Option<String>,
@@ -79,19 +83,21 @@ pub async fn prepare_cosign_request(
             },
         ));
     }
-    if request.amount <= 0.0 {
-        return Err(TauriError::from("Amount must be greater than 0.".to_string()));
-    }
+
+    let amount_zatoshis = nozy::input_validation::resolve_send_amount_zatoshis(
+        request.amount_zatoshis,
+        request.amount,
+    )
+    .map_err(TauriError::from)?;
 
     let zebra_url = request
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
     let wallet = load_session_wallet(request.password.as_deref()).await?;
-    let spendable_notes = scan_notes_for_sending(wallet.clone(), &zebra_url)
+    let spendable_notes = scan_notes_for_sending(&wallet, &zebra_url)
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::from_config(&config);
     let pilot = PilotSendOptions {
         priority: NOZY_WALLET_PRIORITY_FEE,
@@ -173,10 +179,14 @@ pub async fn complete_cosign_send(
         .map_err(|e| TauriError::from(e.to_string()))?;
 
     let wallet = load_session_wallet(request.password.as_deref()).await?;
-    let spendable_notes = scan_notes_for_sending(wallet.clone(), &zebra_url)
+    let spendable_notes = scan_notes_for_sending(&wallet, &zebra_url)
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
-    let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
+    let amount_zatoshis = nozy::input_validation::resolve_send_amount_zatoshis(
+        request.amount_zatoshis,
+        request.amount,
+    )
+    .map_err(TauriError::from)?;
     let pilot = PilotSendOptions {
         priority: NOZY_WALLET_PRIORITY_FEE,
         expiry_delta_blocks: PILOT_EXPIRY_DELTA_BLOCKS,

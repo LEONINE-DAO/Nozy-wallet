@@ -1,9 +1,10 @@
 # Ironwood (NU6.3) wallet readiness — NozyWallet
 
-**Status:** CLI **v2.4.0** shipped (July 2026) — testnet-validated Ironwood scan, migration, and send; desktop/API surfaces in progress  
+**Status:** CLI **v2.4.0** shipped (July 2026) — testnet loop complete; **mainnet Orchard→Ironwood turnstile confirmed** 2026-07-30 (see evidence); desktop Ironwood UX beta  
 **Release:** [v2.4.0 Ironwood (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0)  
+**Mainnet migration evidence:** [`MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md`](MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md) — TXID `ea2fa4e64a5c…7048fd` @ height **3,430,663**  
 **Target:** Mainnet activation **2026-07-28** at height **3,428,143** (ecosystem PSA; wallet falls back to this height if `zcash_protocol` has not pinned NU6.3 yet)  
-**Forum:** [Ironwood: Verifying the Soundness of Zcash's Circulating Supply](https://forum.zcashcommunity.com/t/ironwood-verifying-the-soundness-of-zcash-s-circulating-supply/56044)  
+**Forum:** [Ironwood: Verifying the Soundness of Zcash's Circulating Supply](https://forum.zcashcommunity.com/t/ironwood-verifying-the-soundness-of-zcash-s-circulating-supply/56044) · [wallets update Aug 1](https://forum.zcashcommunity.com/t/ironwood-is-here-updated-wallets-libraries-aug-1/56557/38)  
 **Wallet migration draft:** [ZIP 318 PR #1317](https://github.com/zcash/zips/pull/1317)  
 **Privacy guidance:** Shielded Labs — *Security issues in migrating user funds from Orchard to Ironwood* (Zooko Wilcox & Taylor Hornby): network-level privacy (Defense A) + `{1,2,5}×10^k` concurrent mixing (Defense B / Appendix A)
 
@@ -17,10 +18,10 @@
 | NU6.3 / Ironwood deps (`librustzcash`, `orchard` 0.15-pre) | **Done (compiles)** — mainline pins in `Cargo.toml` |
 | `ShieldedPool` note tagging (Orchard vs Ironwood) | **Started** — `pool` field plus pool-specific witness slots |
 | Ironwood commitment tree + witnesses | **Started (compiles)** — treestate parser, tree codec aliases, witness tracker, scan wiring |
-| Turnstile migration txs (Orchard spend → Ironwood output) | **In progress (testnet)** — 3+ turnstiles confirmed; Orchard → Ironwood migration loop complete on profile |
-| Post-activation sends route to Ironwood pool | **Done (CLI validated)** — live smoke `d6794092…` block 4148837 |
+| Turnstile migration txs (Orchard spend → Ironwood output) | **Mainnet confirmed (CLI)** — TXID `ea2fa4e64a5c…7048fd` @ **3,430,663**; testnet loop earlier; residual Orchard schedule still pending on operator profile |
+| Post-activation sends route to Ironwood pool | **Done (CLI validated)** — testnet smoke `d6794092…` block 4148837; mainnet Ironwood note from turnstile indexed |
 | Ironwood scan/sync (LWD + JSON-RPC) | **JSON-RPC validated** — V3 `IronwoodDomain` decrypt + pool-aware spendable load; LWD needs `ironwood-valar` validation (see **Ironwood lightwalletd** below) |
-| Desktop / API migration UX | **Started (desktop read-only)** — Home card/status panel added; migration actions disabled |
+| Desktop / API migration UX | **Beta** — Ironwood tab plan/split/migrate/broadcast wired; not marketed as GA |
 | Zebrad + lightwalletd NU6.3 | **Testnet WSL node synced** — use WSL IP `:18232` for migration validation (not Windows `zebrad.exe`); run `scripts/ironwood-lwd-smoke.ps1` after `ironwood-valar` LWD |
 | Safer migration Priority 1 (IP) | **Started** — CLI broadcast gate + desktop/API status (`safer_migration`); attest checkbox on Home card |
 | Safer migration Priority 2 (cover) | **Scaffolded** — local thin-bucket warn; **SHOULD** not MUST; next: public-chain cover estimator (no coordinator) |

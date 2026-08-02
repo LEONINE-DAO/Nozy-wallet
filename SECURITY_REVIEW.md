@@ -2,6 +2,8 @@
 
 Use this for a **structured review** before a major release or store submission. It does not replace a professional audit for high-value wallet software.
 
+**Related (2026-08 AI-assisted prep):** [`docs/reference/security-audit/`](docs/reference/security-audit/) — threat model + triaged findings. Prefer remediating High items in [`FINDINGS.md`](docs/reference/security-audit/FINDINGS.md) before claiming GA.
+
 ## 1. Secrets and key material
 
 - [ ] **Mnemonic / seed:** never logged, never in URLs, never sent to companion API or third-party hosts (verify `api-server` handlers and extension message paths).

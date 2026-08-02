@@ -444,7 +444,7 @@ pub fn resolve_scan_range(
 
 /// Scan Orchard notes over RPC, merge into cached `notes.json`, update `last_scan_height`.
 pub async fn sync_wallet_notes(
-    wallet: HDWallet,
+    wallet: &HDWallet,
     options: WalletSyncOptions,
 ) -> Result<WalletSyncResult, WalletSyncError> {
     let config = load_config();

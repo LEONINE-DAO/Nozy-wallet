@@ -49,13 +49,14 @@ While self-audits are valuable, **a professional third-party security audit is e
 
 #### Audit Timeline
 
-**Current Status:** Planning phase
+**Current Status:** Planning phase + **AI-assisted self-prep** (2026-08-01)
+
+**Prep pack (not a third-party certificate):** [`docs/reference/security-audit/`](docs/reference/security-audit/) — scope, threat model, leads, triaged findings, and SOW paste for Least Authority ([methodology reference](https://leastauthority.com/blog/ai-assisted-security-auditing-in-the-zcash-ecosystem/)).
 
 **Target Timeline:**
-- **Q1 2026**: Engage audit firm
-- **Q2 2026**: Complete audit
-- **Q3 2026**: Remediate findings
-- **Q4 2026**: Production release (post-audit)
+- **2026-08**: Self-prep complete; remediate High findings from [`FINDINGS.md`](docs/reference/security-audit/FINDINGS.md)
+- **Next:** Engage audit firm (SOW: [`ENGAGE_LEAST_AUTHORITY.md`](docs/reference/security-audit/ENGAGE_LEAST_AUTHORITY.md))
+- **After engagement:** Remediate confirmed issues; production / GA claims only post-review
 
 #### Recommended Audit Firms
 
@@ -63,8 +64,8 @@ We are considering the following reputable security audit firms:
 
 1. **Least Authority** - [leastauthority.com](https://leastauthority.com/)
    - Specializes in Zcash and cryptocurrency security
-   - Experience with wallet audits
-   - Recommended by Zcash Foundation
+   - Experience with wallet audits and AI-assisted Zcash ecosystem reviews
+   - Recommended by Zcash Foundation / ZCG engagements
 
 2. **Trail of Bits** - [trailofbits.com](https://www.trailofbits.com/)
    - Cryptocurrency security expertise

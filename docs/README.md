@@ -8,6 +8,8 @@
 | [`rfcs/DYNAMIC_FEE_PILOT_PLAN.md`](rfcs/DYNAMIC_FEE_PILOT_PLAN.md) | Dynamic fee pilot architecture (Shielded Labs alignment) |
 | [`reference/DYNAMIC_FEE_CASE_BREAKDOWN.md`](reference/DYNAMIC_FEE_CASE_BREAKDOWN.md) | **Dynamic-fee pilot case breakdown** — Cases 1–6 + cross-ref to Ironwood labels |
 | [`reference/IRONWOOD_WALLET_READINESS.md`](reference/IRONWOOD_WALLET_READINESS.md) | **Ironwood NU6.3** — migration case breakdown, v2.4.0 wrap-up (links to dynamic-fee doc) |
+| [`reference/MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md`](reference/MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md) | **Mainnet** Orchard→Ironwood turnstile TXID + ZIP 318 split anchors |
+| [`reference/security-audit/`](reference/security-audit/) | **LA-style AI-assisted self-review** (scope, threat model, leads, findings, engage SOW) — not a third-party cert |
 | [`reference/KYC_INBOUND_PRIVACY_CASE_BREAKDOWN.md`](reference/KYC_INBOUND_PRIVACY_CASE_BREAKDOWN.md) | **KYC / `t` inbound privacy** — throwaway UAs, quarantine, mix warnings, Zodl/Zingo/Zkool research cases |
 | [`reference/NYM_IP_PRIVACY_CASE_BREAKDOWN.md`](reference/NYM_IP_PRIVACY_CASE_BREAKDOWN.md) | **Nym IP / egress** — IP↔tx submit as biggest win; smolmix broadcast vs smol-dvpn sync cases |
 | [`reference/NOZY_LITE.md`](reference/NOZY_LITE.md) | **Nozy Lite** — CLI/TUI for operators: uptime, health, data checks |

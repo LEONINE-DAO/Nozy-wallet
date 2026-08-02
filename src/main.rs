@@ -767,11 +767,17 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             storage.save_wallet(&wallet, &password).await?;
 
             println!("🎉 Wallet created successfully!");
-            println!("📝 Mnemonic: {}", wallet.get_mnemonic());
             println!();
             println!("⚠️  ⚠️  ⚠️  CRITICAL SECURITY WARNING ⚠️  ⚠️  ⚠️");
             println!("   Your mnemonic phrase is the ONLY way to recover your wallet.");
             println!("   If you lose it, you will PERMANENTLY lose access to ALL your funds.");
+            println!();
+            println!("🔒 Before the mnemonic is printed:");
+            println!("   • Clear anyone looking at your screen");
+            println!("   • Prefer writing on paper — do not leave this in terminal scrollback");
+            println!("   • After backup, clear the terminal (cls / clear) or close the window");
+            println!();
+            println!("📝 Mnemonic: {}", wallet.get_mnemonic());
             println!();
             println!("🔒 SECURITY BEST PRACTICES:");
             println!("   ✅ Write it down on paper (NEVER store digitally)");
@@ -786,6 +792,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!(
                 "   ⚠️  SECURITY: This mnemonic will NOT be shown again for security reasons."
             );
+            println!("   ⚠️  Clear terminal history after you write it down.");
 
             let network = network_type_from_config(&config.network);
             match wallet.generate_orchard_address(0, 0, network) {
@@ -884,7 +891,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 }
             }
 
-            match nozy::sync_wallet_notes(wallet, options).await {
+            match nozy::sync_wallet_notes(&wallet, options).await {
                 Ok(result) => {
                     let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
                     if result.already_synced {
@@ -1107,12 +1114,12 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!("\n🔍 Scanning for spendable notes...");
             let spendable_notes = if use_plain_terminal_output() {
                 println!("   Plain terminal mode enabled (no spinner/progress UI).");
-                scan_notes_for_sending(wallet, &config.zebra_url).await?
+                scan_notes_for_sending(&wallet, &config.zebra_url).await?
             } else {
                 use nozy::progress::create_tx_progress_bar;
                 let pb = create_tx_progress_bar();
                 pb.set_message("Scanning blockchain for spendable notes...");
-                let res = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+                let res = scan_notes_for_sending(&wallet, &config.zebra_url).await?;
                 pb.finish_with_message("✅ Scan complete");
                 res
             };
@@ -1453,9 +1460,12 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 save_wallet_to_active_profile(&mut wallet).await?;
 
                 println!("🎉 Testnet wallet created successfully!");
+                println!();
+                println!("⚠️  Write the mnemonic on paper, then clear this terminal.");
                 println!("📝 Mnemonic: {}", wallet.get_mnemonic());
                 println!();
                 println!("⚠️  This is a testnet wallet. Keep it separate from mainnet funds.");
+                println!("⚠️  Clear terminal history after you write the mnemonic down.");
 
                 match wallet.generate_orchard_address(0, 0, NetworkType::Test) {
                     Ok(address) => {
@@ -3184,7 +3194,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
                     // Derive Secret Network address and key pair
                     let secret_address = hd_wallet.generate_secret_address(0, 0)?;
-                    let key_derivation = SecretKeyDerivation::new(hd_wallet);
+                    let key_derivation = SecretKeyDerivation::new(&hd_wallet);
                     let key_pair = key_derivation.derive_key_pair(
                         &nozy::secret_keys::SecretDerivationPath {
                             account: 0,
@@ -4204,7 +4214,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     println!("🔐 Unlocking wallet for Ironwood migration prebuild...");
                     let (wallet, _storage) = load_wallet().await?;
                     println!("🔍 Loading spendable Orchard notes for turnstile prebuild...");
-                    let spendable_notes = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+                    let spendable_notes =
+                        scan_notes_for_sending(&wallet, &config.zebra_url).await?;
                     let result = execute_orchard_migration(
                         &config.zebra_url,
                         ironwood_active,
@@ -4365,7 +4376,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     println!("🔐 Unlocking wallet for ZIP 318 note split...");
                     let (wallet, _storage) = load_wallet().await?;
                     println!("🔍 Loading spendable Orchard notes...");
-                    let spendable_notes = scan_notes_for_sending(wallet, &config.zebra_url).await?;
+                    let spendable_notes =
+                        scan_notes_for_sending(&wallet, &config.zebra_url).await?;
 
                     if dry_run {
                         let spend_note = spendable_notes

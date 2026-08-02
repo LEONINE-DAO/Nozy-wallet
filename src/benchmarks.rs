@@ -392,7 +392,7 @@ impl BenchmarkSuite {
 
         let wallet = HDWallet::new()?;
         let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
-        let mut scanner = crate::notes::NoteScanner::new(wallet, zebra_client);
+        let mut scanner = crate::notes::NoteScanner::new(&wallet, zebra_client);
 
         let mut total_duration = Duration::new(0, 0);
         let iterations = 5;

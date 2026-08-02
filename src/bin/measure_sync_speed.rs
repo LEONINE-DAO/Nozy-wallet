@@ -131,7 +131,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Measure full scan with note decryption
     println!("\n⏱️  Measuring full scan with note decryption...");
     let scan_start = Instant::now();
-    let mut scanner = NoteScanner::new(wallet, zebra_client.clone());
+    let mut scanner = NoteScanner::new(&wallet, zebra_client.clone());
 
     // Test on smaller range for full scan (decryption is expensive)
     let scan_test_blocks = args.test_blocks.min(10);

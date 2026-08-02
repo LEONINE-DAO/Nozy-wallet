@@ -283,7 +283,10 @@ export interface SyncWalletResponse {
 
 export interface SendTransactionRequest {
   recipient: string;
-  amount: number;
+  /** Legacy ZEC float — backend rejects inexact conversions. Prefer amount_zatoshis. */
+  amount?: number;
+  /** Exact integer zatoshis (preferred). */
+  amount_zatoshis?: number;
   memo?: string;
   password?: string;
   /** NozyWallet always uses ZIP-317 × 4; kept for API compat, ignored by core. */
@@ -362,6 +365,7 @@ export interface AddAddressBookRequest {
 
 export interface BackupPathRequest {
   backup_path: string;
+  password?: string;
 }
 
 export interface BackupActionResponse {
@@ -382,7 +386,10 @@ export interface CosignPreparedSend {
 
 export interface PrepareCosignRequest {
   recipient: string;
-  amount: number;
+  /** Legacy ZEC float — backend rejects inexact conversions. Prefer amount_zatoshis. */
+  amount?: number;
+  /** Exact integer zatoshis (preferred). */
+  amount_zatoshis?: number;
   memo?: string;
   password?: string;
 }
@@ -400,9 +407,24 @@ export interface SignCosignRequest {
 export interface CompleteCosignSendRequest {
   pczt_hex: string;
   recipient: string;
-  amount: number;
+  /** Legacy ZEC float — backend rejects inexact conversions. Prefer amount_zatoshis. */
+  amount?: number;
+  /** Exact integer zatoshis (preferred). */
+  amount_zatoshis?: number;
   memo?: string;
   password?: string;
+}
+
+export interface KeystonePrepareSendRequest {
+  recipient: string;
+  /** Legacy ZEC float — backend rejects inexact conversions. Prefer amount_zatoshis. */
+  amount?: number;
+  /** Exact integer zatoshis (preferred). */
+  amount_zatoshis?: number;
+  memo?: string;
+  priority?: boolean;
+  password?: string;
+  zebra_url?: string;
 }
 
 export interface KeystoneStatusResponse {

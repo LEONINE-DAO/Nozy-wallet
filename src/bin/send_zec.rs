@@ -31,7 +31,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);
     let mut transaction_builder = ZcashTransactionBuilder::new();
-    let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
+    let mut note_scanner = NoteScanner::new(&hd_wallet, zebra_client.clone());
 
     transaction_builder.set_zebra_url(&config.zebra_url);
     transaction_builder.enable_mainnet_broadcast();

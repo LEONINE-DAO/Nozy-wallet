@@ -4,16 +4,32 @@ use std::sync::Mutex;
 
 static UNLOCK_PASSWORD: Mutex<Option<String>> = Mutex::new(None);
 
+fn scrub_password(password: &mut String) {
+    // Best-effort overwrite before drop (F-06); full Zeroize lives in notes_vault key cache.
+    let len = password.len();
+    password.clear();
+    password.extend(std::iter::repeat('\0').take(len));
+    password.clear();
+}
+
 pub fn set_unlock_password(password: String) {
     if let Ok(mut guard) = UNLOCK_PASSWORD.lock() {
-        *guard = Some(password);
+        if let Some(ref mut old) = *guard {
+            scrub_password(old);
+        }
+        *guard = Some(password.clone());
     }
+    let _ = nozy::notes_vault::unlock_notes_vault(&password);
 }
 
 pub fn clear_session() {
     if let Ok(mut guard) = UNLOCK_PASSWORD.lock() {
+        if let Some(ref mut password) = *guard {
+            scrub_password(password);
+        }
         *guard = None;
     }
+    nozy::notes_vault::clear_notes_vault();
 }
 
 pub fn is_session_unlocked() -> bool {
@@ -42,7 +58,7 @@ pub async fn load_session_wallet(
 ) -> Result<HDWallet, TauriError> {
     let password = resolve_password(override_password);
     let storage = WalletStorage::with_xdg_dir();
-    storage.load_wallet(&password).await.map_err(|e| {
+    let wallet = storage.load_wallet(&password).await.map_err(|e| {
         let msg = e.to_string();
         let code = if msg.contains("Invalid password")
             || msg.contains("Decryption failed")
@@ -65,7 +81,9 @@ pub async fn load_session_wallet(
             message,
             code: Some(code.to_string()),
         }
-    })
+    })?;
+    let _ = nozy::notes_vault::unlock_notes_vault(&password);
+    Ok(wallet)
 }
 
 pub fn verify_wallet_password(wallet: &HDWallet, password: &str) -> Result<(), TauriError> {
@@ -104,5 +122,22 @@ pub async fn load_wallet_for_reveal(request_password: &str) -> Result<HDWallet, 
         verify_wallet_password(&wallet, request_password)?;
     }
 
+    Ok(wallet)
+}
+
+/// F-06: migrate / broadcast require step-up auth for password-protected wallets.
+pub async fn load_wallet_for_migrate(request_password: Option<&str>) -> Result<HDWallet, TauriError> {
+    let explicit = request_password.map(str::trim).filter(|p| !p.is_empty());
+    let wallet = load_session_wallet(explicit).await?;
+    if wallet.is_password_protected() {
+        let Some(pw) = explicit else {
+            return Err(TauriError {
+                message: "Enter your wallet password to migrate or broadcast Ironwood turnstiles."
+                    .to_string(),
+                code: Some("AUTH_002".to_string()),
+            });
+        };
+        verify_wallet_password(&wallet, pw)?;
+    }
     Ok(wallet)
 }

@@ -140,7 +140,9 @@ pub async fn get_orchard_pool_stats() -> Result<OrchardPoolStatsResponse, TauriE
 pub struct IronwoodStatusRequest {
     #[serde(default)]
     pub attest_private_network: bool,
+    /// Accepted for IPC compat; ignored (F-07 — desktop never force-clearnets).
     #[serde(default)]
+    #[allow(dead_code)]
     pub force_clearnet: bool,
 }
 
@@ -313,7 +315,8 @@ pub async fn get_ironwood_status(
         local_in_bucket,
         &MigrationNetworkPrivacyOpts {
             attest_private_network: request.attest_private_network,
-            force_clearnet: request.force_clearnet,
+            // F-07: never accept force_clearnet from the webview IPC.
+            force_clearnet: false,
             broadcast_via_nym_mixnet: config.privacy_network.broadcast_via_nym_mixnet,
             skip_broadcast_hygiene: false,
         },
