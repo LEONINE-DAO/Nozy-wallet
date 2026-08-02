@@ -7,7 +7,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let hd_wallet = HDWallet::new()?;
     let zebra_client = ZebraClient::new("http://127.0.0.1:8232".to_string());
-    let mut note_scanner = NoteScanner::new(hd_wallet.clone(), zebra_client.clone());
+    let mut note_scanner = NoteScanner::new(&hd_wallet, zebra_client.clone());
 
     println!("✅ Wallet created successfully");
     println!("📝 Mnemonic: {}", hd_wallet.get_mnemonic());

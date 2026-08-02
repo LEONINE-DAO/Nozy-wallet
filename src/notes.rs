@@ -617,8 +617,13 @@ pub fn merge_scanned_notes(
             continue;
         }
 
-        // No nullifier and no note bytes — cannot safely identity-merge; keep the row.
-        existing.push(new_note.clone());
+        // No nullifier and no note bytes — cannot safely identity-merge (F-14).
+        // Drop instead of appending opaque rows that inflate / corrupt the cache.
+        eprintln!(
+            "⚠️  Skipping scanned note with empty nullifier and empty note_bytes \
+             (txid={}, height={}, value={}) — run `nozy notes-doctor` if balance looks wrong.",
+            new_note.txid, new_note.block_height, new_note.value
+        );
     }
 }
 
@@ -757,16 +762,16 @@ pub struct NoteScanResult {
     pub spendable_count: usize,
 }
 
-pub struct NoteScanner {
-    wallet: HDWallet,
+pub struct NoteScanner<'a> {
+    wallet: &'a HDWallet,
     zebra_client: ZebraClient,
     note_index: Option<NoteIndex>,
     block_cache: Option<Arc<SimpleCache<Vec<ParsedTransaction>>>>,
     parallel_blocks: usize,
 }
 
-impl NoteScanner {
-    pub fn new(wallet: HDWallet, zebra_client: ZebraClient) -> Self {
+impl<'a> NoteScanner<'a> {
+    pub fn new(wallet: &'a HDWallet, zebra_client: ZebraClient) -> Self {
         Self {
             wallet,
             zebra_client,
@@ -786,7 +791,7 @@ impl NoteScanner {
         }
     }
 
-    pub fn with_index(wallet: HDWallet, zebra_client: ZebraClient, index: NoteIndex) -> Self {
+    pub fn with_index(wallet: &'a HDWallet, zebra_client: ZebraClient, index: NoteIndex) -> Self {
         Self {
             wallet,
             zebra_client,
@@ -797,7 +802,7 @@ impl NoteScanner {
     }
 
     pub fn with_index_file(
-        wallet: HDWallet,
+        wallet: &'a HDWallet,
         zebra_client: ZebraClient,
         index_path: &std::path::PathBuf,
     ) -> NozyResult<Self> {
@@ -1641,7 +1646,7 @@ pub async fn scan_real_notes(
         tracing::info!(start_height, end_height, "Scanning Orchard notes");
     }
 
-    let mut scanner = NoteScanner::new(wallet.clone(), zebra_client.clone());
+    let mut scanner = NoteScanner::new(wallet, zebra_client.clone());
     let (_, spendable_notes) = scanner
         .scan_notes(Some(start_height), Some(end_height))
         .await?;

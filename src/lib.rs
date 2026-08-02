@@ -64,6 +64,8 @@ pub mod note_sync;
 #[cfg(feature = "native")]
 pub mod notes;
 #[cfg(feature = "native")]
+pub mod notes_vault;
+#[cfg(feature = "native")]
 pub mod nu6_1_check;
 #[cfg(feature = "native")]
 pub mod nym_dvpn_sync;
@@ -193,14 +195,15 @@ pub use ironwood::{
     require_migration_network_privacy, safer_migration_status_snapshot,
     save_orchard_migration_plan_at, save_orchard_migration_schedule,
     select_canonical_zip318_funding, select_zooko_round_amount, selected_amount_timing_algorithm,
-    validate_orchard_migration_schedule, AmountTimingAlgorithm, BaselineHygieneConfig,
-    IronwoodUserNotices, IronwoodWalletStatus, MigrationBroadcastResult, MigrationExecutionResult,
-    MigrationNetworkPrivacyOpts, MigrationPlanSummary, MigrationReadinessReport,
-    MigrationReadinessState, MigrationSchedule, MigrationScheduleValidation,
-    MigrationScheduledTransfer, MigrationTransferStatus, OrchardNoteSplitResult,
-    PreparedMigrationTransaction, SaferMigrationStatusSnapshot, Zip318CrossingProposal,
-    Zip318FundingMode, IRONWOOD_ACTIVATION_FREEZE_NOTICE, IRONWOOD_MIGRATION_PRIVACY_WARNINGS,
-    MIGRATION_SCHEDULE_VERSION, NU6_3_MAINNET_ACTIVATION_HEIGHT, NU6_3_MAINNET_ACTIVATION_TARGET,
+    validate_orchard_migration_schedule, zebra_client_for_migration_broadcast,
+    AmountTimingAlgorithm, BaselineHygieneConfig, IronwoodUserNotices, IronwoodWalletStatus,
+    MigrationBroadcastResult, MigrationExecutionResult, MigrationNetworkPrivacyOpts,
+    MigrationPlanSummary, MigrationReadinessReport, MigrationReadinessState, MigrationSchedule,
+    MigrationScheduleValidation, MigrationScheduledTransfer, MigrationTransferStatus,
+    OrchardNoteSplitResult, PreparedMigrationTransaction, SaferMigrationStatusSnapshot,
+    Zip318CrossingProposal, Zip318FundingMode, IRONWOOD_ACTIVATION_FREEZE_NOTICE,
+    IRONWOOD_MIGRATION_PRIVACY_WARNINGS, MIGRATION_SCHEDULE_VERSION,
+    NU6_3_MAINNET_ACTIVATION_HEIGHT, NU6_3_MAINNET_ACTIVATION_TARGET,
     NU6_3_MAINNET_DEPLOYMENT_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
     NU6_3_TESTNET_DEPLOYMENT_TARGET, ORCHARD_ONLY_SENDS_DISABLED_AFTER_IRONWOOD,
     ZIP318_DEFAULT_K_MAX, ZIP318_TRANSFER_EXPIRY_BLOCKS, ZOOKO_RESIDUAL_ABANDON_ZAT,
@@ -255,7 +258,8 @@ pub use orchard_tx::{
 #[cfg(feature = "native")]
 pub use paths::{
     get_wallet_base_dir, get_wallet_config_dir, get_wallet_config_path, get_wallet_data_dir,
-    get_wallet_data_path, with_wallet_data_dir,
+    get_wallet_data_path, resolve_allowlisted_user_path, resolve_wallet_scoped_db_path,
+    with_wallet_data_dir,
 };
 #[cfg(feature = "native")]
 pub use rpc_test::RpcTester;

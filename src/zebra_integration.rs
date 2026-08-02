@@ -155,6 +155,33 @@ impl ZebraClient {
         Self::is_local_url(url)
     }
 
+    /// True when `url` targets loopback only (`127.0.0.1` / `::1` / `localhost`).
+    /// Used for Ironwood migration Priority 1 auto-allow — RFC1918 is not enough.
+    pub fn url_is_loopback(url: &str) -> bool {
+        Self::is_loopback_url(url)
+    }
+
+    fn is_loopback_host(host: &str) -> bool {
+        let host_lc = host.trim().trim_matches(['[', ']']).to_ascii_lowercase();
+        if host_lc == "localhost" {
+            return true;
+        }
+        match host_lc.parse::<IpAddr>() {
+            Ok(IpAddr::V4(v4)) => v4.is_loopback(),
+            Ok(IpAddr::V6(v6)) => v6.is_loopback(),
+            Err(_) => false,
+        }
+    }
+
+    fn is_loopback_url(url: &str) -> bool {
+        if let Ok(parsed) = reqwest::Url::parse(url) {
+            if let Some(host) = parsed.host_str() {
+                return Self::is_loopback_host(host);
+            }
+        }
+        false
+    }
+
     fn is_local_url(url: &str) -> bool {
         if let Ok(parsed) = reqwest::Url::parse(url) {
             if let Some(host) = parsed.host_str() {
@@ -309,6 +336,57 @@ impl ZebraClient {
 
     pub fn new_with_backend(url: String, backend: BackendKind) -> Self {
         Self::new_with_backend_and_protocol(url, backend, Protocol::JsonRpc)
+    }
+
+    /// Build a client whose **submit path** matches an Ironwood migration privacy decision.
+    ///
+    /// `DetectedPrivacyProxy` must carry a SOCKS/HTTP proxy on the HTTP client.
+    /// `NymMixnetBroadcast` sets `broadcast_via_nym_mixnet` so `broadcast_transaction`
+    /// uses the smolmix helper instead of clearnet JSON-RPC.
+    pub fn with_migration_privacy(
+        url: String,
+        proxy_url: Option<&str>,
+        broadcast_via_nym_mixnet: bool,
+    ) -> NozyResult<Self> {
+        let url = Self::normalize_url(url);
+        let is_local = Self::is_local_url(&url);
+        let timeout_secs = if is_local { 10 } else { 30 };
+
+        let client = Self::build_http_client(timeout_secs, proxy_url).map_err(|e| {
+            NozyError::NetworkError(format!(
+                "Failed to build migration broadcast HTTP client: {e}"
+            ))
+        })?;
+
+        let connection_mode = if broadcast_via_nym_mixnet && !is_local {
+            ZebraConnectionMode::NymMixnet
+        } else if proxy_url.is_some() {
+            let p = proxy_url.unwrap_or("");
+            if p.to_ascii_lowercase().contains("socks") {
+                ZebraConnectionMode::TorProxy
+            } else {
+                ZebraConnectionMode::I2pProxy
+            }
+        } else if is_local {
+            ZebraConnectionMode::DirectLocal
+        } else {
+            ZebraConnectionMode::DirectRemote
+        };
+
+        Ok(Self {
+            url,
+            fallback_urls: Vec::new(),
+            backend: BackendKind::Zebra,
+            protocol: Protocol::JsonRpc,
+            client: Arc::new(client),
+            rpc_auth: Self::resolve_rpc_auth(),
+            privacy_proxy_url: proxy_url.map(|s| s.to_string()),
+            block_remote_without_privacy: false,
+            privacy_block_reason: None,
+            connection_mode,
+            broadcast_via_nym_mixnet,
+            grpc_client: None,
+        })
     }
 
     pub fn protocol(&self) -> Protocol {

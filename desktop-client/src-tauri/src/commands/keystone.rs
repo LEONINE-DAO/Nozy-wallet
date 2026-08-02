@@ -137,7 +137,9 @@ pub async fn export_keystone_ufvk(
 #[derive(Debug, Deserialize)]
 pub struct KeystonePrepareSendRequest {
     pub recipient: String,
-    pub amount: f64,
+    /// ZEC amount (legacy). Prefer `amount_zatoshis` when available (F-12).
+    pub amount: Option<f64>,
+    pub amount_zatoshis: Option<u64>,
     pub memo: Option<String>,
     #[serde(default = "default_true")]
     pub priority: bool,
@@ -188,28 +190,33 @@ pub async fn keystone_prepare_send(
             ur_type: None,
         });
     }
-    if request.amount <= 0.0 {
-        return Ok(KeystonePrepareResponse {
-            success: false,
-            message: Some("Amount must be greater than 0.".to_string()),
-            summary: None,
-            action_count: None,
-            pczt_hex: None,
-            ur_frames: None,
-            ur_type: None,
-        });
-    }
+    let amount_zatoshis = match nozy::input_validation::resolve_send_amount_zatoshis(
+        request.amount_zatoshis,
+        request.amount,
+    ) {
+        Ok(v) => v,
+        Err(e) => {
+            return Ok(KeystonePrepareResponse {
+                success: false,
+                message: Some(e.to_string()),
+                summary: None,
+                action_count: None,
+                pczt_hex: None,
+                ur_frames: None,
+                ur_type: None,
+            });
+        }
+    };
 
     let config = load_config();
     let zebra_url = request
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
     let wallet = load_session_wallet(request.password.as_deref()).await?;
-    let spendable_notes = scan_notes_for_sending(wallet.clone(), &zebra_url)
+    let spendable_notes = scan_notes_for_sending(&wallet, &zebra_url)
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let amount_zatoshis = (request.amount * 100_000_000.0) as u64;
     let zebra_client = ZebraClient::from_config(&config);
     let pilot = PilotSendOptions {
         priority: request.priority,
@@ -322,7 +329,7 @@ pub async fn keystone_complete_send(
         .map_err(|e| TauriError::from(e.to_string()))?;
     if let Some(prepared) = pending {
         if let Ok(wallet) = load_session_wallet(None).await {
-            if let Ok(spendable_notes) = scan_notes_for_sending(wallet, &zebra_url).await {
+            if let Ok(spendable_notes) = scan_notes_for_sending(&wallet, &zebra_url).await {
                 if let Ok(spent_note) = select_single_spend_note(
                     &spendable_notes,
                     prepared.amount_zatoshis,

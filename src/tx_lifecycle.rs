@@ -89,7 +89,7 @@ pub async fn speed_up_transaction(
         ));
     }
 
-    let spendable_notes = scan_notes_for_sending(wallet, zebra_url).await?;
+    let spendable_notes = scan_notes_for_sending(&wallet, zebra_url).await?;
     if spendable_notes.is_empty() {
         return Err(NozyError::InvalidOperation(
             "No spendable notes available for speed-up; sync the wallet first".to_string(),

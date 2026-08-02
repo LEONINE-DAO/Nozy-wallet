@@ -209,10 +209,25 @@ curl -X POST http://localhost:3000/api/transaction/send \
   -d '{"recipient": "u1test...", "amount": -1.0}'
 ```
 
+## Bind address
+
+**Default:** `127.0.0.1` (loopback only).
+
+```bash
+# Local companion (default)
+# unset NOZY_BIND_ADDR  →  listens on 127.0.0.1
+
+# Hosted / LAN (requires API key)
+export NOZY_BIND_ADDR=0.0.0.0
+export NOZY_API_KEY=your-secret-key
+```
+
+Binding to `0.0.0.0` / `::` **without** `NOZY_API_KEY` is refused at startup (seed/restore must not be LAN-exposed unauthenticated).
+
 ## Notes
 
 - Health check endpoint (`/health`) does not require authentication
 - Rate limiting is per IP address
-- API key authentication is optional - set `NOZY_API_KEY` to enable
+- API key authentication is optional on loopback; **required** when binding all interfaces
 - All security features work independently - you can enable/disable them as needed
 

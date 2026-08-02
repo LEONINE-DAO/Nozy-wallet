@@ -73,7 +73,7 @@ pub async fn sync_wallet(request: SyncRequest) -> Result<SyncResponse, TauriErro
         ..Default::default()
     };
 
-    match sync_wallet_notes(wallet, options).await {
+    match sync_wallet_notes(&wallet, options).await {
         Ok(result) => {
             let balance_zec = result.balance_zatoshis as f64 / 100_000_000.0;
             let message = if result.already_synced {

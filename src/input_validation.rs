@@ -45,9 +45,9 @@ pub fn validate_zcash_address(address: &str) -> NozyResult<()> {
 
 pub fn validate_amount(amount: f64, min: f64, max: f64, unit: &str) -> NozyResult<()> {
     if amount <= 0.0 {
-        return Err(NozyError::InvalidInput(format!(
-            "Amount must be greater than zero"
-        )));
+        return Err(NozyError::InvalidInput(
+            "Amount must be greater than zero".to_string(),
+        ));
     }
 
     if amount < min {
@@ -72,6 +72,60 @@ pub fn validate_amount(amount: f64, min: f64, max: f64, unit: &str) -> NozyResul
     }
 
     Ok(())
+}
+
+/// Convert ZEC (`f64`) to zatoshis only when the value is an exact 8-decimal amount (F-12).
+pub fn zec_to_zatoshis_exact(amount: f64) -> NozyResult<u64> {
+    validate_amount(amount, f64::MIN_POSITIVE, 21_000_000.0, "ZEC")?;
+    if !amount.is_finite() {
+        return Err(NozyError::InvalidInput(
+            "Amount must be a finite number".to_string(),
+        ));
+    }
+    let scaled = amount * 100_000_000.0;
+    if !scaled.is_finite() {
+        return Err(NozyError::InvalidInput(
+            "Amount is too large to convert to zatoshis".to_string(),
+        ));
+    }
+    let rounded = scaled.round();
+    if (scaled - rounded).abs() > 1e-6 {
+        return Err(NozyError::InvalidInput(
+            "Amount is not an exact number of zatoshis (maximum 8 decimal places)".to_string(),
+        ));
+    }
+    if rounded <= 0.0 || rounded > 21_000_000.0 * 100_000_000.0 {
+        return Err(NozyError::InvalidInput(
+            "Amount out of range after zatoshis conversion".to_string(),
+        ));
+    }
+    Ok(rounded as u64)
+}
+
+/// Prefer explicit zatoshis when present; otherwise require an exact ZEC `f64` conversion (F-12).
+pub fn resolve_send_amount_zatoshis(
+    amount_zatoshis: Option<u64>,
+    amount_zec: Option<f64>,
+) -> NozyResult<u64> {
+    if let Some(zat) = amount_zatoshis {
+        if zat == 0 {
+            return Err(NozyError::InvalidInput(
+                "amount_zatoshis must be greater than zero".to_string(),
+            ));
+        }
+        if zat > 21_000_000u64.saturating_mul(100_000_000) {
+            return Err(NozyError::InvalidInput(
+                "amount_zatoshis exceeds maximum supply".to_string(),
+            ));
+        }
+        return Ok(zat);
+    }
+    let Some(zec) = amount_zec else {
+        return Err(NozyError::InvalidInput(
+            "Send amount required (amount_zatoshis or amount)".to_string(),
+        ));
+    };
+    zec_to_zatoshis_exact(zec)
 }
 
 pub fn validate_memo(memo: &str) -> NozyResult<()> {
@@ -121,5 +175,26 @@ mod tests {
             .expect("multiline UA should validate after normalization");
         zcash_address::unified::Address::decode(&normalize_unified_address(multiline))
             .expect("multiline UA should decode after normalization");
+    }
+
+    #[test]
+    fn zec_to_zatoshis_exact_accepts_clean_decimals() {
+        assert_eq!(zec_to_zatoshis_exact(1.0).unwrap(), 100_000_000);
+        assert_eq!(zec_to_zatoshis_exact(0.00000001).unwrap(), 1);
+        assert_eq!(zec_to_zatoshis_exact(0.1).unwrap(), 10_000_000);
+    }
+
+    #[test]
+    fn resolve_send_amount_prefers_zatoshis() {
+        assert_eq!(
+            resolve_send_amount_zatoshis(Some(42), Some(1.0)).unwrap(),
+            42
+        );
+    }
+
+    #[test]
+    fn zec_to_zatoshis_rejects_non_finite() {
+        assert!(zec_to_zatoshis_exact(f64::NAN).is_err());
+        assert!(zec_to_zatoshis_exact(f64::INFINITY).is_err());
     }
 }

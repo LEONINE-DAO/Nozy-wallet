@@ -12,6 +12,7 @@
 use super::network_privacy::{selected_amount_timing_algorithm, AmountTimingAlgorithm};
 use crate::error::{NozyError, NozyResult};
 use crate::notes::{load_wallet_notes, SerializableOrchardNote, SpendableNote};
+use crate::notes_vault::{decrypt_schedule_file_content, encrypt_schedule_json};
 use crate::orchard_tx::OrchardWitnessProvider;
 use crate::paths::get_wallet_data_dir;
 use crate::shielded_pool::ShieldedPool;
@@ -464,12 +465,16 @@ pub fn load_orchard_migration_schedule() -> NozyResult<Option<MigrationSchedule>
 
     let content = fs::read_to_string(&path)
         .map_err(|e| NozyError::Storage(format!("Failed to read Ironwood schedule: {e}")))?;
-    serde_json::from_str(&content)
+    let plaintext = decrypt_schedule_file_content(&content)?;
+    serde_json::from_str(&plaintext)
         .map(Some)
         .map_err(|e| NozyError::Storage(format!("Failed to parse Ironwood schedule: {e}")))
 }
 
 pub fn save_orchard_migration_schedule(schedule: &MigrationSchedule) -> NozyResult<PathBuf> {
+    let mut schedule = schedule.clone();
+    scrub_non_pending_presigned_hex(&mut schedule);
+
     let path = ironwood_migration_schedule_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent).map_err(|e| {
@@ -477,22 +482,38 @@ pub fn save_orchard_migration_schedule(schedule: &MigrationSchedule) -> NozyResu
         })?;
     }
 
-    let serialized = serde_json::to_string_pretty(schedule)
+    let serialized = serde_json::to_string_pretty(&schedule)
         .map_err(|e| NozyError::Storage(format!("Failed to serialize Ironwood schedule: {e}")))?;
+    let encrypted = encrypt_schedule_json(&serialized)?;
     let temp_path = path.with_extension("tmp");
-    fs::write(&temp_path, serialized)
+    fs::write(&temp_path, encrypted)
         .map_err(|e| NozyError::Storage(format!("Failed to write Ironwood schedule: {e}")))?;
     fs::rename(&temp_path, &path)
         .map_err(|e| NozyError::Storage(format!("Failed to save Ironwood schedule: {e}")))?;
     Ok(path)
 }
 
+/// F-13: never keep raw signed turnstile bytes after submit / terminal states.
+fn scrub_non_pending_presigned_hex(schedule: &mut MigrationSchedule) {
+    for transfer in &mut schedule.transfers {
+        match transfer.status {
+            MigrationTransferStatus::Broadcast
+            | MigrationTransferStatus::Confirmed
+            | MigrationTransferStatus::Expired => {
+                transfer.presigned_tx_hex = None;
+            }
+            MigrationTransferStatus::Pending | MigrationTransferStatus::Presigned => {}
+        }
+    }
+}
+
 pub fn save_orchard_migration_plan_at(
     ironwood_active: bool,
     chain_tip: u32,
 ) -> NozyResult<(MigrationSchedule, PathBuf)> {
-    if let Some(existing) = load_orchard_migration_schedule()? {
-        if active_presigned_transfer(&existing, chain_tip).is_some() {
+    let existing = load_orchard_migration_schedule()?;
+    if let Some(ref existing) = existing {
+        if active_presigned_transfer(existing, chain_tip).is_some() {
             return Err(NozyError::InvalidOperation(
                 "Refusing to rebuild the migration schedule while a presigned turnstile transaction \
                  is waiting for broadcast. Run `nozy ironwood broadcast` first.".to_string(),
@@ -500,7 +521,11 @@ pub fn save_orchard_migration_plan_at(
         }
     }
     let plan = plan_orchard_migration_at(ironwood_active, chain_tip)?;
-    let schedule = build_schedule_from_plan(&plan, chain_tip);
+    // F-09: explicit plan rebuild also keeps Broadcast/Confirmed history.
+    let schedule = match existing {
+        Some(existing) => merge_schedule_preserving_history(&existing, &plan, chain_tip),
+        None => build_schedule_from_plan(&plan, chain_tip),
+    };
     let path = save_orchard_migration_schedule(&schedule)?;
     Ok((schedule, path))
 }
@@ -536,6 +561,13 @@ fn sorted_source_notes(transfers: &[MigrationTransfer]) -> Vec<(String, u64, u32
     notes
 }
 
+fn is_open_migration_transfer(status: &MigrationTransferStatus) -> bool {
+    matches!(
+        status,
+        MigrationTransferStatus::Pending | MigrationTransferStatus::Presigned
+    )
+}
+
 pub fn validate_orchard_migration_schedule(
     schedule: &MigrationSchedule,
     plan: &MigrationPlanSummary,
@@ -544,6 +576,14 @@ pub fn validate_orchard_migration_schedule(
     let mut errors = Vec::new();
     let mut expired_transfer_count = 0usize;
     let mut stale_presigned_count = 0usize;
+
+    // F-09: plan conformance applies to open (Pending/Presigned) rows only so
+    // Broadcast/Confirmed history can remain on disk after rebuilds.
+    let open_transfers: Vec<&MigrationScheduledTransfer> = schedule
+        .transfers
+        .iter()
+        .filter(|t| is_open_migration_transfer(&t.status))
+        .collect();
 
     if schedule.version != MIGRATION_SCHEDULE_VERSION {
         errors.push(format!(
@@ -573,16 +613,15 @@ pub fn validate_orchard_migration_schedule(
         errors
             .push("Schedule source notes no longer match active wallet Orchard notes".to_string());
     }
-    if schedule.transfers.len() != plan.zip318.total_transfer_count as usize {
+    if open_transfers.len() != plan.zip318.total_transfer_count as usize {
         errors.push(format!(
-            "Schedule has {} transfers but current plan expects {}",
-            schedule.transfers.len(),
+            "Schedule has {} open transfers but current plan expects {}",
+            open_transfers.len(),
             plan.zip318.total_transfer_count
         ));
     }
 
-    let scheduled_total: u64 = schedule
-        .transfers
+    let scheduled_total: u64 = open_transfers
         .iter()
         .map(|transfer| transfer.value_zat)
         .sum();
@@ -600,7 +639,9 @@ pub fn validate_orchard_migration_schedule(
             schedule.total_zatoshis
         )),
     }
-    if transfer_count_by_value(&schedule.transfers)
+    let open_owned: Vec<MigrationScheduledTransfer> =
+        open_transfers.iter().map(|t| (*t).clone()).collect();
+    if transfer_count_by_value(&open_owned)
         != denomination_count_by_value(&plan.zip318.denomination_transfers)
     {
         errors.push("Schedule denominations no longer match current ZIP 318 plan".to_string());
@@ -638,16 +679,22 @@ pub fn validate_orchard_migration_schedule(
             ));
         }
 
-        let bucket_key = (transfer.value_zat, transfer.anchor_bucket_height);
-        *bucket_counts.entry(bucket_key).or_insert(0) += 1;
-        let slot_key = (
-            transfer.value_zat,
-            transfer.anchor_bucket_height,
-            transfer.bucket_slot,
-        );
-        *seen_slots.entry(slot_key).or_insert(0) += 1;
+        // Slot / bucket caps apply to the open schedule only (history may reuse
+        // the same ZIP 318 coordinates from earlier turnstile windows).
+        if is_open_migration_transfer(&transfer.status) {
+            let bucket_key = (transfer.value_zat, transfer.anchor_bucket_height);
+            *bucket_counts.entry(bucket_key).or_insert(0) += 1;
+            let slot_key = (
+                transfer.value_zat,
+                transfer.anchor_bucket_height,
+                transfer.bucket_slot,
+            );
+            *seen_slots.entry(slot_key).or_insert(0) += 1;
+        }
 
-        if transfer_window_expired(transfer, chain_tip) {
+        if is_open_migration_transfer(&transfer.status)
+            && transfer_window_expired(transfer, chain_tip)
+        {
             expired_transfer_count += 1;
             if transfer.status == MigrationTransferStatus::Presigned {
                 stale_presigned_count += 1;
@@ -752,7 +799,8 @@ pub fn refresh_orchard_migration_schedule_at(
     }
 
     let plan = plan_orchard_migration_at(ironwood_active, chain_tip)?;
-    let rebuilt = build_schedule_from_plan(&plan, chain_tip);
+    // F-09: keep Broadcast/Confirmed history when expired open windows force a rebuild.
+    let rebuilt = merge_schedule_preserving_history(&existing, &plan, chain_tip);
     let path = save_orchard_migration_schedule(&rebuilt)?;
     Ok(Some((rebuilt, path, expired_count)))
 }
@@ -802,10 +850,14 @@ fn can_cover_transfer_with_note_values(
     orchard_note_values: &[u64],
     fee_zatoshis: u64,
 ) -> bool {
-    orchard_note_values.iter().any(|&value| {
-        value >= transfer_value_zat.saturating_add(fee_zatoshis)
-            || (value == transfer_value_zat && value > fee_zatoshis)
-    })
+    // L20: must match `select_canonical_zip318_funding` (exact cover or fee-from-output),
+    // not a loose `value >= transfer+fee` check that would accept headroom/change notes.
+    let notes: Vec<(u64, u32)> = orchard_note_values
+        .iter()
+        .enumerate()
+        .map(|(i, &value)| (value, i as u32))
+        .collect();
+    select_canonical_zip318_funding(&notes, transfer_value_zat, fee_zatoshis).is_some()
 }
 
 fn next_waiting_pending_transfer(
@@ -1208,7 +1260,8 @@ fn load_or_rebuild_orchard_migration_schedule(
             return Ok((existing, ironwood_migration_schedule_path(), 0));
         }
 
-        let rebuilt = build_schedule_from_plan(plan, chain_tip);
+        // F-09: keep Broadcast/Confirmed rows when rebuilding open transfers.
+        let rebuilt = merge_schedule_preserving_history(&existing, plan, chain_tip);
         let path = save_orchard_migration_schedule(&rebuilt)?;
         return Ok((rebuilt, path, validation.expired_transfer_count));
     }
@@ -1216,6 +1269,45 @@ fn load_or_rebuild_orchard_migration_schedule(
     let rebuilt = build_schedule_from_plan(plan, chain_tip);
     let path = save_orchard_migration_schedule(&rebuilt)?;
     Ok((rebuilt, path, 0))
+}
+
+/// Preserve completed turnstile history across schedule rebuilds (F-09).
+fn merge_schedule_preserving_history(
+    existing: &MigrationSchedule,
+    plan: &MigrationPlanSummary,
+    chain_tip: u32,
+) -> MigrationSchedule {
+    let mut history: Vec<MigrationScheduledTransfer> = existing
+        .transfers
+        .iter()
+        .filter(|t| {
+            matches!(
+                t.status,
+                MigrationTransferStatus::Broadcast | MigrationTransferStatus::Confirmed
+            )
+        })
+        .cloned()
+        .map(|mut t| {
+            // Drop raw hex once confirmed to reduce disk exposure of signed txs.
+            if t.status == MigrationTransferStatus::Confirmed {
+                t.presigned_tx_hex = None;
+            }
+            t
+        })
+        .collect();
+
+    let mut rebuilt = build_schedule_from_plan(plan, chain_tip);
+    let start_seq = history.iter().map(|t| t.sequence).max().unwrap_or(0);
+    for (i, transfer) in rebuilt.transfers.iter_mut().enumerate() {
+        transfer.sequence = start_seq + 1 + i as u32;
+    }
+    history.append(&mut rebuilt.transfers);
+    rebuilt.transfers = history;
+    // Renumber 1..n for validate() sequence checks.
+    for (i, transfer) in rebuilt.transfers.iter_mut().enumerate() {
+        transfer.sequence = (i + 1) as u32;
+    }
+    rebuilt
 }
 
 /// List unspent Orchard-pool notes that should migrate after NU6.3 activation.
@@ -1465,13 +1557,14 @@ pub async fn execute_orchard_migration(
         crate::fee_policy::NOZY_WALLET_PRIORITY_FEE,
     );
 
+    let witness_lag = crate::send_readiness::max_witness_lag_blocks(spendable_notes, chain_tip);
     let readiness = assess_orchard_migration_readiness(
         ironwood_active,
         chain_tip,
         &plan,
         Some(&schedule),
-        None,
-        None,
+        Some(witness_lag),
+        Some(crate::send_readiness::MAX_SEND_WITNESS_LAG_BLOCKS),
     );
     match readiness.state {
         MigrationReadinessState::SplitRequired
@@ -1654,6 +1747,7 @@ pub async fn reconcile_migration_broadcast_confirmations(
         };
         if zebra.transaction_in_active_chain(txid).await? {
             transfer.status = MigrationTransferStatus::Confirmed;
+            transfer.presigned_tx_hex = None;
             confirmed += 1;
         }
     }
@@ -1768,6 +1862,15 @@ pub async fn execute_orchard_migration_broadcast(
         eprintln!("🔒 Migration network privacy: {}", mode.label());
     }
 
+    // F-01: rebuild submit client so Tor/I2P/Nym mode matches the HTTP/mixnet path.
+    let zebra = crate::ironwood::network_privacy::zebra_client_for_migration_broadcast(
+        zebra_url, &privacy,
+    )?;
+    eprintln!(
+        "📡 Migration submit connection mode: {}",
+        zebra.connection_mode().as_str()
+    );
+
     let config = crate::config::load_config();
     let tip_guard = crate::ironwood::baseline_hygiene::require_tip_sync_guard(
         &config.baseline_hygiene,
@@ -1812,6 +1915,8 @@ pub async fn execute_orchard_migration_broadcast(
     {
         slot.status = MigrationTransferStatus::Broadcast;
         slot.broadcast_txid = Some(txid.clone());
+        // F-13: drop raw signed bytes once submitted (txid is enough for history).
+        slot.presigned_tx_hex = None;
     }
     schedule_path = save_orchard_migration_schedule(&schedule)?;
 
@@ -1831,6 +1936,7 @@ pub async fn execute_orchard_migration_broadcast(
                 .find(|t| t.sequence == transfer.sequence)
             {
                 slot.status = MigrationTransferStatus::Confirmed;
+                slot.presigned_tx_hex = None;
             }
             schedule_path = save_orchard_migration_schedule(&schedule)?;
         }
@@ -2292,6 +2398,51 @@ mod tests {
     }
 
     #[test]
+    fn schedule_merge_preserves_confirmed_history() {
+        let plan = sample_plan(1_000);
+        let mut existing = build_schedule_from_plan(&plan, 1_000);
+        let confirmed_txid = "ea2fa4e64a5ca3f588dea58f38feb2a72a8d4e30292ac012d983e23bde7048fd";
+        existing.transfers[0].status = MigrationTransferStatus::Confirmed;
+        existing.transfers[0].broadcast_txid = Some(confirmed_txid.to_string());
+        existing.transfers[0].presigned_tx_hex = Some("deadbeef".to_string());
+
+        // Simulate remaining Orchard balance after one turnstile confirmed.
+        let remaining_plan = sample_plan(1_000);
+        let merged = merge_schedule_preserving_history(&existing, &remaining_plan, 1_024);
+
+        assert!(
+            merged
+                .transfers
+                .iter()
+                .any(|t| t.status == MigrationTransferStatus::Confirmed
+                    && t.broadcast_txid.as_deref() == Some(confirmed_txid)),
+            "confirmed txid must survive rebuild"
+        );
+        assert!(
+            merged
+                .transfers
+                .iter()
+                .find(|t| t.broadcast_txid.as_deref() == Some(confirmed_txid))
+                .unwrap()
+                .presigned_tx_hex
+                .is_none(),
+            "confirmed rows should drop raw hex"
+        );
+        let open_count = merged
+            .transfers
+            .iter()
+            .filter(|t| is_open_migration_transfer(&t.status))
+            .count();
+        assert_eq!(
+            open_count,
+            remaining_plan.zip318.total_transfer_count as usize
+        );
+
+        let validation = validate_orchard_migration_schedule(&merged, &remaining_plan, 1_024);
+        assert!(validation.valid, "{:?}", validation.errors);
+    }
+
+    #[test]
     fn schedule_validation_rejects_source_note_mismatch() {
         let plan = sample_plan(1_000);
         let mut schedule = build_schedule_from_plan(&plan, 1_000);
@@ -2576,5 +2727,30 @@ mod tests {
         let transfer = 100_000_000u64;
         let notes = [(transfer + fee + 1, 10u32), (transfer * 2, 1u32)];
         assert!(select_canonical_zip318_funding(&notes, transfer, fee).is_none());
+    }
+
+    #[test]
+    fn cover_helper_matches_strict_canonical_funding() {
+        let fee = 10_000u64;
+        let transfer = 100_000_000u64;
+
+        // Headroom-only: old loose `>=` would have returned true; strict must be false.
+        assert!(!can_cover_transfer_with_note_values(
+            transfer,
+            &[transfer + fee + 1, transfer * 2],
+            fee
+        ));
+        assert!(can_cover_transfer_with_note_values(
+            transfer,
+            &[transfer + fee],
+            fee
+        ));
+        assert!(can_cover_transfer_with_note_values(
+            transfer,
+            &[transfer],
+            fee
+        ));
+        // Exact denom but fee >= transfer is not FeeFromOutput-eligible.
+        assert!(!can_cover_transfer_with_note_values(5_000, &[5_000], fee));
     }
 }

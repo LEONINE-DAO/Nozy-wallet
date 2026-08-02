@@ -403,7 +403,7 @@ pub async fn ironwood_split(
     let (wallet, _) = load_wallet_with_password(payload.password)
         .await
         .map_err(|e| error_response_with_code(StatusCode::UNAUTHORIZED, e, "INVALID_PASSWORD"))?;
-    let spendable = scan_notes_for_sending(wallet, &config.zebra_url)
+    let spendable = scan_notes_for_sending(&wallet, &config.zebra_url)
         .await
         .map_err(|e| {
             error_response_with_code(
@@ -513,7 +513,7 @@ pub async fn ironwood_migrate(
     let (wallet, _) = load_wallet_with_password(payload.password)
         .await
         .map_err(|e| error_response_with_code(StatusCode::UNAUTHORIZED, e, "INVALID_PASSWORD"))?;
-    let spendable = scan_notes_for_sending(wallet, &config.zebra_url)
+    let spendable = scan_notes_for_sending(&wallet, &config.zebra_url)
         .await
         .map_err(|e| {
             error_response_with_code(

@@ -1,11 +1,10 @@
 //! lightwalletd + `zeaking::lwd` — compact block sync for Zebrad stacks (Chrome/Edge extension can use companion HTTP API).
 
 use crate::error::TauriError;
-use nozy::paths::get_wallet_data_dir;
+use zeaking::lwd::proto::Empty;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::command;
-use zeaking::lwd::proto::Empty;
 
 #[derive(Debug, Serialize)]
 pub struct LwdInfoResponse {
@@ -71,14 +70,15 @@ fn zeaking_err(e: zeaking::ZeakingError) -> TauriError {
     }
 }
 
-fn compact_db_path(request: &LwdSyncRequest) -> PathBuf {
-    compact_db_path_opt(request.db_path.as_ref())
+fn compact_db_path(request: &LwdSyncRequest) -> Result<PathBuf, TauriError> {
+    compact_db_path_opt(request.db_path.as_deref())
 }
 
-fn compact_db_path_opt(db_path: Option<&String>) -> PathBuf {
-    db_path
-        .map(PathBuf::from)
-        .unwrap_or_else(|| get_wallet_data_dir().join("lwd_compact.sqlite"))
+fn compact_db_path_opt(db_path: Option<&str>) -> Result<PathBuf, TauriError> {
+    nozy::resolve_wallet_scoped_db_path(db_path).map_err(|message| TauriError {
+        message,
+        code: Some("PATH_DENIED".to_string()),
+    })
 }
 
 /// `GetLightdInfo` from lightwalletd (chain name, tip height, etc.).
@@ -120,7 +120,7 @@ pub async fn lwd_chain_tip(lightwalletd_url: Option<String>) -> Result<u64, Taur
 #[command]
 pub async fn lwd_sync_compact(request: LwdSyncRequest) -> Result<LwdSyncResponse, TauriError> {
     let url = lwd_url(request.lightwalletd_url.clone());
-    let db = compact_db_path(&request);
+    let db = compact_db_path(&request)?;
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
@@ -162,7 +162,7 @@ pub async fn lwd_sync_compact_to_tip(
     request: LwdSyncToTipRequest,
 ) -> Result<LwdSyncToTipResponse, TauriError> {
     let url = lwd_url(request.lightwalletd_url.clone());
-    let db = compact_db_path_opt(request.db_path.as_ref());
+    let db = compact_db_path_opt(request.db_path.as_deref())?;
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
     }

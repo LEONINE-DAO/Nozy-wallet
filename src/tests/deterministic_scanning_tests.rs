@@ -7,6 +7,7 @@ use crate::notes::{NoteScanResult, NoteScanner, SerializableOrchardNote};
 use crate::zebra_integration::ZebraClient;
 use hex;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 // Test mnemonic - using a standard test mnemonic
 const TEST_MNEMONIC: &str =
@@ -110,8 +111,10 @@ mod tests {
         println!("\n🧪 Test 1: Same Wallet, Multiple Scans");
         println!("==========================================");
 
-        let wallet = HDWallet::from_mnemonic(TEST_MNEMONIC)
-            .expect("Failed to create wallet from test mnemonic");
+        let wallet = Arc::new(
+            HDWallet::from_mnemonic(TEST_MNEMONIC)
+                .expect("Failed to create wallet from test mnemonic"),
+        );
 
         let zebra_url =
             std::env::var("ZEBRA_URL").unwrap_or_else(|_| "http://localhost:8137".to_string());
@@ -138,7 +141,7 @@ mod tests {
 
         // First scan
         println!("\n🔍 First scan...");
-        let mut scanner1 = NoteScanner::new(wallet.clone(), client.clone());
+        let mut scanner1 = NoteScanner::new(wallet.as_ref(), client.clone());
         let (result1, spendable1) = scanner1
             .scan_notes(Some(start_height), Some(end_height))
             .await
@@ -155,7 +158,7 @@ mod tests {
 
         // Second scan (same wallet, same range)
         println!("\n🔍 Second scan...");
-        let mut scanner2 = NoteScanner::new(wallet.clone(), client.clone());
+        let mut scanner2 = NoteScanner::new(wallet.as_ref(), client.clone());
         let (result2, spendable2) = scanner2
             .scan_notes(Some(start_height), Some(end_height))
             .await
@@ -220,7 +223,7 @@ mod tests {
         println!("\n🔍 Original wallet scan...");
         let wallet1 =
             HDWallet::from_mnemonic(TEST_MNEMONIC).expect("Failed to create original wallet");
-        let mut scanner1 = NoteScanner::new(wallet1, client.clone());
+        let mut scanner1 = NoteScanner::new(&wallet1, client.clone());
         let (result1, spendable1) = scanner1
             .scan_notes(Some(start_height), Some(end_height))
             .await
@@ -234,7 +237,7 @@ mod tests {
         println!("\n🔍 Restored wallet scan (from same mnemonic)...");
         let wallet2 =
             HDWallet::from_mnemonic(TEST_MNEMONIC).expect("Failed to restore wallet from mnemonic");
-        let mut scanner2 = NoteScanner::new(wallet2, client.clone());
+        let mut scanner2 = NoteScanner::new(&wallet2, client.clone());
         let (result2, spendable2) = scanner2
             .scan_notes(Some(start_height), Some(end_height))
             .await
@@ -273,8 +276,10 @@ mod tests {
         println!("\n🧪 Test 3: Incremental vs Full Scan");
         println!("====================================");
 
-        let wallet = HDWallet::from_mnemonic(TEST_MNEMONIC)
-            .expect("Failed to create wallet from test mnemonic");
+        let wallet = Arc::new(
+            HDWallet::from_mnemonic(TEST_MNEMONIC)
+                .expect("Failed to create wallet from test mnemonic"),
+        );
 
         let zebra_url =
             std::env::var("ZEBRA_URL").unwrap_or_else(|_| "http://localhost:8137".to_string());
@@ -301,7 +306,7 @@ mod tests {
 
         // Full scan
         println!("\n🔍 Full scan...");
-        let mut scanner_full = NoteScanner::new(wallet.clone(), client.clone());
+        let mut scanner_full = NoteScanner::new(wallet.as_ref(), client.clone());
         let (result_full, _) = scanner_full
             .scan_notes(Some(start_height), Some(end_height))
             .await
@@ -316,7 +321,7 @@ mod tests {
             "\n🔍 Incremental scan (part 1: {} to {})...",
             start_height, mid_height
         );
-        let mut scanner1 = NoteScanner::new(wallet.clone(), client.clone());
+        let mut scanner1 = NoteScanner::new(wallet.as_ref(), client.clone());
         let (result1, _) = scanner1
             .scan_notes(Some(start_height), Some(mid_height))
             .await
@@ -328,7 +333,7 @@ mod tests {
             mid_height + 1,
             end_height
         );
-        let mut scanner2 = NoteScanner::new(wallet.clone(), client.clone());
+        let mut scanner2 = NoteScanner::new(wallet.as_ref(), client.clone());
         let (result2, _) = scanner2
             .scan_notes(Some(mid_height + 1), Some(end_height))
             .await

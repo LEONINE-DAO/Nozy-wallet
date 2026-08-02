@@ -448,9 +448,11 @@ impl NoteIndex {
         let serialized = serde_json::to_string_pretty(self)
             .map_err(|e| NozyError::Storage(format!("Failed to serialize index: {}", e)))?;
 
+        let on_disk = crate::notes_vault::encrypt_notes_json(&serialized)?;
+
         // Atomic write: write to temp file first, then rename
         let temp_path = path.with_extension("tmp");
-        fs::write(&temp_path, serialized)
+        fs::write(&temp_path, on_disk)
             .map_err(|e| NozyError::Storage(format!("Failed to write index: {}", e)))?;
 
         fs::rename(&temp_path, path)
@@ -475,6 +477,8 @@ impl NoteIndex {
 
         let content = fs::read_to_string(path)
             .map_err(|e| NozyError::Storage(format!("Failed to read index: {}", e)))?;
+
+        let content = crate::notes_vault::decrypt_notes_file_content(&content)?;
 
         // Try to load as complete structure (version 2)
         match serde_json::from_str::<NoteIndex>(&content) {

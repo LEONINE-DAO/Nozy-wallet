@@ -50,7 +50,7 @@ pub fn selected_amount_timing_algorithm() -> AmountTimingAlgorithm {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationNetworkPrivacyMode {
-    /// Local / LAN Zebrad — preferred desktop path.
+    /// Loopback Zebrad (`127.0.0.1` / `localhost`) — preferred desktop path.
     LocalNode,
     /// Detected Tor or I2P SOCKS proxy.
     DetectedPrivacyProxy,
@@ -81,6 +81,8 @@ pub struct MigrationNetworkPrivacyAssessment {
     pub zebra_url_local: bool,
     pub privacy_proxy_detected: bool,
     pub privacy_proxy_label: Option<String>,
+    /// SOCKS/HTTP proxy URL when Tor/I2P was detected (must be applied on the submit client).
+    pub privacy_proxy_url: Option<String>,
     pub user_attested: bool,
     pub force_clearnet: bool,
     pub blockers: Vec<String>,
@@ -105,8 +107,14 @@ pub async fn assess_migration_network_privacy(
     opts: &MigrationNetworkPrivacyOpts,
 ) -> MigrationNetworkPrivacyAssessment {
     let zebra_url_local = ZebraClient::url_is_local(zebra_url);
+    let zebra_url_loopback = ZebraClient::url_is_loopback(zebra_url);
     let proxy = ProxyConfig::auto_detect().await;
     let privacy_proxy_detected = proxy.enabled;
+    let privacy_proxy_url = if proxy.enabled && !proxy.proxy_url.is_empty() {
+        Some(proxy.proxy_url.clone())
+    } else {
+        None
+    };
     let privacy_proxy_label = if proxy.enabled {
         Some(match proxy.network {
             PrivacyNetwork::Tor => format!("Tor ({})", proxy.proxy_url),
@@ -131,6 +139,7 @@ pub async fn assess_migration_network_privacy(
             zebra_url_local,
             privacy_proxy_detected,
             privacy_proxy_label,
+            privacy_proxy_url,
             user_attested: opts.attest_private_network,
             force_clearnet: true,
             blockers,
@@ -138,13 +147,15 @@ pub async fn assess_migration_network_privacy(
         };
     }
 
-    if zebra_url_local {
+    // Auto-allow only loopback. RFC1918/LAN Zebrad still sees IP↔turnstile amounts.
+    if zebra_url_loopback {
         return MigrationNetworkPrivacyAssessment {
             allowed: true,
             mode: Some(MigrationNetworkPrivacyMode::LocalNode),
             zebra_url_local,
             privacy_proxy_detected,
             privacy_proxy_label,
+            privacy_proxy_url,
             user_attested: opts.attest_private_network,
             force_clearnet: false,
             blockers,
@@ -152,9 +163,35 @@ pub async fn assess_migration_network_privacy(
         };
     }
 
-    if privacy_proxy_detected {
+    if zebra_url_local && !zebra_url_loopback {
         warnings.push(
-            "Remote Zebrad with Tor/I2P proxy detected. Prefer a local node when possible."
+            "Zebrad URL is on a private LAN (not loopback). A LAN node can still link your IP \
+             to migration amounts — use Tor/I2P, Nym mixnet, attestation, or --force-clearnet."
+                .to_string(),
+        );
+    }
+
+    if privacy_proxy_detected {
+        if privacy_proxy_url.is_none() {
+            blockers.push(
+                "Tor/I2P was detected but no proxy URL was available for the submit client."
+                    .to_string(),
+            );
+            return MigrationNetworkPrivacyAssessment {
+                allowed: false,
+                mode: None,
+                zebra_url_local,
+                privacy_proxy_detected,
+                privacy_proxy_label,
+                privacy_proxy_url: None,
+                user_attested: opts.attest_private_network,
+                force_clearnet: false,
+                blockers,
+                warnings,
+            };
+        }
+        warnings.push(
+            "Remote Zebrad with Tor/I2P proxy detected. Prefer a local loopback node when possible."
                 .to_string(),
         );
         return MigrationNetworkPrivacyAssessment {
@@ -163,6 +200,7 @@ pub async fn assess_migration_network_privacy(
             zebra_url_local,
             privacy_proxy_detected,
             privacy_proxy_label,
+            privacy_proxy_url,
             user_attested: opts.attest_private_network,
             force_clearnet: false,
             blockers,
@@ -184,6 +222,7 @@ pub async fn assess_migration_network_privacy(
                     zebra_url_local,
                     privacy_proxy_detected,
                     privacy_proxy_label,
+                    privacy_proxy_url,
                     user_attested: opts.attest_private_network,
                     force_clearnet: false,
                     blockers,
@@ -201,6 +240,7 @@ pub async fn assess_migration_network_privacy(
                     zebra_url_local,
                     privacy_proxy_detected,
                     privacy_proxy_label,
+                    privacy_proxy_url,
                     user_attested: opts.attest_private_network,
                     force_clearnet: false,
                     blockers,
@@ -222,6 +262,7 @@ pub async fn assess_migration_network_privacy(
             zebra_url_local,
             privacy_proxy_detected,
             privacy_proxy_label,
+            privacy_proxy_url,
             user_attested: true,
             force_clearnet: false,
             blockers,
@@ -231,7 +272,7 @@ pub async fn assess_migration_network_privacy(
 
     blockers.push(
         "Safer migration (Priority 1): refuse clearnet broadcast to a remote node. \
-         Use a local Zebrad, start Tor/I2P (SOCKS), pass --attest-private-network if NymVPN/Tor \
+         Use a local Zebrad (127.0.0.1), start Tor/I2P (SOCKS), pass --attest-private-network if NymVPN/Tor \
          is already protecting this machine, or --force-clearnet to override (discouraged)."
             .to_string(),
     );
@@ -242,10 +283,36 @@ pub async fn assess_migration_network_privacy(
         zebra_url_local,
         privacy_proxy_detected,
         privacy_proxy_label,
+        privacy_proxy_url,
         user_attested: false,
         force_clearnet: false,
         blockers,
         warnings,
+    }
+}
+
+/// Build a Zebra client whose submit path matches a successful privacy assessment (F-01).
+pub fn zebra_client_for_migration_broadcast(
+    zebra_url: &str,
+    assessment: &MigrationNetworkPrivacyAssessment,
+) -> NozyResult<ZebraClient> {
+    match assessment.mode {
+        Some(MigrationNetworkPrivacyMode::DetectedPrivacyProxy) => {
+            let proxy = assessment.privacy_proxy_url.as_deref().ok_or_else(|| {
+                NozyError::InvalidOperation(
+                    "Migration privacy mode is Tor/I2P but no proxy URL was recorded for submit."
+                        .to_string(),
+                )
+            })?;
+            ZebraClient::with_migration_privacy(zebra_url.to_string(), Some(proxy), false)
+        }
+        Some(MigrationNetworkPrivacyMode::NymMixnetBroadcast) => {
+            ZebraClient::with_migration_privacy(zebra_url.to_string(), None, true)
+        }
+        Some(MigrationNetworkPrivacyMode::LocalNode)
+        | Some(MigrationNetworkPrivacyMode::UserAttestedPrivateNetwork)
+        | Some(MigrationNetworkPrivacyMode::ForceClearnet)
+        | None => ZebraClient::with_migration_privacy(zebra_url.to_string(), None, false),
     }
 }
 
@@ -487,6 +554,65 @@ mod tests {
             Some(MigrationNetworkPrivacyMode::ForceClearnet)
         );
         assert!(!assessment.warnings.is_empty());
+    }
+
+    #[tokio::test]
+    async fn lan_private_ip_does_not_auto_allow_as_local_node() {
+        let assessment = assess_migration_network_privacy(
+            "http://192.168.1.10:8232",
+            &MigrationNetworkPrivacyOpts::default(),
+        )
+        .await;
+        if !assessment.privacy_proxy_detected {
+            assert_ne!(
+                assessment.mode,
+                Some(MigrationNetworkPrivacyMode::LocalNode)
+            );
+            // Without proxy/attest/mixnet/force, LAN must block.
+            if !assessment.user_attested && !assessment.force_clearnet {
+                assert!(!assessment.allowed);
+            }
+        }
+    }
+
+    #[test]
+    fn migration_submit_client_applies_detected_proxy() {
+        let assessment = MigrationNetworkPrivacyAssessment {
+            allowed: true,
+            mode: Some(MigrationNetworkPrivacyMode::DetectedPrivacyProxy),
+            zebra_url_local: false,
+            privacy_proxy_detected: true,
+            privacy_proxy_label: Some("Tor (socks5://127.0.0.1:9050)".into()),
+            privacy_proxy_url: Some("socks5://127.0.0.1:9050".into()),
+            user_attested: false,
+            force_clearnet: false,
+            blockers: Vec::new(),
+            warnings: Vec::new(),
+        };
+        let client =
+            zebra_client_for_migration_broadcast("https://remote.example:8232", &assessment)
+                .expect("proxy client");
+        assert_eq!(client.connection_mode().as_str(), "tor_proxy");
+    }
+
+    #[test]
+    fn migration_submit_client_sets_nym_mixnet_flag() {
+        let assessment = MigrationNetworkPrivacyAssessment {
+            allowed: true,
+            mode: Some(MigrationNetworkPrivacyMode::NymMixnetBroadcast),
+            zebra_url_local: false,
+            privacy_proxy_detected: false,
+            privacy_proxy_label: None,
+            privacy_proxy_url: None,
+            user_attested: false,
+            force_clearnet: false,
+            blockers: Vec::new(),
+            warnings: Vec::new(),
+        };
+        let client =
+            zebra_client_for_migration_broadcast("https://remote.example:8232", &assessment)
+                .expect("nym client");
+        assert_eq!(client.connection_mode().as_str(), "nym_mixnet");
     }
 
     #[test]

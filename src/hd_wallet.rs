@@ -8,6 +8,7 @@ use rand::RngCore;
 #[cfg(feature = "native")]
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
+use zeroize::Zeroize;
 
 // Nozy Unified Address creation Nozy people gone be Nozy.
 use orchard::{
@@ -18,11 +19,29 @@ use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
 use zcash_protocol::consensus::NetworkType;
 use zip32::AccountId;
 
-#[derive(Debug, Clone)]
+/// HD wallet holding BIP-39 mnemonic + BIP-32 master key.
+///
+/// **L05:** `Drop` zeroizes the mnemonic (bip39 `zeroize` feature) and best-effort
+/// overwrites the in-memory master key. Share via `&HDWallet` or `Arc<HDWallet>`;
+/// do not duplicate secrets for scan/send ownership.
+#[derive(Debug)]
 pub struct HDWallet {
     mnemonic: Mnemonic,
     master_key: XPrv,
     password_hash: Option<String>,
+}
+
+impl Drop for HDWallet {
+    fn drop(&mut self) {
+        self.mnemonic.zeroize();
+        if let Some(ref mut hash) = self.password_hash {
+            hash.zeroize();
+        }
+        self.password_hash = None;
+        if let Ok(dummy) = XPrv::new([0u8; 32]) {
+            self.master_key = dummy;
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -66,10 +85,12 @@ impl HDWallet {
 
         let mnemonic = Mnemonic::from_entropy(&entropy)
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to generate mnemonic: {}", e)))?;
+        entropy.zeroize();
 
-        let seed = mnemonic.to_seed("");
-        let master_key = XPrv::new(seed)
+        let mut seed = mnemonic.to_seed("");
+        let master_key = XPrv::new(&seed)
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to create master key: {}", e)))?;
+        seed.zeroize();
 
         Ok(Self {
             mnemonic,
@@ -82,9 +103,10 @@ impl HDWallet {
         let mnemonic = Mnemonic::parse(mnemonic)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid mnemonic: {}", e)))?;
 
-        let seed = mnemonic.to_seed("");
-        let master_key = XPrv::new(seed)
+        let mut seed = mnemonic.to_seed("");
+        let master_key = XPrv::new(&seed)
             .map_err(|e| NozyError::KeyDerivation(format!("Failed to create master key: {}", e)))?;
+        seed.zeroize();
 
         Ok(Self {
             mnemonic,
@@ -494,5 +516,28 @@ impl HDWallet {
         }
 
         self.derive_key(path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn wallet_drop_scrubs_without_panic() {
+        let wallet = HDWallet::from_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("test mnemonic");
+        assert!(!wallet.get_mnemonic().is_empty());
+        drop(wallet);
+    }
+
+    #[test]
+    fn new_wallet_zeroizes_entropy_path() {
+        let wallet = HDWallet::new().expect("new wallet");
+        let words = wallet.get_mnemonic();
+        assert_eq!(words.split_whitespace().count(), 24);
+        drop(wallet);
     }
 }

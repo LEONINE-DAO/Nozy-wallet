@@ -334,7 +334,8 @@ export const walletApi = {
 
   keystonePrepareSend: async (params: {
     recipient: string;
-    amount: number;
+    amount?: number;
+    amount_zatoshis?: number;
     memo?: string;
     priority?: boolean;
     password?: string;
@@ -343,7 +344,8 @@ export const walletApi = {
     const result = await invoke<KeystonePrepareResponse>("keystone_prepare_send", {
       request: {
         recipient: params.recipient,
-        amount: params.amount,
+        amount: params.amount ?? null,
+        amount_zatoshis: params.amount_zatoshis ?? null,
         memo: params.memo ?? null,
         priority: params.priority ?? true,
         password: params.password ?? null,

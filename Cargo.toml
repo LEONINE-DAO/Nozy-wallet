@@ -39,7 +39,7 @@ curve25519-dalek = "4.1"
 
 # HD wallet
 bip32 = "0.5"
-bip39 = "2.1"
+bip39 = { version = "2.1", features = ["zeroize"] }
 
 # Zcash crypto stack -- default-features off to disable multicore on WASM
 # Native builds re-enable multicore via the "native" feature for parallel proving
