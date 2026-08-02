@@ -290,7 +290,7 @@ function SendView() {
   const [recipient, setRecipient] = useState("");
   const [resolvedName, setResolvedName] = useState<string | null>(null);
   const [amount, setAmount] = useState("");
-  const [feeZats, setFeeZats] = useState("10000");
+  const [feeZats, setFeeZats] = useState("40000");
   const [coreVersion, setCoreVersion] = useState<string>("");
   const [memo, setMemo] = useState("");
   const [rawTxHex, setRawTxHex] = useState<string | null>(null);
@@ -360,7 +360,7 @@ function SendView() {
       const requestedAmount = Number(amount) || 0;
       if (requestedAmount <= 0) throw new Error("Enter an amount in zats");
       const fee = Math.max(0, Math.floor(Number(feeZats) || 0));
-      if (fee <= 0) throw new Error("Enter a positive fee in zats (e.g. 10000)");
+      if (fee <= 0) throw new Error("Enter a positive fee in zats (e.g. 40000)");
       const to = await resolveRecipientToAddress();
       const result = await extensionApi.walletProveTransaction({
         to,
@@ -438,7 +438,7 @@ function SendView() {
         <label className="mb-1 block text-xs text-white/50">Fee (zats)</label>
         <input
           className="w-full rounded bg-white/10 p-2 text-sm outline-none placeholder:text-white/30"
-          placeholder="10000"
+          placeholder="40000"
           value={feeZats}
           onChange={(e) => setFeeZats(e.target.value)}
         />

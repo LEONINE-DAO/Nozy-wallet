@@ -265,7 +265,9 @@ pub async fn build_and_broadcast_transaction(
     pilot: PilotSendOptions,
 ) -> NozyResult<String> {
     let fee_zatoshis = if let Some(fee) = fee_zatoshis {
-        fee
+        // Never allow underpayment vs mandatory ZIP-317 ×4 (legacy callers used 10_000).
+        let min = estimate_orchard_send_fee_zatoshis(memo, true);
+        fee.max(min)
     } else {
         estimate_transaction_fee_for_send(zebra_client, memo, pilot.priority).await
     };

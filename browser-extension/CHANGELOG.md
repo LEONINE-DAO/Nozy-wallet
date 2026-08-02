@@ -2,6 +2,13 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 0.1.10 — 2026-08-03
+
+### Fixed
+- **Mandatory ZIP-317 ×4 fee** on extension WASM / service-worker / wallet-worker paths (was defaulting to conventional **10 000** zat when `priority` was false or WASM fee export was missing). Aligns with CLI / api-server / desktop (`NOZY_WALLET_PRIORITY_FEE`).
+- `build_orchard_v5_tx_from_note` now clamps fee up to the policy minimum so legacy callers cannot underpay.
+- Added WASM exports: `estimate_orchard_send_fee_zats`, `pilot_expiry_delta_blocks`, `nozy_version_display`.
+
 ## 0.1.9 — 2026-08-02
 
 ### Added

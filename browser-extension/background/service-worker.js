@@ -286,7 +286,8 @@ async function _inlineProveTransaction(params) {
   const mnemonic = String(params?.mnemonic ?? "");
   const rpcEndpoint = String(params?.rpcEndpoint ?? "");
   const requestedAmount = Number(params?.amount ?? 0);
-  const requestedFee = Number(params?.fee ?? 10000);
+  // NozyWallet mandatory ZIP-317 × 4 (typical send = 40_000 zat).
+  const requestedFee = Number(params?.fee ?? 40_000);
   const memo = String(params?.memo ?? "");
 
   if (!rpcEndpoint) throw new Error("Missing rpcEndpoint.");
@@ -461,7 +462,8 @@ function parseFeeToZats(v) {
 
 async function buildTxPreflight(tx) {
   const { recipientAddress, amount, memo } = parseTxForOrchardV5(tx);
-  const fee = await estimateFeeZats(memo);
+  // Always priority ×4 — matches CLI / api-server / desktop.
+  const fee = await estimateFeeZats(memo, true);
   const proving = await callWorker("prove_transaction", {
     recipientAddress,
     walletAddress: session.address,
@@ -1255,15 +1257,16 @@ async function getOrchardActivationHeight() {
   }
 }
 
-async function estimateFeeZats(memo = "", priority = false) {
+async function estimateFeeZats(memo = "", _priority = true) {
+  // NozyWallet always uses ZIP-317 × 4; `_priority` kept for call-site compat.
   try {
     await ensureWasm();
-    const fee = wasm.estimate_orchard_send_fee_zats(memo, Boolean(priority));
+    const fee = wasm.estimate_orchard_send_fee_zats(memo, true);
     if (Number.isFinite(fee) && fee > 0) return fee;
   } catch (_) {
     // ignore and fallback
   }
-  return priority ? 40_000 : 10_000;
+  return 40_000;
 }
 
 setInterval(() => {
@@ -2263,10 +2266,11 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         case "wallet_estimate_send_fee": {
           await ensureWasm();
           const memo = String(params?.memo ?? "");
-          const priority = Boolean(params?.priority ?? false);
+          // Ignore caller priority — mandatory ×4 (same as native surfaces).
           sendResponse(
             ok({
-              fee: wasm.estimate_orchard_send_fee_zats(memo, priority),
+              fee: wasm.estimate_orchard_send_fee_zats(memo, true),
+              priority: true,
               expiry_delta_blocks: wasm.pilot_expiry_delta_blocks(),
               core_version: wasm.nozy_version_display()
             })
