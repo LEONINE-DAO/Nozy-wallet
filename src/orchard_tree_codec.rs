@@ -1,10 +1,10 @@
 //! Deserialize Orchard `CommitmentTree` / `IncrementalWitness` from Zebra RPC encodings.
 
 use crate::error::{NozyError, NozyResult};
-use core2::io::Cursor;
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
+use std::io::Cursor;
 use zcash_primitives::merkle_tree::{
     read_commitment_tree, read_incremental_witness, write_incremental_witness,
 };

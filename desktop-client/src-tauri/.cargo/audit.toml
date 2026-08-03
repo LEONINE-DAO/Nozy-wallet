@@ -1,0 +1,62 @@
+# cargo-audit config for desktop-client (Tauri).
+# Inherits root NozyWallet advisory policy, plus GTK3/unic/glib ignores for
+# the Linux Tauri system-dependency stack that cannot be replaced without
+# migrating off gtk-rs 0.15 / Tauri 1.x Linux backends.
+
+[advisories]
+ignore = [
+    # --- Same policy as repo-root .cargo/audit.toml ---
+
+    # curve25519-dalek 3.2.0 timing variability -- transitive from
+    # cosmrs -> tendermint 0.23 -> ed25519-dalek 1.x -> curve25519-dalek 3.x
+    "RUSTSEC-2024-0344",
+
+    # ed25519-dalek 1.0.1 double-public-key oracle -- same chain as above
+    "RUSTSEC-2022-0093",
+
+    # tracing-subscriber 0.2.25 ANSI log poisoning (low severity) -- ark-*
+    "RUSTSEC-2025-0055",
+
+    # derivative unmaintained -- transitive from ark-* stack
+    "RUSTSEC-2024-0388",
+
+    # number_prefix unmaintained -- transitive from indicatif
+    "RUSTSEC-2025-0119",
+
+    # paste unmaintained -- ark-ff / tendermint / flex-error
+    "RUSTSEC-2024-0436",
+
+    # rustls-pemfile unmaintained -- tonic
+    "RUSTSEC-2025-0134",
+
+    # bincode unmaintained -- uniffi 0.28 build-time macros only
+    "RUSTSEC-2025-0141",
+
+    # --- Tauri / GTK3 Linux stack (gtk-rs 0.15 era) ---
+    # These are system UI crates pulled by tauri on Linux. Clearing them
+    # requires a Tauri major upgrade off GTK3 bindings.
+
+    "RUSTSEC-2024-0411",
+    "RUSTSEC-2024-0412",
+    "RUSTSEC-2024-0413",
+    "RUSTSEC-2024-0414",
+    "RUSTSEC-2024-0415",
+    "RUSTSEC-2024-0416",
+    "RUSTSEC-2024-0417",
+    "RUSTSEC-2024-0418",
+    "RUSTSEC-2024-0419",
+    "RUSTSEC-2024-0420",
+
+    # glib unsound (gtk stack)
+    "RUSTSEC-2024-0429",
+
+    # proc-macro-error unmaintained (gtk / syn helpers)
+    "RUSTSEC-2024-0370",
+
+    # unic-* unmaintained (via older unicode helpers in desktop deps)
+    "RUSTSEC-2025-0075",
+    "RUSTSEC-2025-0080",
+    "RUSTSEC-2025-0081",
+    "RUSTSEC-2025-0098",
+    "RUSTSEC-2025-0100",
+]

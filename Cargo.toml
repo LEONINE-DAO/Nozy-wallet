@@ -106,7 +106,6 @@ async-trait = { version = "0.1", optional = true }
 
 # Orchard note commitment tree (checkpoint + incremental witnesses; matches zcash_primitives / orchard)
 incrementalmerkletree = { version = "0.8.2", default-features = false, features = ["legacy-api"], optional = true }
-core2 = { version = "0.3", default-features = false, features = ["std"], optional = true }
 
 # Parallel processing
 rayon = { version = "1.8", optional = true }
@@ -157,7 +156,6 @@ native = [
     "dep:zeaking",
     "dep:async-trait",
     "dep:incrementalmerkletree",
-    "dep:core2",
     "dep:rayon",
     "dep:futures",
     "dep:zcash_proofs",

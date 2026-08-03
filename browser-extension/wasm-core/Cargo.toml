@@ -21,7 +21,6 @@ getrandom = { version = "0.2", features = ["js"] }
 rand = "0.8"
 hex = "0.4"
 sha2 = "0.10"
-core2 = "0.3"
 aes-gcm = "0.10"
 argon2 = "0.5"
 bip39 = "2.1"

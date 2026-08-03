@@ -1,6 +1,6 @@
 //! Orchard `CommitmentTree` / `IncrementalWitness` (zcash-compatible), WASM-only copy of nozy `orchard_tree_codec`.
 
-use core2::io::Cursor;
+use std::io::Cursor;
 use incrementalmerkletree::frontier::CommitmentTree;
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::tree::MerkleHashOrchard;
