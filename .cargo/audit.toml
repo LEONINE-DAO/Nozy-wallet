@@ -35,4 +35,8 @@ ignore = [
     # rustls-pemfile unmaintained -- 2.2.0 transitive from tonic; thin wrapper
     # around rustls-pki-types. Will resolve when tonic drops it.
     "RUSTSEC-2025-0134",
+
+    # bincode unmaintained -- via uniffi 0.28 macros (build-time only for
+    # nozy-ffi / zeaking-ffi). Wait for uniffi migration off bincode 1.x.
+    "RUSTSEC-2025-0141",
 ]

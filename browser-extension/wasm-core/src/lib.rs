@@ -654,7 +654,7 @@ pub fn build_orchard_v5_tx_from_note(
     witness_json: &str,
 ) -> Result<JsValue, JsError> {
     use bip39::Mnemonic;
-    use core2::io::Cursor;
+    use std::io::Cursor;
     use nozy::hd_wallet::OrchardDecryptionResult;
     use orchard::{
         keys::SpendAuthorizingKey,
