@@ -181,23 +181,7 @@ $body = @{ jsonrpc="2.0"; method="getrawtransaction"; params=@($txid,1); id=1 } 
 Invoke-RestMethod -Uri "http://172.20.199.206:8232" -Method Post -ContentType "application/json" -Body $body
 ```
 
----
 
-## Paper paragraph (copy-paste — send readiness + mainnet evidence)
-
-> Beyond fixing pre-broadcast expiry races (BUG-2026-011), we instrumented send-time readiness on operator-class hardware: a fifty-block witness lag threshold blocks sends that would otherwise trigger multi-minute per-block witness catch-up over JSON-RPC; parallel block fetches amortize smaller gaps; and eager Orchard proving-key warm-up removes cold-start latency on first spend. On mainnet in June 2026, with Zebrad on WSL and the CLI on Windows, syncing five thousand blocks required about thirty-two seconds, after which witness lag fell to one block and shielded sends completed in approximately three and a half minutes end-to-end with successful broadcast and no consensus expiry errors—compared with seven-plus minutes and expiry risk when witnesses were thousands of blocks stale. A deliberate stale-wallet test rejected sends in under one tenth of a second with an explicit sync-to-tip message, confirming the guard prevents repeating Gilmore-style long builds. We retained the five-block pilot expiry throughout so mempool expire-and-replace semantics stay responsive.
-
----
-
-## Lecture outline (10–15 min)
-
-1. **Problem:** Shielded send = two clocks (build vs mempool expiry).
-2. **Gilmore incident:** `-25` before mempool; why 15 blocks was rejected.
-3. **Fix layer 1:** Late tip, rebuild, broadcast retry (BUG-2026-011).
-4. **Fix layer 2:** Sync-first policy, witness lag guard, warm proving.
-5. **Live numbers:** Table from “Test matrix” above.
-6. **Demo path:** `nozy sync --to-tip` → `test_send_readiness` → `nozy send` (dust).
-7. **Takeaway:** Product policy (5-block expiry) vs runtime engineering (sync + prove).
 
 ---
 
