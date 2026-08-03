@@ -182,6 +182,13 @@ Invoke-RestMethod -Uri "http://172.20.199.206:8232" -Method Post -ContentType "a
 ```
 
 
+## Mainnet evidence
+
+Beyond fixing pre-broadcast expiry races (BUG-2026-011), we instrumented send-time readiness on operator-class hardware: a fifty-block witness lag threshold blocks sends that would otherwise trigger multi-minute per-block witness catch-up over JSON-RPC; parallel block fetches amortize smaller gaps; and eager Orchard proving-key warm-up removes cold-start latency on first spend. On mainnet in June 2026, with Zebrad on WSL and the CLI on Windows, syncing five thousand blocks required about thirty-two seconds, after which witness lag fell to one block and shielded sends completed in approximately three and a half minutes end-to-end with successful broadcast and no consensus expiry errors—compared with seven-plus minutes and expiry risk when witnesses were thousands of blocks stale. A deliberate stale-wallet test rejected sends in under one tenth of a second with an explicit sync-to-tip message, confirming the guard prevents repeating Gilmore-style long builds. We retained the five-block pilot expiry throughout so mempool expire-and-replace semantics stay responsive.
+
+---
+
+
 
 ---
 
