@@ -112,7 +112,7 @@ Current schedule still lists a **pending** transfer of **200,000** zat (next buc
 
 ---
 
-## Forum / grant paste (short)
+## CLI results 
 
 > NozyWallet CLI completed a mainnet Orchard→Ironwood turnstile on 2026-07-30:  
 > `ea2fa4e64a5ca3f588dea58f38feb2a72a8d4e30292ac012d983e23bde7048fd` at height **3430663** (V6).  
