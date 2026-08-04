@@ -1,4 +1,4 @@
-//! Encrypted Orchard note cache (`notes.json`) — finding F-02.
+//! Encrypted Orchard note cache (`notes.json`) â€” finding F-02.
 //!
 //! Format on disk (hex): `NZN1 || nonce(12) || AES-256-GCM(ciphertext)`
 //! Key: Argon2id(password, persistent `notes.salt`) cached for the unlock session.
@@ -184,16 +184,24 @@ pub fn decrypt_schedule_file_content(content: &str) -> NozyResult<String> {
 }
 
 #[cfg(test)]
+static NOTES_VAULT_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+/// Serialize tests that touch the global notes AES session key / salt dir.
+#[cfg(test)]
+pub(crate) fn lock_notes_vault_for_test() -> std::sync::MutexGuard<'static, ()> {
+    NOTES_VAULT_TEST_LOCK
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::paths::with_wallet_data_dir;
-    use std::sync::Mutex;
-
-    static TEST_DIR_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn notes_vault_roundtrip() {
-        let _g = TEST_DIR_LOCK.lock().unwrap();
+        let _g = super::lock_notes_vault_for_test();
         let dir =
             std::env::temp_dir().join(format!("nozy-notes-vault-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -222,7 +230,7 @@ mod tests {
 
     #[test]
     fn schedule_vault_roundtrip() {
-        let _g = TEST_DIR_LOCK.lock().unwrap();
+        let _g = super::lock_notes_vault_for_test();
         let dir =
             std::env::temp_dir().join(format!("nozy-schedule-vault-test-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

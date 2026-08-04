@@ -279,7 +279,7 @@ impl NoteIndex {
             }) {
                 return Some(idx);
             }
-            // Ambiguous equal-value twins without a stored rho match — refuse to guess.
+            // Ambiguous equal-value twins without a stored rho match â€” refuse to guess.
             return None;
         }
         // No rho to disambiguate: keep legacy first-match only when unique would have applied;
@@ -308,7 +308,7 @@ impl NoteIndex {
     /// Match spent note by on-chain identity when nullifier index lookup fails.
     ///
     /// When ZIP 318 (or any send) creates multiple equal-value notes in one tx, matching on
-    /// `(txid, height, value)` alone is ambiguous — prefer `rho` when provided.
+    /// `(txid, height, value)` alone is ambiguous â€” prefer `rho` when provided.
     pub fn mark_note_spent_by_spend_metadata(
         &mut self,
         txid: &str,
@@ -632,6 +632,32 @@ impl NoteIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notes_vault::{clear_notes_vault, unlock_notes_vault};
+    use crate::paths::with_wallet_data_dir;
+
+    fn with_isolated_notes_vault<T>(label: &str, f: impl FnOnce(&std::path::Path) -> T) -> T {
+        let _g = crate::notes_vault::lock_notes_vault_for_test();
+        let dir = std::env::temp_dir().join(format!(
+            "nozy_{}_{}_{}",
+            label,
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create vault test dir");
+        let result = with_wallet_data_dir(&dir, || {
+            clear_notes_vault();
+            unlock_notes_vault("note-index-test").expect("unlock notes vault");
+            let out = f(&dir);
+            clear_notes_vault();
+            out
+        });
+        let _ = std::fs::remove_dir_all(&dir);
+        result
+    }
 
     fn sample_note(value: u64, height: u32, nullifier_byte: u8) -> SerializableOrchardNote {
         SerializableOrchardNote {
@@ -676,70 +702,63 @@ mod tests {
 
     #[test]
     fn note_index_save_and_load_file_roundtrip() {
-        let path =
-            std::env::temp_dir().join(format!("nozy_note_index_test_{}.json", std::process::id()));
-        let index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 9)]);
+        with_isolated_notes_vault("note_index_roundtrip", |dir| {
+            let path = dir.join("notes.json");
+            let index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 9)]);
 
-        index.save_to_file(&path.to_path_buf()).expect("save index");
+            index.save_to_file(&path).expect("save index");
 
-        let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("load index");
-        assert_eq!(loaded.unspent_count(), 1);
-        assert_eq!(loaded.total_balance(), 250_000);
-
-        let _ = std::fs::remove_file(&path);
+            let loaded = NoteIndex::load_from_file(&path).expect("load index");
+            assert_eq!(loaded.unspent_count(), 1);
+            assert_eq!(loaded.total_balance(), 250_000);
+        });
     }
 
     #[test]
     fn note_index_migrates_legacy_array_format() {
-        let path = std::env::temp_dir().join(format!(
-            "nozy_note_index_legacy_test_{}.json",
-            std::process::id()
-        ));
-        let notes = vec![sample_note(250_000, 3_379_045, 7)];
-        let legacy = serde_json::to_string_pretty(&notes).expect("legacy array json");
-        std::fs::write(&path, legacy).expect("write legacy file");
+        with_isolated_notes_vault("note_index_legacy", |dir| {
+            let path = dir.join("notes.json");
+            let notes = vec![sample_note(250_000, 3_379_045, 7)];
+            let legacy = serde_json::to_string_pretty(&notes).expect("legacy array json");
+            std::fs::write(&path, legacy).expect("write legacy file");
 
-        let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("load legacy");
-        assert_eq!(loaded.total_balance(), 250_000);
-        loaded
-            .validate_indexes()
-            .expect("migrated index must have v2 indexes");
-        let migrated = std::fs::read_to_string(&path).expect("read migrated file");
-        assert!(
-            !migrated.trim_start().starts_with('['),
-            "migration should rewrite off legacy array format"
-        );
-        let reloaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("reload migrated");
-        assert_eq!(reloaded.total_balance(), 250_000);
-
-        let _ = std::fs::remove_file(&path);
+            let loaded = NoteIndex::load_from_file(&path).expect("load legacy");
+            assert_eq!(loaded.total_balance(), 250_000);
+            loaded
+                .validate_indexes()
+                .expect("migrated index must have v2 indexes");
+            let migrated = std::fs::read_to_string(&path).expect("read migrated file");
+            assert!(
+                !migrated.trim_start().starts_with('['),
+                "migration should rewrite off legacy array format"
+            );
+            let reloaded = NoteIndex::load_from_file(&path).expect("reload migrated");
+            assert_eq!(reloaded.total_balance(), 250_000);
+        });
     }
 
     #[test]
     fn mark_note_spent_preserves_v2_index_on_save() {
-        let path =
-            std::env::temp_dir().join(format!("nozy_mark_spent_test_{}.json", std::process::id()));
-        let mut index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 42)]);
-        index.save_to_file(&path.to_path_buf()).expect("save");
+        with_isolated_notes_vault("mark_spent", |dir| {
+            let path = dir.join("notes.json");
+            let mut index = NoteIndex::from_notes(vec![sample_note(250_000, 3_379_045, 42)]);
+            index.save_to_file(&path).expect("save");
 
-        assert!(index.mark_note_spent(&[42u8; 32]));
-        index
-            .save_to_file(&path.to_path_buf())
-            .expect("save after mark");
+            assert!(index.mark_note_spent(&[42u8; 32]));
+            index.save_to_file(&path).expect("save after mark");
 
-        let content = std::fs::read_to_string(&path).expect("read saved");
-        assert!(
-            !content.trim_start().starts_with('['),
-            "must not rewrite as legacy notes array"
-        );
-        let loaded = NoteIndex::load_from_file(&path.to_path_buf()).expect("reload");
-        loaded
-            .validate_indexes()
-            .expect("reloaded index must keep v2 indexes");
-        assert_eq!(loaded.unspent_count(), 0);
-        assert_eq!(loaded.count(), 1);
-
-        let _ = std::fs::remove_file(&path);
+            let content = std::fs::read_to_string(&path).expect("read saved");
+            assert!(
+                !content.trim_start().starts_with('['),
+                "must not rewrite as legacy notes array"
+            );
+            let loaded = NoteIndex::load_from_file(&path).expect("reload");
+            loaded
+                .validate_indexes()
+                .expect("reloaded index must keep v2 indexes");
+            assert_eq!(loaded.unspent_count(), 0);
+            assert_eq!(loaded.count(), 1);
+        });
     }
 
     #[test]
