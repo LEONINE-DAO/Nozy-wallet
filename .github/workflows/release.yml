@@ -120,7 +120,6 @@ jobs:
 
   build-api:
     name: Build API Server Binaries
-    if: false  # Re-enable when nozywallet-api is promoted on releases (CLI-only for now).
     defaults:
       run:
         shell: bash
@@ -132,21 +131,25 @@ jobs:
             target: x86_64-unknown-linux-gnu
             binary: nozywallet-api
             extension: ""
+            friendly_name: nozywallet-api-linux
             build_mode: native
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             binary: nozywallet-api.exe
             extension: ".exe"
+            friendly_name: nozywallet-api-windows.exe
             build_mode: native
           - os: macos-latest
             target: x86_64-apple-darwin
             binary: nozywallet-api
             extension: ""
+            friendly_name: nozywallet-api-macos-intel
             build_mode: cross
           - os: macos-latest
             target: aarch64-apple-darwin
             binary: nozywallet-api
             extension: ""
+            friendly_name: nozywallet-api-macos-arm
             build_mode: native
     runs-on: ${{ matrix.os }}
     steps:
@@ -197,53 +200,34 @@ jobs:
           build_api || { echo "Build failed, retrying..."; sleep 5; build_api; }
         timeout-minutes: 45
 
-      - name: Generate SHA256 hash
-        id: hash
+      - name: Rename binary to friendly name and generate hash
         run: |
           if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
-            BIN="target/${{ matrix.target }}/release/${{ matrix.binary }}"
+            SRC="target/${{ matrix.target }}/release/${{ matrix.binary }}"
           else
-            BIN="target/release/${{ matrix.binary }}"
+            SRC="target/release/${{ matrix.binary }}"
           fi
-          if [[ ! -f "$BIN" ]]; then
-            echo "Expected binary missing at $BIN"
-            exit 1
-          fi
+          cp "$SRC" ${{ matrix.friendly_name }}
           if [[ "${{ runner.os }}" == "Windows" ]]; then
-            powershell -NoProfile -Command '$h=(Get-FileHash -Path "'"$BIN"'" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "hash.txt" -Value ($h + "  ${{ matrix.binary }}") -NoNewline'
+            powershell -NoProfile -Command '$h=(Get-FileHash -Path "${{ matrix.friendly_name }}" -Algorithm SHA256).Hash.ToLower(); Set-Content -Path "${{ matrix.friendly_name }}.sha256" -Value ($h + "  ${{ matrix.friendly_name }}") -NoNewline'
           else
-            shasum -a 256 "$BIN" > hash.txt
+            shasum -a 256 ${{ matrix.friendly_name }} > ${{ matrix.friendly_name }}.sha256
           fi
-          HASH=$(cat hash.txt | awk '{print $1}')
-          echo "hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Generated hash: $HASH"
-
-      # upload-artifact path: avoid inline format() — it has failed silently before (artifacts had only hash.txt).
-      - name: Stage API binary for artifact upload
-        run: |
-          set -euo pipefail
-          if [[ "${{ matrix.build_mode }}" == "cross" ]]; then
-            BIN="target/${{ matrix.target }}/release/${{ matrix.binary }}"
-          else
-            BIN="target/release/${{ matrix.binary }}"
-          fi
-          mkdir -p api-upload
-          cp "$BIN" "api-upload/${{ matrix.binary }}"
-          cp hash.txt api-upload/hash.txt
-          ls -la api-upload
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         continue-on-error: false
         with:
           name: nozywallet-api-${{ matrix.target }}${{ matrix.extension }}
-          path: api-upload
+          path: |
+            ${{ matrix.friendly_name }}
+            ${{ matrix.friendly_name }}.sha256
           retention-days: 90
           if-no-files-found: error
 
   create-release:
     name: Create Release
-    needs: [build-cli]
+    needs: [build-cli, build-api]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
     steps:
@@ -258,9 +242,12 @@ jobs:
       - name: Rename and organize release files
         run: |
           mkdir -p release-files
-          # Copy CLI binaries (already have friendly names)
-          find artifacts -type f -name "nozy-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
-          find artifacts -type f -name "nozy-*.sha256" -exec cp {} release-files/ \;
+          # Copy CLI binaries (already have friendly names; exclude companion API)
+          find artifacts -type f -name "nozy-*" ! -name "nozywallet-api-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
+          find artifacts -type f -name "nozy-*.sha256" ! -name "nozywallet-api-*" -exec cp {} release-files/ \;
+          # Copy companion API binaries (friendly names)
+          find artifacts -type f -name "nozywallet-api-*" ! -name "*.sha256" ! -name "*.txt" -exec cp {} release-files/ \;
+          find artifacts -type f -name "nozywallet-api-*.sha256" -exec cp {} release-files/ \;
 
       - name: Generate hashes file
         run: |
@@ -273,9 +260,11 @@ jobs:
           echo "" >> release-files/HASHES.txt
           echo "## CLI Binaries" >> release-files/HASHES.txt
           echo "" >> release-files/HASHES.txt
-          
-          # Collect all hash files
-          find release-files -name "*.sha256" -exec cat {} \; >> release-files/HASHES.txt || true
+          find release-files -name "nozy-*.sha256" ! -name "nozywallet-api-*" -exec cat {} \; >> release-files/HASHES.txt || true
+          echo "" >> release-files/HASHES.txt
+          echo "## Companion API Binaries (localhost beta)" >> release-files/HASHES.txt
+          echo "" >> release-files/HASHES.txt
+          find release-files -name "nozywallet-api-*.sha256" -exec cat {} \; >> release-files/HASHES.txt || true
 
       - name: Create Release
         uses: softprops/action-gh-release@v1
@@ -285,38 +274,47 @@ jobs:
           prerelease: false
           generate_release_notes: true
           body: |
-            ## 🎉 NozyWallet ${{ github.ref_name }} Release
-            
-            **Production-ready download:** **CLI only** (`nozy`). Desktop, extension, and API companion are in development — build from source; they are not attached to this release until production-ready.
-            
-            ### CLI one-click links (`/releases/latest/download/…`)
-            
+            ## NozyWallet ${{ github.ref_name }} Release
+
+            **Production-ready download:** **CLI** (`nozy`). Companion API binaries (`nozywallet-api-*`) are attached as a **localhost companion beta** (default `http://127.0.0.1:3000`) — not hosted GA. See [`browser-extension/COMPANION.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/COMPANION.md) and [`api-server/SEED_POLICY.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/api-server/SEED_POLICY.md). Desktop and extension remain separate tracks — build from source or their own workflows until promoted.
+
+            ### CLI one-click links (`/releases/latest/download/...`)
+
             | Platform | URL |
             |----------|-----|
             | Windows | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-windows.exe` |
             | Linux | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-linux` |
             | macOS Apple Silicon | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-arm` |
             | macOS Intel | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-intel` |
-            
-            ### 📦 CLI downloads
-            
+
+            ### CLI downloads
+
             - **Windows (x86_64):** `nozy-windows.exe`
             - **Linux (x86_64):** `nozy-linux`
             - **macOS Intel:** `nozy-macos-intel`
             - **macOS Apple Silicon (M1/M2/M3):** `nozy-macos-arm`
-            
-            ### 📝 Installation
-            
+
+            ### Companion API (localhost beta)
+
+            - **Windows:** `nozywallet-api-windows.exe`
+            - **Linux:** `nozywallet-api-linux`
+            - **macOS Intel:** `nozywallet-api-macos-intel`
+            - **macOS Apple Silicon:** `nozywallet-api-macos-arm`
+
+            Default bind: `127.0.0.1:3000`. Binding `0.0.0.0` requires `NOZY_API_KEY`. Do not treat these as a public hosted wallet API.
+
+            ### Installation
+
             **Windows:** download `nozy-windows.exe` and run it.
-            
+
             **Linux:** `chmod +x nozy-linux` then `./nozy-linux`
-            
+
             **macOS:** `chmod +x nozy-macos-*` then run the binary for your chip.
-            
+
             Run with **zebrad** (RPC, typically `:8232`) and **lightwalletd** (typically `:9067`) on the same network.
-            
-            ### 🔒 Security
-            
+
+            ### Security
+
             Verify downloads using `HASHES.txt` or the individual `.sha256` files.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

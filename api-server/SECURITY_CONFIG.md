@@ -211,7 +211,7 @@ curl -X POST http://localhost:3000/api/transaction/send \
 
 ## Bind address
 
-**Default:** `127.0.0.1` (loopback only).
+**Default:** `127.0.0.1` (loopback only). Seed/mnemonic rules for create/restore: [`SEED_POLICY.md`](SEED_POLICY.md).
 
 ```bash
 # Local companion (default)
@@ -226,6 +226,7 @@ Binding to `0.0.0.0` / `::` **without** `NOZY_API_KEY` is refused at startup (se
 
 ## Notes
 
+- Mnemonic create/restore policy: [`SEED_POLICY.md`](SEED_POLICY.md)
 - Health check endpoint (`/health`) does not require authentication
 - Rate limiting is per IP address
 - API key authentication is optional on loopback; **required** when binding all interfaces

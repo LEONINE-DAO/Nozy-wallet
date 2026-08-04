@@ -6,7 +6,7 @@ Use this for a **structured review** before a major release or store submission.
 
 ## 1. Secrets and key material
 
-- [ ] **Mnemonic / seed:** never logged, never in URLs, never sent to companion API or third-party hosts (verify `api-server` handlers and extension message paths).
+- [ ] **Mnemonic / seed:** never logged, never in URLs, never sent to **third-party** hosts. Companion create/restore may accept mnemonic on **loopback only** under [`api-server/SEED_POLICY.md`](api-server/SEED_POLICY.md) — verify handlers do not log it and responses stay masked (`display_mnemonic_safe`).
 - [ ] **Passwords:** only used for local encryption; verify Argon2 / storage paths in `WalletStorage` and extension `encrypt_for_storage`.
 - [ ] **Memory:** confirm `zeroize` / `SecureSeed` on sensitive buffers where the codebase already uses them; no new `String` copies of mnemonics without clear lifecycle.
 - [ ] **Grep (local):** `rg -i "mnemonic|seed phrase|private_key|spending_key" --glob '!**/target/**' --glob '!**/node_modules/**'` — inspect hits for logging or error strings that could leak.
@@ -26,9 +26,11 @@ Use this for a **structured review** before a major release or store submission.
 
 ## 4. `api-server` (companion)
 
-- [ ] **Bind address:** default `0.0.0.0` vs `127.0.0.1` — confirm intended deployment; firewall story for LAN.
-- [ ] **CORS / auth:** if exposed beyond localhost, require auth token or mTLS (not implemented by default — document risk).
-- [ ] **No wallet seed on wire:** companion routes must not accept mnemonics (verify handlers).
+**Policy:** [`api-server/SEED_POLICY.md`](api-server/SEED_POLICY.md) — localhost companion may accept mnemonic for create/restore; all-interfaces bind requires `NOZY_API_KEY`.
+
+- [x] **Bind address:** default `127.0.0.1`; `NOZY_BIND_ADDR=0.0.0.0` only for intentional LAN/hosted (`main.rs` refuses without API key).
+- [x] **CORS / auth:** documented in [`api-server/SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md); API key required when binding all interfaces; production CORS via `NOZY_PRODUCTION` + `NOZY_CORS_ORIGINS`.
+- [x] **Seed on wire (honest):** create/restore accept mnemonic on loopback by design; responses masked; do not claim “never on wire.” Re-verify before each major release (handlers + extension companion path).
 
 ## 5. Desktop (Tauri)
 

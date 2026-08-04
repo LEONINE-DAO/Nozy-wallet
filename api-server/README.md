@@ -18,6 +18,8 @@ cargo run
 
 The server will start on `http://0.0.0.0:3000`
 
+Smoke / policy: [`scripts/smoke-companion.ps1`](scripts/smoke-companion.ps1) (or [`smoke-companion.sh`](scripts/smoke-companion.sh)), [`SEED_POLICY.md`](SEED_POLICY.md), [`PARITY.md`](PARITY.md).
+
 ### Development
 
 ```bash
