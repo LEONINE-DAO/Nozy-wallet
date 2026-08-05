@@ -159,7 +159,7 @@ Until then: keep shipping binaries + engineering hardening; public stance stays 
 - [x] Product copy says own node / wait for funding — [`nozy-mobile/src/lib/connectionPresets.ts`](nozy-mobile/src/lib/connectionPresets.ts) + funding case breakdown
 - [x] Deploy runbook exists — [`nozy-mobile/VPS-DEPLOY.md`](nozy-mobile/VPS-DEPLOY.md) (includes `NOZY_BIND_ADDR=0.0.0.0`)
 
-**Evidence:** SECURITY_CONFIG | SEED_POLICY | PARITY | smoke + parity-local scripts | CI `api-smoke` | smoke screenshot [`docs/reference/grant-evidence/COMPANION_API_SMOKE_PROOF.md`](docs/reference/grant-evidence/COMPANION_API_SMOKE_PROOF.md) | AI agents later [`api-server/AI_AGENTS_LATER.md`](api-server/AI_AGENTS_LATER.md) | `release.yml` attaches `nozywallet-api-*` (localhost; no public GA claim) | connectionPresets | VPS-DEPLOY
+**Evidence:** SECURITY_CONFIG | SEED_POLICY | PARITY | smoke + parity-local scripts | CI `api-smoke` | smoke screenshot [`docs/reference/grant-evidence/COMPANION_API_SMOKE_PROOF.md`](docs/reference/grant-evidence/COMPANION_API_SMOKE_PROOF.md) | `release.yml` attaches `nozywallet-api-*` (localhost; no public GA claim) | connectionPresets | VPS-DEPLOY
 
 ---
 

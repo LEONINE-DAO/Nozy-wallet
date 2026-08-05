@@ -27,8 +27,3 @@ Shows `SMOKE PASSED` for `/health`, `/api/wallet/exists`, `/api/config` against 
 .\api-server\scripts\smoke-companion.ps1
 # optional HTML proof page: api-server/scripts/proof-smoke.html
 ```
-
-## Related notes (later, not for public claim yet)
-
-- AI agents on companion HTTP: [`../../api-server/AI_AGENTS_LATER.md`](../../api-server/AI_AGENTS_LATER.md)
-- Localhost GA gate (internal): [`../../GRANT_80K_PRODUCTION_CHECKLIST.md`](../../GRANT_80K_PRODUCTION_CHECKLIST.md) §2
