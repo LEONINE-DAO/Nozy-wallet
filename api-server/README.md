@@ -6,9 +6,33 @@ REST API server for NozyWallet. This server wraps the Rust wallet backend and ex
 
 **Shielded sends with Zebrad:** This API provides wallet HTTP and compact-sync routes. Orchard spends use local witness derivation with treestate checks. See [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](../ZEBRAD_SHIELDED_SEND_LIMIT.md).
 
-## 🚀 Quick Start
+## Quick Start
 
-### Build and Run
+**Localhost companion:** default bind is **`http://127.0.0.1:3000`**. Intended for same-machine extension / local apps — not a public hosted wallet API. See [`SEED_POLICY.md`](SEED_POLICY.md) and [`SECURITY_CONFIG.md`](SECURITY_CONFIG.md).
+
+### Download from GitHub Releases
+
+CLI tags attach companion binaries:
+
+| Platform | Asset |
+|----------|--------|
+| Windows | `nozywallet-api-windows.exe` |
+| Linux | `nozywallet-api-linux` |
+| macOS Apple Silicon | `nozywallet-api-macos-arm` |
+| macOS Intel | `nozywallet-api-macos-intel` |
+
+From [Releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases): download the asset, verify `.sha256` / `HASHES.txt`, then run (Windows: double-click or terminal; Unix: `chmod +x` then `./nozywallet-api-linux`).
+
+### Operator start (extension / local apps)
+
+1. Run **Zebrad** (RPC, typically `:8232`) and/or **lightwalletd** (typically `:9067`) as needed for your flow.
+2. Start `nozywallet-api` (default `127.0.0.1:3000`). Optional: `LIGHTWALLETD_GRPC` if LWD is not on localhost.
+3. Point the browser extension **API** tab (or your app) at `http://127.0.0.1:3000`.
+4. Smoke: [`scripts/smoke-companion.ps1`](scripts/smoke-companion.ps1) / [`scripts/smoke-companion.sh`](scripts/smoke-companion.sh).
+
+For locked-down local runs set `NOZY_PRODUCTION=true` and `NOZY_API_KEY=…` (required when production mode is on).
+
+### Build from source
 
 ```bash
 cd api-server
@@ -16,9 +40,9 @@ cargo build --release
 cargo run
 ```
 
-The server will start on `http://0.0.0.0:3000`
+The server listens on **`http://127.0.0.1:3000`** by default (`NOZY_BIND_ADDR` to override; `0.0.0.0` requires `NOZY_API_KEY`).
 
-Smoke / policy: [`scripts/smoke-companion.ps1`](scripts/smoke-companion.ps1) (or [`smoke-companion.sh`](scripts/smoke-companion.sh)), [`SEED_POLICY.md`](SEED_POLICY.md), [`PARITY.md`](PARITY.md).
+Policy / parity: [`SEED_POLICY.md`](SEED_POLICY.md), [`PARITY.md`](PARITY.md), [`../browser-extension/COMPANION.md`](../browser-extension/COMPANION.md).
 
 ### Development
 

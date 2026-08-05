@@ -103,16 +103,16 @@ const surfaces: Surface[] = [
   {
     icon: QuestionCircle,
     title: "Companion API",
-    tagline: "Localhost bridge for extension, mobile, and automation.",
-    status: "preview",
-    statusLabel: "Available",
+    tagline: "Localhost HTTP bridge for extension, web, and automation — same Rust core as CLI.",
+    status: "live",
+    statusLabel: "Production",
     bullets: [
-      "HTTP wrapper around Rust core",
-      "LWD compact sync routes",
-      "Run on your machine",
+      "nozywallet-api on CLI releases",
+      "Default http://127.0.0.1:3000",
+      "LWD sync · wallet routes · not hosted",
     ],
     primary: { label: "API docs", href: PATHS.apiServer, external: true },
-    secondary: { label: "Deploy guide", href: PATHS.operatorDeploy },
+    secondary: { label: "Latest release", href: REPO_RELEASES },
   },
 ];
 

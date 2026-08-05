@@ -59,6 +59,8 @@ Without a reachable companion (desktop API or tunnel), the extension **cannot** 
 
 ## Distribution
 
-GitHub Releases may attach **`nozywallet-api-*`** binaries as a **localhost companion beta** (default `http://127.0.0.1:3000`). Prefer loopback; see [`api-server/SEED_POLICY.md`](../api-server/SEED_POLICY.md). This is not a hosted GA API.
+GitHub Releases may attach **`nozywallet-api-*`** (default `http://127.0.0.1:3000`) for same-machine extension / local-app use. Prefer loopback; see [`api-server/SEED_POLICY.md`](../api-server/SEED_POLICY.md) and [`api-server/README.md`](../api-server/README.md). This is **not** a hosted / public wallet API.
+
+Optional locked-down local runs: `NOZY_PRODUCTION=true` and `NOZY_API_KEY`.
 
 Publish the same MV3 package to the **Chrome Web Store** and **Microsoft Edge Add-ons**; validate in both browsers during QA.

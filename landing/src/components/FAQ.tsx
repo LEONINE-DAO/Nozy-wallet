@@ -54,12 +54,12 @@ const FAQ = () => {
     {
       question: "Which surface should I use?",
       answer:
-        "CLI Lite for operators and production mainnet. Desktop for a native wallet UI (no browser). Extension for sites and dApps. Mobile when the companion ships.",
+        "CLI Lite for operators and production mainnet. Companion API for localhost extension / local-app bridge. Desktop for a native wallet UI (no browser). Extension for sites and dApps. Mobile when the phone companion ships.",
     },
     {
       question: "Do I need my own node?",
       answer:
-        "Yes for full independence — pair with Zebrad + lightwalletd you control. The companion API can run on localhost next to desktop.",
+        "Yes for full independence — pair with Zebrad + lightwalletd you control. The companion API runs on localhost (default :3000) next to the extension or your apps.",
     },
     {
       question: "Where do I get support?",

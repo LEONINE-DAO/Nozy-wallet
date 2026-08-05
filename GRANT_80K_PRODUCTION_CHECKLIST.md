@@ -53,7 +53,7 @@ Mark each row **Done** only when that section’s Definition of done is met.
 |---|----------------|--------|-------|
 | 0 | Shared core + CI | ☐ Partial | fmt/test/release build/CI strong; Dependabot #179–#182 hygiene progress; cargo audit hard-zero still open |
 | 1 | CLI (`nozy`) | ☐ Partial | Commands + mainnet evidence + dynamic-fee TXID; ZNS `--to` name resolve; grant-window release polish open |
-| 2 | Companion API (`api-server`) | ☐ Partial | localhost default bind + seed policy; ZNS/Business/invoices/pilot metrics; hosted live open |
+| 2 | Companion API (`api-server`) | ☐ Partial | Engineering: seed policy, CI smoke, `NOZY_PRODUCTION`⇒API key, release assets. **Do not public-claim GA yet** (see §2 note). Chain parity sign-off open; hosted live open |
 | 3 | Desktop (Tauri) | ☐ Partial | Beta until Ironwood GA; Network privacy Settings shipped (PR #178); code signing + path allowlist before GA |
 | 4 | Browser extension (MV3) | ☐ Partial | Release zip **extension-v0.1.8** shipped; store icons/screenshots/submit still open |
 | 5 | Mobile (Expo) | ☐ Partial | Production profile + Sell mode; EAS device smoke + store still open — Android-first |
@@ -136,11 +136,21 @@ Mark each row **Done** only when that section’s Definition of done is met.
 
 **Definition of done:** Localhost companion is safe by default; hosted path (if claimed) has auth + TLS; seed handling is **documented and intentional** (not accidental).
 
+**Internal — when to call companion GA (do not put in release/forum copy until you decide):**
+
+1. Chain rows in [`api-server/PARITY.md`](api-server/PARITY.md) signed off (sync / balance / send / LWD compact-to-tip) against a real node  
+2. CI Companion API Smoke green on `master`  
+3. You intentionally update public README / release.yml / COMPANION to say production-ready localhost companion  
+4. Hosted remains a separate decision  
+
+Until then: keep shipping binaries + engineering hardening; public stance stays “CLI is GA; companion is attached for same-machine use.”
+
 ### Localhost (desktop / extension)
 - [x] Default bind story documented and aligned — default `127.0.0.1`; `NOZY_BIND_ADDR=0.0.0.0` for hosted ([`SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md), COMPANION.md, README)
 - [x] CORS / rate limits documented — [`api-server/SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md)
-- [x] Seed handling policy (honest) - [`SEED_POLICY.md`](api-server/SEED_POLICY.md): loopback create/restore may accept mnemonic; `0.0.0.0`/`::` requires `NOZY_API_KEY` (refused otherwise); responses masked (`display_mnemonic_safe`); never log. Also [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md) section 4 + [`SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md).
-- [ ] Sync / balance / send / speed-up / LWD routes parity with CLI - routes exist; formal field sign-off open ([`PARITY.md`](api-server/PARITY.md)); smoke: [`scripts/smoke-companion.ps1`](api-server/scripts/smoke-companion.ps1)
+- [x] Seed handling policy (honest) - [`SEED_POLICY.md`](api-server/SEED_POLICY.md): loopback create/restore may accept mnemonic; `NOZY_PRODUCTION` or `0.0.0.0`/`::` requires `NOZY_API_KEY` (refused otherwise); responses masked (`display_mnemonic_safe`); never log. Also [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md) section 4 + [`SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md).
+- [x] CI Companion API Smoke — boot `nozywallet-api` + [`scripts/smoke-companion.sh`](api-server/scripts/smoke-companion.sh) in [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+- [ ] Sync / balance / send / speed-up / LWD routes parity with CLI - routes exist; formal **chain** field sign-off open ([`PARITY.md`](api-server/PARITY.md)); non-chain helper: [`scripts/parity-local.sh`](api-server/scripts/parity-local.sh)
 - [x] Ironwood / readiness endpoints present in API — `ironwood_handlers` + status/readiness gates in-repo (PR trail / desktop alignment); keep claims matched to [`IRONWOOD_WALLET_READINESS.md`](docs/reference/IRONWOOD_WALLET_READINESS.md); formal “Done” still needs post-activation field check
 - [x] Axum 0.8 route param compatibility — PR #180
 ### Hosted (mobile companion — only if in grant scope)
@@ -149,7 +159,7 @@ Mark each row **Done** only when that section’s Definition of done is met.
 - [x] Product copy says own node / wait for funding — [`nozy-mobile/src/lib/connectionPresets.ts`](nozy-mobile/src/lib/connectionPresets.ts) + funding case breakdown
 - [x] Deploy runbook exists — [`nozy-mobile/VPS-DEPLOY.md`](nozy-mobile/VPS-DEPLOY.md) (includes `NOZY_BIND_ADDR=0.0.0.0`)
 
-**Evidence:** SECURITY_CONFIG | SEED_POLICY | PARITY | smoke scripts | `release.yml` `build-api` enabled (attach `nozywallet-api-*` as localhost companion beta) | connectionPresets | VPS-DEPLOY
+**Evidence:** SECURITY_CONFIG | SEED_POLICY | PARITY | smoke + parity-local scripts | CI `api-smoke` | `release.yml` attaches `nozywallet-api-*` (localhost; no public GA claim) | connectionPresets | VPS-DEPLOY
 
 ---
 

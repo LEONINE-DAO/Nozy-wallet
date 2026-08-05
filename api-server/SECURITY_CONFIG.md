@@ -122,27 +122,38 @@ All requests are logged with:
 # Generate a secure API key (use a secure random generator)
 export NOZY_API_KEY=$(openssl rand -hex 32)
 
+# Localhost companion: production mode requires NOZY_API_KEY even on 127.0.0.1
+export NOZY_PRODUCTION=true
+
 # Set rate limits (adjust based on expected traffic)
 export NOZY_RATE_LIMIT_REQUESTS=1000
 export NOZY_RATE_LIMIT_WINDOW=60
 
-# Enable production mode
-export NOZY_PRODUCTION=true
-
-# Set allowed CORS origins
-export NOZY_CORS_ORIGINS=https://app.nozywallet.com,https://www.nozywallet.com
+# Optional: restrict CORS when serving a known web origin (hosted / reverse-proxy cases)
+# export NOZY_CORS_ORIGINS=https://app.example.com
 ```
+
+### Environment matrix (localhost companion)
+
+| Mode | `NOZY_PRODUCTION` | `NOZY_API_KEY` | Bind | Notes |
+|------|-------------------|----------------|------|--------|
+| Dev (default) | unset | optional | `127.0.0.1` | Create/restore work without a key on loopback |
+| Locked-down local | `true` / set | **required** | `127.0.0.1` | Process refuses to start without a key |
+| LAN / hosted | recommended | **required** | `0.0.0.0` | Refused without key regardless of production flag |
+
+See also [`SEED_POLICY.md`](SEED_POLICY.md).
 
 ### Security Checklist
 
 - [ ] Set `NOZY_API_KEY` with a strong, random key
-- [ ] Set `NOZY_PRODUCTION=true`
-- [ ] Configure `NOZY_CORS_ORIGINS` with your actual frontend URLs
-- [ ] Use HTTPS (configure reverse proxy like Nginx)
-- [ ] Enable HSTS header (uncomment in middleware.rs)
+- [ ] Set `NOZY_PRODUCTION=true` for any non-dev companion
+- [ ] Configure `NOZY_CORS_ORIGINS` when using production CORS (hosted frontends)
+- [ ] Use HTTPS (configure reverse proxy like Nginx) if exposing beyond loopback
+- [ ] Enable HSTS header (uncomment in middleware.rs) when using HTTPS
 - [ ] Review and adjust rate limits based on traffic
 - [ ] Monitor logs for suspicious activity
 - [ ] Keep dependencies updated
+- [ ] Prefer `127.0.0.1`; do not claim a public hosted companion without TLS + key + ops review
 
 ### HTTPS Setup
 
@@ -227,8 +238,8 @@ Binding to `0.0.0.0` / `::` **without** `NOZY_API_KEY` is refused at startup (se
 ## Notes
 
 - Mnemonic create/restore policy: [`SEED_POLICY.md`](SEED_POLICY.md)
-- Health check endpoint (`/health`) does not require authentication
+- When `NOZY_API_KEY` is set, routes behind `api_key_auth` (including `/health` today) require `X-API-Key` or `Authorization: Bearer …`
 - Rate limiting is per IP address
-- API key authentication is optional on loopback; **required** when binding all interfaces
+- API key is optional on loopback in **dev**; **required** when `NOZY_PRODUCTION` is set or when binding all interfaces
 - All security features work independently - you can enable/disable them as needed
 

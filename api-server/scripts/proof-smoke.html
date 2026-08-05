@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Nozy companion API smoke proof</title>
+  <style>
+    body { font-family: ui-monospace, Consolas, monospace; background: #0f1419; color: #e7ecf1; margin: 0; padding: 2rem; }
+    h1 { font-size: 1.25rem; font-weight: 600; margin: 0 0 0.25rem; }
+    .sub { color: #9aa7b5; margin-bottom: 1.5rem; font-size: 0.9rem; }
+    .ok { color: #3dd68c; }
+    .bad { color: #ff6b6b; }
+    .warn { color: #ffc14d; }
+    pre { background: #1a2332; border: 1px solid #2a3544; padding: 1rem; border-radius: 8px; overflow: auto; white-space: pre-wrap; }
+    .row { margin-bottom: 1rem; }
+    .label { color: #7dd3fc; }
+  </style>
+</head>
+<body>
+  <h1>NozyWallet companion API — live smoke proof</h1>
+  <p class="sub">Probing <span id="base">http://127.0.0.1:3000</span> · <span id="when"></span></p>
+  <div id="out">Running…</div>
+  <script>
+    const base = "http://127.0.0.1:3000";
+    document.getElementById("when").textContent = new Date().toISOString();
+    const paths = ["/health", "/api/wallet/exists", "/api/config"];
+    async function probe(path) {
+      const t0 = performance.now();
+      try {
+        const res = await fetch(base + path);
+        const text = await res.text();
+        let body = text;
+        try { body = JSON.stringify(JSON.parse(text), null, 2); } catch (_) {}
+        return { path, ok: res.ok, status: res.status, ms: Math.round(performance.now() - t0), body };
+      } catch (e) {
+        return { path, ok: false, status: 0, ms: Math.round(performance.now() - t0), body: String(e) };
+      }
+    }
+    (async () => {
+      const results = [];
+      for (const p of paths) results.push(await probe(p));
+      const allOk = results.every(r => r.ok);
+      const html = [
+        `<p class="${allOk ? "ok" : "bad"}">${allOk ? "SMOKE PASSED" : "SMOKE FAILED"} — ${results.filter(r=>r.ok).length}/${results.length} hard probes OK</p>`,
+        ...results.map(r => `
+          <div class="row">
+            <div><span class="${r.ok ? "ok" : "bad"}">${r.ok ? "OK" : "FAIL"}</span>
+            <span class="label">${r.path}</span> · HTTP ${r.status} · ${r.ms}ms</div>
+            <pre>${r.body.replace(/[&<>]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]))}</pre>
+          </div>`)
+      ].join("");
+      document.getElementById("out").innerHTML = html;
+      document.title = allOk ? "PASS — companion API smoke" : "FAIL — companion API smoke";
+    })();
+  </script>
+</body>
+</html>
