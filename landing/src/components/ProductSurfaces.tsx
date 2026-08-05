@@ -7,6 +7,7 @@ import {
   QuestionCircle,
 } from "@solar-icons/react";
 import { PATHS, REPO_RELEASES } from "../lib/links";
+import { DESKTOP_RELEASE } from "../lib/downloads";
 import type { ComponentType, SVGProps } from "react";
 
 type Status = "live" | "preview" | "soon";
@@ -48,15 +49,15 @@ const surfaces: Surface[] = [
     icon: LockPassword,
     title: "Desktop",
     tagline: "Native wallet UI — sync, send, history, settings. No in-app browser.",
-    status: "preview",
-    statusLabel: "Beta",
+    status: "live",
+    statusLabel: "Production",
     bullets: [
-      "Windows Tauri app (wallet-only)",
+      "Windows · macOS · Linux builds",
       "Ironwood readiness + migrate tools",
       "Same disk profile as CLI / companion",
     ],
     primary: { label: "Download desktop", href: "#download" },
-    secondary: { label: "Desktop source", href: PATHS.desktop },
+    secondary: { label: "Release notes", href: DESKTOP_RELEASE },
   },
   {
     icon: ShieldCheck,

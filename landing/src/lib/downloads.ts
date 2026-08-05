@@ -1,25 +1,36 @@
 /**
  * Download URLs for GitHub Releases.
- * CLI assets ship on the latest (non-prerelease) tag via /releases/latest.
- * Desktop beta is a prerelease — pin the tag so links stay stable.
+ * CLI + companion API assets ship on the latest (non-prerelease) CLI tag via /releases/latest.
+ * Desktop ships on its own tag (Hot Lemon Pepper Sprinkles line) — pin the tag so links stay stable.
  */
 export const REPO_RELEASES_LATEST =
   "https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest";
 
-export const DESKTOP_BETA_TAG = "desktop-v1.1.0-beta2-Hot-lemon";
-export const DESKTOP_BETA_RELEASE =
-  `https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/${DESKTOP_BETA_TAG}`;
+/** Current desktop release tag (food name: Hot Lemon Pepper Sprinkles). */
+export const DESKTOP_TAG = "desktop-v1.0.0-beta.6";
+export const DESKTOP_RELEASE =
+  `https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/${DESKTOP_TAG}`;
+
+/** @deprecated Use DESKTOP_TAG — kept for any stray imports. */
+export const DESKTOP_BETA_TAG = DESKTOP_TAG;
+/** @deprecated Use DESKTOP_RELEASE */
+export const DESKTOP_BETA_RELEASE = DESKTOP_RELEASE;
 
 /** Direct asset URL on the current latest (non-prerelease) release. */
 export function releaseAsset(filename: string): string {
   return `${REPO_RELEASES_LATEST}/download/${encodeURIComponent(filename)}`;
 }
 
-export function desktopBetaAsset(filename: string): string {
-  return `https://github.com/LEONINE-DAO/Nozy-wallet/releases/download/${DESKTOP_BETA_TAG}/${encodeURIComponent(filename)}`;
+export function desktopAsset(filename: string): string {
+  return `https://github.com/LEONINE-DAO/Nozy-wallet/releases/download/${DESKTOP_TAG}/${encodeURIComponent(filename)}`;
 }
 
-/** Production CLI assets (attached on every CLI tag). */
+/** @deprecated Use desktopAsset */
+export function desktopBetaAsset(filename: string): string {
+  return desktopAsset(filename);
+}
+
+/** Production CLI + companion API assets (attached on every CLI tag). */
 export const DOWNLOAD_URLS = {
   cliWindows: releaseAsset("nozy-windows.exe"),
   cliLinux: releaseAsset("nozy-linux"),
@@ -32,10 +43,10 @@ export const DOWNLOAD_URLS = {
   hashes: releaseAsset("HASHES.txt"),
 } as const;
 
-/** Desktop beta.2 installer / binaries (prerelease). */
+/** Desktop installer / binaries (Hot Lemon Pepper Sprinkles — desktop-v1.0.0-beta.6). */
 export const DESKTOP_DOWNLOAD_URLS = {
-  windows: desktopBetaAsset("nozy-desktop-windows-x86_64-installer.exe"),
-  linux: desktopBetaAsset("nozy-desktop-linux-x86_64.tar.gz"),
-  macArm: desktopBetaAsset("nozy-desktop-macos-aarch64.tar.gz"),
-  releasePage: DESKTOP_BETA_RELEASE,
+  windows: desktopAsset("nozy-desktop-windows-x86_64-installer.exe"),
+  linux: desktopAsset("nozy-desktop-linux-x86_64.tar.gz"),
+  macArm: desktopAsset("nozy-desktop-macos-aarch64.tar.gz"),
+  releasePage: DESKTOP_RELEASE,
 } as const;
