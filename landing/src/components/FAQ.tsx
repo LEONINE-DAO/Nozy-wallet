@@ -54,7 +54,7 @@ const FAQ = () => {
     {
       question: "Which surface should I use?",
       answer:
-        "CLI Lite for operators and production mainnet. Companion API for localhost extension / local-app bridge. Desktop for a native wallet UI (no browser). Extension for sites and dApps. Mobile when the phone companion ships.",
+        "CLI Lite for operators and production mainnet. Desktop for a native wallet UI (no browser). Companion API for localhost extension / local-app bridge. Extension for sites and dApps. Mobile when the phone companion ships.",
     },
     {
       question: "Do I need my own node?",
