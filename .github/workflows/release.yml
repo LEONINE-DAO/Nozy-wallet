@@ -262,7 +262,7 @@ jobs:
           echo "" >> release-files/HASHES.txt
           find release-files -name "nozy-*.sha256" ! -name "nozywallet-api-*" -exec cat {} \; >> release-files/HASHES.txt || true
           echo "" >> release-files/HASHES.txt
-          echo "## Companion API Binaries (localhost beta)" >> release-files/HASHES.txt
+          echo "## Companion API Binaries (localhost)" >> release-files/HASHES.txt
           echo "" >> release-files/HASHES.txt
           find release-files -name "nozywallet-api-*.sha256" -exec cat {} \; >> release-files/HASHES.txt || true
 
@@ -276,7 +276,7 @@ jobs:
           body: |
             ## NozyWallet ${{ github.ref_name }} Release
 
-            **Production-ready download:** **CLI** (`nozy`). Companion API binaries (`nozywallet-api-*`) are attached as a **localhost companion beta** (default `http://127.0.0.1:3000`) — not hosted GA. See [`browser-extension/COMPANION.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/COMPANION.md) and [`api-server/SEED_POLICY.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/api-server/SEED_POLICY.md). Desktop and extension remain separate tracks — build from source or their own workflows until promoted.
+            **Production-ready download:** **CLI** (`nozy`). Companion API binaries (`nozywallet-api-*`) are also attached for **same-machine** extension / local-app use (default `http://127.0.0.1:3000`) — not a public hosted API. See [`browser-extension/COMPANION.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/COMPANION.md) and [`api-server/SEED_POLICY.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/api-server/SEED_POLICY.md). Desktop and extension remain separate tracks until promoted.
 
             ### CLI one-click links (`/releases/latest/download/...`)
 
@@ -294,14 +294,14 @@ jobs:
             - **macOS Intel:** `nozy-macos-intel`
             - **macOS Apple Silicon (M1/M2/M3):** `nozy-macos-arm`
 
-            ### Companion API (localhost beta)
+            ### Companion API (localhost)
 
             - **Windows:** `nozywallet-api-windows.exe`
             - **Linux:** `nozywallet-api-linux`
             - **macOS Intel:** `nozywallet-api-macos-intel`
             - **macOS Apple Silicon:** `nozywallet-api-macos-arm`
 
-            Default bind: `127.0.0.1:3000`. Binding `0.0.0.0` requires `NOZY_API_KEY`. Do not treat these as a public hosted wallet API.
+            Default bind: `127.0.0.1:3000`. Optional: `NOZY_PRODUCTION=true` and `NOZY_API_KEY` for locked-down local runs. Binding `0.0.0.0` requires `NOZY_API_KEY`. Do not treat these as a public hosted wallet API.
 
             ### Installation
 

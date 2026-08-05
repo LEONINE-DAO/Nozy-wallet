@@ -25,6 +25,10 @@ export const DOWNLOAD_URLS = {
   cliLinux: releaseAsset("nozy-linux"),
   cliMacIntel: releaseAsset("nozy-macos-intel"),
   cliMacArm: releaseAsset("nozy-macos-arm"),
+  apiWindows: releaseAsset("nozywallet-api-windows.exe"),
+  apiLinux: releaseAsset("nozywallet-api-linux"),
+  apiMacIntel: releaseAsset("nozywallet-api-macos-intel"),
+  apiMacArm: releaseAsset("nozywallet-api-macos-arm"),
   hashes: releaseAsset("HASHES.txt"),
 } as const;
 

@@ -29,7 +29,7 @@ Use this for a **structured review** before a major release or store submission.
 **Policy:** [`api-server/SEED_POLICY.md`](api-server/SEED_POLICY.md) — localhost companion may accept mnemonic for create/restore; all-interfaces bind requires `NOZY_API_KEY`.
 
 - [x] **Bind address:** default `127.0.0.1`; `NOZY_BIND_ADDR=0.0.0.0` only for intentional LAN/hosted (`main.rs` refuses without API key).
-- [x] **CORS / auth:** documented in [`api-server/SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md); API key required when binding all interfaces; production CORS via `NOZY_PRODUCTION` + `NOZY_CORS_ORIGINS`.
+- [x] **CORS / auth:** documented in [`api-server/SECURITY_CONFIG.md`](api-server/SECURITY_CONFIG.md); API key required when binding all interfaces **or** when `NOZY_PRODUCTION` is set (even on loopback); production CORS via `NOZY_PRODUCTION` + `NOZY_CORS_ORIGINS`.
 - [x] **Seed on wire (honest):** create/restore accept mnemonic on loopback by design; responses masked; do not claim “never on wire.” Re-verify before each major release (handlers + extension companion path).
 
 ## 5. Desktop (Tauri)

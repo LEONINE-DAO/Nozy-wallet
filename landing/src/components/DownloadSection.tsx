@@ -18,8 +18,8 @@ const DownloadSection = () => {
             Get NozyWallet
           </h2>
           <p className="text-[#a39a88] text-lg leading-relaxed">
-            CLI Lite is mainnet-ready. Extension and desktop are in public beta.
-            Mobile is coming next.
+            CLI Lite and the localhost companion API are production for same-machine use.
+            Extension and desktop are in public beta. Mobile is coming next.
           </p>
         </div>
 
@@ -49,6 +49,41 @@ const DownloadSection = () => {
           </div>
           <a href={DOWNLOAD_URLS.hashes} className="text-xs text-[#c8ccd4] hover:underline">
             Verify with HASHES.txt →
+          </a>
+        </div>
+
+        <div className="nw-panel p-6 mb-5 border-emerald-500/20">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <h3 className="font-display text-xl font-bold text-[#f5f0e6]">Companion API</h3>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-emerald-500/30 text-emerald-300 bg-emerald-500/10">
+              Production · localhost
+            </span>
+          </div>
+          <p className="text-sm text-[#a39a88] mb-5 leading-relaxed max-w-3xl">
+            <code className="text-[#c8ccd4]">nozywallet-api</code> — same wallet core over HTTP for
+            the extension and local apps. Default bind{" "}
+            <code className="text-[#c8ccd4]">http://127.0.0.1:3000</code>. Not a public hosted
+            wallet. Ships on the latest CLI release (e.g. Mango Habanero).
+          </p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+            {[
+              { label: "Windows", href: DOWNLOAD_URLS.apiWindows },
+              { label: "Linux", href: DOWNLOAD_URLS.apiLinux },
+              { label: "macOS ARM", href: DOWNLOAD_URLS.apiMacArm },
+              { label: "macOS Intel", href: DOWNLOAD_URLS.apiMacIntel },
+            ].map((item) => (
+              <a key={item.label} href={item.href} className="nw-btn nw-btn-primary !py-2.5 text-sm">
+                {item.label}
+              </a>
+            ))}
+          </div>
+          <a
+            href={PATHS.apiServer}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs text-[#c8ccd4] hover:underline"
+          >
+            Companion API docs →
           </a>
         </div>
 

@@ -6,8 +6,9 @@
 
 | Binding | Mnemonic create/restore | API key |
 |---------|-------------------------|---------|
-| `127.0.0.1` / `::1` (default) | Allowed | Optional (dev convenience) |
-| `0.0.0.0` / `::` (LAN/hosted) | Allowed only with auth | **Required** - process refuses to start without `NOZY_API_KEY` |
+| `127.0.0.1` / `::1` (default), dev | Allowed | Optional (dev convenience) |
+| `127.0.0.1` / `::1` with `NOZY_PRODUCTION` | Allowed only with auth | **Required** — process refuses to start without `NOZY_API_KEY` |
+| `0.0.0.0` / `::` (LAN/hosted) | Allowed only with auth | **Required** — process refuses to start without `NOZY_API_KEY` |
 
 ## Guarantees
 
@@ -15,10 +16,11 @@
 - Mnemonics must **never** appear in logs, URLs, or error strings.
 - Extension / web clients must use loopback (`http://127.0.0.1:3000`) unless the user intentionally runs a hosted companion with API key + TLS.
 
-## Out of scope for localhost GA
+## Out of scope for public claims
 
-- Claiming "seed never touches HTTP"
+- Claiming “seed never touches HTTP”
 - Public unauthenticated hosted wallet API
+- Formal product **GA** label for companion (engineering may be ready; public GA is a later decision — see [`../GRANT_80K_PRODUCTION_CHECKLIST.md`](../GRANT_80K_PRODUCTION_CHECKLIST.md) §2)
 - Third-party audit (track separately)
 
 ## See also

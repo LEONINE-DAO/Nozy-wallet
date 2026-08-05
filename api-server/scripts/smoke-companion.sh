@@ -4,24 +4,29 @@
 # Usage:
 #   ./api-server/scripts/smoke-companion.sh
 #   BASE_URL=http://127.0.0.1:3000 ./api-server/scripts/smoke-companion.sh
+#   NOZY_API_KEY=secret ./api-server/scripts/smoke-companion.sh
 #
 # Exit codes:
-#   0 - /health succeeded (other probes may soft-fail)
-#   1 - /health failed or unreachable
+#   0 - /health, /api/wallet/exists, and /api/config succeeded
+#   1 - a hard probe failed
 #
-# Soft failures (LWD / optional routes) print WARN and do not fail the script.
+# Soft failures (LWD) print WARN and do not fail the script.
 
 set -u
 BASE_URL="${BASE_URL:-http://127.0.0.1:3000}"
 BASE_URL="${BASE_URL%/}"
 failed_hard=0
+CURL_AUTH=()
+if [[ -n "${NOZY_API_KEY:-}" ]]; then
+  CURL_AUTH=(-H "X-API-Key: ${NOZY_API_KEY}")
+fi
 
 probe() {
   local path="$1"
   local soft="${2:-0}"
   local url="${BASE_URL}${path}"
   local code
-  code=$(curl -sS -o /tmp/nozy-smoke-body.$$ -w "%{http_code}" --connect-timeout 5 --max-time 10 "$url" 2>/tmp/nozy-smoke-err.$$ || true)
+  code=$(curl -sS "${CURL_AUTH[@]}" -o /tmp/nozy-smoke-body.$$ -w "%{http_code}" --connect-timeout 5 --max-time 10 "$url" 2>/tmp/nozy-smoke-err.$$ || true)
   if [[ "$code" =~ ^2 ]]; then
     echo "OK   ${path}  (${code})"
     return 0
@@ -48,15 +53,22 @@ if ! probe "/health" 0; then
   failed_hard=1
 fi
 
+# No chain required — these must work on a fresh boot.
+if ! probe "/api/wallet/exists" 0; then
+  failed_hard=1
+fi
+if ! probe "/api/config" 0; then
+  failed_hard=1
+fi
+
+# Soft: need lightwalletd.
 probe "/api/lwd/info" 1
 probe "/api/lwd/chain-tip" 1
-probe "/api/wallet/exists" 1
-probe "/api/config" 1
 
 echo ""
 if [[ "$failed_hard" -ne 0 ]]; then
-  echo "Smoke FAILED: /health did not succeed."
+  echo "Smoke FAILED: one or more hard probes did not succeed."
   exit 1
 fi
-echo "Smoke PASSED: /health OK (soft probes reported above)."
+echo "Smoke PASSED: hard probes OK (soft LWD probes reported above)."
 exit 0

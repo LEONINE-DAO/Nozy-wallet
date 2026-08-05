@@ -74,6 +74,17 @@ async fn main() -> anyhow::Result<()> {
     // Must run before middleware captures `api_key`.
     let bind_host = std::env::var("NOZY_BIND_ADDR").unwrap_or_else(|_| "127.0.0.1".to_string());
     let bind_is_all_interfaces = bind_host == "0.0.0.0" || bind_host == "::" || bind_host == "[::]";
+
+    // Locked-down local: NOZY_PRODUCTION requires an API key even on loopback so
+    // create/restore/unlock (and all other routes behind api_key_auth) are not open.
+    if is_production && api_key.is_none() {
+        return Err(anyhow::anyhow!(
+            "NOZY_PRODUCTION is set but NOZY_API_KEY is missing. \
+             Set NOZY_API_KEY for create/restore/unlock and other authenticated routes, \
+             or unset NOZY_PRODUCTION for local development."
+        ));
+    }
+
     if bind_is_all_interfaces {
         warn!(
             "Binding to {} — API is reachable on all interfaces. Prefer 127.0.0.1 unless hosted.",

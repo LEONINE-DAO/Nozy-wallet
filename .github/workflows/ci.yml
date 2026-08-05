@@ -211,3 +211,70 @@ jobs:
       - name: Build API Server
         run: cargo build --release --package nozywallet-api
 
+  api-smoke:
+    name: Companion API Smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install protobuf compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+          workspaces: |
+            .
+            zeaking
+            api-server
+
+      - name: Build API Server
+        run: cargo build --release --package nozywallet-api
+
+      - name: Boot companion and smoke
+        run: |
+          set -euo pipefail
+          export HOME="${RUNNER_TEMP}/nozy-api-smoke-home"
+          export XDG_DATA_HOME="${HOME}/.local/share"
+          mkdir -p "$XDG_DATA_HOME"
+          export NOZY_BIND_ADDR=127.0.0.1
+          export NOZY_HTTP_PORT=3000
+          # Dev mode (no NOZY_PRODUCTION) so smoke does not need an API key.
+          unset NOZY_PRODUCTION || true
+          unset NOZY_API_KEY || true
+
+          ./target/release/nozywallet-api >"${RUNNER_TEMP}/nozywallet-api.log" 2>&1 &
+          API_PID=$!
+          cleanup() {
+            kill "$API_PID" 2>/dev/null || true
+            wait "$API_PID" 2>/dev/null || true
+            echo "---- nozywallet-api log ----"
+            cat "${RUNNER_TEMP}/nozywallet-api.log" || true
+          }
+          trap cleanup EXIT
+
+          for i in $(seq 1 60); do
+            if curl -fsS --connect-timeout 1 --max-time 2 "http://127.0.0.1:3000/health" >/dev/null; then
+              echo "API ready after ${i}s"
+              break
+            fi
+            if ! kill -0 "$API_PID" 2>/dev/null; then
+              echo "API process exited early"
+              exit 1
+            fi
+            sleep 1
+            if [[ "$i" -eq 60 ]]; then
+              echo "Timed out waiting for /health"
+              exit 1
+            fi
+          done
+
+          chmod +x api-server/scripts/smoke-companion.sh
+          BASE_URL=http://127.0.0.1:3000 api-server/scripts/smoke-companion.sh
+
