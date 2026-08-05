@@ -1,6 +1,6 @@
 ﻿# NozyWallet
 
-**Orchard-first Zcash wallet** — **CLI production release** today; desktop app, browser extension, and companion API in active development. This repository is a **wallet and companion services**, not a consensus node.
+**Orchard-first Zcash wallet** — **CLI**, **desktop**, and **localhost companion API** production downloads today; browser extension and mobile in active development. This repository is a **wallet and companion services**, not a consensus node.
 
 **Latest release:** [v2.4.2 — Teriyaki Hot (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.2) · See [CHANGELOG.md](CHANGELOG.md) for notes. Prior: [v2.4.1.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1.1) · [v2.4.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1) · [v2.4.0 Ironwood](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0).
 
@@ -15,14 +15,14 @@ NozyWallet helps you create and restore a **shielded Orchard now Ironwood wallet
 | **CLI + core library (Nozy Lite)** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, ops health/TUI, `ZebraClient`, transaction building |
 | **Zeaking** | `zeaking/` | Compact sync via lightwalletd → SQLite (`zeaking::lwd`) |
 | **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`) — **production** for same-machine use (not hosted) |
-| **Desktop** | `desktop-client/` | Tauri app — **in development** (not promoted for production use yet) |
+| **Desktop** | `desktop-client/` | Tauri app — **production** (Hot Lemon Pepper Sprinkles); not a formal GA ceremony |
 | **Browser extension** | `browser-extension/` | MV3 + WASM — **in development**; compact sync via companion API when used |
 | **Mobile (in progress)** | `mobile/` + `zeaking-ffi/` | Expo shell (Phase 1); UniFFI for on-device LWD (Phase 4) |
 | **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
 **Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`zebra-wsl-rpc.ps1`, `start-lightwalletd-wsl.ps1`, `run-nozy-api.ps1`).
 
-**Production-ready today:** the **`nozy` CLI** — productized as **[Nozy Lite](docs/reference/NOZY_LITE.md)** for **uptime & data checks** next to Zebrad (plus sync/send/Ironwood) — and the **localhost companion API** (`nozywallet-api-*`, default `127.0.0.1:3000`) for same-machine extension / local apps. Desktop, extension, and mobile remain in active development. Hosted/public companion is **not** claimed.
+**Production-ready today:** the **`nozy` CLI** — productized as **[Nozy Lite](docs/reference/NOZY_LITE.md)** for **uptime & data checks** next to Zebrad (plus sync/send/Ironwood); the **desktop app** ([Hot Lemon Pepper Sprinkles](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.6)); and the **localhost companion API** (`nozywallet-api-*`, default `127.0.0.1:3000`). Extension and mobile remain in active development. Hosted/public companion is **not** claimed. No formal “GA” marketing label for desktop/API.
 
 **Nozy Lite (operators):** `nozy health`, `nozy status --watch` / `nozy tui`, and `--json` for monitoring — see [`docs/reference/NOZY_LITE.md`](docs/reference/NOZY_LITE.md) and [`docs/reference/NOZY_LITE_BENCHES.md`](docs/reference/NOZY_LITE_BENCHES.md).
 
@@ -106,7 +106,7 @@ Optional: **Secret Network** CLI features (`--features secret-network`) share th
 
 Run with **Zebra** (`zebrad`, typically `:8232`) and **lightwalletd** (typically `:9067`) on the same network. See [Installation](#-installation) below.
 
-**In development:** desktop (Tauri), browser extension, mobile. Contributors can build from source under `desktop-client/` and `browser-extension/`. Release CI attaches **CLI** (`nozy-*`) and **localhost companion API** (`nozywallet-api-*`) for same-machine use; desktop/extension use their own workflows until promoted.
+**In development:** browser extension, mobile. Contributors can build from source under `browser-extension/` and `nozy-mobile/`. Release CI attaches **CLI** (`nozy-*`) and **localhost companion API** (`nozywallet-api-*`); desktop ships under `desktop-v*` tags.
 
 **iOS & Android:** not on App Store / Google Play yet — see **[Enhancement roadmap — mobile](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md)**.
 

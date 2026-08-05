@@ -18,8 +18,8 @@ const DownloadSection = () => {
             Get NozyWallet
           </h2>
           <p className="text-[#a39a88] text-lg leading-relaxed">
-            CLI Lite and the localhost companion API are production for same-machine use.
-            Extension and desktop are in public beta. Mobile is coming next.
+            CLI Lite, desktop, and the localhost companion API are production for everyday use.
+            Extension is in public beta. Mobile is coming next.
           </p>
         </div>
 
@@ -87,16 +87,16 @@ const DownloadSection = () => {
           </a>
         </div>
 
-        <div className="nw-panel p-6 mb-5">
+        <div className="nw-panel p-6 mb-5 border-emerald-500/20">
           <div className="flex flex-wrap items-center gap-3 mb-3">
             <h3 className="font-display text-xl font-bold text-[#f5f0e6]">Desktop</h3>
-            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-[#c8ccd4]/30 text-[#c8ccd4] bg-[#c8ccd4]/10">
-              Beta · wallet-only
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-emerald-500/30 text-emerald-300 bg-emerald-500/10">
+              Production · Hot Lemon Pepper Sprinkles
             </span>
           </div>
           <p className="text-sm text-[#a39a88] mb-5 leading-relaxed max-w-3xl">
             Native sync, send, history, and settings. No in-app browser — use the extension for
-            sites and dApps. Prefer CLI Lite for production mainnet today.
+            sites and dApps. Same Orchard / Ironwood core as CLI.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mb-4">
             {[
@@ -104,7 +104,7 @@ const DownloadSection = () => {
               { label: "macOS ARM", href: DESKTOP_DOWNLOAD_URLS.macArm },
               { label: "Linux", href: DESKTOP_DOWNLOAD_URLS.linux },
             ].map((item) => (
-              <a key={item.label} href={item.href} className="nw-btn nw-btn-ghost !py-2.5 text-sm">
+              <a key={item.label} href={item.href} className="nw-btn nw-btn-primary !py-2.5 text-sm">
                 {item.label}
               </a>
             ))}
@@ -124,7 +124,7 @@ const DownloadSection = () => {
             <div className="flex flex-wrap items-center gap-3 mb-3">
               <h3 className="font-display text-xl font-bold text-[#f5f0e6]">Extension</h3>
               <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-[#c8ccd4]/30 text-[#c8ccd4] bg-[#c8ccd4]/10">
-                Beta · 0.1.7
+                Beta · 0.1.10
               </span>
             </div>
             <p className="text-sm text-[#a39a88] mb-5 leading-relaxed">

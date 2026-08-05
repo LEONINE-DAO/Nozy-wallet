@@ -3,9 +3,9 @@ export const MANIFESTO = `${BOOK}nozy/manifesto.html`;
 export const REPO = "https://github.com/LEONINE-DAO/Nozy-wallet";
 export const REPO_RELEASES = `${REPO}/releases/latest`;
 
-/** Public beta extension zip (Sweet chili). */
+/** Public beta extension zip (Sweet Chili). */
 export const EXTENSION_RELEASE =
-  `${REPO}/releases/tag/extension-v0.1.7`;
+  `${REPO}/releases/tag/extension-v0.1.10`;
 
 export const IRONWOOD_ZODL = "https://ironwood.zodl.com/";
 export const IRONWOOD_CIPHERSCAN = "https://cipherscan.app/ironwood";

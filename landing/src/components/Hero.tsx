@@ -37,12 +37,12 @@ const Hero = () => {
             Download CLI Lite
           </a>
           <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.7"
+            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.10"
             target="_blank"
             rel="noopener noreferrer"
             className="nw-btn nw-btn-ghost"
           >
-            Get extension beta
+            Get extension
           </a>
         </div>
 

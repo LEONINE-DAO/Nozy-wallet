@@ -54,7 +54,7 @@ Mark each row **Done** only when that section’s Definition of done is met.
 | 0 | Shared core + CI | ☐ Partial | fmt/test/release build/CI strong; Dependabot #179–#182 hygiene progress; cargo audit hard-zero still open |
 | 1 | CLI (`nozy`) | ☐ Partial | Commands + mainnet evidence + dynamic-fee TXID; ZNS `--to` name resolve; grant-window release polish open |
 | 2 | Companion API (`api-server`) | ☐ Partial | Engineering: seed policy, CI smoke, `NOZY_PRODUCTION`⇒API key, release assets. **Do not public-claim GA yet** (see §2 note). Chain parity sign-off open; hosted live open |
-| 3 | Desktop (Tauri) | ☐ Partial | Beta until Ironwood GA; Network privacy Settings shipped (PR #178); code signing + path allowlist before GA |
+| 3 | Desktop (Tauri) | ☐ Partial | Site/release: production Hot Lemon Pepper Sprinkles (`desktop-v1.0.0-beta.6`); **no public GA label**. Balance/history QA + code signing still open |
 | 4 | Browser extension (MV3) | ☐ Partial | Release zip **extension-v0.1.8** shipped; store icons/screenshots/submit still open |
 | 5 | Mobile (Expo) | ☐ Partial | Production profile + Sell mode; EAS device smoke + store still open — Android-first |
 | 6 | Security & privacy | ☐ Partial | Internal SECURITY_REVIEW signed; contact **Nozywallet.support@leoninedao.org**; Nym opt-in + dep cleanup; **no** third-party audit |
@@ -165,7 +165,15 @@ Until then: keep shipping binaries + engineering hardening; public stance stays 
 
 ## 3. Desktop (Tauri)
 
-**Definition of done:** Windows users can install a signed (or clearly beta-unsigned) build, sync, send, and manage settings without the CLI.
+**Definition of done:** Windows users can install a signed (or clearly unsigned-with-warning) build, sync, send, and manage settings without the CLI.
+
+**Internal — when to call desktop GA (do not put in release/forum copy until you decide):**
+
+1. Balance + history QA vs CLI on same wallet data signed off  
+2. Code signing / SmartScreen story acceptable  
+3. You intentionally use a formal GA tag/name (today: food name + production claim without “GA”)
+
+Until then: ship **Hot Lemon Pepper Sprinkles** as production desktop; keep tag `desktop-v1.0.0-beta.6` as version history.
 
 ### Product
 - [x] Create / restore / unlock / lock — described in release notes / app surface
@@ -178,13 +186,13 @@ Until then: keep shipping binaries + engineering hardening; public stance stays 
 
 ### Engineering / release
 - [x] IPC / capability allowlist reviewed — SECURITY_REVIEW §5 (2026-07-20); residual path args documented
-- [x] Beta clearly labeled (GA deferred until Ironwood) — [`DESKTOP_RELEASE.md`](desktop-client/DESKTOP_RELEASE.md) / [`DESKTOP_BETA_2_RELEASE.md`](desktop-client/DESKTOP_BETA_2_RELEASE.md)
+- [x] Public stance: production download under Hot Lemon Pepper Sprinkles; formal **GA** deferred (landing + release notes)
 - [x] Updater channel policy — **manual download only** (no updater plugin)
 - [x] Release workflow exists — [`.github/workflows/desktop-release.yml`](.github/workflows/desktop-release.yml)
 - [x] Release notes: not a third-party audit (honest)
-- [x] GA vs beta gate clear
+- [x] GA vs production claim gate clear (internal note above)
 
-**Evidence:** desktop release docs + workflow
+**Evidence:** desktop release docs + workflow + landing Download / ProductSurfaces
 
 ---
 

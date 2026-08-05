@@ -214,7 +214,7 @@ const Mobile = () => {
           <h2 className="mobile-section-title">Mobile beta coming soon</h2>
           <p className="mobile-section-lede">
             Store listing prep is underway — not on App Store or Google Play yet.
-            Until then, use CLI Lite, Desktop beta, or the Sweet chili browser extension.
+            Until then, use CLI Lite, Desktop, or the Sweet Chili browser extension.
             Privacy policy for store submission is already published.
           </p>
           <div className="mobile-store-row">
