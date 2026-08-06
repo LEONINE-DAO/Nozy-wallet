@@ -13,5 +13,5 @@ name = "zeaking_ffi"
 [dependencies]
 zeaking = { path = "../zeaking", features = ["lightwalletd"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-thiserror = "1.0"
+thiserror = "2.0"
 uniffi = { version = "0.28", features = ["tokio"] }
