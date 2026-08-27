@@ -107,7 +107,9 @@ pub async fn build_ironwood_vote_notes_at_snapshot(
     let notes = load_wallet_notes()?;
     let eligible: Vec<&SerializableOrchardNote> = notes
         .iter()
-        .filter(|n| !n.spent && n.pool == ShieldedPool::Ironwood && n.block_height <= snapshot_height)
+        .filter(|n| {
+            !n.spent && n.pool == ShieldedPool::Ironwood && n.block_height <= snapshot_height
+        })
         .collect();
 
     if eligible.is_empty() {
