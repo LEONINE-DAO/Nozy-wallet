@@ -18,6 +18,7 @@ mod lwd_handlers;
 mod middleware;
 mod profile_handlers;
 mod sapling_handlers;
+mod vote_handlers;
 mod zns_handlers;
 
 #[tokio::main]
@@ -134,6 +135,23 @@ async fn main() -> anyhow::Result<()> {
             "/api/sapling/shield",
             post(sapling_handlers::shield_sapling),
         )
+        .route("/api/vote/status", get(vote_handlers::vote_status))
+        .route("/api/vote/active", get(vote_handlers::vote_active))
+        .route(
+            "/api/vote/export-notes",
+            post(vote_handlers::vote_export_notes),
+        )
+        .route("/api/vote/prepare", post(vote_handlers::vote_prepare))
+        .route("/api/vote/delegate", post(vote_handlers::vote_delegate))
+        .route(
+            "/api/vote/sign-delegation",
+            post(vote_handlers::vote_sign_delegation),
+        )
+        .route(
+            "/api/vote/delegate-finish",
+            post(vote_handlers::vote_delegate_finish),
+        )
+        .route("/api/vote/cast", post(vote_handlers::vote_cast))
         .route("/api/zns/resolve", post(zns_handlers::resolve_zns_name))
         .route("/api/zns/link", get(zns_handlers::get_zns_link))
         .route("/api/zns/link", post(zns_handlers::link_zns_name))

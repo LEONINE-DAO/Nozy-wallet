@@ -348,6 +348,89 @@ export interface SignMessageResponse {
   scheme?: string;
 }
 
+export interface VoteStatusResponse {
+  helper_version: string;
+  env: string;
+  data_dir: string;
+  sdk_enabled: boolean;
+  static_source: string;
+  snapshot_utc: string;
+  vote_start_utc: string;
+  vote_end_utc: string;
+  phase: string;
+  phase_message: string;
+  forum_url: string;
+  notes_exported: boolean;
+  notes_count: number | null;
+  hotkey_ready: boolean;
+  signing_request_present: boolean;
+  sig_present: boolean;
+}
+
+export interface VoteActiveOption {
+  /** May be omitted as 0 in Valar protobuf JSON; treat missing as 0. */
+  index?: number;
+  label: string;
+  description?: string | null;
+}
+
+export interface VoteActiveProposal {
+  id: number;
+  title: string;
+  description?: string | null;
+  options: VoteActiveOption[];
+  zip_number?: string | null;
+}
+
+export interface VoteActiveRound {
+  vote_round_id: string;
+  snapshot_height: number;
+  snapshot_blockhash?: string | null;
+  vote_end_time: number;
+  nullifier_imt_root: string;
+  nc_root: string;
+  status: number;
+  ea_pk: string;
+  title?: string | null;
+  description?: string | null;
+  proposals: VoteActiveProposal[];
+}
+
+export interface VoteExportNotesResponse {
+  notes_path: string;
+  note_count: number;
+  total_value_zat: number;
+  message: string;
+}
+
+export interface VotePrepareResult {
+  round_id: string;
+  message: string;
+  stdout: string;
+}
+
+export interface VoteDelegatePrepareResult {
+  message: string;
+  stdout: string;
+}
+
+export interface VoteSignResponse {
+  round_id: string;
+  sig_path: string;
+  message: string;
+}
+
+export interface VoteDelegateFinishResult {
+  tx_hash: string;
+  confirmed: boolean;
+  stdout: string;
+}
+
+export interface VoteCastResult {
+  proposal_count: number;
+  stdout: string;
+}
+
 export interface AddressBookEntry {
   name: string;
   address: string;

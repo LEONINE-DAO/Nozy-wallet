@@ -4,13 +4,14 @@ import { ProfileDropdown } from "./ProfileDropdown";
 import { Tooltip } from "./Tooltip";
 import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
 import { useWalletStore } from "../store/walletStore";
-import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
+import { dappBrowserEnabled, webWatchOnlyEnabled, nu7VoteEnabled } from "../lib/featureFlags";
 import { cn } from "../lib/cn";
 
 export type TabId =
   | "home"
   | "history"
   | "ironwood"
+  | "vote"
   | "settings"
   | "send"
   | "browser"
@@ -89,6 +90,19 @@ export function Header({ activeTab, onTabChange, showLabels }: HeaderProps) {
                 />
               </div>
             </Tooltip>
+            {nu7VoteEnabled && (
+              <Tooltip content="NU7 coinholder vote (Valar)" placement="bottom">
+                <div>
+                  <HeaderItem
+                    icon={<Shield weight="Bold" />}
+                    label="Vote"
+                    showLabel
+                    active={activeTab === "vote"}
+                    onClick={() => onTabChange("vote")}
+                  />
+                </div>
+              </Tooltip>
+            )}
             {dappBrowserEnabled && (
               <Tooltip content="Browse Zcash dApps" placement="bottom">
                 <div>
