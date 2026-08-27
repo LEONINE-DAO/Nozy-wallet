@@ -3635,6 +3635,8 @@ dependencies = [
 name = "nozywallet-desktop"
 version = "1.0.0-beta.6"
 dependencies = [
+ "base64 0.22.1",
+ "directories",
  "hex",
  "indexmap 2.14.0",
  "nozy",
