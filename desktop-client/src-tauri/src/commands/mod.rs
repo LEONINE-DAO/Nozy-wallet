@@ -15,6 +15,7 @@ pub mod keystone;
 pub mod status;
 pub mod sync;
 pub mod transaction;
+pub mod vote;
 pub mod wallet;
 
 pub use address::*;
@@ -34,4 +35,5 @@ pub use keystone::*;
 pub use status::*;
 pub use sync::*;
 pub use transaction::*;
+pub use vote::*;
 pub use wallet::*;

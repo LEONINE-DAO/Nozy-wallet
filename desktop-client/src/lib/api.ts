@@ -22,6 +22,14 @@ import {
   VerifyPasswordRequest as _VerifyPasswordRequest,
   SignMessageRequest,
   SignMessageResponse,
+  VoteStatusResponse,
+  VoteActiveRound,
+  VoteExportNotesResponse,
+  VotePrepareResult,
+  VoteDelegatePrepareResult,
+  VoteSignResponse,
+  VoteDelegateFinishResult,
+  VoteCastResult,
   AddressBookEntry,
   AddAddressBookRequest,
   BackupPathRequest,
@@ -558,5 +566,83 @@ export const walletApi = {
   listBackups: async (): Promise<{ data: string[] }> => {
     const result = await invoke<string[]>("list_backups");
     return { data: result ?? [] };
+  },
+
+  voteStatus: async (env = "prod"): Promise<{ data: VoteStatusResponse }> => {
+    const result = await invoke<VoteStatusResponse>("vote_status", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteActive: async (env = "prod"): Promise<{ data: VoteActiveRound }> => {
+    const result = await invoke<VoteActiveRound>("vote_active", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteExportNotes: async (
+    password?: string
+  ): Promise<{ data: VoteExportNotesResponse }> => {
+    const result = await invoke<VoteExportNotesResponse>("vote_export_notes", {
+      password: password ?? null,
+    });
+    return { data: result };
+  },
+
+  votePrepare: async (env = "prod"): Promise<{ data: VotePrepareResult }> => {
+    const result = await invoke<VotePrepareResult>("vote_prepare", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteDelegate: async (
+    env = "prod"
+  ): Promise<{ data: VoteDelegatePrepareResult }> => {
+    const result = await invoke<VoteDelegatePrepareResult>("vote_delegate", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteSignDelegation: async (
+    password?: string,
+    env = "prod"
+  ): Promise<{ data: VoteSignResponse }> => {
+    const result = await invoke<VoteSignResponse>("vote_sign_delegation", {
+      request: { password: password ?? null, env },
+    });
+    return { data: result };
+  },
+
+  voteDelegateFinish: async (
+    env = "prod",
+    wait = true
+  ): Promise<{ data: VoteDelegateFinishResult }> => {
+    const result = await invoke<VoteDelegateFinishResult>("vote_delegate_finish", {
+      request: { env, wait },
+    });
+    return { data: result };
+  },
+
+  voteCast: async (args: {
+    env?: string;
+    choices: Record<string, number>;
+    delegation_tx?: string;
+    single_share?: boolean;
+    wait?: boolean;
+  }): Promise<{ data: VoteCastResult }> => {
+    const result = await invoke<VoteCastResult>("vote_cast", {
+      request: {
+        env: args.env ?? "prod",
+        choices: args.choices,
+        delegation_tx: args.delegation_tx ?? null,
+        single_share: args.single_share ?? false,
+        wait: args.wait ?? true,
+      },
+    });
+    return { data: result };
   },
 };

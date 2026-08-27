@@ -18,6 +18,10 @@ indexmap = { version = "2.13.1", features = ["std"] }
 # NozyWallet core - use path to parent directory
 nozy = { path = "../../" }
 zeaking = { path = "../../zeaking", features = ["lightwalletd"] }
+# Vote SDK (`zcash_voting`) cannot link into this binary: rusqlite 0.37 vs zeaking 0.39
+# both `links = "sqlite3"`. Desktop shells out to the `nozy-vote` helper binary instead.
+directories = "5"
+base64 = "0.22"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }

@@ -201,6 +201,27 @@ pub enum Commands {
     )]
     NotesDoctor,
 
+    #[command(
+        about = "Export unspent Ironwood notes for nozy-vote (NU7 coinholder voting)",
+        long_about = "Writes nozy-vote-notes-v1 JSON for tools/nozy-vote import-notes.\n\
+Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.md and issue #273."
+    )]
+    VoteExportNotes {
+        #[arg(long, help = "Output JSON path (default: vote-notes.json in cwd)")]
+        out: Option<String>,
+    },
+
+    /// Sign a nozy-vote delegation PCZT sighash (keeps seed in `nozy`, not the helper).
+    VoteSignDelegation {
+        #[arg(long, help = "Path to signing-request-*.json from nozy-vote delegate")]
+        request: String,
+        #[arg(
+            long,
+            help = "Output signature JSON path (default: delegation-sig.json)"
+        )]
+        out: Option<String>,
+    },
+
     #[command(about = "Manage local wallet profiles")]
     Profile {
         #[command(subcommand)]
@@ -1432,6 +1453,89 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             println!(
                 "\n   If balance looks low after a split, rebuild from the split height:\n      nozy sync --start-height <split_height> --to-tip"
             );
+        }
+
+        Commands::VoteExportNotes { out } => {
+            use std::path::PathBuf;
+
+            let (wallet, _storage) = load_wallet().await?;
+            let network = if cli.testnet {
+                NetworkType::Test
+            } else {
+                NetworkType::Main
+            };
+            let out_path = PathBuf::from(out.unwrap_or_else(|| "vote-notes.json".into()));
+            use nozy::{
+                export_ironwood_vote_notes_at_snapshot, load_config, ZebraClient,
+                NU7_SNAPSHOT_HEIGHT_MAINNET,
+            };
+            let config = load_config();
+            let zebra = ZebraClient::from_config(&config);
+            let snapshot = NU7_SNAPSHOT_HEIGHT_MAINNET;
+            println!(
+                "Rebuilding Ironwood witnesses to snapshot height {snapshot} (may take several minutes)…"
+            );
+            match export_ironwood_vote_notes_at_snapshot(
+                &wallet, network, &zebra, snapshot, &out_path,
+            )
+            .await
+            {
+                Ok(file) => {
+                    println!(
+                        "✅ Exported {} Ironwood note(s) at snapshot {snapshot} → {}",
+                        file.notes.len(),
+                        out_path.display()
+                    );
+                    println!("   Next:");
+                    println!("     cd tools\\nozy-vote");
+                    println!("     cargo run --release -- hotkey-init");
+                    println!("     cargo run --release -- --env prod init-round");
+                    println!(
+                        "     cargo run --release -- --env prod import-notes --file {}",
+                        out_path.display()
+                    );
+                    println!(
+                        "     cargo run --release -- --env prod delegate --notes-file {}",
+                        out_path.display()
+                    );
+                    println!("     nozy vote-sign-delegation --request <signing-request-…json>");
+                    println!(
+                        "     cargo run --release -- --env prod delegate-finish --notes-file {} --sig <sig.json>",
+                        out_path.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("❌ vote-export-notes failed: {e}");
+                    return Ok(());
+                }
+            }
+        }
+
+        Commands::VoteSignDelegation { request, out } => {
+            use nozy::sign_delegation_request;
+            use std::path::PathBuf;
+
+            let (wallet, _storage) = load_wallet().await?;
+            let req_path = PathBuf::from(request);
+            let out_path = PathBuf::from(out.unwrap_or_else(|| "delegation-sig.json".into()));
+            match sign_delegation_request(&wallet, &req_path, &out_path) {
+                Ok(sig) => {
+                    println!(
+                        "✅ Delegation SpendAuth signature → {} (round {})",
+                        out_path.display(),
+                        sig.round_id
+                    );
+                    println!("   Next:");
+                    println!(
+                        "     cd tools\\nozy-vote && cargo run --release -- --env prod delegate-finish --notes-file vote-notes.json --sig {}",
+                        out_path.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("❌ vote-sign-delegation failed: {e}");
+                    return Ok(());
+                }
+            }
         }
 
         Commands::Profile { command } => match command {

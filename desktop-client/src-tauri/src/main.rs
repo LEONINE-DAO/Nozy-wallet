@@ -99,6 +99,14 @@ fn main() {
             restore_from_backup,
             list_backups,
             sign_message,
+            vote_status,
+            vote_active,
+            vote_export_notes,
+            vote_prepare,
+            vote_delegate,
+            vote_sign_delegation,
+            vote_delegate_finish,
+            vote_cast,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

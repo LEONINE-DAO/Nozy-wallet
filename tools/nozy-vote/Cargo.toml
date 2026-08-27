@@ -1,0 +1,37 @@
+# Isolated helper — excluded from the root Nozy workspace.
+# See README.md and https://github.com/LEONINE-DAO/Nozy-wallet/issues/273
+[package]
+name = "nozy-vote"
+version = "0.1.0"
+edition = "2021"
+publish = false
+description = "NozyWallet NU7 coinholder vote helper (Valar Shielded Vote)"
+license = "MIT"
+repository = "https://github.com/LEONINE-DAO/Nozy-wallet"
+rust-version = "1.88"
+
+[lib]
+name = "nozy_vote"
+path = "src/lib.rs"
+
+[[bin]]
+name = "nozy-vote"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+base64 = "0.22"
+clap = { version = "4", features = ["derive", "env"] }
+hex = "0.4"
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls", "json"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+directories = "5"
+tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+rand = "0.8"
+
+# Required (not optional): optional+cfg was building a binary that still reported sdk disabled.
+zcash_voting = "3.0.0-rc.3"

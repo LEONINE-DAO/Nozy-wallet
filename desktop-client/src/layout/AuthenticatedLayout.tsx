@@ -6,6 +6,7 @@ import { SendPage } from "../pages/Send";
 import { SettingsPage } from "../pages/Settings";
 import { HistoryPage } from "../pages/History";
 import { IronwoodPage } from "../pages/Ironwood";
+import { VotePage } from "../pages/Vote";
 import { BrowserPage } from "../pages/Browser";
 import { ContactsPage } from "../pages/Contacts";
 import { WebWalletWatchOnlyPage } from "../pages/WebWalletWatchOnly";
@@ -21,7 +22,7 @@ import { Refresh, CloseCircle, Download } from "@solar-icons/react";
 import { useWalletAutoSync } from "../hooks/useWalletAutoSync";
 import { balanceFromResponse } from "../lib/syncHelpers";
 import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
-import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
+import { dappBrowserEnabled, webWatchOnlyEnabled, nu7VoteEnabled } from "../lib/featureFlags";
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
@@ -220,6 +221,19 @@ export function AuthenticatedLayout() {
                 {activeTab === "home" && <HomePage onNavigate={setActiveTab} />}
                 {activeTab === "history" && <HistoryPage />}
                 {activeTab === "ironwood" && <IronwoodPage />}
+                {activeTab === "vote" &&
+                  (nu7VoteEnabled ? (
+                    <VotePage onNavigate={setActiveTab} />
+                  ) : (
+                    <div className="max-w-2xl mx-auto py-8">
+                      <h2 className="text-2xl font-bold text-gray-100 mb-2">
+                        Vote tab disabled
+                      </h2>
+                      <p className="text-sm text-gray-400">
+                        Set `VITE_ENABLE_NU7_VOTE` unset or not `false` to enable.
+                      </p>
+                    </div>
+                  ))}
                 {activeTab === "send" && <SendPage />}
                 {activeTab === "settings" && <SettingsPage />}
                 {activeTab === "contacts" && <ContactsPage />}
