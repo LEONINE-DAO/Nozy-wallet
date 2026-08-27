@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@solar-icons/react": "^1.1.1",
-    "@tailwindcss/postcss": "^4.1.18",
+    "@tailwindcss/postcss": "^4.3.3",
     "@tanstack/react-query": "^5.101.0",
     "@tauri-apps/cli": "2.11.1",
     "@types/react": "^18.2.64",
