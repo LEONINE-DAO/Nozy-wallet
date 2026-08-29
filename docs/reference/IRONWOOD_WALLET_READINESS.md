@@ -293,7 +293,7 @@ Implementation evidence:
 
 Conclusion: a `0 ZEC` result after an incremental no-new-note scan should be treated as a cache/reporting bug if `ironwood status`, `preflight`, or a saved schedule still proves an older unspent note exists. The targeted recovery is to rescan from the note's block height and then rerun Ironwood readiness checks.
 
-**Half balance after ZIP 318 splits (twin notes):** see [`ZIP318_TWIN_BALANCE_RECOVERY.md`](ZIP318_TWIN_BALANCE_RECOVERY.md).
+**Half balance after ZIP 318 splits (twin notes):** see [`ZIP318_TWIN_BALANCE_RECOVERY.md`](ZIP318_TWIN_BALANCE_RECOVERY.md) (steps) and [`ZIP318_TWIN_BALANCE_CASE_BREAKDOWN.md`](ZIP318_TWIN_BALANCE_CASE_BREAKDOWN.md) (postmortem).
 
 ---
 

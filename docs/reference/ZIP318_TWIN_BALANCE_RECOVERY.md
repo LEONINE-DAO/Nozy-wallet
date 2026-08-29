@@ -66,6 +66,8 @@ Desktop and the companion API sync in **bounded height chunks**. This PR hardens
 
 Operators should still run **`nozy sync --to-tip`** after Ironwood splits or if `notes-doctor` warns about equal-value groups.
 
+**Full case write-up:** [`ZIP318_TWIN_BALANCE_CASE_BREAKDOWN.md`](ZIP318_TWIN_BALANCE_CASE_BREAKDOWN.md)
+
 ---
 
 **See also:** [`MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md`](MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md) · [`IRONWOOD_WALLET_READINESS.md`](IRONWOOD_WALLET_READINESS.md)
