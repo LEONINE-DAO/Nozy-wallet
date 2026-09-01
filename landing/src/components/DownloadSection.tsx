@@ -19,8 +19,35 @@ const DownloadSection = () => {
           </h2>
           <p className="text-[#a39a88] text-lg leading-relaxed">
             CLI Lite, desktop, and the localhost companion API are production for everyday use.
-            Extension is in public beta. Mobile is coming next.
+            Extension is in public beta. Mobile is coming next. Ironwood (NU6.3) is live — migrate
+            residual Orchard with ZIP 318 on CLI or desktop.
           </p>
+        </div>
+
+        <div className="nw-panel p-6 mb-5 border-amber-500/25">
+          <div className="flex flex-wrap items-center gap-3 mb-3">
+            <h3 className="font-display text-xl font-bold text-[#f5f0e6]">Finish Ironwood migration</h3>
+            <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-amber-500/30 text-amber-200 bg-amber-500/10">
+              Orchard sealed
+            </span>
+          </div>
+          <p className="text-sm text-[#a39a88] mb-5 leading-relaxed max-w-3xl">
+            Orchard no longer accepts inflows. If you still hold Orchard notes, run Plan → Split →
+            Migrate → Broadcast (ZIP 318). Prefer a local Zebrad for broadcast.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <a href={PATHS.ironwoodPage} className="nw-btn nw-btn-primary !py-2.5 text-sm">
+              Migration dashboard
+            </a>
+            <a
+              href={PATHS.ironwoodReadiness}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="nw-btn nw-btn-ghost !py-2.5 text-sm"
+            >
+              Readiness notes →
+            </a>
+          </div>
         </div>
 
         <div className="nw-panel p-6 mb-5 border-[#c8ccd4]/25">
@@ -128,8 +155,8 @@ const DownloadSection = () => {
               </span>
             </div>
             <p className="text-sm text-[#a39a88] mb-5 leading-relaxed">
-              Chrome, Brave, Edge — load unpacked. Optional local companion for sync. Store listing
-              in progress.
+              Chrome, Brave, Edge — install from the Chrome Web Store. Optional local companion for
+              sync.
             </p>
             <a
               href={PATHS.extensionRelease}
@@ -137,7 +164,7 @@ const DownloadSection = () => {
               rel="noopener noreferrer"
               className="nw-btn nw-btn-primary w-full !py-2.5 text-sm mb-2"
             >
-              Download extension zip
+              Get on Chrome Web Store
             </a>
             <a
               href={PATHS.extension}
