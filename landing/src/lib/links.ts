@@ -3,7 +3,11 @@ export const MANIFESTO = `${BOOK}nozy/manifesto.html`;
 export const REPO = "https://github.com/LEONINE-DAO/Nozy-wallet";
 export const REPO_RELEASES = `${REPO}/releases/latest`;
 
-/** Public beta extension zip (Sweet Chili). */
+/** Chrome Web Store listing (NozyWallet). */
+export const EXTENSION_CHROME_STORE =
+  "https://chromewebstore.google.com/detail/nozywallet/pnlmnkallkmelflckjkmohemibfahoce";
+
+/** Optional GitHub zip for load-unpacked / contributor builds. */
 export const EXTENSION_RELEASE =
   `${REPO}/releases/tag/extension-v0.1.10`;
 
@@ -22,7 +26,9 @@ export const PATHS = {
   desktop: `${REPO}/tree/master/desktop-client`,
   extension: `${REPO}/tree/master/browser-extension`,
   extensionCompanion: `${REPO}/blob/master/browser-extension/COMPANION.md`,
-  extensionRelease: EXTENSION_RELEASE,
+  /** Primary install — Chrome Web Store */
+  extensionRelease: EXTENSION_CHROME_STORE,
+  extensionZip: EXTENSION_RELEASE,
   mobile: `${REPO}/tree/master/nozy-mobile`,
   mobilePage: "https://leonine-dao.github.io/Nozy-wallet/mobile",
   mobileReadme: `${REPO}/blob/master/nozy-mobile/README.md`,

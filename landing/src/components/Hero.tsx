@@ -1,4 +1,5 @@
 import BrandLogo from "./BrandLogo";
+import { PATHS } from "../lib/links";
 
 const Hero = () => {
   return (
@@ -28,16 +29,20 @@ const Hero = () => {
         </h1>
 
         <p className="max-w-xl text-lg sm:text-xl text-[#a39a88] leading-relaxed mb-10 animate-fade-in-up">
-          Self-custodial Orchard wallet — private by default. CLI for operators,
-          desktop for day-to-day, extension for the open web.
+          Self-custodial shielded Zcash — Orchard and Ironwood. CLI for operators,
+          desktop for day-to-day, extension for the open web. Still holding Orchard?
+          Finish ZIP 318 migration.
         </p>
 
         <div className="flex flex-col sm:flex-row flex-wrap gap-3 animate-fade-in-up">
           <a href="#download" className="nw-btn nw-btn-primary">
             Download CLI Lite
           </a>
+          <a href={PATHS.ironwoodPage} className="nw-btn nw-btn-ghost">
+            Finish Ironwood migration
+          </a>
           <a
-            href="https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.10"
+            href={PATHS.extensionRelease}
             target="_blank"
             rel="noopener noreferrer"
             className="nw-btn nw-btn-ghost"
