@@ -36,4 +36,5 @@
 /nozy-mobile/android/.gradle/
 /nozy-mobile/android/app/build/
 /nozy-mobile/android/build/
+/nozy-mobile/modules/nozy-wallet/android/build/
 /nozy-mobile/.expo/
