@@ -59,7 +59,7 @@ export function NetworkPrivacySettings({ onBack }: { onBack: () => void }) {
     <StubSettings
       onBack={onBack}
       title="Network privacy"
-      body="Configure privacy network preferences when available."
+      body="Prefer a local Zebrad. If you must use a remote node for Ironwood: prove shielded ZEC at https://zcash.nym.com for a free NymVPN month. Fast mode for sync; Mixnet mode and a new exit for send/broadcast. Do not sync and migrate-broadcast through the same hosted lightwalletd a minute later. In-app Nym is desktop/CLI — this screen is guidance only."
     />
   );
 }

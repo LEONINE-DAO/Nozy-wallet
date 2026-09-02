@@ -1,4 +1,6 @@
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import { CompositeScreenProps } from "@react-navigation/native";
+import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
+import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -11,6 +13,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
+import { PageHeader } from "../components/PageHeader";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
 import {
@@ -18,9 +21,12 @@ import {
   type ZnsRegistration,
 } from "../lib/zns";
 import { colors, fontSize, spacing } from "../theme";
-import type { RootStackParamList } from "../types";
+import type { MainTabParamList, RootStackParamList } from "../types";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Send">;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<MainTabParamList, "Send">,
+  NativeStackScreenProps<RootStackParamList>
+>;
 
 async function resolveRecipientOrThrow(raw: string): Promise<string> {
   const result = await resolveSendRecipient(raw, async (name, network) => {
@@ -51,6 +57,10 @@ export function SendScreen({ navigation, route }: Props) {
       setRecipient(route.params.recipient);
     }
   }, [route.params?.recipient]);
+
+  function openStackScreen(name: "AddressBook" | "Keystone") {
+    navigation.getParent()?.navigate(name);
+  }
 
   async function handleSend() {
     setError("");
@@ -89,16 +99,16 @@ export function SendScreen({ navigation, route }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={["bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <ScrollView contentContainerStyle={styles.container}>
-          <Text style={styles.subtitle}>
-            Send shielded ZEC to a u1… address or Zcash name (e.g. alice). Transparent addresses are
-            not supported.
-          </Text>
+          <PageHeader
+            title="Send"
+            description="Shielded ZEC to a u1… address or Zcash name."
+          />
 
           <Input
             label="Recipient"
@@ -108,13 +118,14 @@ export function SendScreen({ navigation, route }: Props) {
               setResolvedHint("");
             }}
             autoCapitalize="none"
-            placeholder="u1… or Zcash name (e.g. alice)"
+            placeholder="u1… or zoie"
           />
           {resolvedHint ? <Text style={styles.ok}>{resolvedHint}</Text> : null}
           <Button
             label="Pick from address book"
             variant="ghost"
-            onPress={() => navigation.navigate("AddressBook")}
+            size="sm"
+            onPress={() => openStackScreen("AddressBook")}
           />
 
           <Input
@@ -145,7 +156,7 @@ export function SendScreen({ navigation, route }: Props) {
           <Button
             label="Send with Keystone"
             variant="secondary"
-            onPress={() => navigation.navigate("Keystone")}
+            onPress={() => openStackScreen("Keystone")}
           />
         </ScrollView>
       </KeyboardAvoidingView>
@@ -156,9 +167,8 @@ export function SendScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   flex: { flex: 1 },
-  container: { padding: spacing.lg, gap: spacing.md },
-  subtitle: { color: colors.textMuted, fontSize: fontSize.md, lineHeight: 22 },
-  fee: { color: colors.textMuted, fontSize: fontSize.sm },
+  container: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
+  fee: { color: colors.textFaint, fontSize: fontSize.sm },
   error: { color: colors.error, fontSize: fontSize.sm },
   ok: { color: colors.success, fontSize: fontSize.sm },
 });

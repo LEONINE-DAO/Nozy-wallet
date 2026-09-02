@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: colors.surfaceLight,
+    backgroundColor: colors.surfaceInset,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
@@ -101,7 +101,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
   },
   optionActive: {
-    backgroundColor: colors.primary + "22",
+    backgroundColor: colors.primarySoft,
   },
   optionText: {
     color: colors.text,

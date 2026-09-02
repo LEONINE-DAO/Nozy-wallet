@@ -1,0 +1,45 @@
+# EAS uploads from the git repo root when nozy-mobile lives in a monorepo.
+# Keep only what the Expo Android build needs.
+
+# Other apps / crates in the monorepo
+/desktop-client/
+/browser-extension/
+/tools/
+/lightwalletd/
+/src/
+/api-server/
+/zeaking/
+/nozy-ffi/
+/book/
+/landing/
+/docs/
+/assignments/
+/nozy-sync-engine/
+/target-agent/
+/web-app/
+
+# Rust build artifacts
+/target/
+
+# Local scratch / evidence (not for CI)
+/_video_frames/
+/_forum_*
+/_p35.txt
+/_p36.txt
+/_rpc_*
+/_staking_*
+/_wallet_sync_pr.patch
+/_zns_recovery/
+/_zns_test*.ps1
+/_extract_forum.py
+/_fix_phantom_txs.py
+/gui-stderr.txt
+/gui-stdout.txt
+/zk-cosmwasm-claim-draft.json
+
+# Mobile dev caches (EAS runs npm ci on the server)
+/nozy-mobile/node_modules/
+/nozy-mobile/android/.gradle/
+/nozy-mobile/android/app/build/
+/nozy-mobile/android/build/
+/nozy-mobile/.expo/

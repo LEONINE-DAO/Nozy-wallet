@@ -60,10 +60,10 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
   },
   dialog: {
-    backgroundColor: colors.surface,
+    backgroundColor: colors.surfaceAlt,
     borderRadius: radius.xxl,
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.borderStrong,
     maxHeight: "90%",
     overflow: "hidden",
     zIndex: 1,

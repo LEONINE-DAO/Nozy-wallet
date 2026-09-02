@@ -12,8 +12,20 @@ Expo / React Native companion app for [NozyWallet](https://github.com/LEONINE-DA
 
 2. **Start the app on Android emulator**:
    - Run [`RUN-ON-EMULATOR.bat`](RUN-ON-EMULATOR.bat) or `npm run android`
+   - Keep the Metro terminal open (do not close it while using the app).
 
 3. On **Welcome**, use API URL `http://10.0.2.2:3000` (emulator → host PC). Leave API key blank for local dev.
+
+### "Development build" screen instead of the wallet
+
+The installed Android app is a **debug build**: it loads JavaScript from Metro on your PC, not from a bundled APK. If Metro is not running (or the emulator cannot reach port 8081), you will see Expo’s development-build launcher instead of NozyWallet.
+
+**Fix:** In one terminal run `npm start` (or use `RUN-ON-EMULATOR.bat`, which also runs `adb reverse`). Then on the emulator either:
+
+- Tap the listed project / **NozyWallet**, or
+- Choose **Enter URL manually** and use `http://10.0.2.2:8081`
+
+For a standalone APK that does not need Metro, use an EAS production build (`npm run build:android`) or `npx expo run:android --variant release` after configuring signing.
 
 **Web preview:** `.\start-web.ps1` or `npm run web`
 

@@ -1,8 +1,7 @@
-import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Button } from "../components/Button";
 import { PageHeader } from "../components/PageHeader";
 import { AccountSettings } from "../components/settings/AccountSettings";
 import { DisplaySettings } from "../components/settings/DisplaySettings";
@@ -16,9 +15,9 @@ import { SyncSettings } from "../components/settings/SyncSettings";
 import { WalletsAccountsSettings } from "../components/settings/WalletsAccountsSettings";
 import { enableExperimentalFeatures } from "../lib/buildProfile";
 import { colors, spacing } from "../theme";
-import type { RootStackParamList } from "../types";
+import type { MainTabParamList } from "../types";
 
-type Props = NativeStackScreenProps<RootStackParamList, "Settings">;
+type Props = BottomTabScreenProps<MainTabParamList, "Settings">;
 
 type SettingsSection =
   | "main"
@@ -32,7 +31,7 @@ type SettingsSection =
   | "wallets"
   | "account";
 
-export function SettingsScreen({ navigation }: Props) {
+export function SettingsScreen({}: Props) {
   const [section, setSection] = useState<SettingsSection>("main");
   const showExperimental = enableExperimentalFeatures();
 
@@ -65,84 +64,51 @@ export function SettingsScreen({ navigation }: Props) {
   }
 
   return (
-    <SafeAreaView style={styles.safe} edges={["bottom"]}>
+    <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.container}>
-        <PageHeader
-          title="Settings"
-          description="Manage your wallet, network, and preferences"
-        />
+        <PageHeader title="Settings" description="Connection, sync, and account." />
         <View style={styles.list}>
           {showExperimental ? (
             <>
               <SettingsItem
-                title="On-device wallet (Phase 2)"
-                description="Keys on phone — create, unlock, sync via nozy-ffi"
+                title="On-device wallet"
                 onPress={() => setSection("ondevice")}
               />
               <SettingsItem
-                title="Light client (experimental)"
-                description="On-device LWD sync via zeaking-ffi"
+                title="Light client"
                 onPress={() => setSection("lightclient")}
               />
             </>
           ) : null}
           <SettingsItem
             title="Mobile connection"
-            description="Own API (home/VPS) or Nozy hosted — sync needs Zebrad behind the API"
             onPress={() => setSection("mobile")}
           />
           <SettingsItem
-            title="Account Information"
-            description="Address, seed, private key, change password"
+            title="Account"
             onPress={() => setSection("account")}
           />
           <SettingsItem
-            title="Wallets & Accounts"
-            description="Switch profiles and mainnet / testnet wallets"
+            title="Wallets & accounts"
             onPress={() => setSection("wallets")}
           />
           <SettingsItem
-            title="Network & Node"
-            description="Configure Zebra RPC on the API server"
+            title="Network & node"
             onPress={() => setSection("network")}
           />
           <SettingsItem
             title="Network privacy"
-            description="Local Zebrad defaults, Nym/Tor attestation"
             onPress={() => setSection("privacy")}
           />
           <SettingsItem
             title="Sync"
-            description="Keep wallet near tip while unlocked"
             onPress={() => setSection("sync")}
           />
           <SettingsItem
             title="Display"
-            description="Fiat equivalent and balance visibility"
             onPress={() => setSection("display")}
           />
-          <SettingsItem
-            title="Address book"
-            description="Saved contacts for shielded sends"
-            onPress={() => navigation.navigate("AddressBook")}
-          />
-          <SettingsItem
-            title="Ironwood"
-            description="NU6.3 readiness and Orchard migration"
-            onPress={() => navigation.navigate("Ironwood")}
-          />
-          <SettingsItem
-            title="Keystone wallet"
-            description="Hardware wallet PCZT signing"
-            onPress={() => navigation.navigate("Keystone")}
-          />
-          <SettingsItem
-            title="About & privacy"
-            description="Privacy policy and support links"
-            onPress={() => navigation.navigate("About")}
-          />
         </View>
-        <Button label="Back" variant="ghost" onPress={() => navigation.goBack()} />
       </ScrollView>
     </SafeAreaView>
   );
@@ -150,6 +116,6 @@ export function SettingsScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  container: { padding: spacing.lg, gap: spacing.md },
-  list: { gap: spacing.sm },
+  container: { padding: spacing.lg, paddingBottom: spacing.xl },
+  list: { gap: spacing.xs },
 });

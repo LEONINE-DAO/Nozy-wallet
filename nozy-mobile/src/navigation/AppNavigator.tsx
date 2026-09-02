@@ -2,19 +2,18 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { AboutScreen } from "../screens/About";
 import { AddressBookScreen } from "../screens/AddressBook";
 import { CreateWalletScreen } from "../screens/CreateWallet";
-import { DashboardScreen } from "../screens/Dashboard";
 import { KeystoneScreen } from "../screens/Keystone";
 import { MnemonicBackupScreen } from "../screens/MnemonicBackup";
 import { RestoreWalletScreen } from "../screens/RestoreWallet";
-import { SendScreen } from "../screens/Send";
-import { SellScreen } from "../screens/Sell";
-import { SettingsScreen } from "../screens/Settings";
 import { TransactionDetailScreen } from "../screens/TransactionDetail";
 import { TransactionHistoryScreen } from "../screens/TransactionHistory";
 import { UnlockScreen } from "../screens/Unlock";
 import { WelcomeScreen } from "../screens/Welcome";
+import { IronwoodScreen } from "../screens/Ironwood";
+import { VoteScreen } from "../screens/Vote";
 import { colors } from "../theme";
 import type { RootStackParamList } from "../types";
+import { MainTabNavigator } from "./MainTabNavigator";
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -55,12 +54,10 @@ export function AppNavigator() {
         options={{ title: "Unlock", headerBackVisible: false }}
       />
       <Stack.Screen
-        name="Dashboard"
-        component={DashboardScreen}
-        options={{ title: "NozyWallet", headerBackVisible: false }}
+        name="Main"
+        component={MainTabNavigator}
+        options={{ headerShown: false }}
       />
-      <Stack.Screen name="Send" component={SendScreen} options={{ title: "Send ZEC" }} />
-      <Stack.Screen name="Sell" component={SellScreen} options={{ title: "Sell mode" }} />
       <Stack.Screen
         name="TransactionHistory"
         component={TransactionHistoryScreen}
@@ -70,11 +67,6 @@ export function AppNavigator() {
         name="TransactionDetail"
         component={TransactionDetailScreen}
         options={{ title: "Transaction" }}
-      />
-      <Stack.Screen
-        name="Settings"
-        component={SettingsScreen}
-        options={{ title: "Settings" }}
       />
       <Stack.Screen
         name="About"
@@ -90,6 +82,16 @@ export function AppNavigator() {
         name="Keystone"
         component={KeystoneScreen}
         options={{ title: "Keystone" }}
+      />
+      <Stack.Screen
+        name="Ironwood"
+        component={IronwoodScreen}
+        options={{ title: "Ironwood" }}
+      />
+      <Stack.Screen
+        name="Vote"
+        component={VoteScreen}
+        options={{ title: "NU7 Vote" }}
       />
     </Stack.Navigator>
   );
