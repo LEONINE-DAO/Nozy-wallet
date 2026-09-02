@@ -112,7 +112,10 @@ export function AddressBookScreen({ navigation }: Props) {
             <Pressable
               style={styles.rowMain}
               onPress={() =>
-                navigation.navigate("Send", { recipient: item.address })
+                navigation.navigate("Main", {
+                  screen: "Send",
+                  params: { recipient: item.address },
+                })
               }
             >
               <Text style={styles.name}>{item.name}</Text>

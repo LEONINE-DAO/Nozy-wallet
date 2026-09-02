@@ -11,8 +11,10 @@ You can finish most App Store / Play prep **without** a paid VPS. Pay for a **ne
 | Step | Command / doc | Outcome |
 |------|----------------|---------|
 | 1. Production app UI | `$env:EXPO_PUBLIC_APP_VARIANT="production"; npx expo start` | Hosted-only UI, no experimental screens |
-| 2. Generate API key | `powershell -File ..\scripts\prepare-mobile-store-credentials.ps1` | `hosted-api.env` + key for app |
+| 2. Generate API key | `powershell -File ..\scripts\prepare-mobile-store-credentials.ps1` | gitignored `hosted-api.env` + key for app |
 | 3. Production-mode API locally | `powershell -File ..\scripts\run-production-api-for-mobile-qa.ps1` | API requires `X-API-Key` like VPS |
+
+> **Not the browser extension.** Extension → node uses local `run-nozy-api.ps1` + paste `companion_api_key` in Companion settings (see [`browser-extension/COMPANION.md`](../browser-extension/COMPANION.md)). These two scripts are mobile store / hosted-API only.
 | 4. Free HTTPS tunnel (optional) | [`HTTPS-TUNNEL-QA.md`](HTTPS-TUNNEL-QA.md) | Test **production APK** against HTTPS before DNS |
 | 5. EAS production build | `eas build --platform android --profile production` | Store candidate AAB (Expo account) |
 | 6. Listing copy | [`STORE-LISTING.md`](STORE-LISTING.md) | Play / App Store text draft |

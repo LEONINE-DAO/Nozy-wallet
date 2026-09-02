@@ -216,6 +216,13 @@ export type IronwoodStatusResponse = {
   migration_privacy_warnings: string[];
   orchard_funds_at_risk: boolean;
   safer_migration: IronwoodSaferMigrationStatus;
+  send_egress?: {
+    kind: string;
+    label: string;
+    summary: string;
+    show_stopgap: boolean;
+    stopgap_url: string;
+  };
 };
 
 export type IronwoodPlanSaveResponse = {
@@ -317,20 +324,32 @@ export type ApiError = {
   code?: string;
 };
 
+import type { NavigatorScreenParams } from "@react-navigation/native";
+
+export type MainTabParamList = {
+  Home: undefined;
+  Send: { recipient?: string } | undefined;
+  Receive: undefined;
+  Settings: undefined;
+  More: undefined;
+};
+
 export type RootStackParamList = {
   Welcome: undefined;
   CreateWallet: undefined;
   MnemonicBackup: { mnemonic: string };
   RestoreWallet: undefined;
   Unlock: undefined;
+  Main: NavigatorScreenParams<MainTabParamList> | undefined;
+  /** @deprecated use Main → Home tab */
   Dashboard: undefined;
+  /** Unlinked — sell mode removed from mobile UI */
   Sell: undefined;
-  Send: { recipient?: string } | undefined;
   TransactionHistory: undefined;
   TransactionDetail: { txid: string };
-  Settings: undefined;
   About: undefined;
   AddressBook: undefined;
   Keystone: undefined;
   Ironwood: undefined;
+  Vote: undefined;
 };

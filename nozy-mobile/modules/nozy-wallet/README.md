@@ -8,4 +8,8 @@
  * `NativeModules.NozyFfi` TurboModule / Expo module that forwards to UniFFI.
  *
  * Issue: https://github.com/LEONINE-DAO/Nozy-wallet/issues/208
+ * NU7 vote export/sign: https://github.com/LEONINE-DAO/Nozy-wallet/issues/273
+ *
+ * After rebuilding nozy-ffi, expose `voteCalendarInfo`, `voteExportNotes`,
+ * and `voteSignDelegation` on NativeModules.NozyFfi (same UniFFI surface).
  */

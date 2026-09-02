@@ -44,7 +44,7 @@ export function MnemonicBackupScreen({ navigation, route }: Props) {
         />
         <Button
           label="I saved my seed phrase"
-          onPress={() => navigation.replace("Dashboard")}
+          onPress={() => navigation.replace("Main")}
         />
       </ScrollView>
     </SafeAreaView>

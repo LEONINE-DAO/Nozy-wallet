@@ -1,7 +1,7 @@
 # Android EAS production smoke (grant P0)
 
 **Scope:** Android-first companion build against hosted or tunnel HTTPS API.  
-**Related:** [`STORE-CHECKLIST.md`](STORE-CHECKLIST.md) · [`eas.json`](eas.json) · grant gate [`GRANT_80K_PRODUCTION_CHECKLIST.md`](../GRANT_80K_PRODUCTION_CHECKLIST.md)
+**Related:** [`STORE-CHECKLIST.md`](STORE-CHECKLIST.md) · [`eas.json`](eas.json)
 
 ## Prerequisites
 

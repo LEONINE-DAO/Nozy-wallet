@@ -30,7 +30,7 @@ export function RestoreWalletScreen({ navigation }: Props) {
     try {
       await api.restoreWallet(mnemonic.trim(), password);
       await setPassword(password);
-      navigation.replace("Dashboard");
+      navigation.replace("Main");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to restore wallet");
     } finally {

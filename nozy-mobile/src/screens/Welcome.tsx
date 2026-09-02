@@ -1,16 +1,10 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
-import {
-  Image,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
+import { AppLogo } from "../components/AppLogo";
 import { Card } from "../components/Card";
 import { ConnectionSetupFields } from "../components/ConnectionSetupFields";
 import { Input } from "../components/Input";
@@ -157,7 +151,7 @@ export function WelcomeScreen({ navigation }: Props) {
       }
       await api.unlockWallet(pwd);
       await unlockSession(pwd);
-      navigation.replace("Dashboard");
+      navigation.replace("Main");
     } catch (err: unknown) {
       setError(
         err instanceof Error
@@ -185,7 +179,7 @@ export function WelcomeScreen({ navigation }: Props) {
         await unlockSession(createPassword);
       } else {
         await unlockSession(createPassword);
-        navigation.replace("Dashboard");
+        navigation.replace("Main");
       }
     } catch (err: unknown) {
       setError(
@@ -251,7 +245,7 @@ export function WelcomeScreen({ navigation }: Props) {
       // Best-effort; session should already be open after create/restore.
     }
     setView("initial");
-    navigation.replace("Dashboard");
+    navigation.replace("Main");
   }
 
   return (
@@ -262,11 +256,7 @@ export function WelcomeScreen({ navigation }: Props) {
       >
         <View style={styles.heroGlow} />
 
-        <Image
-          source={require("../../assets/logo.png")}
-          style={styles.logo}
-          resizeMode="contain"
-        />
+        <AppLogo variant="welcome" />
         <Text style={styles.brandTitle}>Privacy by Default.</Text>
 
         {generatedMnemonic ? (
@@ -553,20 +543,15 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     height: 220,
-    backgroundColor: "rgba(212, 175, 55, 0.08)",
-  },
-  logo: {
-    width: 160,
-    height: 160,
-    marginTop: spacing.md,
-    marginBottom: spacing.md,
+    backgroundColor: "rgba(200, 204, 212, 0.08)",
   },
   brandTitle: {
-    color: colors.text,
+    color: colors.primary,
     fontSize: fontSize.xl,
     fontWeight: "800",
     textAlign: "center",
     marginBottom: spacing.lg,
+    letterSpacing: -0.5,
   },
   section: {
     width: "100%",

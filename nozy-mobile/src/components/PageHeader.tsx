@@ -19,12 +19,14 @@ const styles = StyleSheet.create({
   wrap: { marginBottom: spacing.lg },
   title: {
     color: colors.text,
-    fontSize: fontSize.xl,
-    fontWeight: "700",
+    fontSize: 21,
+    fontWeight: "800",
+    letterSpacing: -0.5,
   },
   desc: {
-    color: colors.textMuted,
-    fontSize: fontSize.sm,
+    color: colors.textFaint,
+    fontSize: 11,
+    lineHeight: 16,
     marginTop: spacing.xs,
   },
 });

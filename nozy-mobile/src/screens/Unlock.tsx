@@ -23,7 +23,7 @@ export function UnlockScreen({ navigation }: Props) {
     try {
       await api.unlockWallet(password);
       await setPassword(password);
-      navigation.replace("Dashboard");
+      navigation.replace("Main");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Unlock failed");
     } finally {

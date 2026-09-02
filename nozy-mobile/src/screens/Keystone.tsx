@@ -176,7 +176,7 @@ export function KeystoneScreen({ navigation }: Props) {
           value={recipient}
           onChangeText={setRecipient}
           autoCapitalize="none"
-          placeholder="u1… or Zcash name (e.g. alice)"
+          placeholder="u1… or Zcash name (e.g. zoie)"
         />
         <Input label="Amount (ZEC)" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" />
         <Button label="Prepare for Keystone" onPress={() => void prepareSend()} loading={loading} />
