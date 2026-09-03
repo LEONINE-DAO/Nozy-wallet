@@ -116,6 +116,9 @@ docs/journal/
 docs/grant/
 docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
 
+# Local reference clones (not part of Nozy build)
+tools/zcash_voting/
+
 book/book/
 
 # Local Nym spike credential / runtime data (never commit)

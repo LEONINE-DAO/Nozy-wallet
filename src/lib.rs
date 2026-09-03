@@ -128,6 +128,9 @@ pub mod transaction_tracker;
 #[cfg(feature = "native")]
 pub mod tx_lifecycle;
 #[cfg(feature = "native")]
+pub mod vote_export;
+pub mod vote_sign;
+#[cfg(feature = "native")]
 pub mod wallet_profiles;
 #[cfg(feature = "native")]
 pub mod wallet_sync;
@@ -316,6 +319,12 @@ pub use transaction_history::{
 };
 #[cfg(feature = "native")]
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
+#[cfg(feature = "native")]
+pub use vote_export::{
+    build_ironwood_vote_notes, build_ironwood_vote_notes_at_snapshot, export_ironwood_vote_notes,
+    export_ironwood_vote_notes_at_snapshot, NU7_SNAPSHOT_HEIGHT_MAINNET,
+};
+pub use vote_sign::{sign_delegation_request, sign_delegation_request_json};
 #[cfg(feature = "native")]
 pub use wallet_profiles::{
     active_profile_id, active_wallet_exists, apply_profile_connection_to_config,

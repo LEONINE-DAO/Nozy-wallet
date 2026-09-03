@@ -65,7 +65,7 @@ pub trait IronwoodWitnessProvider: Send + Sync {
 
 pub struct ZebraJsonRpcIronwoodWitnessProvider;
 
-async fn fetch_ironwood_cmx_nodes_for_height(
+pub(crate) async fn fetch_ironwood_cmx_nodes_for_height(
     zebra: &ZebraClient,
     height: u32,
 ) -> NozyResult<Vec<orchard::tree::MerkleHashOrchard>> {

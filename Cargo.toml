@@ -182,6 +182,7 @@ exclude = [
     "browser-extension/wasm-core",
     "tools/nym-dvpn-lwd-spike",
     "tools/nym-smolmix-broadcast-spike",
+    "tools/nozy-vote",
 ]
 resolver = "2"
 
