@@ -8,19 +8,26 @@ export type PopupView =
   | "receive"
   | "scan"
   | "companion"
-  | "settings";
+  | "vote"
+  | "crosslink"
+  | "settings"
+  | "browser";
 
 type UiState = {
   view: PopupView;
   setView: (view: PopupView) => void;
   statusMessage: string | null;
   setStatusMessage: (message: string | null) => void;
+  pendingFinalizer: string | null;
+  setPendingFinalizer: (hex: string | null) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
   view: "welcome",
   setView: (view) => set({ view }),
   statusMessage: null,
-  setStatusMessage: (message) => set({ statusMessage: message })
+  setStatusMessage: (message) => set({ statusMessage: message }),
+  pendingFinalizer: null,
+  setPendingFinalizer: (hex) => set({ pendingFinalizer: hex })
 }));
 

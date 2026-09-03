@@ -1,6 +1,5 @@
 {
   "name": "nozy-wasm",
-  "type": "module",
   "collaborators": [
     "LEONINE-DAO"
   ],
@@ -12,7 +11,7 @@
     "nozy_wasm.js",
     "nozy_wasm.d.ts"
   ],
-  "main": "nozy_wasm.js",
+  "module": "nozy_wasm.js",
   "types": "nozy_wasm.d.ts",
   "sideEffects": [
     "./snippets/*"

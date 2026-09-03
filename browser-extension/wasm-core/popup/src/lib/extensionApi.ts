@@ -57,12 +57,101 @@ export type WalletScanProgressResult = {
   percentInt?: number;
   discoveredNotes?: number;
   totalBalanceZats?: number;
+  orchardBalanceZats?: number;
+  ironwoodBalanceZats?: number;
+  saplingBalanceZats?: number;
   scanError?: string | null;
   /** Last block-level RPC/WASM error while scanning (for diagnostics). */
   lastRpcError?: string | null;
   consecutiveFailures?: number;
   startedAt?: number;
   elapsed?: number;
+  /** Set when scan is waiting for session re-hydration after SW restart. */
+  sessionWaitingSince?: number | null;
+};
+
+export type SendEgressKind =
+  | "local"
+  | "trusted"
+  | "mixnet"
+  | "tor"
+  | "i2p"
+  | "direct_remote"
+  | "blocked";
+
+export type SendEgressSnapshot = {
+  kind: SendEgressKind;
+  label: string;
+  connection_mode: string;
+  zebra_url: string;
+  zebra_url_local: boolean;
+  mixnet_requested: boolean;
+  mixnet_helper_ok: boolean;
+  would_use_mixnet: boolean;
+  show_stopgap: boolean;
+  stopgap_url: string;
+  stopgap_hint: string;
+  summary: string;
+  detail: string;
+};
+
+export type PrivacyNetworkSnapshot = {
+  tor_enabled: boolean;
+  tor_proxy: string;
+  i2p_enabled: boolean;
+  i2p_proxy: string;
+  preferred_network: string;
+  require_privacy_network: boolean;
+  broadcast_via_nym_mixnet: boolean;
+  sync_via_nym_dvpn: boolean;
+  attest_private_network: boolean;
+  force_clearnet: boolean;
+};
+
+export type NymMixnetReadiness = {
+  requested: boolean;
+  zebra_url_local: boolean;
+  would_use_mixnet: boolean;
+  helper_ok: boolean;
+  helper_path: string | null;
+  helper_error: string | null;
+  notes: string[];
+};
+
+export type NymDvpnSyncStatus = {
+  requested: boolean;
+  lwd_url: string;
+  lwd_url_local: boolean;
+  would_use_dvpn: boolean;
+  helper_ok: boolean;
+  helper_path: string | null;
+  helper_error: string | null;
+  mnemonic_env_ok: boolean;
+  notes: string[];
+};
+
+export type NymDvpnProbeResult = {
+  ok: boolean;
+  exit_code: number | null;
+  helper_path: string;
+  lwd_url: string;
+  blocks: number;
+  stdout_tail: string;
+  stderr_tail: string;
+  timed_out: boolean;
+};
+
+/** Consumer NymVPN OS app — companion probe (not mixnet sendraw). */
+export type NymVpnAppStatus = {
+  daemon_present: boolean;
+  vpnc_found: boolean;
+  vpnc_path: string | null;
+  connected: boolean;
+  mode: string;
+  tunnel_state: string;
+  browse_allowed: boolean;
+  source: string;
+  detail: string;
 };
 
 export type MobileSyncDevice = {
@@ -128,6 +217,7 @@ export const extensionApi = {
       method: "wallet_restore",
       params: { mnemonic, password, birthdayHeight: opts?.birthdayHeight }
     }),
+  walletReset: () => sendMessage<{ exists: boolean }>({ method: "wallet_reset" }),
   walletSetBirthdayHeight: (height: number) =>
     sendMessage<{ orchardBirthdayHeight: number }>({
       method: "wallet_set_birthday_height",
@@ -179,13 +269,22 @@ export const extensionApi = {
     }),
   rpcAutodetect: () =>
     sendMessage<{ rpcEndpoint: string; blockCount: number }>({ method: "rpc_autodetect" }),
+  rpcConnect: (opts?: { url?: string; tryCompanion?: boolean }) =>
+    sendMessage<{
+      rpcEndpoint: string;
+      blockCount: number;
+      connected: boolean;
+      source: "manual" | "companion" | "autodetect";
+    }>({ method: "rpc_connect", params: opts ?? {} }),
   rpcProbeEndpoint: (url: string) =>
     sendMessage<{ endpoint: string; connected: boolean }>({
       method: "rpc_probe_endpoint",
       params: { url }
     }),
   rpcGetStatus: () =>
-    sendMessage<{ endpoint: string; connected: boolean }>({ method: "rpc_get_status" }),
+    sendMessage<{ endpoint: string; connected: boolean; blockCount?: number | null }>({
+      method: "rpc_get_status"
+    }),
   rpcGetBlockCount: () => sendMessage<number>({ method: "rpc_get_block_count" }),
   walletScanNotes: (startHeight: number, endHeight: number) =>
     sendMessage<{
@@ -209,6 +308,8 @@ export const extensionApi = {
           startHeight?: number;
           endHeight?: number;
           useBirthdayRange?: boolean;
+          /** Companion wallet password (nozywallet-api data dir); empty string if no password. */
+          companionPassword?: string;
         } = 20_000
   ) => {
     const params: Record<string, unknown> =
@@ -218,6 +319,7 @@ export const extensionApi = {
             window: opts.window,
             startHeight: opts.startHeight,
             endHeight: opts.endHeight,
+            companionPassword: opts.companionPassword,
             ...(opts.useBirthdayRange ? { useBirthdayRange: true } : {})
           };
     return sendMessage<{
@@ -313,6 +415,12 @@ export const extensionApi = {
       lwdChainTip: unknown;
     }>({ method: "companion_status", params: { baseUrl } }),
 
+  companionAddressGenerate: (params: { baseUrl?: string; password?: string }) =>
+    sendMessage<{ address: string }>({
+      method: "companion_address_generate",
+      params
+    }),
+
   companionLwdInfo: (baseUrl?: string, lightwalletd_url?: string) =>
     sendMessage<Record<string, unknown>>({
       method: "companion_lwd_info",
@@ -390,6 +498,243 @@ export const extensionApi = {
       params: params ?? {}
     }),
 
+  companionVoteStatus: (params?: { baseUrl?: string; env?: string }) =>
+    sendMessage<{
+      helper_version: string;
+      env: string;
+      phase: string;
+      phase_message: string;
+      notes_exported: boolean;
+      notes_count: number | null;
+      hotkey_ready: boolean;
+      signing_request_present: boolean;
+      sig_present: boolean;
+      forum_url: string;
+      snapshot_utc: string;
+      vote_start_utc: string;
+      vote_end_utc: string;
+    }>({ method: "companion_vote_status", params: params ?? {} }),
+
+  companionVoteActive: (params?: { baseUrl?: string; env?: string }) =>
+    sendMessage<{
+      vote_round_id: string;
+      title?: string | null;
+      proposals?: Array<{
+        id: number;
+        title: string;
+        options: Array<{ index: number; label: string }>;
+      }>;
+    }>({ method: "companion_vote_active", params: params ?? {} }),
+
+  companionVoteExportNotes: (params?: {
+    baseUrl?: string;
+    password?: string;
+    env?: string;
+  }) =>
+    sendMessage<{
+      notes_path: string;
+      note_count: number;
+      total_value_zat: number;
+      message: string;
+    }>({ method: "companion_vote_export_notes", params: params ?? {} }),
+
+  walletVoteExportNotes: () =>
+    sendMessage<{
+      notes_json: string;
+      note_count: number;
+      total_value_zat: number;
+      message: string;
+    }>({ method: "wallet_vote_export_notes" }),
+
+  companionVoteImportNotes: (params: { baseUrl?: string; notes_json: string }) =>
+    sendMessage<{
+      notes_path: string;
+      note_count: number;
+      total_value_zat: number;
+      message: string;
+    }>({ method: "companion_vote_import_notes", params }),
+
+  companionVoteSigningRequest: (params?: { baseUrl?: string }) =>
+    sendMessage<Record<string, unknown>>({
+      method: "companion_vote_signing_request",
+      params: params ?? {}
+    }),
+
+  walletVoteSignDelegation: (requestJson: string) =>
+    sendMessage<{ sig_json: string }>({
+      method: "wallet_vote_sign_delegation",
+      params: { request_json: requestJson }
+    }),
+
+  companionVoteSubmitDelegationSig: (params: {
+    baseUrl?: string;
+    sig_json: string;
+    env?: string;
+  }) =>
+    sendMessage<{ round_id: string; sig_path: string; message: string }>({
+      method: "companion_vote_submit_delegation_sig",
+      params
+    }),
+
+  companionVotePrepare: (params?: { baseUrl?: string; env?: string }) =>
+    sendMessage<{ round_id: string; message: string; stdout: string }>({
+      method: "companion_vote_prepare",
+      params: params ?? {}
+    }),
+
+  companionVoteDelegate: (params?: { baseUrl?: string; env?: string }) =>
+    sendMessage<{ message: string; stdout: string }>({
+      method: "companion_vote_delegate",
+      params: params ?? {}
+    }),
+
+  companionVoteSignDelegation: (params?: {
+    baseUrl?: string;
+    password?: string;
+    env?: string;
+  }) =>
+    sendMessage<{ round_id: string; sig_path: string; message: string }>({
+      method: "companion_vote_sign_delegation",
+      params: params ?? {}
+    }),
+
+  companionVoteDelegateFinish: (params?: {
+    baseUrl?: string;
+    env?: string;
+    wait?: boolean;
+  }) =>
+    sendMessage<{ tx_hash: string; confirmed: boolean; stdout: string }>({
+      method: "companion_vote_delegate_finish",
+      params: params ?? {}
+    }),
+
+  companionVoteCast: (params: {
+    baseUrl?: string;
+    env?: string;
+    choices: Record<string, number>;
+    delegation_tx?: string;
+    single_share?: boolean;
+    wait?: boolean;
+  }) =>
+    sendMessage<{ proposal_count: number; stdout: string }>({
+      method: "companion_vote_cast",
+      params
+    }),
+
+  companionCrosslinkStatus: (params?: { baseUrl?: string }) =>
+    sendMessage<{
+      rpc_url: string;
+      height: number;
+      staking_day: {
+        height: number;
+        open: boolean;
+        blocks_remaining_in_window: number | null;
+        blocks_until_next: number | null;
+        cycle: number;
+        window: number;
+      };
+      tfl_activated: boolean | null;
+      positions: {
+        active: Record<
+          string,
+          Array<{
+            pk: string;
+            create_height: number | null;
+            initial_val: number;
+            latest_val: number;
+            finalizer: string | null;
+          }>
+        >;
+        withdrawable: Array<{
+          pk: string;
+          create_height: number | null;
+          initial_val: number;
+          latest_val: number;
+          finalizer: string | null;
+        }>;
+      };
+      finalizer_count: number | null;
+      next_action:
+        | { wait_for_staking_day: { blocks: number } }
+        | { withdraw_ready: { count: number } }
+        | "unbond_to_exit"
+        | "stake_or_guardian"
+        | "retarget_if_needed";
+      privacy_notes: string[];
+      wallet: {
+        sync_height: number;
+        tip_height: number;
+        user_shielded_spendable_zats: number;
+        user_shielded_pending_zats: number;
+        user_unshielded_zats: number;
+        staked_zats: number;
+        withdrawable_zats: number;
+      } | null;
+    }>({ method: "companion_crosslink_status", params: params ?? {} }),
+
+  companionCrosslinkWalletStatus: (params?: { baseUrl?: string }) =>
+    sendMessage<{
+      sync_height: number;
+      tip_height: number;
+      user_shielded_spendable_zats: number;
+      user_shielded_pending_zats: number;
+      user_unshielded_zats: number;
+      staked_zats: number;
+      withdrawable_zats: number;
+    }>({ method: "companion_crosslink_wallet_status", params: params ?? {} }),
+
+  companionCrosslinkWalletUfvk: (params?: { baseUrl?: string }) =>
+    sendMessage<{ ufvk: string }>({
+      method: "companion_crosslink_wallet_ufvk",
+      params: params ?? {}
+    }),
+
+  companionCrosslinkRoster: (params?: { baseUrl?: string; zats?: boolean }) =>
+    sendMessage<
+      Array<{ finalizer: string; stake_zat: number; share: number }>
+    >({ method: "companion_crosslink_roster", params: params ?? {} }),
+
+  companionCrosslinkStake: (params: {
+    baseUrl?: string;
+    amount_ctaz: number;
+    finalizer: string;
+    force?: boolean;
+  }) =>
+    sendMessage<{ action: string; result: unknown }>({
+      method: "companion_crosslink_stake",
+      params
+    }),
+
+  companionCrosslinkRetarget: (params: {
+    baseUrl?: string;
+    bond: string;
+    finalizer: string;
+  }) =>
+    sendMessage<{ action: string; result: unknown }>({
+      method: "companion_crosslink_retarget",
+      params
+    }),
+
+  companionCrosslinkUnbond: (params: {
+    baseUrl?: string;
+    bond: string;
+    force?: boolean;
+  }) =>
+    sendMessage<{ action: string; result: unknown }>({
+      method: "companion_crosslink_unbond",
+      params
+    }),
+
+  companionCrosslinkWithdraw: (params: {
+    baseUrl?: string;
+    bond: string;
+    force?: boolean;
+  }) =>
+    sendMessage<{ action: string; result: unknown }>({
+      method: "companion_crosslink_withdraw",
+      params
+    }),
+
   companionZnsResolve: (params: {
     name: string;
     network?: "mainnet" | "testnet";
@@ -406,11 +751,58 @@ export const extensionApi = {
         nonce?: number;
         last_action?: string;
       };
-    }>({ method: "companion_zns_resolve", params })
+    }>({ method: "companion_zns_resolve", params }),
+
+  companionSendEgress: (baseUrl?: string) =>
+    sendMessage<SendEgressSnapshot>({ method: "companion_send_egress", params: { baseUrl } }),
+
+  companionPrivacyNetwork: (baseUrl?: string) =>
+    sendMessage<PrivacyNetworkSnapshot>({
+      method: "companion_privacy_network",
+      params: { baseUrl }
+    }),
+
+  companionSetPrivacyNetwork: (params: {
+    baseUrl?: string;
+    patch: Partial<{
+      broadcast_via_nym_mixnet: boolean;
+      sync_via_nym_dvpn: boolean;
+      attest_private_network: boolean;
+      force_clearnet: boolean;
+      require_privacy_network: boolean;
+    }>;
+  }) =>
+    sendMessage<PrivacyNetworkSnapshot>({
+      method: "companion_set_privacy_network",
+      params
+    }),
+
+  companionNymMixnet: (baseUrl?: string) =>
+    sendMessage<NymMixnetReadiness>({ method: "companion_nym_mixnet", params: { baseUrl } }),
+
+  companionNymDvpn: (baseUrl?: string, lightwalletd_url?: string) =>
+    sendMessage<NymDvpnSyncStatus>({
+      method: "companion_nym_dvpn",
+      params: { baseUrl, lightwalletd_url }
+    }),
+
+  companionSetNymDvpn: (params: { baseUrl?: string; enabled: boolean }) =>
+    sendMessage<NymDvpnSyncStatus>({ method: "companion_set_nym_dvpn", params }),
+
+  companionNymDvpnProbe: (params: {
+    baseUrl?: string;
+    lightwalletd_url?: string;
+    blocks?: number;
+  }) =>
+    sendMessage<NymDvpnProbeResult>({ method: "companion_nym_dvpn_probe", params }),
+
+  companionNymVpnApp: (baseUrl?: string) =>
+    sendMessage<NymVpnAppStatus>({ method: "companion_nym_vpn_app", params: { baseUrl } })
 };
 
 const STORAGE_COMPANION_BASE = "nozy_companion_base_url";
 const STORAGE_LWD_URL = "nozy_lightwalletd_url";
+const STORAGE_COMPANION_API_KEY = "nozy_companion_api_key_v1";
 const DEFAULT_LWD_URL = "http://127.0.0.1:9067";
 
 function normalizeStoredLwdUrl(raw: string): string {
@@ -422,12 +814,17 @@ function normalizeStoredLwdUrl(raw: string): string {
 }
 
 /** Local Nozy API + optional lightwalletd URL (popup chrome.storage; not sent to sites). */
-export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalletdUrl: string }> {
+export async function getCompanionPrefs(): Promise<{
+  baseUrl: string;
+  lightwalletdUrl: string;
+  apiKey: string;
+}> {
   return new Promise((resolve, reject) => {
     chrome.storage.local.get(
       {
         [STORAGE_COMPANION_BASE]: "http://127.0.0.1:3000",
-        [STORAGE_LWD_URL]: DEFAULT_LWD_URL
+        [STORAGE_LWD_URL]: DEFAULT_LWD_URL,
+        [STORAGE_COMPANION_API_KEY]: ""
       },
       (items) => {
         if (chrome.runtime.lastError) {
@@ -436,7 +833,8 @@ export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalle
         }
         resolve({
           baseUrl: String(items[STORAGE_COMPANION_BASE]),
-          lightwalletdUrl: normalizeStoredLwdUrl(String(items[STORAGE_LWD_URL] ?? ""))
+          lightwalletdUrl: normalizeStoredLwdUrl(String(items[STORAGE_LWD_URL] ?? "")),
+          apiKey: String(items[STORAGE_COMPANION_API_KEY] ?? "")
         });
       }
     );
@@ -446,6 +844,7 @@ export async function getCompanionPrefs(): Promise<{ baseUrl: string; lightwalle
 export async function setCompanionPrefs(prefs: {
   baseUrl?: string;
   lightwalletdUrl?: string;
+  apiKey?: string;
 }): Promise<void> {
   return new Promise((resolve, reject) => {
     const patch: Record<string, string> = {};
@@ -455,6 +854,9 @@ export async function setCompanionPrefs(prefs: {
     }
     if (prefs.lightwalletdUrl !== undefined) {
       patch[STORAGE_LWD_URL] = normalizeStoredLwdUrl(prefs.lightwalletdUrl);
+    }
+    if (prefs.apiKey !== undefined) {
+      patch[STORAGE_COMPANION_API_KEY] = prefs.apiKey.trim();
     }
     chrome.storage.local.set(patch, () => {
       if (chrome.runtime.lastError) {

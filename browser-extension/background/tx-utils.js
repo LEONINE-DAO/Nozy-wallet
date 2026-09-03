@@ -1,3 +1,20 @@
+/** Typical ZIP-317 × 4 orchard send with empty memo (NozyWallet policy). */
+export const MANDATORY_ORCHARD_FEE_FALLBACK_ZATS = 40_000;
+
+/**
+ * ZIP-317 × 4 is required on every Nozy surface (CLI / API / desktop / extension).
+ * Callers may pass a `fee` for display only — prove paths must use this value.
+ */
+export function mandatoryOrchardFeeZats(wasm, memo = "") {
+  try {
+    const fee = Number(wasm?.estimate_orchard_send_fee_zats?.(String(memo || ""), true));
+    if (Number.isFinite(fee) && fee > 0) return Math.floor(fee);
+  } catch (_) {
+    // Fall through to the known empty-memo floor.
+  }
+  return MANDATORY_ORCHARD_FEE_FALLBACK_ZATS;
+}
+
 export function selectNotesForSpend(notes, requiredValue) {
   const usable = notes
     .filter((n) => Number.isFinite(n.value) && n.value > 0)
