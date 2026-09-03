@@ -1,12 +1,24 @@
 {
   "manifest_version": 3,
   "name": "NozyWallet",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "minimum_chrome_version": "114",
-  "description": "Zcash Orchard wallet (MV3): WASM in the extension + optional local Nozy API for lightwalletd compact sync. Use Nozy Desktop for the full Zebrad-first experience.",
+  "description": "Zcash Orchard + Ironwood wallet (MV3): WASM in the extension + optional local Nozy API for lightwalletd compact sync. Pair with CLI/desktop for ZIP 318 migration.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "32": "icons/icon-32.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
   "action": {
     "default_title": "NozyWallet",
-    "default_popup": "wasm-core/popup/dist/index.html"
+    "default_popup": "wasm-core/popup/dist/index.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "32": "icons/icon-32.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
   },
   "background": {
     "service_worker": "background/service-worker.js",
@@ -25,15 +37,19 @@
   ],
   "permissions": [
     "storage",
-    "alarms"
+    "alarms",
+    "sidePanel"
   ],
+  "side_panel": {
+    "default_path": "wasm-core/popup/dist/index.html?page=1"
+  },
   "host_permissions": [
     "http://127.0.0.1:3000/*",
     "http://*/*",
     "https://*/*"
   ],
   "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; frame-src 'self' https:"
   }
 }
 

@@ -4,7 +4,8 @@ use serde::{Deserialize, Serialize};
 mod orchard_block_parse;
 mod orchard_tree_codec;
 mod orchard_witness_local;
-mod orchard_scan;
+mod shielded_scan;
+mod vote;
 
 #[derive(Serialize, Deserialize)]
 pub struct OrchardActionInput {

@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { rpcFallbackWithRequester, selectNotesForSpend } from "./tx-utils.js";
+import {
+  mandatoryOrchardFeeZats,
+  MANDATORY_ORCHARD_FEE_FALLBACK_ZATS,
+  rpcFallbackWithRequester,
+  selectNotesForSpend
+} from "./tx-utils.js";
 
 test("selectNotesForSpend prefers smallest single sufficient note", () => {
   const notes = [
@@ -44,5 +49,20 @@ test("rpcFallbackWithRequester returns first successful attempt", async () => {
 
   assert.equal(result, "ok");
   assert.equal(calls, 2);
+});
+
+test("mandatoryOrchardFeeZats falls back when wasm is missing", () => {
+  assert.equal(mandatoryOrchardFeeZats(null, ""), MANDATORY_ORCHARD_FEE_FALLBACK_ZATS);
+  assert.equal(mandatoryOrchardFeeZats({}, "hello"), MANDATORY_ORCHARD_FEE_FALLBACK_ZATS);
+});
+
+test("mandatoryOrchardFeeZats uses ZIP-317 ×4 from wasm and ignores a lower caller fee", () => {
+  const wasm = {
+    estimate_orchard_send_fee_zats: (memo, priority) => {
+      assert.equal(priority, true);
+      return memo ? 40_000 : 40_000;
+    }
+  };
+  assert.equal(mandatoryOrchardFeeZats(wasm, ""), 40_000);
 });
 

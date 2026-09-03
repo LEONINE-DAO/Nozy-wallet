@@ -2,7 +2,10 @@ import React from "react";
 import { createRoot } from "react-dom/client";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { App } from "./App";
+import { applyWalletPageClass } from "./lib/walletPage";
 import "./styles.css";
+
+applyWalletPageClass();
 
 const queryClient = new QueryClient();
 

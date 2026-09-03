@@ -1,5 +1,9 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
-import { rpcFallbackWithRequester, selectNotesForSpend } from "./tx-utils.js";
+import {
+  mandatoryOrchardFeeZats,
+  rpcFallbackWithRequester,
+  selectNotesForSpend
+} from "./tx-utils.js";
 import {
   findReachableRpcEndpoint,
   normalizeRpcEndpoint,
@@ -37,6 +41,61 @@ function toByteArray(value) {
 function bytesToHex(bytes) {
   const arr = Array.isArray(bytes) || bytes instanceof Uint8Array ? bytes : [];
   return Array.from(arr, (b) => Number(b) & 0xff).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function poolFinalStateFromTreestate(ts, pool) {
+  const c = ts?.[pool]?.commitments ?? ts?.[pool];
+  return (
+    (typeof c?.finalState === "string" && c.finalState) ||
+    (typeof c?.final_state === "string" && c.final_state) ||
+    ""
+  );
+}
+
+function serializeShieldedTrackerState(trackers) {
+  return JSON.stringify({
+    orchard: trackers.orchard || "",
+    ironwood: trackers.ironwood || ""
+  });
+}
+
+async function initShieldedTrackerState(endpoint, startHeight) {
+  let orchardFinal = "";
+  let ironwoodFinal = "";
+  if (startHeight > 0) {
+    const ts = await rpcFallback(endpoint, [
+      { method: "z_gettreestate", params: [String(startHeight - 1)] }
+    ]);
+    orchardFinal = poolFinalStateFromTreestate(ts, "orchard");
+    ironwoodFinal = poolFinalStateFromTreestate(ts, "ironwood");
+  }
+  if (typeof wasm.shielded_scan_tracker_new === "function") {
+    return wasm.shielded_scan_tracker_new(orchardFinal, ironwoodFinal);
+  }
+  return serializeShieldedTrackerState({
+    orchard: wasm.orchard_scan_tracker_new(orchardFinal),
+    ironwood: wasm.orchard_scan_tracker_new(ironwoodFinal)
+  });
+}
+
+function applyShieldedScanBlock(trackerJson, mnemonic, address, height, blockJson) {
+  const out = wasm.orchard_scan_tracker_apply_block(
+    trackerJson,
+    mnemonic,
+    address,
+    height,
+    blockJson
+  );
+  const nextTracker =
+    out?.tracker_state ??
+    out?.trackerState ??
+    (out?.orchard_tracker_state && out?.ironwood_tracker_state
+      ? serializeShieldedTrackerState({
+          orchard: out.orchard_tracker_state,
+          ironwood: out.ironwood_tracker_state
+        })
+      : null);
+  return { out, nextTracker };
 }
 
 async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
@@ -206,14 +265,7 @@ self.onmessage = async (event) => {
       let totalBalanceZats = 0;
       const discoveredNotes = [];
 
-      let trackerState;
-      if (startHeight > 0) {
-        const ts = await rpcFallback(endpoint, [{ method: "z_gettreestate", params: [String(startHeight - 1)] }]);
-        const finalState = ts?.orchard?.commitments?.finalState ?? ts?.orchard?.commitments?.final_state ?? "";
-        trackerState = wasm.orchard_scan_tracker_new(typeof finalState === "string" ? finalState : "");
-      } else {
-        trackerState = wasm.orchard_scan_tracker_new("");
-      }
+      let trackerState = await initShieldedTrackerState(endpoint, startHeight);
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         scannedBlocks += 1;
@@ -221,14 +273,14 @@ self.onmessage = async (event) => {
           const block = await rpcGetBlockVerboseByHeight(endpoint, h);
           if (!block) continue;
           const blockJson = JSON.stringify(block);
-          const out = wasm.orchard_scan_tracker_apply_block(
+          const { out, nextTracker } = applyShieldedScanBlock(
             trackerState,
             mnemonic,
             address,
             h,
             blockJson
           );
-          trackerState = out.tracker_state;
+          if (nextTracker) trackerState = nextTracker;
           if (out.notes?.length) {
             for (const n of out.notes) {
               discoveredNotes.push(n);
@@ -259,9 +311,8 @@ self.onmessage = async (event) => {
       const mnemonic = String(params?.mnemonic ?? "");
       const rpcEndpoint = String(params?.rpcEndpoint ?? "");
       const requestedAmount = Number(params?.amount ?? 0);
-      // NozyWallet mandatory ZIP-317 × 4 (typical send = 40_000 zat).
-      const requestedFee = Number(params?.fee ?? 40_000);
       const memo = String(params?.memo ?? "nozy-poc");
+      const requestedFee = mandatoryOrchardFeeZats(wasm, memo);
 
       if (!rpcEndpoint) throw new Error("Missing rpcEndpoint for proving scan.");
       if (!mnemonic) throw new Error("Missing wallet mnemonic for proving.");
@@ -290,28 +341,21 @@ self.onmessage = async (event) => {
       const candidates = [];
       let scannedValue = 0;
 
-      let trackerState;
-      if (startHeight > 0) {
-        const ts = await rpcFallback(endpoint, [{ method: "z_gettreestate", params: [String(startHeight - 1)] }]);
-        const finalState = ts?.orchard?.commitments?.finalState ?? ts?.orchard?.commitments?.final_state ?? "";
-        trackerState = wasm.orchard_scan_tracker_new(typeof finalState === "string" ? finalState : "");
-      } else {
-        trackerState = wasm.orchard_scan_tracker_new("");
-      }
+      let trackerState = await initShieldedTrackerState(endpoint, startHeight);
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
           const block = await rpcGetBlockVerboseByHeight(endpoint, h);
           if (!block) continue;
           const blockJson = JSON.stringify(block);
-          const out = wasm.orchard_scan_tracker_apply_block(
+          const { out, nextTracker } = applyShieldedScanBlock(
             trackerState,
             mnemonic,
             walletAddress,
             h,
             blockJson
           );
-          trackerState = out.tracker_state;
+          if (nextTracker) trackerState = nextTracker;
           if (out.notes?.length) {
             const txid = block?.hash || `h${h}`;
             for (const n of out.notes) {
@@ -322,7 +366,8 @@ self.onmessage = async (event) => {
                   note: n,
                   height: h,
                   txid,
-                  value: v
+                  value: v,
+                  pool: n?.pool === "ironwood" ? "ironwood" : "orchard"
                 });
               }
             }

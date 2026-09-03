@@ -85,7 +85,7 @@ export async function resolveSendRecipient(
   if (!isLikelyZnsName(trimmed)) {
     return {
       kind: "invalid",
-      message: "Enter a unified address (u1…) or a Zcash name (e.g. alice).",
+      message: "Enter a unified address (u1…) or a Zcash name (e.g. zoie).",
     };
   }
   const name = normalizeZnsNameInput(trimmed);

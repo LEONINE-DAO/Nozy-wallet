@@ -109,6 +109,52 @@ export function encrypt_for_storage(data, password) {
 }
 
 /**
+ * ZIP-317 fee in zatoshis. NozyWallet always applies the priority multiplier (×4);
+ * the `priority` argument is accepted for API compatibility and ignored.
+ * @param {string} memo
+ * @param {boolean} _priority
+ * @returns {bigint}
+ */
+export function estimate_orchard_send_fee_zats(memo, _priority) {
+    const ptr0 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.estimate_orchard_send_fee_zats(ptr0, len0, _priority);
+    return BigInt.asUintN(64, ret);
+}
+
+/**
+ * Build `nozy-vote-notes-v1` JSON from scanned Ironwood notes (cached witnesses).
+ * @param {string} mnemonic_str
+ * @param {string} notes_json
+ * @param {string} network
+ * @returns {string}
+ */
+export function export_ironwood_vote_notes_json(mnemonic_str, notes_json, network) {
+    let deferred5_0;
+    let deferred5_1;
+    try {
+        const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(notes_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ptr2 = passStringToWasm0(network, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len2 = WASM_VECTOR_LEN;
+        const ret = wasm.export_ironwood_vote_notes_json(ptr0, len0, ptr1, len1, ptr2, len2);
+        var ptr4 = ret[0];
+        var len4 = ret[1];
+        if (ret[3]) {
+            ptr4 = 0; len4 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred5_0 = ptr4;
+        deferred5_1 = len4;
+        return getStringFromWasm0(ptr4, len4);
+    } finally {
+        wasm.__wbindgen_free(deferred5_0, deferred5_1, 1);
+    }
+}
+
+/**
  * @param {string} mnemonic_str
  * @param {number} account
  * @param {number} index
@@ -160,6 +206,22 @@ export function get_zcash_chain_id() {
 }
 
 /**
+ * @returns {string}
+ */
+export function nozy_version_display() {
+    let deferred1_0;
+    let deferred1_1;
+    try {
+        const ret = wasm.nozy_version_display();
+        deferred1_0 = ret[0];
+        deferred1_1 = ret[1];
+        return getStringFromWasm0(ret[0], ret[1]);
+    } finally {
+        wasm.__wbindgen_free(deferred1_0, deferred1_1, 1);
+    }
+}
+
+/**
  * @param {string} tracker_state_json
  * @param {string} mnemonic_str
  * @param {string} wallet_address
@@ -184,7 +246,6 @@ export function orchard_scan_tracker_apply_block(tracker_state_json, mnemonic_st
 }
 
 /**
- * Pass empty string to start from an empty Orchard tree (only valid when scanning from chain genesis / NU5).
  * @param {string} final_state_hex
  * @returns {string}
  */
@@ -224,6 +285,14 @@ export function orchard_witness_matches_anchor_hex(witness_hex, anchor_hex) {
         throw takeFromExternrefTable0(ret[1]);
     }
     return ret[0] !== 0;
+}
+
+/**
+ * @returns {number}
+ */
+export function pilot_expiry_delta_blocks() {
+    const ret = wasm.pilot_expiry_delta_blocks();
+    return ret >>> 0;
 }
 
 /**
@@ -313,6 +382,35 @@ export function scan_orchard_actions(mnemonic_str, address, actions_json, block_
 }
 
 /**
+ * Initialize dual-pool trackers from Zebrad `z_gettreestate` final states.
+ * @param {string} orchard_final_state_hex
+ * @param {string} ironwood_final_state_hex
+ * @returns {string}
+ */
+export function shielded_scan_tracker_new(orchard_final_state_hex, ironwood_final_state_hex) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(orchard_final_state_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(ironwood_final_state_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.shielded_scan_tracker_new(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * @param {string} mnemonic_str
  * @param {string} message
  * @returns {string}
@@ -326,6 +424,34 @@ export function sign_message(mnemonic_str, message) {
         const ptr1 = passStringToWasm0(message, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
         const len1 = WASM_VECTOR_LEN;
         const ret = wasm.sign_message(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
+ * @param {string} mnemonic_str
+ * @param {string} request_json
+ * @returns {string}
+ */
+export function sign_vote_delegation(mnemonic_str, request_json) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(request_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.sign_vote_delegation(ptr0, len0, ptr1, len1);
         var ptr3 = ret[0];
         var len3 = ret[1];
         if (ret[3]) {
