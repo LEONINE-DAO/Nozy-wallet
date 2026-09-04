@@ -2979,7 +2979,7 @@ dependencies = [
  "serde_json",
  "sha2 0.10.9",
  "tendermint",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tonic",
  "tracing",
@@ -3002,7 +3002,7 @@ name = "nozy-ffi"
 version = "0.1.0"
 dependencies = [
  "nozy",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "uniffi",
  "zcash_protocol",
@@ -3023,7 +3023,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tower 0.4.13",
  "tower-http 0.7.0",
@@ -6450,7 +6450,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "tonic",
  "tonic-prost",
@@ -6462,7 +6462,7 @@ dependencies = [
 name = "zeaking-ffi"
 version = "0.1.0"
 dependencies = [
- "thiserror 1.0.69",
+ "thiserror 2.0.18",
  "tokio",
  "uniffi",
  "zeaking",
