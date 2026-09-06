@@ -644,6 +644,37 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
         }
     }
 
+    /// JSON-RPC URL this client posts to (primary endpoint).
+    pub fn rpc_url(&self) -> &str {
+        &self.url
+    }
+
+    /// Generic JSON-RPC call (Crosslink TFL / staking methods, experimental node RPCs).
+    pub async fn call_rpc<T>(&self, method: &str, params: Value) -> NozyResult<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": 1
+        });
+
+        let response: ZebraResponse<T> = self.make_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(NozyError::Rpc(format!(
+                "{} (code: {})",
+                error.message, error.code
+            )));
+        }
+
+        response
+            .result
+            .ok_or_else(|| NozyError::Rpc(format!("No result from RPC method `{method}`")))
+    }
+
     async fn get_grpc_client(&self) -> NozyResult<Arc<ZebraGrpcClient>> {
         let grpc_client = ZebraGrpcClient::new(self.url.clone()).await?;
         Ok(Arc::new(grpc_client))

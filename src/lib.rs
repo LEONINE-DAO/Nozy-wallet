@@ -110,9 +110,8 @@ pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
 #[cfg(feature = "native")]
-pub mod send_egress;
-#[cfg(feature = "native")]
 pub mod send_readiness;
+#[cfg(feature = "native")]
 pub mod shielded_pool;
 #[cfg(feature = "native")]
 pub mod storage;
@@ -298,8 +297,6 @@ pub use secret_keys::{
     SECRET_COIN_TYPE,
 };
 #[cfg(feature = "native")]
-pub use send_egress::{assess_send_egress, SendEgressSnapshot};
-#[cfg(feature = "native")]
 pub use send_readiness::{
     ensure_cached_witness_fresh_for_send, ensure_witness_fresh_for_send,
     is_witness_stale_for_send_error, max_serialized_witness_lag_blocks, max_witness_lag_blocks,
@@ -334,11 +331,10 @@ pub use vote_sign::{sign_delegation_request, sign_delegation_request_json};
 pub use wallet_profiles::{
     active_profile_id, active_wallet_exists, apply_profile_connection_to_config,
     configure_profile_network, create_new_profile, default_network_for_profile_name,
-    default_zebra_url_for_network, delete_wallet_profile, list_wallet_profiles,
-    migrate_orphaned_sent_transactions, profile_connection_settings, profile_has_wallet,
-    prune_profiles_without_wallet, save_profile_connection_settings, set_active_wallet_profile,
-    snapshot_active_profile_from_config, touch_active_profile_scan_height,
-    ProfileConnectionSettings, WalletProfile,
+    default_zebra_url_for_network, list_wallet_profiles, migrate_orphaned_sent_transactions,
+    profile_connection_settings, profile_has_wallet, save_profile_connection_settings,
+    set_active_wallet_profile, snapshot_active_profile_from_config,
+    touch_active_profile_scan_height, ProfileConnectionSettings, WalletProfile,
 };
 #[cfg(feature = "native")]
 pub use wallet_sync::{
