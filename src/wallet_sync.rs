@@ -271,12 +271,13 @@ pub(crate) fn apply_cached_notes_resume(
     }
 
     if let Some(floor) = unwitnessed_unspent_floor(notes_before) {
-        if floor < range.scan_start {
-            range.scan_start = floor;
-        }
-        // Bound each round so witness rebuild can persist progress and the UI can update.
-        let batch = options.incremental_batch.max(1);
+        // Bounded desktop/API chunks pass explicit end_height ??? do not rewind into a
+        // full-history rescan while catching up to tip.
         if options.end_height.is_none() {
+            if floor < range.scan_start {
+                range.scan_start = floor;
+            }
+            let batch = options.incremental_batch.max(1);
             range.scan_end = range.scan_start.saturating_add(batch).min(range.chain_tip);
         }
         return;
@@ -302,13 +303,14 @@ pub(crate) fn apply_cached_notes_resume(
 
 /// Nym baseline hygiene (V3): rewind auto-resume starts with overlap + checkpoint snap.
 ///
-/// Skipped when the operator set an explicit `--start-height` (deterministic debug windows).
+/// Skipped when the operator set an explicit `--start-height` (deterministic debug windows)
+/// or an explicit `end_height` (bounded desktop/API incremental chunk).
 pub(crate) fn apply_start_height_obfuscation(
     range: &mut ScanRange,
     config: &WalletConfig,
     options: &WalletSyncOptions,
 ) {
-    if options.start_height.is_some() {
+    if options.start_height.is_some() || options.end_height.is_some() {
         return;
     }
     if range.scan_start > range.scan_end {
@@ -334,6 +336,26 @@ pub(crate) fn apply_start_height_obfuscation(
         "baseline hygiene: obfuscated sync start height"
     );
     range.scan_start = obf.obfuscated_start;
+}
+
+/// Forward-only bounds for explicit incremental chunks (`end_height` set).
+pub(crate) fn clamp_incremental_chunk_range(
+    range: &mut ScanRange,
+    config: &WalletConfig,
+    options: &WalletSyncOptions,
+) {
+    if options.end_height.is_none() {
+        return;
+    }
+    if let Some(last) = config.last_scan_height {
+        let forward_start = last.saturating_add(1);
+        if range.scan_start < forward_start {
+            range.scan_start = forward_start;
+        }
+    }
+    if let Some(end) = options.end_height {
+        range.scan_end = end.max(range.scan_start).min(range.chain_tip);
+    }
 }
 
 fn record_tip_sync_if_caught_up(scan_end: u32, chain_tip: u32) {
@@ -478,6 +500,7 @@ pub async fn sync_wallet_notes(
     apply_empty_cache_backfill(&mut range, &config, &options, &notes_before);
     apply_cached_notes_resume(&mut range, &config, &options, &notes_before);
     apply_start_height_obfuscation(&mut range, &config, &options);
+    clamp_incremental_chunk_range(&mut range, &config, &options);
 
     let ctx = SyncRangeContext::from_range(&range);
     let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
@@ -550,7 +573,30 @@ pub async fn sync_wallet_notes(
             chain_tip_opt,
         ));
     }
-    refresh_and_persist_witnesses(&zebra_client, &mut cached_notes, range.scan_end)
+    let incremental_chunk =
+        options.end_height.is_some() || (!options.scan_to_tip && range.scan_end < range.chain_tip);
+    if incremental_chunk {
+        update_last_scan_height(range.scan_end).map_err(|e| {
+            WalletSyncError::with_range(
+                WalletSyncPhase::Checkpoint,
+                e,
+                None,
+                scan_start,
+                scan_end,
+                chain_tip_opt,
+            )
+        })?;
+    }
+
+    let witness_target = if incremental_chunk {
+        range.scan_end.min(witness_catchup_target_height(
+            &cached_notes,
+            range.chain_tip,
+        ))
+    } else {
+        range.scan_end
+    };
+    refresh_and_persist_witnesses(&zebra_client, &mut cached_notes, witness_target)
         .await
         .map_err(|e| {
             WalletSyncError::with_range(
@@ -1137,5 +1183,27 @@ mod tests {
         let before = range.scan_start;
         apply_start_height_obfuscation(&mut range, &config, &opts);
         assert_eq!(range.scan_start, before);
+    }
+
+    #[test]
+    fn bounded_chunk_skips_obfuscation_and_stays_forward_only() {
+        let config = test_config(Some(3_460_284), "mainnet");
+        let opts = WalletSyncOptions {
+            end_height: Some(3_460_309),
+            incremental_batch: 25,
+            ..WalletSyncOptions::default()
+        };
+        let mut range = resolve_scan_range(&config, &opts, 3_460_673).unwrap();
+        assert_eq!(range.scan_start, 3_460_285);
+        assert_eq!(range.scan_end, 3_460_309);
+        apply_start_height_obfuscation(&mut range, &config, &opts);
+        clamp_incremental_chunk_range(&mut range, &config, &opts);
+        assert_eq!(range.scan_start, 3_460_285);
+        assert_eq!(range.scan_end, 3_460_309);
+        assert_eq!(
+            range.scan_end.saturating_sub(range.scan_start) + 1,
+            25,
+            "bounded chunk must scan exactly 25 blocks"
+        );
     }
 }
