@@ -176,12 +176,14 @@ wasm = ["getrandom/js"]
 secret-network = ["dep:cosmrs", "dep:tendermint"]
 
 [workspace]
-members = ["zeaking", "api-server", "zeaking-ffi", "nozy-ffi"]
+members = ["zeaking", "api-server", "zeaking-ffi", "nozy-ffi", "nozy-sync-engine"]
 exclude = [
     "desktop-client/src-tauri",
     "browser-extension/wasm-core",
     "tools/nym-dvpn-lwd-spike",
     "tools/nym-smolmix-broadcast-spike",
+    "tools/lwd-mixnet-proxy",
+    "tools/nozy-vote",
 ]
 resolver = "2"
 

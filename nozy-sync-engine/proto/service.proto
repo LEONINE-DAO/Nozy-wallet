@@ -1,0 +1,147 @@
+// Vendored from Zcash lightwalletd protocol (MIT). See compact_formats.proto.
+syntax = "proto3";
+package cash.z.wallet.sdk.rpc;
+option go_package = "lightwalletd/walletrpc";
+option swift_prefix = "";
+import "compact_formats.proto";
+
+message BlockID {
+     uint64 height = 1;
+     bytes hash = 2;
+}
+
+message BlockRange {
+    BlockID start = 1;
+    BlockID end = 2;
+}
+
+message TxFilter {
+     BlockID block = 1;
+     uint64 index = 2;
+     bytes hash = 3;
+}
+
+message RawTransaction {
+    bytes data = 1;
+    uint64 height = 2;
+}
+
+message SendResponse {
+    int32 errorCode = 1;
+    string errorMessage = 2;
+}
+
+message ChainSpec {}
+
+message Empty {}
+
+message LightdInfo {
+    string version = 1;
+    string vendor = 2;
+    bool   taddrSupport = 3;
+    string chainName = 4;
+    uint64 saplingActivationHeight = 5;
+    string consensusBranchId = 6;
+    uint64 blockHeight = 7;
+    string gitCommit = 8;
+    string branch = 9;
+    string buildDate = 10;
+    string buildUser = 11;
+    uint64 estimatedHeight = 12;
+    string zcashdBuild = 13;
+    string zcashdSubversion = 14;
+    string donationAddress = 15;
+}
+
+message TransparentAddressBlockFilter {
+    string address = 1;
+    BlockRange range = 2;
+}
+
+message Duration {
+    int64 intervalUs = 1;
+}
+
+message PingResponse {
+    int64 entry = 1;
+    int64 exit = 2;
+}
+
+message Address {
+    string address = 1;
+}
+message AddressList {
+    repeated string addresses = 1;
+}
+message Balance {
+    int64 valueZat = 1;
+}
+
+message Exclude {
+    repeated bytes txid = 1;
+}
+
+message TreeState {
+    string network = 1;
+    uint64 height = 2;
+    string hash = 3;
+    uint32 time = 4;
+    string saplingTree = 5;
+    string orchardTree = 6;
+}
+
+enum ShieldedProtocol {
+    sapling = 0;
+    orchard = 1;
+}
+
+message GetSubtreeRootsArg {
+    uint32 startIndex = 1;
+    ShieldedProtocol shieldedProtocol = 2;
+    uint32 maxEntries = 3;
+}
+message SubtreeRoot {
+    bytes rootHash = 2;
+    bytes completingBlockHash = 3;
+    uint64 completingBlockHeight = 4;
+}
+
+message GetAddressUtxosArg {
+    repeated string addresses = 1;
+    uint64 startHeight = 2;
+    uint32 maxEntries = 3;
+}
+message GetAddressUtxosReply {
+    string address = 6;
+    bytes txid = 1;
+    int32 index = 2;
+    bytes script = 3;
+    int64 valueZat = 4;
+    uint64 height = 5;
+}
+message GetAddressUtxosReplyList {
+    repeated GetAddressUtxosReply addressUtxos = 1;
+}
+
+service CompactTxStreamer {
+    rpc GetLatestBlock(ChainSpec) returns (BlockID) {}
+    rpc GetBlock(BlockID) returns (CompactBlock) {}
+    rpc GetBlockNullifiers(BlockID) returns (CompactBlock) {}
+    rpc GetBlockRange(BlockRange) returns (stream CompactBlock) {}
+    rpc GetBlockRangeNullifiers(BlockRange) returns (stream CompactBlock) {}
+    rpc GetTransaction(TxFilter) returns (RawTransaction) {}
+    rpc SendTransaction(RawTransaction) returns (SendResponse) {}
+    rpc GetTaddressTxids(TransparentAddressBlockFilter) returns (stream RawTransaction) {}
+    rpc GetTaddressTransactions(TransparentAddressBlockFilter) returns (stream RawTransaction) {}
+    rpc GetTaddressBalance(AddressList) returns (Balance) {}
+    rpc GetTaddressBalanceStream(stream Address) returns (Balance) {}
+    rpc GetMempoolTx(Exclude) returns (stream CompactTx) {}
+    rpc GetMempoolStream(Empty) returns (stream RawTransaction) {}
+    rpc GetTreeState(BlockID) returns (TreeState) {}
+    rpc GetLatestTreeState(Empty) returns (TreeState) {}
+    rpc GetSubtreeRoots(GetSubtreeRootsArg) returns (stream SubtreeRoot) {}
+    rpc GetAddressUtxos(GetAddressUtxosArg) returns (GetAddressUtxosReplyList) {}
+    rpc GetAddressUtxosStream(GetAddressUtxosArg) returns (stream GetAddressUtxosReply) {}
+    rpc GetLightdInfo(Empty) returns (LightdInfo) {}
+    rpc Ping(Duration) returns (PingResponse) {}
+}
