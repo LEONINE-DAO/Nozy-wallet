@@ -4,6 +4,8 @@ import { Shield } from "@solar-icons/react";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useSettingsStore } from "../../store/settingsStore";
 import { walletApi } from "../../lib/api";
+import { ZCASH_NYM_FREE_URL } from "../../lib/nymIronwoodStopgap";
+import { SendEgressCard } from "../SendEgressCard";
 import type { NymDvpnSyncProbeResult, NymDvpnSyncStatus } from "../../lib/types";
 
 const NYM_VPN_URL = "https://nym.com/vpn";
@@ -93,6 +95,10 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
     window.open(ZCASH_SDK_NYM, "_blank", "noopener,noreferrer");
   };
 
+  const openZcashNymFree = () => {
+    window.open(ZCASH_NYM_FREE_URL, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="max-w-2xl mx-auto animate-fade-in">
       <SettingsBackButton onClick={onBack} />
@@ -106,6 +112,8 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
       </p>
 
       <div className="space-y-6">
+        <SendEgressCard />
+
         <div className="p-4 rounded-xl bg-primary-50/50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
           <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">
             Default — local Zebrad
@@ -246,15 +254,36 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
         </div>
 
         <div className="p-4 rounded-xl bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700">
-          <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">NymVPN — full privacy on the web</h3>
-          <p className="text-sm text-gray-600 dark:text-gray-300 mb-4">
-            <strong>NymVPN</strong> routes traffic through the Nym mixnet (or a fast 2-hop
-            WireGuard mode). Useful for general metadata protection; for migration, prefer local
-            Zebrad first. Consumer app ≠ SDK ticketbooks.
+          <h3 className="font-medium text-gray-900 dark:text-gray-100 mb-2">
+            Ironwood stopgap — free NymVPN (consumer app)
+          </h3>
+          <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
+            If you are not on a local Zebrad, Nym offers a <strong>free month of NymVPN</strong>{" "}
+            to ZEC holders who prove shielded ZEC at{" "}
+            <span className="font-mono text-xs">zcash.nym.com</span>. Sign in to the NymVPN app
+            with the key from that site. This is a bridge until in-app dVPN sync + mixnet submit
+            are the default — it is not “Nozy integrated Nym.”
           </p>
+          <ol className="list-decimal list-inside text-sm text-gray-600 dark:text-gray-300 space-y-2 mb-4">
+            <li>
+              <strong>Sync</strong> with NymVPN <em>Fast mode</em> (2-hop). Mixnet is too slow for
+              compact blocks.
+            </li>
+            <li>
+              <strong>Ironwood send / broadcast</strong> with NymVPN <em>Mixnet mode</em> and a{" "}
+              <strong>new exit</strong> — a different IP than the sync session.
+            </li>
+            <li>
+              Do not sync and migrate-broadcast through the same hosted lightwalletd a minute later.
+              Timing can re-link you even when the VPN changed.
+            </li>
+          </ol>
           <div className="flex flex-wrap gap-3">
-            <Button variant="primary" onClick={openNymVpn}>
-              Get NymVPN (nym.com)
+            <Button variant="primary" onClick={openZcashNymFree}>
+              Claim free month (zcash.nym.com)
+            </Button>
+            <Button variant="outline" onClick={openNymVpn}>
+              NymVPN app
             </Button>
             <Button variant="outline" onClick={openNymVpnRepo}>
               NymVPN source (GitHub)
