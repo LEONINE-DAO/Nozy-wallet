@@ -15,5 +15,5 @@ nozy = { path = "../", default-features = true }
 zeaking = { path = "../zeaking", features = ["lightwalletd"] }
 zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }
-thiserror = "1.0"
+thiserror = "2.0"
 uniffi = { version = "0.28", features = ["tokio"] }
