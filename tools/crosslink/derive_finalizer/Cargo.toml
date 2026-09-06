@@ -1,0 +1,10 @@
+[package]
+name = "derive_finalizer"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+
+[dependencies]
+zebra-crosslink = { path = "/home/lowo/projects/crosslink-monolith-v13/zebra-crosslink/zebra-crosslink" }
+hex = "0.4"
