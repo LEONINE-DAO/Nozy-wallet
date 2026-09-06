@@ -59,7 +59,9 @@ Zeaking uses a trait-based design to work with any blockchain backend:
 - **`BlockParser`**: Trait for parsing block data (optional, has default implementation)
 - **`Zeaking`**: Main indexer that uses these traits
 
-## lightwalletd (Zebrad + compact blocks)
+## lightwalletd / Nozy Sync Engine (Zebrad + compact blocks)
+
+**Preferred operator path:** in-repo [`nozy-sync-engine`](../nozy-sync-engine/README.md) (#274) — Zebra-family ingest + CompactTxStreamer drop-in for `LIGHTWALLETD_GRPC`. lightwalletd remains a supported fallback.
 
 ### Build prerequisites (`lightwalletd` feature)
 

@@ -3002,11 +3002,43 @@ name = "nozy-ffi"
 version = "0.1.0"
 dependencies = [
  "nozy",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "uniffi",
  "zcash_protocol",
  "zeaking",
+]
+
+[[package]]
+name = "nozy-sync-engine"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "clap",
+ "futures",
+ "hex",
+ "incrementalmerkletree",
+ "orchard",
+ "prost 0.14.3",
+ "reqwest",
+ "rusqlite",
+ "sapling-crypto",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tempfile",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tonic-prost",
+ "tonic-prost-build",
+ "tracing",
+ "tracing-subscriber",
+ "zcash_primitives",
+ "zcash_protocol",
 ]
 
 [[package]]
@@ -5117,6 +5149,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac2a5518c70fa84342385732db33fb3f44bc4cc748936eb5833d2df34d6445ef"
 dependencies = [
  "async-trait",
+ "axum",
  "base64",
  "bytes",
  "h2",
