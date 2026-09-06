@@ -10,14 +10,18 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+mod companion_auth;
+mod crosslink_handlers;
 mod handlers;
 mod invoice_handlers;
 mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
+mod privacy_handlers;
 mod profile_handlers;
 mod sapling_handlers;
+mod vote_handlers;
 mod zns_handlers;
 
 #[tokio::main]
@@ -26,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let api_key = std::env::var("NOZY_API_KEY").ok();
+    let api_key = companion_auth::resolve_companion_api_key()?;
     let rate_limit_requests = std::env::var("NOZY_RATE_LIMIT_REQUESTS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -38,9 +42,11 @@ async fn main() -> anyhow::Result<()> {
     let is_production = std::env::var("NOZY_PRODUCTION").is_ok();
 
     if api_key.is_some() {
-        info!("API key authentication enabled");
+        info!("API key authentication enabled (public exemptions: /health, /api/lwd/*)");
     } else {
-        warn!("⚠️  API key authentication is DISABLED - set NOZY_API_KEY environment variable to enable");
+        warn!(
+            "API key authentication is DISABLED via NOZY_ALLOW_UNAUTHENTICATED — not for real funds"
+        );
     }
 
     info!(
@@ -79,9 +85,8 @@ async fn main() -> anyhow::Result<()> {
     // create/restore/unlock (and all other routes behind api_key_auth) are not open.
     if is_production && api_key.is_none() {
         return Err(anyhow::anyhow!(
-            "NOZY_PRODUCTION is set but NOZY_API_KEY is missing. \
-             Set NOZY_API_KEY for create/restore/unlock and other authenticated routes, \
-             or unset NOZY_PRODUCTION for local development."
+            "NOZY_PRODUCTION is set but API key auth is disabled. \
+             Unset NOZY_ALLOW_UNAUTHENTICATED, or set NOZY_API_KEY / use companion_api_key file."
         ));
     }
 
@@ -133,6 +138,79 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/sapling/shield",
             post(sapling_handlers::shield_sapling),
+        )
+        .route("/api/vote/status", get(vote_handlers::vote_status))
+        .route("/api/vote/active", get(vote_handlers::vote_active))
+        .route(
+            "/api/vote/export-notes",
+            post(vote_handlers::vote_export_notes),
+        )
+        .route(
+            "/api/vote/import-notes",
+            post(vote_handlers::vote_import_notes),
+        )
+        .route(
+            "/api/vote/signing-request",
+            get(vote_handlers::vote_signing_request),
+        )
+        .route(
+            "/api/vote/submit-delegation-sig",
+            post(vote_handlers::vote_submit_delegation_sig),
+        )
+        .route("/api/vote/prepare", post(vote_handlers::vote_prepare))
+        .route("/api/vote/delegate", post(vote_handlers::vote_delegate))
+        .route(
+            "/api/vote/sign-delegation",
+            post(vote_handlers::vote_sign_delegation),
+        )
+        .route(
+            "/api/vote/delegate-finish",
+            post(vote_handlers::vote_delegate_finish),
+        )
+        .route("/api/vote/cast", post(vote_handlers::vote_cast))
+        .route(
+            "/api/crosslink/status",
+            get(crosslink_handlers::crosslink_status),
+        )
+        .route(
+            "/api/crosslink/positions",
+            get(crosslink_handlers::crosslink_positions),
+        )
+        .route(
+            "/api/crosslink/roster",
+            get(crosslink_handlers::crosslink_roster),
+        )
+        .route(
+            "/api/crosslink/finality",
+            get(crosslink_handlers::crosslink_finality),
+        )
+        .route(
+            "/api/crosslink/bond",
+            get(crosslink_handlers::crosslink_bond),
+        )
+        .route(
+            "/api/crosslink/stake",
+            post(crosslink_handlers::crosslink_stake),
+        )
+        .route(
+            "/api/crosslink/retarget",
+            post(crosslink_handlers::crosslink_retarget),
+        )
+        .route(
+            "/api/crosslink/unbond",
+            post(crosslink_handlers::crosslink_unbond),
+        )
+        .route(
+            "/api/crosslink/withdraw",
+            post(crosslink_handlers::crosslink_withdraw),
+        )
+        .route(
+            "/api/crosslink/wallet-ufvk",
+            get(crosslink_handlers::crosslink_wallet_ufvk),
+        )
+        .route(
+            "/api/crosslink/wallet-status",
+            get(crosslink_handlers::crosslink_wallet_status),
         )
         .route("/api/zns/resolve", post(zns_handlers::resolve_zns_name))
         .route("/api/zns/link", get(zns_handlers::get_zns_link))
@@ -194,6 +272,30 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config", get(handlers::get_config))
         .route("/api/config/zebra-url", post(handlers::set_zebra_url))
         .route("/api/config/theme", post(handlers::set_theme))
+        .route(
+            "/api/config/privacy-network",
+            get(privacy_handlers::get_privacy_network).post(privacy_handlers::set_privacy_network),
+        )
+        .route(
+            "/api/privacy/send-egress",
+            get(privacy_handlers::get_send_egress),
+        )
+        .route(
+            "/api/privacy/nym-mixnet",
+            get(privacy_handlers::get_nym_mixnet),
+        )
+        .route(
+            "/api/privacy/nym-dvpn",
+            get(privacy_handlers::get_nym_dvpn).post(privacy_handlers::set_nym_dvpn),
+        )
+        .route(
+            "/api/privacy/nym-dvpn/probe",
+            post(privacy_handlers::probe_nym_dvpn),
+        )
+        .route(
+            "/api/privacy/nym-vpn-app",
+            get(privacy_handlers::get_nym_vpn_app),
+        )
         .route(
             "/api/config/test-zebra",
             post(handlers::test_zebra_connection),
