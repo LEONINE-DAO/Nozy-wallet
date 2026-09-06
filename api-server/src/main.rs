@@ -17,6 +17,7 @@ mod ironwood_handlers;
 mod keystone_handlers;
 mod lwd_handlers;
 mod middleware;
+mod privacy_handlers;
 mod profile_handlers;
 mod sapling_handlers;
 mod vote_handlers;
@@ -257,6 +258,30 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/config", get(handlers::get_config))
         .route("/api/config/zebra-url", post(handlers::set_zebra_url))
         .route("/api/config/theme", post(handlers::set_theme))
+        .route(
+            "/api/config/privacy-network",
+            get(privacy_handlers::get_privacy_network).post(privacy_handlers::set_privacy_network),
+        )
+        .route(
+            "/api/privacy/send-egress",
+            get(privacy_handlers::get_send_egress),
+        )
+        .route(
+            "/api/privacy/nym-mixnet",
+            get(privacy_handlers::get_nym_mixnet),
+        )
+        .route(
+            "/api/privacy/nym-dvpn",
+            get(privacy_handlers::get_nym_dvpn).post(privacy_handlers::set_nym_dvpn),
+        )
+        .route(
+            "/api/privacy/nym-dvpn/probe",
+            post(privacy_handlers::probe_nym_dvpn),
+        )
+        .route(
+            "/api/privacy/nym-vpn-app",
+            get(privacy_handlers::get_nym_vpn_app),
+        )
         .route(
             "/api/config/test-zebra",
             post(handlers::test_zebra_connection),

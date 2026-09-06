@@ -702,6 +702,9 @@ pub enum PrivacyNetworkCommand {
     /// Show Nym smolmix broadcast helper readiness (D2c) without opening a tunnel.
     #[command(name = "nym-mixnet")]
     NymMixnet,
+    /// Show which egress the next send / Ironwood broadcast will use (no tunnel).
+    #[command(name = "send-egress")]
+    SendEgress,
 }
 
 #[derive(Subcommand)]
@@ -3168,6 +3171,31 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         "  Then: --dry-reachability / --ip-relocate / --rpc-probe --zebra <public>"
                     );
                     println!("  Docs: docs/reference/NYM_MIXNET_BROADCAST_CASE_BREAKDOWN.md");
+                }
+                PrivacyNetworkCommand::SendEgress => {
+                    let egress = nozy::assess_send_egress(&config);
+                    println!("🔒 Next send egress (no tunnel)");
+                    println!("{}", "=".repeat(60));
+                    println!("  Badge:    {}", egress.label);
+                    println!("  Mode:     {}", egress.connection_mode);
+                    println!("  Zebra:    {}", egress.zebra_url);
+                    println!(
+                        "  Local:    {}",
+                        if egress.zebra_url_local { "yes" } else { "no" }
+                    );
+                    println!(
+                        "  Mixnet requested / helper / would use: {} / {} / {}",
+                        if egress.mixnet_requested { "yes" } else { "no" },
+                        if egress.mixnet_helper_ok { "yes" } else { "no" },
+                        if egress.would_use_mixnet { "yes" } else { "no" },
+                    );
+                    println!("  Summary:  {}", egress.summary);
+                    println!("  Detail:   {}", egress.detail);
+                    if egress.show_stopgap {
+                        println!("  Stopgap:  {}", egress.stopgap_url);
+                        println!("            {}", egress.stopgap_hint);
+                    }
+                    println!("  Docs: docs/reference/NYM_SEND_EGRESS_CASE_BREAKDOWN.md");
                 }
             }
         }

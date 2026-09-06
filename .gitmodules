@@ -1,0 +1,3 @@
+[submodule "tools/lwd-mixnet-proxy"]
+	path = tools/lwd-mixnet-proxy
+	url = https://github.com/jpgonzalezra/lwd-mixnet-proxy.git

@@ -298,6 +298,31 @@ export interface ConfigResponse {
   theme: string;
 }
 
+export type SendEgressKind =
+  | "local"
+  | "trusted"
+  | "mixnet"
+  | "tor"
+  | "i2p"
+  | "direct_remote"
+  | "blocked";
+
+export interface SendEgressSnapshot {
+  kind: SendEgressKind;
+  label: string;
+  connection_mode: string;
+  zebra_url: string;
+  zebra_url_local: boolean;
+  mixnet_requested: boolean;
+  mixnet_helper_ok: boolean;
+  would_use_mixnet: boolean;
+  show_stopgap: boolean;
+  stopgap_url: string;
+  stopgap_hint: string;
+  summary: string;
+  detail: string;
+}
+
 export interface NymDvpnSyncStatus {
   requested: boolean;
   lwd_url: string;

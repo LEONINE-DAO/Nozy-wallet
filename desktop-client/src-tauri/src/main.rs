@@ -90,6 +90,7 @@ fn main() {
             get_nym_dvpn_sync_status,
             set_sync_via_nym_dvpn,
             run_nym_dvpn_sync_probe,
+            get_send_egress,
             address_book_list,
             address_book_add,
             address_book_remove,
