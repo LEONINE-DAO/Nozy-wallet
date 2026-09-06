@@ -3002,7 +3002,6 @@ name = "nozy-ffi"
 version = "0.1.0"
 dependencies = [
  "nozy",
- "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "uniffi",
