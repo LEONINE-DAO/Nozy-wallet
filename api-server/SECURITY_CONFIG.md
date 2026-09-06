@@ -6,11 +6,14 @@ This document describes the security features implemented in the NozyWallet API 
 
 ### 1. API Key Authentication
 
-The API server supports optional API key authentication to protect endpoints.
+The API server **requires** an API key for fund-moving and wallet routes by default.
 
 **Configuration:**
-- Set the `NOZY_API_KEY` environment variable to enable authentication
-- If not set, authentication is disabled (development mode)
+- Set `NOZY_API_KEY`, **or**
+- Let the server create `{wallet_data_dir}/companion_api_key` on first start (logged at startup)
+- Set `NOZY_ALLOW_UNAUTHENTICATED=1` only for emergency/dev (disables auth; do not use with real funds)
+
+**Public without a key:** `/health` and `/api/lwd/*` (compact sync).
 
 **Usage:**
 Clients must include the API key in one of two ways:
@@ -25,6 +28,8 @@ curl -H "X-API-Key: your-secret-key" http://localhost:3000/api/balance
 # With Authorization header
 curl -H "Authorization: Bearer your-secret-key" http://localhost:3000/api/balance
 ```
+
+Extension users: paste the key into **Companion → Companion API key** (same storage key the background client sends).
 
 ### 2. Rate Limiting
 

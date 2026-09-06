@@ -20,6 +20,11 @@ This crate does **not** implement LWD-only treestate.
 | `sapling_status(wallet_data_dir)` | Quiet legacy balance from persisted notes |
 | `sapling_scan(mnemonic, wallet_data_dir, compact_db_path, start_floor?, full)` | Scan compact SQLite for Sapling notes |
 | `sapling_shield(mnemonic, wallet_data_dir, compact_db_path, zebra_url, lightwalletd_url, dry_run, no_broadcast)` | Shield-to-self (Groth16 + Halo2) |
+| `vote_calendar_info()` | Static NU7 snapshot / vote window |
+| `vote_export_notes(mnemonic, wallet_data_dir, network)` | Ironwood notes JSON for `nozy-vote` / desktop |
+| `vote_sign_delegation(mnemonic, request_json)` | Sign Valar delegation PCZT request |
+
+**Vote scope:** export + sign only (seed on device). Prepare / PIR / cast need `zcash_voting` and cannot link in this crate beside `zeaking` (sqlite). Finish those steps on **Desktop Vote** or `tools/nozy-vote`.
 
 Errors are `NozyFfiError` with a message string. Never log mnemonics or seeds.
 
@@ -63,3 +68,4 @@ uniffi-bindgen generate --library target/release/libnozy_ffi.so \
 - Keystone Sapling
 - Outbound Sapling send (`zs1`)
 - Full on-device Orchard send (separate from this shield path)
+- In-process vote prepare / cast (`zcash_voting` — use desktop or `nozy-vote`)

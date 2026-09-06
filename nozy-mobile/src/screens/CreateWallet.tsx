@@ -27,14 +27,18 @@ export function CreateWalletScreen({ navigation }: Props) {
 
   async function handleCreate() {
     setError("");
-    if (password && password !== confirm) {
+    if (!password.trim()) {
+      setError("A password is required to create a wallet via the companion API.");
+      return;
+    }
+    if (password !== confirm) {
       setError("Passwords do not match");
       return;
     }
 
     setLoading(true);
     try {
-      const result = await api.createWallet(password || undefined);
+      const result = await api.createWallet(password);
       await setPassword(password);
       navigation.replace("MnemonicBackup", { mnemonic: result.mnemonic });
     } catch (e) {
@@ -53,12 +57,16 @@ export function CreateWalletScreen({ navigation }: Props) {
         <ScrollView contentContainerStyle={styles.container}>
           <Text style={styles.title}>Create wallet</Text>
           <Text style={styles.subtitle}>
-            Optional password encrypts your wallet on the API server. Leave blank
-            for no password.
+            Only if you have never created a Nozy wallet. Restore the Desktop
+            phrase instead so this phone matches Desktop and the extension.
+          </Text>
+          <Text style={styles.subtitle}>
+            A password is required. It encrypts the wallet on the companion API
+            server.
           </Text>
 
           <Input
-            label="Password (optional)"
+            label="Password"
             value={password}
             onChangeText={setPasswordDraft}
             secureTextEntry

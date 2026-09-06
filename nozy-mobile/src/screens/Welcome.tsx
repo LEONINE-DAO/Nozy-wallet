@@ -51,6 +51,7 @@ export function WelcomeScreen({ navigation }: Props) {
   const [mnemonic, setMnemonic] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
   const [showRestorePass, setShowRestorePass] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState("");
   const [showUnlockPass, setShowUnlockPass] = useState(false);
 
@@ -164,6 +165,10 @@ export function WelcomeScreen({ navigation }: Props) {
   }
 
   async function handleCreateWallet() {
+    if (!createPassword.trim()) {
+      setError("A password is required to create a wallet via the companion API.");
+      return;
+    }
     if (createPassword !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -197,10 +202,16 @@ export function WelcomeScreen({ navigation }: Props) {
       setError("Mnemonic is required");
       return;
     }
+    if (!restorePassword.trim()) {
+      setError("A password is required to restore a wallet via the companion API.");
+      return;
+    }
     setIsLoading(true);
     setError(null);
     try {
-      await api.restoreWallet(mnemonic.trim(), restorePassword);
+      await api.restoreWallet(mnemonic.trim(), restorePassword, {
+        confirmOverwrite: replaceExisting,
+      });
       setWalletExistsOnDisk(true);
       setRequiresPassword(Boolean(restorePassword));
       await unlockSession(restorePassword);
@@ -372,23 +383,27 @@ export function WelcomeScreen({ navigation }: Props) {
             </View>
 
             <Text style={styles.orSetup}>or set up a different wallet</Text>
+            <Text style={styles.subtitle}>
+              Use the same 24-word phrase as Nozy Desktop. Create makes a new
+              address that will not match Desktop.
+            </Text>
 
             <View style={styles.actions}>
               <Button
-                label="Create New Wallet"
+                label="Restore Desktop wallet"
                 onPress={() => {
                   setError(null);
-                  setView("create");
+                  setView("restore");
                 }}
                 disabled={!apiReachable}
                 size="lg"
               />
               <Button
-                label="Restore Wallet"
+                label="Create New Wallet"
                 variant="secondary"
                 onPress={() => {
                   setError(null);
-                  setView("restore");
+                  setView("create");
                 }}
                 disabled={!apiReachable}
                 size="lg"
@@ -402,8 +417,8 @@ export function WelcomeScreen({ navigation }: Props) {
             <Card variant="elevated" padding="lg">
               <Text style={styles.sectionTitle}>Create New Wallet</Text>
               <Text style={styles.subtitle}>
-                Set a password to secure your wallet. You can create as many
-                wallets as you need.
+                Only if you have never created a Nozy wallet. This will not
+                match Desktop if you already have a recovery phrase.
               </Text>
               <Input
                 label="Password"
@@ -444,9 +459,10 @@ export function WelcomeScreen({ navigation }: Props) {
         {!generatedMnemonic && view === "restore" ? (
           <View style={styles.section}>
             <Card variant="elevated" padding="lg">
-              <Text style={styles.sectionTitle}>Restore Wallet</Text>
+              <Text style={styles.sectionTitle}>Restore Desktop wallet</Text>
               <Text style={styles.subtitle}>
-                Enter your seed phrase to recover your wallet
+                Enter the same 24-word phrase as Nozy Desktop. Phone, Desktop,
+                CLI, and the browser extension should all show that wallet.
               </Text>
               <Textarea
                 label="Seed Phrase (Mnemonic)"
@@ -468,11 +484,25 @@ export function WelcomeScreen({ navigation }: Props) {
                   {showRestorePass ? "Hide password" : "Show password"}
                 </Text>
               </Pressable>
+              {walletExistsOnDisk ? (
+                <Pressable
+                  onPress={() => setReplaceExisting((v) => !v)}
+                  style={{ marginBottom: spacing.md }}
+                >
+                  <Text style={styles.subtitle}>
+                    {replaceExisting ? "☑" : "☐"} Replace the wallet on this API
+                    with this phrase. Required if the phone was pointing at a
+                    different wallet. Do not check this against Desktop on this
+                    PC unless you intend to overwrite it.
+                  </Text>
+                </Pressable>
+              ) : null}
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <Button
-                label={isLoading ? "Restoring..." : "Restore Wallet"}
+                label={isLoading ? "Restoring..." : "Restore Desktop wallet"}
                 onPress={() => void handleRestoreWallet()}
                 loading={isLoading}
+                disabled={isLoading || (walletExistsOnDisk && !replaceExisting)}
                 size="lg"
               />
               <Button label="Back" variant="ghost" onPress={handleBack} />

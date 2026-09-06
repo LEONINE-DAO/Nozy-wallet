@@ -3002,6 +3002,7 @@ name = "nozy-ffi"
 version = "0.1.0"
 dependencies = [
  "nozy",
+ "serde_json",
  "thiserror 1.0.69",
  "tokio",
  "uniffi",
@@ -3049,6 +3050,7 @@ dependencies = [
  "axum-server",
  "chrono",
  "directories",
+ "getrandom 0.2.17",
  "hex",
  "nozy",
  "reqwest",
