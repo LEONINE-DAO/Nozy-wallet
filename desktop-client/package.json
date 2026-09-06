@@ -48,6 +48,6 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.2.2",
     "vite": "^6.4.3",
-    "zustand": "^5.0.9"
+    "zustand": "^5.0.15"
   }
 }
