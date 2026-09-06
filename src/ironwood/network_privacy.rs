@@ -22,6 +22,19 @@ use crate::privacy_network::proxy::{PrivacyNetwork, ProxyConfig};
 use crate::zebra_integration::ZebraClient;
 use serde::{Deserialize, Serialize};
 
+/// Harry / Nym: free NymVPN month for shielded ZEC holders (Ironwood stopgap).
+pub const ZCASH_NYM_FREE_URL: &str = "https://zcash.nym.com";
+
+/// User-facing hybrid stopgap. Prefer local Zebrad; consumer NymVPN is not in-app Nym.
+pub fn nymvpn_ironwood_stopgap_hint() -> String {
+    format!(
+        "Stopgap if you are not on local Zebrad: prove shielded ZEC at {ZCASH_NYM_FREE_URL} for a free \
+         NymVPN month. Use Fast mode for compact sync; Mixnet mode and a new exit for Ironwood \
+         send/broadcast. Do not sync and migrate-broadcast through the same hosted lightwalletd a \
+         minute later."
+    )
+}
+
 /// How the wallet chose amounts and broadcast windows for migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]

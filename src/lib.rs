@@ -74,6 +74,8 @@ pub mod nym_dvpn_sync;
 #[cfg(feature = "native")]
 pub mod nym_mixnet_broadcast;
 #[cfg(feature = "native")]
+pub mod nym_vpn_app;
+#[cfg(feature = "native")]
 pub mod orchard_chain_tree;
 #[cfg(feature = "native")]
 pub mod orchard_tree_codec;
@@ -109,6 +111,8 @@ pub mod sapling_witness;
 pub mod scan_log;
 #[cfg(feature = "secret-network")]
 pub mod secret;
+#[cfg(feature = "native")]
+pub mod send_egress;
 #[cfg(feature = "native")]
 pub mod send_readiness;
 #[cfg(feature = "native")]
@@ -296,6 +300,8 @@ pub use secret_keys::{
     SecretDerivationPath, SecretKeyDerivation, SecretKeyPair, SECRET_ADDRESS_PREFIX,
     SECRET_COIN_TYPE,
 };
+#[cfg(feature = "native")]
+pub use send_egress::{assess_send_egress, SendEgressSnapshot};
 #[cfg(feature = "native")]
 pub use send_readiness::{
     ensure_cached_witness_fresh_for_send, ensure_witness_fresh_for_send,

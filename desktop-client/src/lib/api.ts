@@ -14,6 +14,7 @@ import {
   BalanceResponse,
   SendTransactionRequest,
   ConfigResponse,
+  SendEgressSnapshot,
   NymDvpnSyncStatus,
   NymDvpnSyncProbeResult,
   SetZebraUrlRequest,
@@ -485,6 +486,11 @@ export const walletApi = {
         blocks: opts?.blocks ?? null,
       },
     });
+    return { data: result };
+  },
+
+  getSendEgress: async (): Promise<{ data: SendEgressSnapshot }> => {
+    const result = await invoke<SendEgressSnapshot>("get_send_egress");
     return { data: result };
   },
 
