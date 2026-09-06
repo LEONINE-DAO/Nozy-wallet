@@ -16,6 +16,19 @@ set -u
 BASE_URL="${BASE_URL:-http://127.0.0.1:3000}"
 BASE_URL="${BASE_URL%/}"
 failed_hard=0
+
+# Auto-generated companion_api_key (loopback default). CI unsets NOZY_API_KEY.
+if [[ -z "${NOZY_API_KEY:-}" ]]; then
+  search_root="${XDG_DATA_HOME:-${HOME:-}/.local/share}"
+  if [[ -d "$search_root" ]]; then
+    found_key=$(find "$search_root" -name companion_api_key -type f 2>/dev/null | head -n 1 || true)
+    if [[ -n "${found_key}" ]]; then
+      NOZY_API_KEY=$(tr -d '[:space:]' < "$found_key")
+      echo "Using companion API key from ${found_key}"
+    fi
+  fi
+fi
+
 CURL_AUTH=()
 if [[ -n "${NOZY_API_KEY:-}" ]]; then
   CURL_AUTH=(-H "X-API-Key: ${NOZY_API_KEY}")

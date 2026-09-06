@@ -11,6 +11,10 @@ The MV3 extension does **not** embed `zeaking`, gRPC, or SQLite. For **lightwall
 
 **Sending shielded ZEC** from the extension against **Zebrad-only** still depends on RPC capabilities (witness / anchor); Desktop + updated Nozy core target the supported Zebrad tree APIs. The companion fixes **compact sync**, not every prove path in the extension. See repo **`ZEBRAD_SHIELDED_SEND_LIMIT.md`** when relevant.
 
+## Companion API key
+
+`nozywallet-api` now **generates** `{wallet_data_dir}/companion_api_key` on first start unless `NOZY_API_KEY` is set. Paste that value into the extension **API** tab and the mobile Welcome screen (`X-API-Key`). `/health` and `/api/lwd/*` stay public. Set `NOZY_ALLOW_UNAUTHENTICATED=1` only for emergency/dev. On Windows, `SHOW-API-KEY.bat` copies the key to the clipboard.
+
 ## Localhost HTTP (recommended)
 
 1. Run **`nozywallet-api`** from the Nozy-wallet repo (default bind: `http://127.0.0.1:3000`). Set `LIGHTWALLETD_GRPC` if lightwalletd is not on `http://127.0.0.1:9067`.

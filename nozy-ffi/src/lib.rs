@@ -1,7 +1,8 @@
-//! UniFFI surface for quiet Sapling legacy status / scan / shield-to-self.
+//! UniFFI surface for quiet Sapling legacy status / scan / shield-to-self,
+//! plus NU7 coinholder vote **export/sign** (seed stays on device).
 //!
-//! Same core path as CLI `nozy sapling`, Tauri, and `api-server` `/api/sapling/*`.
-//! On-device proving still requires reachable Zebrad JSON-RPC + LWD compact SQLite.
+//! Prepare / delegate-finish / cast need `zcash_voting` and cannot link here
+//! beside `zeaking` (sqlite conflict) — use desktop Vote tab or `nozy-vote` CLI.
 //!
 //! Generate Kotlin / Swift bindings with `uniffi-bindgen` (see README).
 
@@ -34,9 +35,25 @@ fn network_type(config: &nozy::WalletConfig) -> zcash_protocol::consensus::Netwo
     }
 }
 
+fn parse_network_label(
+    network: &str,
+) -> Result<zcash_protocol::consensus::NetworkType, NozyFfiError> {
+    match network.trim().to_ascii_lowercase().as_str() {
+        "" | "main" | "mainnet" => Ok(zcash_protocol::consensus::NetworkType::Main),
+        "test" | "testnet" => Ok(zcash_protocol::consensus::NetworkType::Test),
+        other => Err(NozyFfiError::Message(format!(
+            "unknown network {other} (mainnet|testnet)"
+        ))),
+    }
+}
+
 fn seed_from_mnemonic(mnemonic: &str) -> Result<Vec<u8>, NozyFfiError> {
     let wallet = nozy::HDWallet::from_mnemonic(mnemonic.trim()).map_err(map_err)?;
     Ok(wallet.get_mnemonic_object().to_seed("").to_vec())
+}
+
+fn wallet_from_mnemonic(mnemonic: &str) -> Result<nozy::HDWallet, NozyFfiError> {
+    nozy::HDWallet::from_mnemonic(mnemonic.trim()).map_err(map_err)
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -76,6 +93,114 @@ pub struct SaplingShieldResultFfi {
     pub candidate_notes: u64,
     pub candidate_zatoshis: u64,
     pub message: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct VoteCalendarFfi {
+    pub snapshot_utc: String,
+    pub vote_start_utc: String,
+    pub vote_end_utc: String,
+    pub forum_url: String,
+    pub tally_url: String,
+    pub message: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct VoteNotesExportFfi {
+    pub format: String,
+    pub network: String,
+    pub note_count: u64,
+    pub total_value_zat: u64,
+    pub seed_fingerprint_hex: String,
+    /// Full `nozy-vote-notes-v1` JSON for `nozy-vote import-notes` / desktop handoff.
+    pub notes_json: String,
+    pub message: String,
+}
+
+#[derive(Clone, uniffi::Record)]
+pub struct VoteDelegationSigFfi {
+    pub format: String,
+    pub round_id: String,
+    pub bundle_index: u32,
+    pub sighash_hex: String,
+    pub spend_auth_sig_hex: String,
+    /// Full `nozy-vote-delegation-sig-v1` JSON for `delegate-finish`.
+    pub sig_json: String,
+    pub message: String,
+}
+
+/// Static NU7 coinholder vote calendar (no network / no SDK).
+#[uniffi::export]
+pub fn vote_calendar_info() -> VoteCalendarFfi {
+    VoteCalendarFfi {
+        snapshot_utc: "2026-08-24T19:00:00Z".into(),
+        vote_start_utc: "2026-08-25T00:00:00Z".into(),
+        vote_end_utc: "2026-09-14T19:00:00Z".into(),
+        forum_url: "https://forum.zcashcommunity.com/t/nu7-coinholder-vote/56912".into(),
+        tally_url: "https://tally.valargroup.org".into(),
+        message: "Eligible weight = spendable Ironwood notes at snapshot. \
+Prepare/cast on desktop or nozy-vote CLI; this FFI only exports notes and signs delegation."
+            .into(),
+    }
+}
+
+/// Export unspent Ironwood notes (+ witnesses) as `nozy-vote-notes-v1` JSON.
+///
+/// Requires synced Ironwood notes under `wallet_data_dir`. Prepare/cast stay on desktop/`nozy-vote`.
+#[uniffi::export]
+pub fn vote_export_notes(
+    mnemonic: String,
+    wallet_data_dir: String,
+    network: String,
+) -> Result<VoteNotesExportFfi, NozyFfiError> {
+    let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let net = if network.trim().is_empty() {
+        let config = nozy::load_config();
+        network_type(&config)
+    } else {
+        parse_network_label(&network)?
+    };
+    nozy::with_wallet_data_dir(Path::new(&wallet_data_dir), || {
+        let file = nozy::build_ironwood_vote_notes(&wallet, net).map_err(map_err)?;
+        let total_value_zat: u64 = file.notes.iter().map(|n| n.value).sum();
+        let notes_json = serde_json::to_string_pretty(&file)
+            .map_err(|e| map_err(format!("serialize notes json: {e}")))?;
+        Ok(VoteNotesExportFfi {
+            format: file.format.clone(),
+            network: file.network.clone(),
+            note_count: file.notes.len() as u64,
+            total_value_zat,
+            seed_fingerprint_hex: file.seed_fingerprint_hex.clone(),
+            notes_json,
+            message: format!(
+                "Exported {} Ironwood note(s). Share notes_json to desktop/nozy-vote for import.",
+                file.notes.len()
+            ),
+        })
+    })
+}
+
+/// Sign a Valar delegation PCZT request (`nozy-vote-delegation-sign-v1` JSON).
+#[uniffi::export]
+pub fn vote_sign_delegation(
+    mnemonic: String,
+    request_json: String,
+) -> Result<VoteDelegationSigFfi, NozyFfiError> {
+    let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let sig =
+        nozy::sign_delegation_request_json(&wallet, request_json.as_bytes()).map_err(map_err)?;
+    let sig_json = serde_json::to_string_pretty(&sig)
+        .map_err(|e| map_err(format!("serialize sig json: {e}")))?;
+    Ok(VoteDelegationSigFfi {
+        format: sig.format.clone(),
+        round_id: sig.round_id.clone(),
+        bundle_index: sig.bundle_index,
+        sighash_hex: sig.sighash_hex.clone(),
+        spend_auth_sig_hex: sig.spend_auth_sig_hex.clone(),
+        sig_json,
+        message: "Delegation signed. Share sig_json to desktop/nozy-vote for delegate-finish."
+            .into(),
+    })
 }
 
 /// Quiet legacy status from persisted Sapling notes under `wallet_data_dir`.
@@ -336,6 +461,35 @@ mod tests {
             db.to_string_lossy().into_owned(),
             None,
             false,
+        );
+        assert!(err.is_err());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn vote_calendar_has_snapshot() {
+        let c = vote_calendar_info();
+        assert!(c.snapshot_utc.contains("2026-08-24"));
+    }
+
+    #[test]
+    fn vote_sign_rejects_bad_json() {
+        let err = vote_sign_delegation(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"
+                .into(),
+            "{not json".into(),
+        );
+        assert!(err.is_err());
+    }
+
+    #[test]
+    fn vote_export_rejects_bad_mnemonic() {
+        let dir = std::env::temp_dir().join(format!("nozy-ffi-vote-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&dir);
+        let err = vote_export_notes(
+            "not a real mnemonic".into(),
+            dir.to_string_lossy().into_owned(),
+            "mainnet".into(),
         );
         assert!(err.is_err());
         let _ = std::fs::remove_dir_all(&dir);

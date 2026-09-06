@@ -10,6 +10,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+mod companion_auth;
 mod crosslink_handlers;
 mod handlers;
 mod invoice_handlers;
@@ -29,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
 
-    let api_key = std::env::var("NOZY_API_KEY").ok();
+    let api_key = companion_auth::resolve_companion_api_key()?;
     let rate_limit_requests = std::env::var("NOZY_RATE_LIMIT_REQUESTS")
         .ok()
         .and_then(|s| s.parse().ok())
@@ -41,9 +42,11 @@ async fn main() -> anyhow::Result<()> {
     let is_production = std::env::var("NOZY_PRODUCTION").is_ok();
 
     if api_key.is_some() {
-        info!("API key authentication enabled");
+        info!("API key authentication enabled (public exemptions: /health, /api/lwd/*)");
     } else {
-        warn!("⚠️  API key authentication is DISABLED - set NOZY_API_KEY environment variable to enable");
+        warn!(
+            "API key authentication is DISABLED via NOZY_ALLOW_UNAUTHENTICATED — not for real funds"
+        );
     }
 
     info!(
@@ -82,9 +85,8 @@ async fn main() -> anyhow::Result<()> {
     // create/restore/unlock (and all other routes behind api_key_auth) are not open.
     if is_production && api_key.is_none() {
         return Err(anyhow::anyhow!(
-            "NOZY_PRODUCTION is set but NOZY_API_KEY is missing. \
-             Set NOZY_API_KEY for create/restore/unlock and other authenticated routes, \
-             or unset NOZY_PRODUCTION for local development."
+            "NOZY_PRODUCTION is set but API key auth is disabled. \
+             Unset NOZY_ALLOW_UNAUTHENTICATED, or set NOZY_API_KEY / use companion_api_key file."
         ));
     }
 
