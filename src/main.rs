@@ -366,6 +366,16 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
         command: PrivacyNetworkCommand,
     },
 
+    #[command(
+        about = "zk-CosmWasm × Nym track (shielded claim draft + LCD egress policy)",
+        long_about = "Step B/D prep for Harry WASM+shielded stack. Does not run CosmWasm.\n\
+See docs/reference/ZK_COSMWASM_NYM_DEMO.md"
+    )]
+    ZkCosmwasm {
+        #[command(subcommand)]
+        command: ZkCosmwasmCommand,
+    },
+
     #[command(about = "Cross-chain swap functionality (XMR to ZEC, etc.)")]
     Swap {
         #[command(subcommand)]
@@ -373,10 +383,10 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
     },
 
     #[cfg(feature = "secret-network")]
-    #[command(about = "Shade Protocol (Secret Network) integration commands")]
-    Shade {
+    #[command(about = "Secret Network (SCRT and generic SNIP-20)")]
+    Secret {
         #[command(subcommand)]
-        command: ShadeCommand,
+        command: SecretCommand,
     },
 
     #[command(about = "Monero integration and verification commands")]
@@ -392,6 +402,111 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
     Ironwood {
         #[command(subcommand)]
         command: IronwoodCommand,
+    },
+
+    #[command(about = "Nozy × Crosslink Protocol Guardian (Season 1 feature-net staking / TFL)")]
+    Crosslink {
+        #[command(subcommand)]
+        command: CrosslinkCommand,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum CrosslinkCommand {
+    #[command(about = "Guardian dashboard: Staking Day, bonds, rewards, next action")]
+    Status {
+        #[arg(long, help = "Print JSON snapshot")]
+        json: bool,
+        #[arg(long, help = "Include full bond / finalizer hex in human output")]
+        full_keys: bool,
+    },
+    #[command(about = "List active and withdrawable staking positions")]
+    Positions {
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        full_keys: bool,
+    },
+    #[command(about = "Show finalizer roster and stake share")]
+    Roster {
+        #[arg(long, help = "Prefer get_tfl_roster_zats")]
+        zats: bool,
+        #[arg(long)]
+        json: bool,
+        #[arg(long)]
+        full_keys: bool,
+    },
+    #[command(about = "Finalized tip and optional block/tx finality")]
+    Finality {
+        #[arg(long, help = "Block hash")]
+        block: Option<String>,
+        #[arg(long, help = "Transaction id")]
+        tx: Option<String>,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Lookup one bond via getbondinfo (byte-reverses positions pk)")]
+    Bond {
+        #[arg(long, help = "Bond pk from `positions` (not reversed)")]
+        key: String,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Stake cTAZ to a finalizer (Staking Day; node wallet signs)")]
+    Stake {
+        #[arg(long, help = "Amount in cTAZ (e.g. 0.01)")]
+        amount: f64,
+        #[arg(long, help = "Finalizer identity — 64 hex chars")]
+        finalizer: String,
+        #[arg(long, help = "Skip confirmation prompt")]
+        yes: bool,
+        #[arg(long, help = "Allow outside Staking Day (node will likely reject)")]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Retarget an existing bond to another finalizer (any time)")]
+    Retarget {
+        #[arg(long, help = "Bond pk from positions")]
+        bond: String,
+        #[arg(long)]
+        finalizer: String,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Begin unbonding (Staking Day)")]
+    Unbond {
+        #[arg(long)]
+        bond: String,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Withdraw a finished unbond (Staking Day)")]
+    Withdraw {
+        #[arg(long)]
+        bond: String,
+        #[arg(long)]
+        yes: bool,
+        #[arg(long)]
+        force: bool,
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Export node wallet UFVK for Season 1 ZEC payout submission")]
+    Ufvk {
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(about = "Node wallet spendable balance (requires get_wallet_sync_status RPC)")]
+    Wallet {
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -424,7 +539,7 @@ pub enum IronwoodCommand {
         wait_confirm: bool,
         #[arg(
             long,
-            help = "Attest that NymVPN/Tor (or equivalent) is protecting this machine's egress"
+            help = "Attest that NymVPN/Tor (or equivalent) is protecting this machine's egress. Prefer local Zebrad. Free NymVPN for shielded ZEC holders: https://zcash.nym.com (Fast mode to sync, Mixnet + new exit to send)."
         )]
         attest_private_network: bool,
         #[arg(
@@ -597,6 +712,36 @@ pub enum PrivacyNetworkCommand {
     /// Show Nym smolmix broadcast helper readiness (D2c) without opening a tunnel.
     #[command(name = "nym-mixnet")]
     NymMixnet,
+    /// Show which egress the next send / Ironwood broadcast will use (no tunnel).
+    #[command(name = "send-egress")]
+    SendEgress,
+}
+
+#[derive(Subcommand)]
+pub enum ZkCosmwasmCommand {
+    /// Track status for steps A–D (VM, witness, mixnet LCD, glue).
+    Status {
+        #[arg(
+            long,
+            help = "zk-CosmWasm LCD base URL (overrides NOZY_ZK_COSMWASM_LCD_URL)"
+        )]
+        lcd_url: Option<String>,
+        #[arg(long, help = "Emit JSON")]
+        json: bool,
+    },
+    /// Build claim draft JSON from wallet or vote-export file (proof bytes blocked on upstream spec).
+    #[command(name = "claim-draft")]
+    ClaimDraft {
+        #[arg(
+            long,
+            help = "Input nozy-vote-notes-v1 JSON (default: build from synced wallet Ironwood notes)"
+        )]
+        from: Option<String>,
+        #[arg(long, help = "Output path (default: zk-cosmwasm-claim-draft.json)")]
+        out: Option<String>,
+        #[arg(long, help = "LCD URL for egress snapshot in draft")]
+        lcd_url: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -624,7 +769,7 @@ pub enum SwapCommand {
 
 #[cfg(feature = "secret-network")]
 #[derive(Subcommand)]
-pub enum ShadeCommand {
+pub enum SecretCommand {
     Balance {
         #[arg(long)]
         address: Option<String>,
@@ -656,7 +801,6 @@ pub enum ShadeCommand {
         #[arg(long)]
         txid: Option<String>,
     },
-    ListTokens,
 }
 
 #[derive(Subcommand)]
@@ -1083,7 +1227,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             let network = config.network.clone();
             let is_mainnet = network == "mainnet";
 
-            let amount_zatoshis = (amount * 100_000_000.0) as u64;
+            let amount_zatoshis = nozy::input_validation::zec_to_zatoshis_exact(amount)?;
 
             println!("\n📋 Transaction Summary");
             println!("{}", "=".repeat(60));
@@ -1100,6 +1244,11 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     "TESTNET"
                 }
             );
+            let egress = nozy::assess_send_egress(&config);
+            println!("  Submit:    {} — {}", egress.label, egress.summary);
+            if egress.show_stopgap {
+                println!("  Stopgap:   {}", egress.stopgap_url);
+            }
 
             println!("\n💸 Estimating transaction fee...");
             let memo_preview = memo
@@ -1252,7 +1401,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 }
             };
 
-            let amount_zatoshis = (amount * 100_000_000.0) as u64;
+            let amount_zatoshis = nozy::input_validation::zec_to_zatoshis_exact(amount)?;
 
             use nozy::privacy_ui::validate_and_show_privacy;
             if let Err(e) = validate_and_show_privacy(&actual_recipient) {
@@ -3020,12 +3169,17 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
                 PrivacyNetworkCommand::NymMixnet => {
+                    let egress = nozy::assess_send_egress(&config);
+                    println!("🌀 Nym smolmix broadcast readiness (issue #147 / D2c)");
+                    println!("{}", "=".repeat(60));
+                    println!("  Next send: {} — {}", egress.label, egress.summary);
+                    if egress.show_stopgap {
+                        println!("  Stopgap: {}", egress.stopgap_url);
+                    }
                     let readiness = nozy::nym_mixnet_broadcast::assess_mixnet_broadcast_readiness(
                         &config.zebra_url,
                         config.privacy_network.broadcast_via_nym_mixnet,
                     );
-                    println!("🌀 Nym smolmix broadcast readiness (issue #147 / D2c)");
-                    println!("{}", "=".repeat(60));
                     println!(
                         "  Requested: {}",
                         if readiness.requested { "yes" } else { "no" }
@@ -3063,6 +3217,164 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         "  Then: --dry-reachability / --ip-relocate / --rpc-probe --zebra <public>"
                     );
                     println!("  Docs: docs/reference/NYM_MIXNET_BROADCAST_CASE_BREAKDOWN.md");
+                }
+                PrivacyNetworkCommand::SendEgress => {
+                    let egress = nozy::assess_send_egress(&config);
+                    println!("🔒 Next send egress (no tunnel)");
+                    println!("{}", "=".repeat(60));
+                    println!("  Badge:    {}", egress.label);
+                    println!("  Mode:     {}", egress.connection_mode);
+                    println!("  Zebra:    {}", egress.zebra_url);
+                    println!(
+                        "  Local:    {}",
+                        if egress.zebra_url_local { "yes" } else { "no" }
+                    );
+                    println!(
+                        "  Mixnet requested / helper / would use: {} / {} / {}",
+                        if egress.mixnet_requested { "yes" } else { "no" },
+                        if egress.mixnet_helper_ok { "yes" } else { "no" },
+                        if egress.would_use_mixnet { "yes" } else { "no" },
+                    );
+                    println!("  Summary:  {}", egress.summary);
+                    println!("  Detail:   {}", egress.detail);
+                    if egress.show_stopgap {
+                        println!("  Stopgap:  {}", egress.stopgap_url);
+                        println!("            {}", egress.stopgap_hint);
+                    }
+                    println!("  Docs: docs/reference/NYM_SEND_EGRESS_CASE_BREAKDOWN.md");
+                }
+            }
+        }
+
+        Commands::ZkCosmwasm { command } => {
+            use nozy::zk_cosmwasm_claim::{
+                assess_track_status, build_claim_draft, build_claim_draft_from_wallet,
+                load_vote_export, LCD_URL_ENV,
+            };
+            use std::path::PathBuf;
+
+            match &command {
+                ZkCosmwasmCommand::Status { lcd_url, .. }
+                | ZkCosmwasmCommand::ClaimDraft { lcd_url, .. } => {
+                    if let Some(u) = lcd_url {
+                        std::env::set_var(LCD_URL_ENV, u);
+                    }
+                }
+            }
+
+            let evidence_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("docs")
+                .join("reference")
+                .join("evidence");
+            let step_a_ok = std::fs::read_dir(&evidence_dir)
+                .ok()
+                .map(|entries| {
+                    entries.filter_map(Result::ok).any(|e| {
+                        e.file_name()
+                            .to_string_lossy()
+                            .starts_with("zk-cosmwasm-step-a-")
+                    })
+                })
+                .unwrap_or(false);
+
+            let wallet_has_notes = if let Ok((wallet, _)) = nozy::cli_helpers::load_wallet().await {
+                let network = if cli.testnet {
+                    NetworkType::Test
+                } else {
+                    NetworkType::Main
+                };
+                nozy::build_ironwood_vote_notes(&wallet, network).is_ok()
+            } else {
+                false
+            };
+
+            match command {
+                ZkCosmwasmCommand::Status { json, .. } => {
+                    let status = assess_track_status(&config, step_a_ok, wallet_has_notes);
+                    if json {
+                        println!(
+                            "{}",
+                            serde_json::to_string_pretty(&status).map_err(|e| {
+                                nozy::NozyError::InvalidOperation(format!("json: {e}"))
+                            })?
+                        );
+                    } else {
+                        println!("zk-CosmWasm × Nym × Nozy track");
+                        println!("{}", "=".repeat(60));
+                        println!(
+                            "  A VM verify:     {} — {}",
+                            status.step_a_vm.label(),
+                            status.step_a_note
+                        );
+                        println!(
+                            "  B witness:       {} — {}",
+                            status.step_b_witness.label(),
+                            status.step_b_note
+                        );
+                        println!(
+                            "  C LCD egress:    {} — {}",
+                            status.step_c_egress.label(),
+                            status.step_c_note
+                        );
+                        println!(
+                            "  D glue POST:     {} — {}",
+                            status.step_d_glue.label(),
+                            status.step_d_note
+                        );
+                        if let Some(ref lcd) = status.lcd_url {
+                            println!("  LCD URL:         {lcd}");
+                            if let Some(ref eg) = status.lcd_submit_egress {
+                                println!("  LCD egress:      {} ({})", eg.label, eg.summary);
+                            }
+                        } else {
+                            println!("  LCD URL:         (set {LCD_URL_ENV} or --lcd-url)");
+                        }
+                        println!(
+                            "  Zebrad egress:   {} — {}",
+                            status.zebra_submit_egress.label, status.zebra_submit_egress.summary
+                        );
+                        println!("  Honest claim:    {}", status.honest_claim);
+                        println!("  Docs: docs/reference/ZK_COSMWASM_NYM_DEMO.md");
+                    }
+                }
+                ZkCosmwasmCommand::ClaimDraft { from, out, .. } => {
+                    let lcd = nozy::zk_cosmwasm_claim::lcd_url_from_env_or_config(&config);
+                    let draft = if let Some(path) = from {
+                        let vote = load_vote_export(PathBuf::from(path).as_path())?;
+                        build_claim_draft(vote, lcd, &config)
+                    } else {
+                        let (wallet, _) = nozy::cli_helpers::load_wallet().await?;
+                        let network = if cli.testnet {
+                            NetworkType::Test
+                        } else {
+                            NetworkType::Main
+                        };
+                        build_claim_draft_from_wallet(&wallet, network, lcd, &config)?
+                    };
+                    let out_path =
+                        PathBuf::from(out.unwrap_or_else(|| "zk-cosmwasm-claim-draft.json".into()));
+                    let json = serde_json::to_string_pretty(&draft)
+                        .map_err(|e| nozy::NozyError::InvalidOperation(format!("json: {e}")))?;
+                    std::fs::write(&out_path, json).map_err(|e| {
+                        nozy::NozyError::InvalidOperation(format!(
+                            "write {}: {e}",
+                            out_path.display()
+                        ))
+                    })?;
+                    println!(
+                        "✅ Claim draft → {} ({} note(s), {} zatoshis)",
+                        out_path.display(),
+                        draft.note_count,
+                        draft.total_value_zatoshis
+                    );
+                    println!(
+                        "   proof_instance: {} (step D blocked)",
+                        draft.proof_instance_status
+                    );
+                    if let Some(ref eg) = draft.lcd_submit_egress {
+                        println!("   LCD egress if used: {} — {}", eg.label, eg.summary);
+                    }
+                    println!("   Do not commit this file. Next: scripts/zk-cosmwasm-step-a.ps1");
                 }
             }
         }
@@ -3176,10 +3488,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
         }
 
         #[cfg(feature = "secret-network")]
-        Commands::Shade { command } => {
+        Commands::Secret { command } => {
             use nozy::load_config;
             use nozy::privacy_network::proxy::ProxyConfig;
-            use nozy::secret::snip20::shade_tokens;
             use nozy::secret::SecretWallet;
             use nozy::secret_keys::SecretKeyDerivation;
 
@@ -3189,7 +3500,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             let hd_wallet = load_wallet().await.ok();
 
             match command {
-                ShadeCommand::Balance { address, token } => {
+                SecretCommand::Balance { address, token } => {
                     let wallet_address = if let Some(addr) = address {
                         addr
                     } else if let Some((ref wallet, _)) = hd_wallet.as_ref() {
@@ -3240,23 +3551,13 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             }
                         }
                     } else {
-                        println!("\n   Common Shade Tokens:");
-                        for (_name, contract) in
-                            [("SHD", shade_tokens::SHD), ("SILK", shade_tokens::SILK)]
-                        {
-                            match wallet.get_token_balance(contract).await {
-                                Ok((balance, info)) => {
-                                    if balance > 0.0 {
-                                        println!("      {}: {:.6}", info.symbol, balance);
-                                    }
-                                }
-                                Err(_) => {}
-                            }
-                        }
+                        println!(
+                            "\n   SNIP-20: pass --token <contract> to query a specific token."
+                        );
                     }
                 }
 
-                ShadeCommand::Info { token } => {
+                SecretCommand::Info { token } => {
                     let wallet = SecretWallet::new(
                         "secret1example1234567890123456789012345678901234567890".to_string(),
                         None,
@@ -3282,13 +3583,13 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
 
-                ShadeCommand::Send {
+                SecretCommand::Send {
                     recipient,
                     amount,
                     token,
                     memo,
                 } => {
-                    println!("💸 Sending Shade Token");
+                    println!("💸 Sending SNIP-20 token");
                     println!("{}", "=".repeat(60));
                     println!("   Token: {}", token);
                     println!("   Recipient: {}", recipient);
@@ -3402,14 +3703,15 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
 
-                ShadeCommand::Receive { account, index } => {
+                SecretCommand::Receive { account, index } => {
                     let (wallet, _storage) = load_wallet().await?;
 
                     match wallet.generate_secret_address(account, index) {
                         Ok(address) => {
                             println!("📍 Your Secret Network address:");
                             println!("{}", address);
-                            println!("\n💡 Share this address to receive SCRT and Shade tokens.");
+                            println!("\n💡 Share this address to receive native SCRT.");
+                            println!("   SNIP-20: the sender must use this address and the token contract.");
                             println!("   Derivation path: m/44'/529'/{}/0/{}", account, index);
                         }
                         Err(e) => {
@@ -3418,7 +3720,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
 
-                ShadeCommand::History => {
+                SecretCommand::History => {
                     use nozy::secret::SecretTransactionStorage;
 
                     let tx_storage = SecretTransactionStorage::new()?;
@@ -3473,7 +3775,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                 }
 
-                ShadeCommand::Status { txid } => {
+                SecretCommand::Status { txid } => {
                     use nozy::load_config;
                     use nozy::secret::{SecretRpcClient, SecretTransactionStorage};
 
@@ -3538,16 +3840,6 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             );
                         }
                     }
-                }
-
-                ShadeCommand::ListTokens => {
-                    println!("🎨 Shade Protocol Tokens");
-                    println!("{}", "=".repeat(60));
-                    println!("\n   Mainnet Token Contracts:");
-                    println!("   SHD (Shade): {}", shade_tokens::SHD);
-                    println!("   SILK: {}", shade_tokens::SILK);
-                    println!("\n💡 Use 'nozy shade balance' to check balances");
-                    println!("💡 Use 'nozy shade receive' to generate your address");
                 }
             }
         }
@@ -3879,10 +4171,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         ));
                     }
                     if ironwood_active && orchard_zat > 0 {
-                        blockers.push(
-                            "Orchard notes remain — run `nozy ironwood migrate` for turnstile migration"
-                                .to_string(),
-                        );
+                        blockers.push("Orchard notes remain migrate if able.".to_string());
                     }
                     if ironwood_active && ironwood_zat == 0 && orchard_zat == 0 {
                         blockers.push(
@@ -4201,7 +4490,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     } else {
                         println!(
                             "      Broadcast policy: blocked until local node, Tor/I2P, \
-                             --attest-private-network, or --force-clearnet"
+                             --attest-private-network, or --force-clearnet. {}",
+                            nozy::ironwood::nymvpn_ironwood_stopgap_hint()
                         );
                     }
                     for warning in &privacy.warnings {
@@ -4209,6 +4499,15 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     }
                     for blocker in &privacy.blockers {
                         println!("      Blocker: {blocker}");
+                    }
+
+                    let egress = nozy::assess_send_egress(&config);
+                    println!(
+                        "   Next send / broadcast egress: {} — {}",
+                        egress.label, egress.summary
+                    );
+                    if egress.show_stopgap {
+                        println!("      Stopgap: {}", egress.stopgap_url);
                     }
 
                     let bucket = nozy::ironwood::previous_zip318_anchor_boundary(chain_tip);
@@ -4263,6 +4562,11 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     match readiness.state {
                         MigrationReadinessState::PlanningOnly => {
                             println!("   Result: planning-only until NU6.3 activation");
+                        }
+                        MigrationReadinessState::NeedsPlan => {
+                            println!(
+                                "   Result: save a ZIP 318 plan first (`ironwood plan --save`)"
+                            );
                         }
                         MigrationReadinessState::NoOrchardNotes => {
                             println!("   Result: no Orchard notes need migration");
@@ -4351,6 +4655,14 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         match result.readiness_state {
                             MigrationReadinessState::NoOrchardNotes => {
                                 println!("✅ No Orchard notes require Ironwood migration.");
+                            }
+                            MigrationReadinessState::NeedsPlan => {
+                                println!(
+                                    "📋 Save a ZIP 318 plan first: `nozy ironwood plan --save`"
+                                );
+                                for blocker in &result.blockers {
+                                    println!("   Blocker: {blocker}");
+                                }
                             }
                             MigrationReadinessState::SplitRequired => {
                                 println!("🧩 ZIP 318 note splitting is required before migration prebuild.");
@@ -4542,6 +4854,261 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         }
                     }
                 }
+            }
+        }
+
+        Commands::Crosslink { command } => {
+            use nozy::crosslink::{
+                block_finality, bond_info, build_crosslink_client, ctaz_to_zat, display_bond,
+                display_finality, display_positions, display_roster, display_status,
+                display_wallet, fetch_guardian_snapshot, finality_tip, normalize_finalizer_hex,
+                print_feature_net_banner, roster, staking_action, staking_day_at,
+                staking_positions, tx_finality, wallet_sync_status, wallet_ufvk, StakingAction,
+            };
+            use std::io::{self, Write};
+
+            let client = build_crosslink_client(&config)?;
+
+            async fn confirm_action(label: &str, yes: bool) -> NozyResult<()> {
+                if yes {
+                    return Ok(());
+                }
+                print!("Proceed with {label}? [y/N] ");
+                let _ = io::stdout().flush();
+                let mut line = String::new();
+                io::stdin().read_line(&mut line).map_err(|e| {
+                    NozyError::InvalidOperation(format!("Failed to read confirmation: {e}"))
+                })?;
+                let ok = matches!(line.trim().to_ascii_lowercase().as_str(), "y" | "yes");
+                if !ok {
+                    return Err(NozyError::InvalidOperation("Cancelled.".into()));
+                }
+                Ok(())
+            }
+
+            async fn gate_staking_day(
+                client: &nozy::ZebraClient,
+                requires_day: bool,
+                force: bool,
+            ) -> NozyResult<()> {
+                if !requires_day {
+                    return Ok(());
+                }
+                let height = client.get_block_count().await?;
+                let day = staking_day_at(height);
+                if day.open {
+                    return Ok(());
+                }
+                if force {
+                    eprintln!(
+                        "⚠️  Staking Day CLOSED ({} blocks until next). --force set; node may reject.",
+                        day.blocks_until_next.unwrap_or(0)
+                    );
+                    return Ok(());
+                }
+                Err(NozyError::InvalidOperation(format!(
+                    "Staking Day is closed ({} blocks until next). Retarget anytime, or wait / pass --force.",
+                    day.blocks_until_next.unwrap_or(0)
+                )))
+            }
+
+            fn json_any<T: serde::Serialize>(v: &T) -> NozyResult<String> {
+                serde_json::to_string_pretty(v)
+                    .map_err(|e| NozyError::InvalidOperation(format!("json encode: {e}")))
+            }
+
+            match command {
+                CrosslinkCommand::Status { json, full_keys } => {
+                    let snap = fetch_guardian_snapshot(&client).await?;
+                    if json {
+                        println!("{}", json_any(&snap)?);
+                    } else {
+                        display_status(&snap, full_keys);
+                    }
+                }
+                CrosslinkCommand::Positions { json, full_keys } => {
+                    let positions = staking_positions(&client).await?;
+                    if json {
+                        println!("{}", json_any(&positions)?);
+                    } else {
+                        display_positions(&positions, full_keys);
+                    }
+                }
+                CrosslinkCommand::Roster {
+                    zats,
+                    json,
+                    full_keys,
+                } => {
+                    let entries = roster(&client, zats).await?;
+                    if json {
+                        println!("{}", json_any(&entries)?);
+                    } else {
+                        display_roster(&entries, full_keys);
+                    }
+                }
+                CrosslinkCommand::Finality { block, tx, json } => {
+                    let tip = finality_tip(&client).await?;
+                    let detail = if let Some(ref h) = block {
+                        Some(block_finality(&client, h).await?)
+                    } else if let Some(ref t) = tx {
+                        Some(tx_finality(&client, t).await?)
+                    } else {
+                        None
+                    };
+                    if json {
+                        println!(
+                            "{}",
+                            json_any(&serde_json::json!({
+                                "tip": tip,
+                                "detail": detail,
+                            }))?
+                        );
+                    } else {
+                        display_finality(&tip, detail.as_ref());
+                    }
+                }
+                CrosslinkCommand::Bond { key, json } => {
+                    let info = bond_info(&client, &key).await?;
+                    if json {
+                        println!("{}", json_any(&info)?);
+                    } else {
+                        display_bond(&key, &info);
+                    }
+                }
+                CrosslinkCommand::Stake {
+                    amount,
+                    finalizer,
+                    yes,
+                    force,
+                    json,
+                } => {
+                    let amount_zats = ctaz_to_zat(amount)?;
+                    let target = normalize_finalizer_hex(&finalizer)?;
+                    let action = StakingAction::CreateNewDelegationBond {
+                        amount_zats,
+                        target_finalizer: target.clone(),
+                    };
+                    gate_staking_day(&client, action.requires_staking_day(), force).await?;
+                    if !json {
+                        print_feature_net_banner();
+                        println!(
+                            "Stake {:.8} cTAZ ({amount_zats} zats) → finalizer {target}",
+                            amount
+                        );
+                        println!("Node wallet will build, sign, and broadcast.");
+                    }
+                    confirm_action(action.label(), yes).await?;
+                    let result = staking_action(&client, &action).await?;
+                    if json {
+                        println!("{}", json_any(&result)?);
+                    } else {
+                        println!("✅ Submitted");
+                        println!("{}", json_any(&result)?);
+                    }
+                }
+                CrosslinkCommand::Retarget {
+                    bond,
+                    finalizer,
+                    yes,
+                    json,
+                } => {
+                    let target = normalize_finalizer_hex(&finalizer)?;
+                    let action = StakingAction::RetargetDelegationBond {
+                        bond_key: bond.clone(),
+                        target_finalizer: target.clone(),
+                    };
+                    if !json {
+                        print_feature_net_banner();
+                        println!("Retarget bond → {target}");
+                        println!("Allowed any time (not Staking Day–gated).");
+                    }
+                    confirm_action(action.label(), yes).await?;
+                    let result = staking_action(&client, &action).await?;
+                    if json {
+                        println!("{}", json_any(&result)?);
+                    } else {
+                        println!("✅ Submitted");
+                        println!("{}", json_any(&result)?);
+                    }
+                }
+                CrosslinkCommand::Unbond {
+                    bond,
+                    yes,
+                    force,
+                    json,
+                } => {
+                    let action = StakingAction::BeginDelegationUnbonding {
+                        bond_key: bond.clone(),
+                    };
+                    gate_staking_day(&client, true, force).await?;
+                    if !json {
+                        print_feature_net_banner();
+                        println!("Begin unbonding for bond {bond}");
+                    }
+                    confirm_action(action.label(), yes).await?;
+                    let result = staking_action(&client, &action).await?;
+                    if json {
+                        println!("{}", json_any(&result)?);
+                    } else {
+                        println!("✅ Submitted — withdraw on a later Staking Day when listed under withdrawable.");
+                        println!("{}", json_any(&result)?);
+                    }
+                }
+                CrosslinkCommand::Withdraw {
+                    bond,
+                    yes,
+                    force,
+                    json,
+                } => {
+                    let action = StakingAction::WithdrawDelegationBond {
+                        bond_key: bond.clone(),
+                    };
+                    gate_staking_day(&client, true, force).await?;
+                    if !json {
+                        print_feature_net_banner();
+                        println!("Withdraw bond {bond}");
+                    }
+                    confirm_action(action.label(), yes).await?;
+                    let result = staking_action(&client, &action).await?;
+                    if json {
+                        println!("{}", json_any(&result)?);
+                    } else {
+                        println!("✅ Submitted");
+                        println!("{}", json_any(&result)?);
+                    }
+                }
+                CrosslinkCommand::Ufvk { json } => {
+                    let ufvk = wallet_ufvk(&client).await?;
+                    if json {
+                        println!("{}", json_any(&serde_json::json!({ "ufvk": ufvk }))?);
+                    } else {
+                        print_feature_net_banner();
+                        println!(
+                            "Node wallet UFVK (submit to Shielded Labs for Season 1 ZEC payout):"
+                        );
+                        println!("{ufvk}");
+                        println!();
+                        println!(
+                            "Also provide a mainnet Ironwood address when Jason announces the submission window."
+                        );
+                    }
+                }
+                CrosslinkCommand::Wallet { json } => match wallet_sync_status(&client).await {
+                    Some(w) => {
+                        if json {
+                            println!("{}", json_any(&w)?);
+                        } else {
+                            display_wallet(&w);
+                        }
+                    }
+                    None => {
+                        return Err(NozyError::InvalidOperation(
+                            "Node does not expose get_wallet_sync_status.\n  \
+                                 Upgrade: docs/CROSSLINK_WALLET_RPC_UPGRADE.md"
+                                .into(),
+                        ));
+                    }
+                },
             }
         }
 

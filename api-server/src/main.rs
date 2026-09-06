@@ -10,6 +10,7 @@ use tower_http::cors::{AllowOrigin, CorsLayer};
 use tower_http::trace::TraceLayer;
 use tracing::{info, warn};
 
+mod crosslink_handlers;
 mod handlers;
 mod invoice_handlers;
 mod ironwood_handlers;
@@ -152,6 +153,50 @@ async fn main() -> anyhow::Result<()> {
             post(vote_handlers::vote_delegate_finish),
         )
         .route("/api/vote/cast", post(vote_handlers::vote_cast))
+        .route(
+            "/api/crosslink/status",
+            get(crosslink_handlers::crosslink_status),
+        )
+        .route(
+            "/api/crosslink/positions",
+            get(crosslink_handlers::crosslink_positions),
+        )
+        .route(
+            "/api/crosslink/roster",
+            get(crosslink_handlers::crosslink_roster),
+        )
+        .route(
+            "/api/crosslink/finality",
+            get(crosslink_handlers::crosslink_finality),
+        )
+        .route(
+            "/api/crosslink/bond",
+            get(crosslink_handlers::crosslink_bond),
+        )
+        .route(
+            "/api/crosslink/stake",
+            post(crosslink_handlers::crosslink_stake),
+        )
+        .route(
+            "/api/crosslink/retarget",
+            post(crosslink_handlers::crosslink_retarget),
+        )
+        .route(
+            "/api/crosslink/unbond",
+            post(crosslink_handlers::crosslink_unbond),
+        )
+        .route(
+            "/api/crosslink/withdraw",
+            post(crosslink_handlers::crosslink_withdraw),
+        )
+        .route(
+            "/api/crosslink/wallet-ufvk",
+            get(crosslink_handlers::crosslink_wallet_ufvk),
+        )
+        .route(
+            "/api/crosslink/wallet-status",
+            get(crosslink_handlers::crosslink_wallet_status),
+        )
         .route("/api/zns/resolve", post(zns_handlers::resolve_zns_name))
         .route("/api/zns/link", get(zns_handlers::get_zns_link))
         .route("/api/zns/link", post(zns_handlers::link_zns_name))
