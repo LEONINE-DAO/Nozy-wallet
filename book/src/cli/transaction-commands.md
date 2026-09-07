@@ -45,7 +45,7 @@ nozy history
 Look up confirmation depth for a TXID.
 
 ```bash
-nozy check-confirmations -t <txid>
+nozy check-confirmations --txid <txid>
 ```
 
 ## Send readiness guards

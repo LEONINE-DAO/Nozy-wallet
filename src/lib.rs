@@ -30,6 +30,8 @@ pub mod bridge;
 #[cfg(feature = "native")]
 pub mod cache;
 #[cfg(feature = "native")]
+pub mod cli_art;
+#[cfg(feature = "native")]
 pub mod cli_helpers;
 #[cfg(feature = "native")]
 pub mod config;

@@ -24,7 +24,7 @@ nozy balance
 nozy send -r u1RECIPIENT… -a 0.0001
 
 # 5. Confirm
-nozy check-confirmations -t <txid>
+nozy check-confirmations --txid <txid>
 ```
 
 First send may take **2–4+ minutes** for Orchard proving.
