@@ -105,6 +105,7 @@ async fn save_wallet_to_active_profile(wallet: &mut HDWallet) -> NozyResult<()> 
 #[command(name = "nozy")]
 #[command(version = nozy::version_info::VERSION_DISPLAY)]
 #[command(about = "NozyWallet / Nozy Lite — privacy-first Orchard CLI (ops health, sync, send)")]
+#[command(before_help = nozy::cli_art::STARTUP_LOGO)]
 #[command(
     long_about = "NozyWallet is a privacy-first Orchard wallet. The CLI is productized as Nozy Lite for operator uptime and data checks next to Zebrad (health/--json/TUI), plus sync, send, and Ironwood. Fully shielded by default."
 )]
@@ -288,7 +289,8 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
 
     #[command(about = "Check confirmation status of a transaction")]
     CheckConfirmations {
-        #[arg(long, short = 't', help = "Transaction ID (TXID) to check")]
+        // No short flag: global `--testnet` already uses `-t`.
+        #[arg(long, help = "Transaction ID (TXID) to check")]
         txid: Option<String>,
     },
 
@@ -862,6 +864,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
     }
+
+    maybe_print_cli_art(&cli);
 
     match cli.command {
         Commands::New => {
@@ -4973,6 +4977,19 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
     }
 
     Ok(())
+}
+
+fn maybe_print_cli_art(cli: &Cli) {
+    if !nozy::cli_art::should_print_art(cli.quiet, cli.json) {
+        return;
+    }
+    match &cli.command {
+        Commands::Send { .. } => nozy::cli_art::print_send_shield(),
+        Commands::Health { .. } | Commands::Tui { .. } => {}
+        Commands::Status { json, watch, .. } if *json || *watch => {}
+        Commands::Balance { json } if *json => {}
+        _ => nozy::cli_art::print_startup_logo(),
+    }
 }
 
 // Error handling wrapper for main function
