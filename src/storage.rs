@@ -106,6 +106,7 @@ impl WalletStorage {
                 println!("✅ Migrated wallet from insecure location to secure XDG directory");
                 println!("   Old location: wallet_data/wallet.dat");
                 println!("   New location: {}", live.display());
+                Self::retire_insecure_wallet_data_source();
                 println!(
                     "   ⚠️  Please delete the old wallet_data/ directory to prevent accidental commits"
                 );
@@ -120,18 +121,63 @@ impl WalletStorage {
         Self::new(secure_dir)
     }
 
-    /// Copy `wallet_data/wallet.dat` into the XDG base dir if neither the base
-    /// nor the active profile already has a wallet. Returns true when a copy ran.
+    fn insecure_wallet_data_path() -> PathBuf {
+        PathBuf::from("wallet_data").join("wallet.dat")
+    }
+
+    /// Rename cwd `wallet_data/wallet.dat` so a later `sync` cannot copy it again.
+    fn retire_insecure_wallet_data_source() {
+        let old = Self::insecure_wallet_data_path();
+        if !old.exists() {
+            return;
+        }
+        let backup = PathBuf::from("wallet_data").join("wallet.dat.pre-xdg-backup");
+        let dest = if backup.exists() {
+            PathBuf::from("wallet_data").join(format!(
+                "wallet.dat.pre-xdg-backup-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            ))
+        } else {
+            backup
+        };
+        match std::fs::rename(&old, &dest) {
+            Ok(()) => {
+                eprintln!(
+                    "ℹ️  Renamed leftover {} → {} so XDG migration will not run again.",
+                    old.display(),
+                    dest.display()
+                );
+            }
+            Err(e) => {
+                eprintln!(
+                    "⚠️  Could not rename {}: {e}. Move or rename wallet_data/wallet.dat yourself so sync does not re-copy it.",
+                    old.display()
+                );
+            }
+        }
+    }
+
+    /// Copy `wallet_data/wallet.dat` into the XDG base dir only when no profile
+    /// wallet exists yet. Returns true when a copy ran.
     fn migrate_from_insecure_location(base_dir: &PathBuf) -> bool {
-        let old_wallet_path = PathBuf::from("wallet_data").join("wallet.dat");
+        let old_wallet_path = Self::insecure_wallet_data_path();
         if !old_wallet_path.exists() {
             return false;
         }
-        if crate::wallet_profiles::active_profile_wallet_file_exists() {
+
+        if crate::wallet_profiles::any_profile_has_wallet_dat(base_dir) {
+            eprintln!(
+                "ℹ️  Ignoring {} — an XDG profile wallet already exists.",
+                old_wallet_path.display()
+            );
+            Self::retire_insecure_wallet_data_source();
             return false;
         }
-        let new_wallet_path = base_dir.join("wallet.dat");
-        if new_wallet_path.exists() {
+
+        if crate::wallet_profiles::should_skip_insecure_wallet_data_copy(base_dir) {
             return false;
         }
 
@@ -143,6 +189,7 @@ impl WalletStorage {
             return false;
         }
 
+        let new_wallet_path = base_dir.join("wallet.dat");
         match std::fs::copy(&old_wallet_path, &new_wallet_path) {
             Ok(_) => true,
             Err(e) => {

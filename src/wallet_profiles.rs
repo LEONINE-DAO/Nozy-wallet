@@ -426,20 +426,27 @@ fn migrate_profile_network_fields(base: &Path) -> NozyResult<()> {
     Ok(())
 }
 
+/// True when any `profiles/*/wallet.dat` exists (does not require a valid manifest).
+pub fn any_profile_has_wallet_dat(base: &Path) -> bool {
+    let root = profiles_root(base);
+    let Ok(entries) = fs::read_dir(root) else {
+        return false;
+    };
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        path.is_dir() && path.join("wallet.dat").exists()
+    })
+}
+
+/// True when cwd `wallet_data/wallet.dat` must not be copied into XDG.
+pub fn should_skip_insecure_wallet_data_copy(base: &Path) -> bool {
+    base.join("wallet.dat").exists() || any_profile_has_wallet_dat(base)
+}
+
 /// True when the active profile (or leftover base `wallet.dat`) already has a vault.
 /// Does **not** initialize profiles — callers use this before copying `wallet_data/`.
 pub fn active_profile_wallet_file_exists() -> bool {
-    let base = get_wallet_base_dir();
-    if base.join("wallet.dat").exists() {
-        return true;
-    }
-    let Ok(manifest) = load_manifest(&base) else {
-        return false;
-    };
-    match manifest.active_id {
-        Some(id) => profile_dir(&base, &id).join("wallet.dat").exists(),
-        None => false,
-    }
+    should_skip_insecure_wallet_data_copy(&get_wallet_base_dir())
 }
 
 /// Move leftover `{base}/wallet.dat` into the active profile when that profile has none.
@@ -458,9 +465,14 @@ fn adopt_base_wallet_if_needed_inner(base: &Path) -> NozyResult<()> {
     if let Some(id) = manifest.active_id.clone() {
         let dest_dir = profile_dir(base, &id);
         if dest_dir.join("wallet.dat").exists() {
+            // Never overwrite a live profile with a leftover base copy.
             return Ok(());
         }
         return migrate_legacy_wallet_to_profile(base, &dest_dir);
+    }
+
+    if any_profile_has_wallet_dat(base) {
+        return Ok(());
     }
 
     let profile = WalletProfile {
@@ -806,6 +818,71 @@ mod tests {
         assert_eq!(
             fs::read(profile_dir(&base, &id).join("wallet.dat")).unwrap(),
             b"from-wallet-data"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn skip_copy_when_any_profile_dir_has_wallet_dat() {
+        let base = temp_base_dir();
+        let _ = fs::remove_dir_all(&base);
+        let id = new_profile_id();
+        fs::create_dir_all(profile_dir(&base, &id)).unwrap();
+        fs::write(profile_dir(&base, &id).join("wallet.dat"), b"live").unwrap();
+
+        assert!(any_profile_has_wallet_dat(&base));
+        assert!(should_skip_insecure_wallet_data_copy(&base));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn skip_copy_even_without_manifest_if_profile_wallet_exists() {
+        let base = temp_base_dir();
+        let _ = fs::remove_dir_all(&base);
+        let orphan = profiles_root(&base).join("356541ef15af4f72");
+        fs::create_dir_all(&orphan).unwrap();
+        fs::write(orphan.join("wallet.dat"), b"synced").unwrap();
+
+        assert!(any_profile_has_wallet_dat(&base));
+        assert!(should_skip_insecure_wallet_data_copy(&base));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn adopt_does_not_overwrite_existing_profile_wallet() {
+        let base = temp_base_dir();
+        let _ = fs::remove_dir_all(&base);
+
+        let profile = WalletProfile {
+            id: new_profile_id(),
+            name: "Wallet 1".to_string(),
+            created_at: now_secs(),
+            network: None,
+            zebra_url: None,
+            last_scan_height: None,
+        };
+        fs::create_dir_all(profile_dir(&base, &profile.id)).unwrap();
+        fs::write(
+            profile_dir(&base, &profile.id).join("wallet.dat"),
+            b"good-profile",
+        )
+        .unwrap();
+        let manifest = ProfilesManifest {
+            version: MANIFEST_VERSION,
+            active_id: Some(profile.id.clone()),
+            profiles: vec![profile.clone()],
+        };
+        save_manifest(&base, &manifest).unwrap();
+        fs::write(base.join("wallet.dat"), b"bad-cwd-copy").unwrap();
+
+        adopt_base_wallet_if_needed_inner(&base).unwrap();
+
+        assert_eq!(
+            fs::read(profile_dir(&base, &profile.id).join("wallet.dat")).unwrap(),
+            b"good-profile"
         );
 
         let _ = fs::remove_dir_all(&base);
