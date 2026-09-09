@@ -92,39 +92,113 @@ impl WalletStorage {
     pub fn with_xdg_dir() -> Self {
         use crate::paths::{get_wallet_base_dir, get_wallet_data_dir};
         let base_dir = get_wallet_base_dir();
-        Self::migrate_from_insecure_location(&base_dir);
-        let _ = crate::wallet_profiles::ensure_profiles_initialized();
+        let copied = Self::migrate_from_insecure_location(&base_dir);
+        if let Err(e) = crate::wallet_profiles::ensure_profiles_initialized() {
+            eprintln!("⚠️  Warning: Failed to initialize wallet profiles: {e}");
+        }
+        if let Err(e) = crate::wallet_profiles::adopt_base_wallet_if_needed() {
+            eprintln!("⚠️  Warning: Failed to place migrated wallet into the active profile: {e}");
+        }
         let secure_dir = get_wallet_data_dir();
+        if copied {
+            let live = secure_dir.join("wallet.dat");
+            if live.exists() {
+                println!("✅ Migrated wallet from insecure location to secure XDG directory");
+                println!("   Old location: wallet_data/wallet.dat");
+                println!("   New location: {}", live.display());
+                Self::retire_insecure_wallet_data_source();
+                println!(
+                    "   ⚠️  Please delete the old wallet_data/ directory to prevent accidental commits"
+                );
+            } else {
+                eprintln!(
+                    "⚠️  Copied wallet_data/wallet.dat to {} but the CLI loads {}",
+                    base_dir.join("wallet.dat").display(),
+                    live.display()
+                );
+            }
+        }
         Self::new(secure_dir)
     }
 
-    fn migrate_from_insecure_location(secure_dir: &PathBuf) {
-        let old_wallet_path = PathBuf::from("wallet_data").join("wallet.dat");
-        let new_wallet_path = secure_dir.join("wallet.dat");
+    fn insecure_wallet_data_path() -> PathBuf {
+        PathBuf::from("wallet_data").join("wallet.dat")
+    }
 
-        if old_wallet_path.exists() && !new_wallet_path.exists() {
-            if let Err(e) = std::fs::create_dir_all(secure_dir) {
+    /// Rename cwd `wallet_data/wallet.dat` so a later `sync` cannot copy it again.
+    fn retire_insecure_wallet_data_source() {
+        let old = Self::insecure_wallet_data_path();
+        if !old.exists() {
+            return;
+        }
+        let backup = PathBuf::from("wallet_data").join("wallet.dat.pre-xdg-backup");
+        let dest = if backup.exists() {
+            PathBuf::from("wallet_data").join(format!(
+                "wallet.dat.pre-xdg-backup-{}",
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0)
+            ))
+        } else {
+            backup
+        };
+        match std::fs::rename(&old, &dest) {
+            Ok(()) => {
                 eprintln!(
-                    "⚠️  Warning: Failed to create secure wallet directory: {}",
-                    e
+                    "ℹ️  Renamed leftover {} → {} so XDG migration will not run again.",
+                    old.display(),
+                    dest.display()
                 );
-                return;
             }
+            Err(e) => {
+                eprintln!(
+                    "⚠️  Could not rename {}: {e}. Move or rename wallet_data/wallet.dat yourself so sync does not re-copy it.",
+                    old.display()
+                );
+            }
+        }
+    }
 
-            match std::fs::copy(&old_wallet_path, &new_wallet_path) {
-                Ok(_) => {
-                    println!("✅ Migrated wallet from insecure location to secure XDG directory");
-                    println!("   Old location: {}", old_wallet_path.display());
-                    println!("   New location: {}", new_wallet_path.display());
-                    println!("   ⚠️  Please delete the old wallet_data/ directory to prevent accidental commits");
-                }
-                Err(e) => {
-                    eprintln!("⚠️  Warning: Failed to migrate wallet: {}", e);
-                    eprintln!(
-                        "   Your wallet is still in the insecure location: {}",
-                        old_wallet_path.display()
-                    );
-                }
+    /// Copy `wallet_data/wallet.dat` into the XDG base dir only when no profile
+    /// wallet exists yet. Returns true when a copy ran.
+    fn migrate_from_insecure_location(base_dir: &PathBuf) -> bool {
+        let old_wallet_path = Self::insecure_wallet_data_path();
+        if !old_wallet_path.exists() {
+            return false;
+        }
+
+        if crate::wallet_profiles::any_profile_has_wallet_dat(base_dir) {
+            eprintln!(
+                "ℹ️  Ignoring {} — an XDG profile wallet already exists.",
+                old_wallet_path.display()
+            );
+            Self::retire_insecure_wallet_data_source();
+            return false;
+        }
+
+        if crate::wallet_profiles::should_skip_insecure_wallet_data_copy(base_dir) {
+            return false;
+        }
+
+        if let Err(e) = std::fs::create_dir_all(base_dir) {
+            eprintln!(
+                "⚠️  Warning: Failed to create secure wallet directory: {}",
+                e
+            );
+            return false;
+        }
+
+        let new_wallet_path = base_dir.join("wallet.dat");
+        match std::fs::copy(&old_wallet_path, &new_wallet_path) {
+            Ok(_) => true,
+            Err(e) => {
+                eprintln!("⚠️  Warning: Failed to migrate wallet: {}", e);
+                eprintln!(
+                    "   Your wallet is still in the insecure location: {}",
+                    old_wallet_path.display()
+                );
+                false
             }
         }
     }
@@ -229,8 +303,17 @@ impl WalletStorage {
     }
 
     fn decrypt_data(&self, encrypted_data: &str, password: &str) -> NozyResult<String> {
-        let data = hex::decode(encrypted_data)
-            .map_err(|e| NozyError::Storage(format!("Failed to decode hex: {}", e)))?;
+        let cleaned: String = encrypted_data
+            .trim()
+            .trim_start_matches('\u{feff}')
+            .chars()
+            .filter(|c| !c.is_whitespace())
+            .collect();
+        let data = hex::decode(&cleaned).map_err(|e| {
+            NozyError::Storage(format!(
+                "Failed to decode wallet.dat as hex ({e}). File is not a Nozy vault blob."
+            ))
+        })?;
 
         if data.len() >= V2_HEADER_LEN && data.starts_with(VAULT_MAGIC_V2) {
             let salt = &data[4..20];
@@ -265,8 +348,8 @@ impl WalletStorage {
         let plaintext = cipher
             .decrypt(Nonce::from_slice(nonce), ciphertext)
             .map_err(|_| {
-                NozyError::Storage(
-                    "Decryption failed: Invalid password or corrupted data".to_string(),
+                NozyError::Cryptographic(
+                    "Invalid password or corrupted wallet.dat (decrypt failed)".to_string(),
                 )
             })?;
 
@@ -428,5 +511,32 @@ mod tests {
             .decrypt_data(&hex_blob, password)
             .expect("legacy decrypt");
         assert_eq!(plain, "legacy-wallet-json");
+    }
+
+    #[test]
+    fn vault_hex_ignores_whitespace_and_bom() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        let blob = storage
+            .encrypt_data(r#"{"mnemonic":"test words only"}"#, "pw")
+            .expect("encrypt");
+        let wrapped = format!("\u{feff}{blob}\n");
+        let plain = storage
+            .decrypt_data(&wrapped, "pw")
+            .expect("decrypt wrapped");
+        assert!(plain.contains("test words only"));
+    }
+
+    #[test]
+    fn wrong_password_is_cryptographic_not_storage() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        let blob = storage.encrypt_data("{}", "right").expect("encrypt");
+        let err = storage.decrypt_data(&blob, "wrong").unwrap_err();
+        match err {
+            NozyError::Cryptographic(ref msg) => {
+                assert!(msg.to_ascii_lowercase().contains("password"))
+            }
+            other => panic!("expected Cryptographic, got {other:?}"),
+        }
+        assert!(!err.user_friendly_message().contains("permissions"));
     }
 }
