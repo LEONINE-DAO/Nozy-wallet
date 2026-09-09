@@ -426,10 +426,66 @@ fn migrate_profile_network_fields(base: &Path) -> NozyResult<()> {
     Ok(())
 }
 
+/// True when the active profile (or leftover base `wallet.dat`) already has a vault.
+/// Does **not** initialize profiles — callers use this before copying `wallet_data/`.
+pub fn active_profile_wallet_file_exists() -> bool {
+    let base = get_wallet_base_dir();
+    if base.join("wallet.dat").exists() {
+        return true;
+    }
+    let Ok(manifest) = load_manifest(&base) else {
+        return false;
+    };
+    match manifest.active_id {
+        Some(id) => profile_dir(&base, &id).join("wallet.dat").exists(),
+        None => false,
+    }
+}
+
+/// Move leftover `{base}/wallet.dat` into the active profile when that profile has none.
+/// Covers: empty manifest created first, then XDG copy of `wallet_data/wallet.dat`.
+pub fn adopt_base_wallet_if_needed() -> NozyResult<()> {
+    adopt_base_wallet_if_needed_inner(&get_wallet_base_dir())
+}
+
+fn adopt_base_wallet_if_needed_inner(base: &Path) -> NozyResult<()> {
+    let legacy = base.join("wallet.dat");
+    if !legacy.exists() {
+        return Ok(());
+    }
+
+    let mut manifest = load_manifest(base)?;
+    if let Some(id) = manifest.active_id.clone() {
+        let dest_dir = profile_dir(base, &id);
+        if dest_dir.join("wallet.dat").exists() {
+            return Ok(());
+        }
+        return migrate_legacy_wallet_to_profile(base, &dest_dir);
+    }
+
+    let profile = WalletProfile {
+        id: new_profile_id(),
+        name: default_profile_name(manifest.profiles.len()),
+        created_at: now_secs(),
+        network: None,
+        zebra_url: None,
+        last_scan_height: None,
+    };
+    let dest = profile_dir(base, &profile.id);
+    migrate_legacy_wallet_to_profile(base, &dest)?;
+    manifest.active_id = Some(profile.id.clone());
+    manifest.profiles.push(profile);
+    if manifest.version == 0 {
+        manifest.version = MANIFEST_VERSION;
+    }
+    save_manifest(base, &manifest)
+}
+
 pub fn ensure_profiles_initialized() -> NozyResult<()> {
     let base = get_wallet_base_dir();
     if manifest_path(&base).exists() {
         migrate_profile_network_fields(&base)?;
+        adopt_base_wallet_if_needed_inner(&base)?;
         return Ok(());
     }
 
@@ -700,5 +756,58 @@ mod tests {
             default_zebra_url_for_network("mainnet"),
             DEFAULT_MAINNET_RPC
         );
+    }
+
+    #[test]
+    fn adopt_moves_stranded_base_wallet_into_existing_empty_profile() {
+        let base = temp_base_dir();
+        let _ = fs::remove_dir_all(&base);
+
+        let profile = WalletProfile {
+            id: new_profile_id(),
+            name: "Wallet 1".to_string(),
+            created_at: now_secs(),
+            network: None,
+            zebra_url: None,
+            last_scan_height: None,
+        };
+        fs::create_dir_all(profile_dir(&base, &profile.id)).unwrap();
+        let manifest = ProfilesManifest {
+            version: MANIFEST_VERSION,
+            active_id: Some(profile.id.clone()),
+            profiles: vec![profile.clone()],
+        };
+        save_manifest(&base, &manifest).unwrap();
+        fs::write(base.join("wallet.dat"), b"migrated-hex-blob").unwrap();
+
+        adopt_base_wallet_if_needed_inner(&base).unwrap();
+
+        assert!(!base.join("wallet.dat").exists());
+        assert_eq!(
+            fs::read(profile_dir(&base, &profile.id).join("wallet.dat")).unwrap(),
+            b"migrated-hex-blob"
+        );
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn adopt_creates_profile_when_manifest_has_no_active_id() {
+        let base = temp_base_dir();
+        let _ = fs::remove_dir_all(&base);
+        save_manifest(&base, &ProfilesManifest::default()).unwrap();
+        fs::write(base.join("wallet.dat"), b"from-wallet-data").unwrap();
+
+        adopt_base_wallet_if_needed_inner(&base).unwrap();
+
+        let manifest = load_manifest(&base).unwrap();
+        let id = manifest.active_id.expect("active profile");
+        assert!(!base.join("wallet.dat").exists());
+        assert_eq!(
+            fs::read(profile_dir(&base, &id).join("wallet.dat")).unwrap(),
+            b"from-wallet-data"
+        );
+
+        let _ = fs::remove_dir_all(&base);
     }
 }

@@ -120,9 +120,19 @@ impl NozyError {
             NozyError::KeyDerivation(_) => {
                 "Key derivation failed. Please check your wallet seed and try again.".to_string()
             }
-            NozyError::Storage(_) => {
-                "Storage error. Please check your wallet file permissions and try again."
-                    .to_string()
+            NozyError::Storage(msg) => {
+                // Never hide the inner cause: decrypt / hex / path bugs were all
+                // reported as "permissions" and sent operators down the wrong path.
+                format!("Storage error: {msg}")
+            }
+            NozyError::Cryptographic(msg) => {
+                if msg.to_ascii_lowercase().contains("password")
+                    || msg.to_ascii_lowercase().contains("decrypt")
+                {
+                    format!("{msg}")
+                } else {
+                    format!("Cryptographic error: {msg}")
+                }
             }
             NozyError::InsufficientFunds(_) => {
                 "Insufficient funds. Please check your balance and try again.".to_string()
@@ -158,10 +168,35 @@ impl NozyError {
                 "Ensure sufficient funds including fees".to_string(),
                 "Try again after a few moments".to_string(),
             ],
-            NozyError::Storage(_) => vec![
-                "Check wallet file permissions".to_string(),
-                "Ensure sufficient disk space".to_string(),
-                "Verify wallet directory is writable".to_string(),
+            NozyError::Storage(msg) => {
+                let mut hints = Vec::new();
+                let lower = msg.to_ascii_lowercase();
+                if lower.contains("decrypt") || lower.contains("hex") {
+                    hints.push(
+                        "Wrong password, or the CLI is not reading the same wallet.dat you unlocked before."
+                            .to_string(),
+                    );
+                    hints.push(
+                        "After XDG migration the live file is ~/.local/share/nozy/profiles/<id>/wallet.dat, not ~/.local/share/nozy/wallet.dat or wallet_data/."
+                            .to_string(),
+                    );
+                } else if lower.contains("no wallet found") {
+                    hints.push(
+                        "Create or restore a wallet: 'nozy new' or 'nozy restore'.".to_string(),
+                    );
+                } else {
+                    hints.push(
+                        "Check wallet file permissions and that the directory is writable."
+                            .to_string(),
+                    );
+                    hints.push("Ensure sufficient disk space.".to_string());
+                }
+                hints
+            }
+            NozyError::Cryptographic(_) => vec![
+                "Re-enter the wallet password (typos fail AES-GCM as a decrypt error).".to_string(),
+                "Confirm you are unlocking the migrated profile copy, not an older leftover file."
+                    .to_string(),
             ],
             NozyError::KeyDerivation(_) => vec![
                 "Verify mnemonic phrase is correct".to_string(),

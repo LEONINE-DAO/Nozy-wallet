@@ -103,6 +103,11 @@ mod tests {
 
         let error = NozyError::Transaction("Test error".to_string());
         assert!(error.user_friendly_message().contains("Transaction failed"));
+
+        let error = NozyError::Storage("Failed to decode wallet.dat as hex".to_string());
+        let msg = error.user_friendly_message();
+        assert!(msg.contains("Failed to decode wallet.dat as hex"));
+        assert!(!msg.contains("permissions"));
     }
 
     #[test]
