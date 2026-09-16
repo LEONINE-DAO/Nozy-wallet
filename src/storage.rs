@@ -139,18 +139,12 @@ impl WalletStorage {
         // AES-GCM + Argon2id (or legacy SHA-256 decrypt) must not block the async runtime.
         tokio::task::spawn_blocking(move || {
             let storage = WalletStorage::new(data_dir);
-            let mut wallet_data = WalletData::new(mnemonic);
-            wallet_data.password_protected = password_protected;
-            wallet_data.password_hash = password_hash;
-
-            let serialized = serde_json::to_string(&wallet_data)
-                .map_err(|e| NozyError::Storage(format!("Failed to serialize wallet: {}", e)))?;
-
-            let encrypted = storage.encrypt_data(&serialized, &password)?;
-            std::fs::write(storage.data_dir.join("wallet.dat"), encrypted)
-                .map_err(|e| NozyError::Storage(format!("Failed to write wallet file: {}", e)))?;
-
-            Ok(())
+            storage.persist_wallet_data_blocking(
+                mnemonic,
+                password_protected,
+                password_hash,
+                &password,
+            )
         })
         .await
         .map_err(|e| NozyError::Storage(format!("Wallet save task failed: {e}")))?
@@ -171,30 +165,136 @@ impl WalletStorage {
 
     /// Synchronous wallet load for blocking-pool workers.
     pub fn load_wallet_blocking(&self, password: &str) -> NozyResult<HDWallet> {
-        let encrypted = std::fs::read(self.data_dir.join("wallet.dat"))
-            .map_err(|e| NozyError::Storage(format!("Failed to read wallet file: {}", e)))?;
+        let wallet_path = self.data_dir.join("wallet.dat");
+        let encrypted = std::fs::read(&wallet_path).map_err(|e| {
+            NozyError::Storage(format!(
+                "Failed to read wallet file {}: {}",
+                wallet_path.display(),
+                e
+            ))
+        })?;
+        let size = encrypted.len();
+        let kind = vault_kind_label(&encrypted);
 
-        let decrypted = self.decrypt_data(&String::from_utf8_lossy(&encrypted), password)?;
-        let mut wallet_data: WalletData = serde_json::from_str(&decrypted)
+        let mut enc_passwords = password_unlock_candidates(password);
+        // Wallets saved with an empty vault key but a real password_hash inside
+        // AES-GCM-fail for the typed password. Unlock by decrypting with "" then
+        // verifying the hash — then rewrite NZK2 so the next unlock is normal.
+        if !password.is_empty() {
+            enc_passwords.push(String::new());
+        }
+
+        let mut last_err: Option<NozyError> = None;
+        for enc_pw in &enc_passwords {
+            match self.decrypt_wallet_bytes(&encrypted, enc_pw) {
+                Ok(plain) => match self.wallet_from_plaintext(&plain, password, enc_pw) {
+                    Ok(wallet) => {
+                        if enc_pw != password {
+                            let verified = password_unlock_candidates(password)
+                                .into_iter()
+                                .find(|pw| wallet.verify_password(pw).unwrap_or(false))
+                                .unwrap_or_else(|| password.to_string());
+                            if let Err(e) = self.persist_wallet_data_blocking(
+                                wallet.get_mnemonic(),
+                                wallet.is_password_protected(),
+                                wallet.get_password_hash().cloned(),
+                                &verified,
+                            ) {
+                                eprintln!(
+                                    "⚠️  Unlocked via compatibility path but failed to rewrite {}: {e}",
+                                    wallet_path.display()
+                                );
+                            } else {
+                                eprintln!(
+                                    "✅ Rewrote {} as NZK2 using your password (previous vault key was a compatibility fallback).",
+                                    wallet_path.display()
+                                );
+                            }
+                        }
+                        return Ok(wallet);
+                    }
+                    Err(e) => last_err = Some(e),
+                },
+                Err(e) => last_err = Some(e),
+            }
+        }
+
+        Err(self.annotate_unlock_error(last_err, &wallet_path, size, kind, password))
+    }
+
+    fn persist_wallet_data_blocking(
+        &self,
+        mnemonic: String,
+        password_protected: bool,
+        password_hash: Option<String>,
+        password: &str,
+    ) -> NozyResult<()> {
+        let mut wallet_data = WalletData::new(mnemonic);
+        wallet_data.password_protected = password_protected;
+        wallet_data.password_hash = password_hash;
+
+        let serialized = serde_json::to_string(&wallet_data)
+            .map_err(|e| NozyError::Storage(format!("Failed to serialize wallet: {}", e)))?;
+
+        let encrypted = self.encrypt_data(&serialized, password)?;
+        std::fs::write(self.data_dir.join("wallet.dat"), encrypted)
+            .map_err(|e| NozyError::Storage(format!("Failed to write wallet file: {}", e)))?;
+        Ok(())
+    }
+
+    fn wallet_from_plaintext(
+        &self,
+        decrypted: &str,
+        supplied_password: &str,
+        enc_pw: &str,
+    ) -> NozyResult<HDWallet> {
+        let mut wallet_data: WalletData = serde_json::from_str(decrypted)
             .map_err(|e| NozyError::Storage(format!("Failed to deserialize wallet: {}", e)))?;
 
         wallet_data.ensure_timestamps();
 
         let mut wallet = HDWallet::from_mnemonic(&wallet_data.mnemonic)?;
+        let supplied = password_unlock_candidates(supplied_password);
 
         if let Some(hash) = wallet_data.password_hash {
-            wallet.set_password_hash(hash.clone())?;
-
-            let is_valid = wallet.verify_password(password).map_err(|e| {
-                NozyError::Cryptographic(format!("Password verification failed: {}", e))
-            })?;
-
-            if !is_valid {
+            wallet.set_password_hash(hash)?;
+            let matched = supplied
+                .iter()
+                .any(|pw| wallet.verify_password(pw).unwrap_or(false));
+            if !matched {
                 return Err(NozyError::Cryptographic("Invalid password".to_string()));
             }
+        } else if !supplied.iter().any(|pw| pw == enc_pw) {
+            // Empty-key fallback must not open an unprotected vault when the
+            // caller typed a non-empty password.
+            return Err(NozyError::Cryptographic("Invalid password".to_string()));
         }
 
         Ok(wallet)
+    }
+
+    fn annotate_unlock_error(
+        &self,
+        last_err: Option<NozyError>,
+        wallet_path: &std::path::Path,
+        size: usize,
+        kind: &str,
+        password: &str,
+    ) -> NozyError {
+        let detail = match last_err {
+            Some(NozyError::Cryptographic(msg)) | Some(NozyError::Storage(msg)) => msg,
+            Some(other) => other.to_string(),
+            None => "Decryption failed: Invalid password or corrupted data".to_string(),
+        };
+        let hint = if password.is_empty() {
+            "Tried the empty vault key."
+        } else {
+            "Tried your password, trimmed password, empty vault key, NZK2 Argon2id, unversioned Argon2id, and legacy SHA-256."
+        };
+        NozyError::Cryptographic(format!(
+            "Decryption failed: Invalid password or corrupted data ({detail})\n  File: {}\n  Size: {size} bytes\n  Vault: {kind}\n  {hint}",
+            wallet_path.display()
+        ))
     }
 
     /// True when the wallet cannot be opened with an empty encryption password.
@@ -229,9 +329,15 @@ impl WalletStorage {
     }
 
     fn decrypt_data(&self, encrypted_data: &str, password: &str) -> NozyResult<String> {
-        let data = hex::decode(encrypted_data)
-            .map_err(|e| NozyError::Storage(format!("Failed to decode hex: {}", e)))?;
+        self.decrypt_wallet_bytes(encrypted_data.as_bytes(), password)
+    }
 
+    fn decrypt_wallet_bytes(&self, raw: &[u8], password: &str) -> NozyResult<String> {
+        let blob = decode_vault_bytes(raw)?;
+        self.decrypt_decoded_blob(&blob, password)
+    }
+
+    fn decrypt_decoded_blob(&self, data: &[u8], password: &str) -> NozyResult<String> {
         if data.len() >= V2_HEADER_LEN && data.starts_with(VAULT_MAGIC_V2) {
             let salt = &data[4..20];
             let nonce = &data[20..32];
@@ -240,7 +346,6 @@ impl WalletStorage {
             return self.decrypt_aes_gcm(&key, nonce, ciphertext);
         }
 
-        // Legacy iterated-SHA256 vault (pre-F-05). Still readable; next save upgrades to NZK2.
         if data.len() < LEGACY_HEADER_LEN {
             return Err(NozyError::Storage(
                 "Invalid encrypted data length".to_string(),
@@ -250,8 +355,17 @@ impl WalletStorage {
         let salt = &data[0..16];
         let nonce = &data[16..28];
         let ciphertext = &data[28..];
-        let key = self.derive_key_legacy_sha256(password, salt);
-        self.decrypt_aes_gcm(&key, nonce, ciphertext)
+
+        // Pre-F-05 native vaults used iterated SHA-256 with no magic.
+        let sha_key = self.derive_key_legacy_sha256(password, salt);
+        if let Ok(plain) = self.decrypt_aes_gcm(&sha_key, nonce, ciphertext) {
+            return Ok(plain);
+        }
+
+        // WASM / unversioned Argon2id used the same salt||nonce||ct layout as SHA-256
+        // but Argon2::default() (same 19MiB params as NZK2) — without the NZK2 prefix.
+        let argon_key = self.derive_key_argon2id(password, salt)?;
+        self.decrypt_aes_gcm(&argon_key, nonce, ciphertext)
     }
 
     fn decrypt_aes_gcm(
@@ -265,7 +379,7 @@ impl WalletStorage {
         let plaintext = cipher
             .decrypt(Nonce::from_slice(nonce), ciphertext)
             .map_err(|_| {
-                NozyError::Storage(
+                NozyError::Cryptographic(
                     "Decryption failed: Invalid password or corrupted data".to_string(),
                 )
             })?;
@@ -386,9 +500,50 @@ impl WalletStorage {
     }
 }
 
+fn password_unlock_candidates(password: &str) -> Vec<String> {
+    let mut out = vec![password.to_string()];
+    let trimmed = password.trim();
+    if trimmed != password {
+        out.push(trimmed.to_string());
+    }
+    out
+}
+
+fn decode_vault_bytes(raw: &[u8]) -> NozyResult<Vec<u8>> {
+    let text = String::from_utf8_lossy(raw);
+    let cleaned: String = text
+        .trim()
+        .trim_start_matches('\u{feff}')
+        .chars()
+        .filter(|c| !c.is_whitespace())
+        .collect();
+    if let Ok(data) = hex::decode(&cleaned) {
+        if data.len() >= LEGACY_HEADER_LEN {
+            return Ok(data);
+        }
+    }
+    if raw.len() >= LEGACY_HEADER_LEN {
+        return Ok(raw.to_vec());
+    }
+    Err(NozyError::Storage(
+        "Failed to decode wallet.dat as hex. File is not a Nozy vault blob.".to_string(),
+    ))
+}
+
+fn vault_kind_label(raw: &[u8]) -> &'static str {
+    match decode_vault_bytes(raw) {
+        Ok(data) if data.len() >= V2_HEADER_LEN && data.starts_with(VAULT_MAGIC_V2) => {
+            "NZK2 (Argon2id)"
+        }
+        Ok(_) => "unversioned (SHA-256 or Argon2id)",
+        Err(_) => "not-hex / too short",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aes_gcm::aead::Aead;
 
     #[test]
     fn vault_nzk2_roundtrip_argon2id() {
@@ -428,5 +583,144 @@ mod tests {
             .decrypt_data(&hex_blob, password)
             .expect("legacy decrypt");
         assert_eq!(plain, "legacy-wallet-json");
+    }
+
+    #[test]
+    fn vault_hex_ignores_whitespace_and_bom() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        let blob = storage
+            .encrypt_data(r#"{"mnemonic":"test words only"}"#, "pw")
+            .expect("encrypt");
+        let wrapped = format!("\u{feff}{blob}\n");
+        let plain = storage
+            .decrypt_data(&wrapped, "pw")
+            .expect("decrypt wrapped");
+        assert!(plain.contains("test words only"));
+    }
+
+    #[test]
+    fn wrong_password_is_cryptographic_not_storage() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        let blob = storage.encrypt_data("{}", "right").expect("encrypt");
+        let err = storage.decrypt_data(&blob, "wrong").unwrap_err();
+        match err {
+            NozyError::Cryptographic(ref msg) => {
+                assert!(msg.to_ascii_lowercase().contains("password"))
+            }
+            other => panic!("expected Cryptographic, got {other:?}"),
+        }
+        assert!(!err.user_friendly_message().contains("permissions"));
+    }
+
+    fn temp_wallet_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "nozy-vault-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn encrypt_unversioned_argon2(storage: &WalletStorage, data: &str, password: &str) -> String {
+        let mut salt = [0u8; 16];
+        OsRng.fill_bytes(&mut salt);
+        let key = storage.derive_key_argon2id(password, &salt).unwrap();
+        let mut nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut nonce);
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), data.as_bytes())
+            .unwrap();
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&salt);
+        raw.extend_from_slice(&nonce);
+        raw.extend_from_slice(&ciphertext);
+        hex::encode(raw)
+    }
+
+    #[test]
+    fn vault_unversioned_argon2id_still_decrypts() {
+        let storage = WalletStorage::new(PathBuf::from("."));
+        let blob = encrypt_unversioned_argon2(&storage, "wasm-or-pre-nzk2-json", "secret");
+        let raw = hex::decode(&blob).unwrap();
+        assert!(!raw.starts_with(VAULT_MAGIC_V2));
+        let plain = storage
+            .decrypt_data(&blob, "secret")
+            .expect("unversioned argon2 decrypt");
+        assert_eq!(plain, "wasm-or-pre-nzk2-json");
+    }
+
+    #[test]
+    fn empty_vault_key_unlocks_when_password_hash_matches() {
+        let dir = temp_wallet_dir();
+        let storage = WalletStorage::new(dir.clone());
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let mut wallet = HDWallet::from_mnemonic(mnemonic).unwrap();
+        wallet.set_password("correct-horse").unwrap();
+        let mut data = WalletData::new(mnemonic.to_string());
+        data.password_protected = true;
+        data.password_hash = wallet.get_password_hash().cloned();
+        let json = serde_json::to_string(&data).unwrap();
+        let blob = storage.encrypt_data(&json, "").expect("encrypt empty key");
+        fs::write(dir.join("wallet.dat"), blob.as_bytes()).unwrap();
+
+        storage
+            .load_wallet_blocking("wrong-password")
+            .expect_err("hash must not match");
+        let loaded = storage
+            .load_wallet_blocking("correct-horse")
+            .expect("empty-key + matching hash");
+        assert_eq!(loaded.get_mnemonic(), mnemonic);
+
+        let rewritten = fs::read_to_string(dir.join("wallet.dat")).unwrap();
+        let raw = hex::decode(rewritten.trim()).unwrap();
+        assert!(
+            raw.starts_with(VAULT_MAGIC_V2),
+            "repair should rewrite NZK2 with the user password"
+        );
+        storage
+            .load_wallet_blocking("correct-horse")
+            .expect("unlock after NZK2 rewrite");
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_wallet_blocking_names_file_on_decrypt_fail() {
+        let dir = temp_wallet_dir();
+        let storage = WalletStorage::new(dir.clone());
+        let blob = storage.encrypt_data("{}", "right").expect("encrypt");
+        fs::write(dir.join("wallet.dat"), blob.as_bytes()).unwrap();
+        let err = storage.load_wallet_blocking("wrong").unwrap_err();
+        match err {
+            NozyError::Cryptographic(msg) => {
+                assert!(msg.contains("Decryption failed"));
+                assert!(msg.contains("File:"));
+                assert!(msg.contains("Size:"));
+                assert!(msg.contains("Vault:"));
+            }
+            other => panic!("expected Cryptographic, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn empty_key_fallback_does_not_open_unprotected_wallet_with_wrong_password() {
+        let dir = temp_wallet_dir();
+        let storage = WalletStorage::new(dir.clone());
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let data = WalletData::new(mnemonic.to_string());
+        let json = serde_json::to_string(&data).unwrap();
+        let blob = storage.encrypt_data(&json, "").expect("encrypt empty");
+        fs::write(dir.join("wallet.dat"), blob.as_bytes()).unwrap();
+        storage
+            .load_wallet_blocking("guess")
+            .expect_err("must not open unprotected vault via empty fallback");
+        storage
+            .load_wallet_blocking("")
+            .expect("empty password still opens unprotected vault");
+        let _ = fs::remove_dir_all(&dir);
     }
 }
