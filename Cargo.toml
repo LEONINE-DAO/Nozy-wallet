@@ -46,7 +46,7 @@ bip39 = { version = "2.1", features = ["zeroize"] }
 # Ironwood (NU6.3) pre-release support: match zcash/librustzcash mainline pins below.
 orchard = { version = "0.15.0-pre.1", default-features = false, features = ["circuit", "std"] }
 pasta_curves = "0.5"
-group = "0.13"
+group = "0.14"
 zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", default-features = false, features = ["std", "circuits"] }
 zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
