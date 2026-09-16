@@ -183,6 +183,8 @@ exclude = [
     "tools/nym-dvpn-lwd-spike",
     "tools/nym-smolmix-broadcast-spike",
     "tools/nozy-vote",
+    # OrchardZSA / QEDIT pins — must not unify with Ironwood orchard 0.15
+    "nozy-zsa",
 ]
 resolver = "2"
 

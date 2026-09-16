@@ -152,6 +152,8 @@ pub mod zebra_tree_rpc;
 pub mod zip321;
 #[cfg(feature = "native")]
 pub mod zns;
+#[cfg(feature = "native")]
+pub mod zsa;
 
 // ============================================================
 // WASM-safe re-exports
