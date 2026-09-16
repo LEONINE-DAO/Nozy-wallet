@@ -396,6 +396,16 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
         command: IronwoodCommand,
     },
 
+    #[command(
+        about = "Zcash Shielded Assets on the dedicated ZSA testnet (not mainnet / not regular testnet)",
+        long_about = "Talks to https://zsa.methyl.cc. Addresses are uregtest1….\n\
+Issue/transfer need an isolated OrchardZSA crate (next slice) so Ironwood mainnet stays on the current orchard pin."
+    )]
+    Zsa {
+        #[command(subcommand)]
+        command: ZsaCommand,
+    },
+
     #[command(about = "Nozy × Crosslink Protocol Guardian (Season 1 feature-net staking / TFL)")]
     Crosslink {
         #[command(subcommand)]
@@ -668,6 +678,50 @@ pub enum SaplingCommand {
         dry_run: bool,
         #[arg(long, help = "Build and prove but do not broadcast")]
         no_broadcast: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ZsaCommand {
+    #[command(about = "Probe ZSA testnet lightwalletd (chain tip, compact Orchard actions)")]
+    Status {
+        #[arg(long, help = "Emit JSON")]
+        json: bool,
+        #[arg(
+            long,
+            help = "Override lightwalletd URL (default https://zsa.methyl.cc or NOZY_ZSA_LWD)"
+        )]
+        lwd: Option<String>,
+    },
+    #[command(about = "Print uregtest1 unified addresses for this wallet (ZSA testnet HRP)")]
+    Addresses {
+        #[arg(
+            long,
+            default_value_t = 1,
+            help = "How many ZIP-32 accounts to print (0..N-1)"
+        )]
+        accounts: u32,
+    },
+    #[command(about = "Show ZSA testnet balances (asset scan not wired yet)")]
+    Balance {
+        #[arg(long, help = "Emit JSON")]
+        json: bool,
+    },
+    #[command(about = "Issue a custom shielded asset (OrchardZSA crate — next slice)")]
+    Issue {
+        #[arg(long, help = "Asset name / ticker")]
+        name: String,
+        #[arg(long, help = "Amount in integer asset units")]
+        amount: u64,
+    },
+    #[command(about = "Transfer a custom shielded asset (OrchardZSA crate — next slice)")]
+    Transfer {
+        #[arg(long, short = 'r', help = "Recipient uregtest1… unified address")]
+        recipient: String,
+        #[arg(long, short = 'a', help = "Amount in integer asset units")]
+        amount: u64,
+        #[arg(long, help = "Asset name or id (optional until OrchardZSA is wired)")]
+        asset: Option<String>,
     },
 }
 
@@ -3952,6 +4006,41 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             }
         }
 
+        Commands::Zsa { command } => match command {
+            ZsaCommand::Status { json, lwd } => {
+                let url = lwd.unwrap_or_else(nozy::zsa::resolve_lwd_url);
+                let snap = nozy::zsa::probe_status(&url).await;
+                if json {
+                    println!("{}", snap.to_json_string()?);
+                } else {
+                    snap.print();
+                }
+                if !snap.connected {
+                    return Err(NozyError::NetworkError(
+                        snap.error
+                            .unwrap_or_else(|| "ZSA lightwalletd unreachable".to_string()),
+                    ));
+                }
+            }
+            ZsaCommand::Addresses { accounts } => {
+                let (wallet, _) = load_wallet().await?;
+                nozy::zsa::print_addresses(&wallet, accounts)?;
+            }
+            ZsaCommand::Balance { json } => {
+                nozy::zsa::print_balance(json).await?;
+            }
+            ZsaCommand::Issue { name, amount } => {
+                nozy::zsa::issue_asset(&name, amount)?;
+            }
+            ZsaCommand::Transfer {
+                recipient,
+                amount,
+                asset: _,
+            } => {
+                nozy::zsa::transfer_asset(&recipient, amount)?;
+            }
+        },
+
         Commands::Ironwood { command } => {
             use nozy::ironwood::{
                 display_ironwood_status, execute_orchard_migration,
@@ -4988,6 +5077,12 @@ fn maybe_print_cli_art(cli: &Cli) {
         Commands::Health { .. } | Commands::Tui { .. } => {}
         Commands::Status { json, watch, .. } if *json || *watch => {}
         Commands::Balance { json } if *json => {}
+        Commands::Zsa {
+            command: ZsaCommand::Status { json, .. },
+        } if *json => {}
+        Commands::Zsa {
+            command: ZsaCommand::Balance { json },
+        } if *json => {}
         _ => nozy::cli_art::print_startup_logo(),
     }
 }
