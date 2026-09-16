@@ -11,6 +11,7 @@ import { UnlockScreen } from "../screens/Unlock";
 import { WelcomeScreen } from "../screens/Welcome";
 import { IronwoodScreen } from "../screens/Ironwood";
 import { VoteScreen } from "../screens/Vote";
+import { CrosslinkScreen } from "../screens/Crosslink";
 import { colors } from "../theme";
 import type { RootStackParamList } from "../types";
 import { MainTabNavigator } from "./MainTabNavigator";
@@ -92,6 +93,11 @@ export function AppNavigator() {
         name="Vote"
         component={VoteScreen}
         options={{ title: "NU7 Vote" }}
+      />
+      <Stack.Screen
+        name="Crosslink"
+        component={CrosslinkScreen}
+        options={{ title: "Crosslink" }}
       />
     </Stack.Navigator>
   );

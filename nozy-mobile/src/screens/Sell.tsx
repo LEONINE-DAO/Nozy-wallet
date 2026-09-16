@@ -15,13 +15,14 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { onDeviceReceiveAddress } from "../services/onDeviceWallet";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Sell">;
 
 export function SellScreen({ navigation }: Props) {
-  const { password } = useWalletSession();
+  const { password, backendMode } = useWalletSession();
   const [role, setRole] = useState("personal");
   const [displayName, setDisplayName] = useState("");
   const [linkedDisplay, setLinkedDisplay] = useState<string | null>(null);
@@ -38,6 +39,12 @@ export function SellScreen({ navigation }: Props) {
   const load = useCallback(async () => {
     setError("");
     try {
+      if (backendMode === "on_device") {
+        const res = await onDeviceReceiveAddress();
+        setBusinessAddress(res.address);
+        setRole("personal");
+        return;
+      }
       const profile = await api.getProfile(password || undefined);
       setRole(profile.role);
       setDisplayName(profile.business_display_name ?? "");
@@ -46,7 +53,7 @@ export function SellScreen({ navigation }: Props) {
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load profile");
     }
-  }, [password]);
+  }, [password, backendMode]);
 
   useEffect(() => {
     void load();
@@ -134,7 +141,12 @@ export function SellScreen({ navigation }: Props) {
     }
   }
 
-  const identityLabel = linkedDisplay || businessAddress || "Switch to Business and generate address";
+  const identityLabel =
+    linkedDisplay ||
+    businessAddress ||
+    (backendMode === "on_device"
+      ? "Unlock to show your receive address"
+      : "Switch to Business and generate address");
   const amt = parseFloat(amount);
   const qrPayload = (() => {
     if (!businessAddress) return linkedDisplay || "";
@@ -150,60 +162,65 @@ export function SellScreen({ navigation }: Props) {
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.container}>
         <Text style={styles.subtitle}>
-          Sell mode — show your Business identity. Claim a name on zcashnames.com pointing at your
-          Business UA, then link it here.
+          {backendMode === "on_device"
+            ? "Show your unified address so someone can pay you."
+            : "Sell mode — show your Business identity. Claim a name on zcashnames.com pointing at your Business UA, then link it here."}
         </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.label}>Profile</Text>
-          <Text style={styles.value}>
-            {role === "business" ? "Business (account 1)" : "Personal (account 0)"}
-          </Text>
-          <Input
-            label="Business display name (optional)"
-            value={displayName}
-            onChangeText={setDisplayName}
-            placeholder="Taco stand"
-          />
-          <Button
-            label="Use Business profile"
-            onPress={() => void switchToBusiness()}
-            loading={busy}
-          />
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Zcash name</Text>
-          {linkedDisplay ? (
-            <>
-              <Text style={styles.heroName}>{linkedDisplay}</Text>
-              <Button label="Unlink name" variant="ghost" onPress={() => void unlink()} />
-            </>
-          ) : (
-            <>
-              <Text style={styles.hint}>
-                Get a name at zcashnames.com, point it at your Business address, then link.
+        {backendMode === "on_device" ? null : (
+          <>
+            <View style={styles.card}>
+              <Text style={styles.label}>Profile</Text>
+              <Text style={styles.value}>
+                {role === "business" ? "Business (account 1)" : "Personal (account 0)"}
               </Text>
-              <Button
-                label="Open zcashnames.com"
-                variant="secondary"
-                onPress={() => void Linking.openURL("https://www.zcashnames.com")}
-              />
               <Input
-                label="Name to link"
-                value={linkName}
-                onChangeText={setLinkName}
-                autoCapitalize="none"
-                placeholder="mystore"
+                label="Business display name (optional)"
+                value={displayName}
+                onChangeText={setDisplayName}
+                placeholder="Taco stand"
               />
               <Button
-                label="Link name"
-                onPress={() => void linkNameAction()}
+                label="Use Business profile"
+                onPress={() => void switchToBusiness()}
                 loading={busy}
               />
-            </>
-          )}
-        </View>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.label}>Zcash name</Text>
+              {linkedDisplay ? (
+                <>
+                  <Text style={styles.heroName}>{linkedDisplay}</Text>
+                  <Button label="Unlink name" variant="ghost" onPress={() => void unlink()} />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.hint}>
+                    Get a name at zcashnames.com, point it at your Business address, then link.
+                  </Text>
+                  <Button
+                    label="Open zcashnames.com"
+                    variant="secondary"
+                    onPress={() => void Linking.openURL("https://www.zcashnames.com")}
+                  />
+                  <Input
+                    label="Name to link"
+                    value={linkName}
+                    onChangeText={setLinkName}
+                    autoCapitalize="none"
+                    placeholder="mystore"
+                  />
+                  <Button
+                    label="Link name"
+                    onPress={() => void linkNameAction()}
+                    loading={busy}
+                  />
+                </>
+              )}
+            </View>
+          </>
+        )}
 
         <View style={styles.card}>
           <Text style={styles.label}>Receive (ZIP-321 URI for QR)</Text>
@@ -219,8 +236,7 @@ export function SellScreen({ navigation }: Props) {
             </Text>
           ) : null}
           <Text style={styles.hint}>
-            Paste the URI into a QR generator, or copy for the customer. Native on-screen QR lands with
-            the invoice API polish pass.
+            Copy the URI into a QR generator, or share the address.
           </Text>
           <TextInput
             style={styles.amount}
@@ -246,9 +262,9 @@ export function SellScreen({ navigation }: Props) {
               if (qrPayload) await Clipboard.setStringAsync(qrPayload);
             }}
           />
-          {!waiting ? (
+          {backendMode === "on_device" ? null : !waiting ? (
             <Button label="Waiting for payment…" onPress={() => void startWaiting()} />
-          ) : (
+          ) : backendMode === "on_device" ? null : (
             <View style={styles.waitRow}>
               <ActivityIndicator color={colors.primary} />
               <Text style={styles.hint}>Polling balance after sync…</Text>

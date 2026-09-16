@@ -16,6 +16,7 @@ import { Input } from "../components/Input";
 import { PageHeader } from "../components/PageHeader";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { onDeviceSpendableZec } from "../services/onDeviceWallet";
 import {
   resolveSendRecipient,
   type ZnsRegistration,
@@ -43,7 +44,7 @@ async function resolveRecipientOrThrow(raw: string): Promise<string> {
 }
 
 export function SendScreen({ navigation, route }: Props) {
-  const { password } = useWalletSession();
+  const { password, backendMode } = useWalletSession();
   const [recipient, setRecipient] = useState(route.params?.recipient ?? "");
   const [amount, setAmount] = useState("");
   const [memo, setMemo] = useState("");
@@ -74,6 +75,13 @@ export function SendScreen({ navigation, route }: Props) {
 
     setLoading(true);
     try {
+      if (backendMode === "on_device") {
+        const spendable = await onDeviceSpendableZec();
+        if (spendable <= 0 || parsed > spendable) {
+          throw new Error("No spendable ZEC yet.");
+        }
+        throw new Error("No spendable ZEC yet.");
+      }
       const resolved = await resolveRecipientOrThrow(recipient);
       if (resolved !== recipient.trim()) {
         setResolvedHint(`Resolved → ${resolved.slice(0, 16)}…`);
@@ -153,11 +161,13 @@ export function SendScreen({ navigation, route }: Props) {
             onPress={() => void handleSend()}
             loading={loading}
           />
-          <Button
-            label="Send with Keystone"
-            variant="secondary"
-            onPress={() => openStackScreen("Keystone")}
-          />
+          {backendMode === "on_device" ? null : (
+            <Button
+              label="Send with Keystone"
+              variant="secondary"
+              onPress={() => openStackScreen("Keystone")}
+            />
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

@@ -1,10 +1,5 @@
 import Constants from "expo-constants";
-import { Platform } from "react-native";
-import {
-  defaultHostedApiUrl,
-  defaultSelfHostedApiUrl,
-} from "../lib/connectionPresets";
-import { isProductionBuild } from "../lib/buildProfile";
+import { defaultSelfHostedApiUrl, isRetiredNozyHostedApiUrl } from "../lib/connectionPresets";
 import type {
   AddressBookEntry,
   AddressResponse,
@@ -34,28 +29,23 @@ import type {
   TransactionHistoryResponse,
   WalletInfo,
   WalletStatusResponse,
+  CrosslinkActionResponse,
+  CrosslinkDoctorReport,
+  CrosslinkGuardianSnapshot,
+  CrosslinkPayoutClaimPack,
+  CrosslinkRosterEntry,
 } from "../types";
 
 function defaultApiUrl(): string {
   const fromConfig = Constants.expoConfig?.extra?.defaultApiUrl as
     | string
     | undefined;
-  if (fromConfig) return fromConfig;
-  if (isProductionBuild()) return defaultHostedApiUrl();
-  if (Platform.OS === "android") return defaultSelfHostedApiUrl();
-  return "http://localhost:3000";
+  if (fromConfig && !isRetiredNozyHostedApiUrl(fromConfig)) return fromConfig;
+  return defaultSelfHostedApiUrl();
 }
 
 let apiBaseUrl = defaultApiUrl();
 let apiKey: string | null = null;
-
-// Preview + production: bake hosted API key so physical-device installs
-// can reach nozywallet.leoninedao.org without manual Settings entry.
-const bakedHostedApiKey = (Constants.expoConfig?.extra
-  ?.hostedApiKey as string | undefined)?.trim();
-if (bakedHostedApiKey) {
-  apiKey = bakedHostedApiKey;
-}
 
 export function getApiBaseUrl(): string {
   return apiBaseUrl;
@@ -111,13 +101,15 @@ async function request<T>(
     }
     const detail = e instanceof Error ? e.message : "Network request failed";
     const usingHttp = apiBaseUrl.startsWith("http://");
-    const hint =
-      Platform.OS === "android" &&
-      (apiBaseUrl.includes("localhost") || apiBaseUrl.includes("127.0.0.1"))
-        ? " On the Android emulator use http://10.0.2.2:3000 (not localhost). On a real phone use your PC LAN IP or HTTPS."
-        : usingHttp
-          ? " If this is a real phone, use your PC's LAN IP (e.g. http://192.168.x.x:3000) or HTTPS — not 10.0.2.2."
-          : " Check that nozywallet-api is running and the API URL in Settings is correct.";
+    const usingLoopback =
+      apiBaseUrl.includes("localhost") ||
+      apiBaseUrl.includes("127.0.0.1") ||
+      apiBaseUrl.includes("10.0.2.2");
+    const hint = usingLoopback
+      ? " That URL is nozywallet-api on your PC. On-device Nozy (Home, Receive, Sync, Vote) does not need it. If you do run the API: emulator http://10.0.2.2:3000, real phone your PC LAN IP — never 10.0.2.2 on a physical device."
+      : usingHttp
+        ? " Check that nozywallet-api is running and the API URL in Settings is your PC LAN IP or HTTPS."
+        : " Check that nozywallet-api is running and the API URL in Settings is correct.";
     throw new Error(`${detail}.${hint}`);
   } finally {
     clearTimeout(timer);
@@ -156,10 +148,18 @@ export const api = {
       body: JSON.stringify({ password: password || null }),
     }),
 
-  restoreWallet: (mnemonic: string, password: string) =>
+  restoreWallet: (
+    mnemonic: string,
+    password: string,
+    opts?: { confirmOverwrite?: boolean },
+  ) =>
     request<{ success: boolean }>("/api/wallet/restore", {
       method: "POST",
-      body: JSON.stringify({ mnemonic, password }),
+      body: JSON.stringify({
+        mnemonic,
+        password,
+        confirm_overwrite: opts?.confirmOverwrite === true,
+      }),
     }),
 
   unlockWallet: (password: string) =>
@@ -560,4 +560,63 @@ export const api = {
       method: "POST",
       body: JSON.stringify({}),
     }),
+
+  crosslinkStatus: () =>
+    request<CrosslinkGuardianSnapshot>("/api/crosslink/status"),
+
+  crosslinkRoster: (zats = false) =>
+    request<CrosslinkRosterEntry[]>(
+      `/api/crosslink/roster?zats=${zats ? "true" : "false"}`,
+    ),
+
+  crosslinkStake: (body: {
+    amount_ctaz: number;
+    finalizer: string;
+    force?: boolean;
+  }) =>
+    request<CrosslinkActionResponse>("/api/crosslink/stake", {
+      method: "POST",
+      body: JSON.stringify({
+        amount_ctaz: body.amount_ctaz,
+        finalizer: body.finalizer,
+        force: body.force ?? false,
+      }),
+    }),
+
+  crosslinkRetarget: (body: { bond: string; finalizer: string }) =>
+    request<CrosslinkActionResponse>("/api/crosslink/retarget", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+
+  crosslinkUnbond: (body: { bond: string; force?: boolean }) =>
+    request<CrosslinkActionResponse>("/api/crosslink/unbond", {
+      method: "POST",
+      body: JSON.stringify({ bond: body.bond, force: body.force ?? false }),
+    }),
+
+  crosslinkWithdraw: (body: { bond: string; force?: boolean }) =>
+    request<CrosslinkActionResponse>("/api/crosslink/withdraw", {
+      method: "POST",
+      body: JSON.stringify({ bond: body.bond, force: body.force ?? false }),
+    }),
+
+  crosslinkPayoutClaim: (body?: {
+    payout_address?: string;
+    mobile_ufvk?: string;
+    cutoff_height?: number;
+  }) =>
+    request<CrosslinkPayoutClaimPack>("/api/crosslink/payout-claim", {
+      method: "POST",
+      body: JSON.stringify({
+        payout_address: body?.payout_address || undefined,
+        mobile_ufvk: body?.mobile_ufvk || undefined,
+        cutoff_height: body?.cutoff_height ?? undefined,
+      }),
+    }),
+
+  crosslinkDoctor: (observer = true) =>
+    request<CrosslinkDoctorReport>(
+      `/api/crosslink/doctor?observer=${observer ? "true" : "false"}`,
+    ),
 };

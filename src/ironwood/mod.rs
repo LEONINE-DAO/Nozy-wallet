@@ -35,10 +35,11 @@ pub use migration::{
 };
 pub use network_privacy::{
     amount_timing_status, assess_migration_cover_traffic, assess_migration_network_privacy,
-    require_migration_network_privacy, safer_migration_status_snapshot,
-    selected_amount_timing_algorithm, zebra_client_for_migration_broadcast, AmountTimingAlgorithm,
-    AmountTimingStatus, MigrationCoverAssessment, MigrationNetworkPrivacyAssessment,
-    MigrationNetworkPrivacyMode, MigrationNetworkPrivacyOpts, SaferMigrationStatusSnapshot,
+    nymvpn_ironwood_stopgap_hint, require_migration_network_privacy,
+    safer_migration_status_snapshot, selected_amount_timing_algorithm,
+    zebra_client_for_migration_broadcast, AmountTimingAlgorithm, AmountTimingStatus,
+    MigrationCoverAssessment, MigrationNetworkPrivacyAssessment, MigrationNetworkPrivacyMode,
+    MigrationNetworkPrivacyOpts, SaferMigrationStatusSnapshot, ZCASH_NYM_FREE_URL,
 };
 pub use status::{
     display_ironwood_status, fetch_pool_balances, ironwood_software_send_available,

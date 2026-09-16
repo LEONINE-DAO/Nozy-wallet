@@ -9,8 +9,12 @@ import { Select } from "../Select";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useWalletSession } from "../../context/WalletSessionContext";
 import { api } from "../../services/api";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { lwdGetInfo } from "nozy-wallet";
+import { ONDEVICE_LWD_URL_KEY } from "./OnDeviceWalletSettings";
 import {
   type NodeConnectionMode,
+  defaultHostedLwdUrl,
   defaultLocalZebraUrl,
   defaultPublicZebraUrl,
   inferNodeConnectionMode,
@@ -22,7 +26,7 @@ import { colors, fontSize, spacing } from "../../theme";
 type Props = { onBack: () => void };
 
 export function NetworkSettings({ onBack }: Props) {
-  const { apiUrl } = useWalletSession();
+  const { apiUrl, backendMode } = useWalletSession();
   const apiIsHosted = isHostedApiUrl(apiUrl);
   const [zebraUrl, setZebraUrl] = useState("");
   const [initialZebraUrl, setInitialZebraUrl] = useState("");
@@ -33,8 +37,15 @@ export function NetworkSettings({ onBack }: Props) {
   const [loading, setLoading] = useState(false);
   const [riskOpen, setRiskOpen] = useState(false);
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
+  const [lwdUrl, setLwdUrl] = useState(defaultHostedLwdUrl());
 
   useEffect(() => {
+    if (backendMode === "on_device") {
+      void AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY).then((v) => {
+        setLwdUrl(v?.trim() || defaultHostedLwdUrl());
+      });
+      return;
+    }
     void api
       .getConfig()
       .then((c) => {
@@ -48,7 +59,7 @@ export function NetworkSettings({ onBack }: Props) {
           e instanceof Error ? e.message : "Could not load network config",
         );
       });
-  }, []);
+  }, [backendMode]);
 
   function applyNodeMode(next: NodeConnectionMode) {
     setNodeMode(next);
@@ -176,13 +187,67 @@ export function NetworkSettings({ onBack }: Props) {
     }
   }
 
+  async function saveLwd() {
+    setLoading(true);
+    setError("");
+    setStatus("");
+    try {
+      const url = lwdUrl.trim() || defaultHostedLwdUrl();
+      await AsyncStorage.setItem(ONDEVICE_LWD_URL_KEY, url);
+      setLwdUrl(url);
+      const info = await lwdGetInfo(url);
+      setStatus(
+        `Connected · height ${Number(info.block_height || info.estimated_height || 0).toLocaleString()}`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reach lightwalletd");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  if (backendMode === "on_device") {
+    return (
+      <SafeAreaView style={styles.safe} edges={["bottom"]}>
+        <SettingsBackButton onPress={onBack} />
+        <ScrollView
+          contentContainerStyle={styles.container}
+          keyboardShouldPersistTaps="handled"
+        >
+          <Text style={styles.title}>Network & node</Text>
+          <Text style={styles.subtitle}>
+            This phone syncs compact blocks from lightwalletd. Default is
+            lwd.nozywallet.org. Set your own URL if you run a node.
+          </Text>
+          <Card>
+            <Input
+              label="lightwalletd URL"
+              value={lwdUrl}
+              onChangeText={setLwdUrl}
+              autoCapitalize="none"
+              autoCorrect={false}
+              placeholder={defaultHostedLwdUrl()}
+            />
+            <Button
+              label="Save & test"
+              onPress={() => void saveLwd()}
+              loading={loading}
+            />
+            {status ? <Text style={styles.ok}>{status}</Text> : null}
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+          </Card>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
+      <SettingsBackButton onPress={onBack} />
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <SettingsBackButton onPress={onBack} />
         <Text style={styles.title}>Network & Node</Text>
         <Text style={styles.subtitle}>
           This sets the full-node RPC URL on your API server (not on the phone).
@@ -192,10 +257,9 @@ export function NetworkSettings({ onBack }: Props) {
         {apiIsHosted ? (
           <View style={styles.banner}>
             <Text style={styles.bannerText}>
-              You are on the Nozy hosted API. http://127.0.0.1 here is the
-              DigitalOcean box, not your phone or home PC. To use your node,
-              switch Mobile connection to your own API that sits next to
-              Zebrad/Zakura.
+              You are on a remote API. http://127.0.0.1 here is that server,
+              not your phone or home PC. To use your node, point Mobile
+              connection at an API that sits next to Zebrad/Zakura.
             </Text>
           </View>
         ) : null}

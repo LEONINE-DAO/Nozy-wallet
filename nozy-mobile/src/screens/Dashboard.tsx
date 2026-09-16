@@ -11,6 +11,12 @@ import { SyncPill } from "../components/SyncPill";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
 import { onDeviceMoveLegacy, onDeviceSaplingStatus } from "../services/onDeviceSapling";
+import { onDeviceCompactSync, onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
+import { loadHideBalances } from "../lib/displayPrefs";
+import { formatUsd, getZecUsdPrice } from "../lib/zecPrice";
+import { getActiveOnDeviceAccount } from "../services/onDeviceAccounts";
+import { PoolAmountsRow } from "../components/PoolAmountsRow";
+import { ZecPriceBar } from "../components/ZecPriceBar";
 import { colors, fontSize, spacing } from "../theme";
 import type {
   MainTabParamList,
@@ -24,7 +30,13 @@ type Props = CompositeScreenProps<
   NativeStackScreenProps<RootStackParamList>
 >;
 
-const SYNC_PHASES = [
+const SYNC_PHASES_LWD = [
+  "Connecting to lightwalletd…",
+  "Downloading compact blocks…",
+  "First scan can take several minutes…",
+];
+
+const SYNC_PHASES_API = [
   "Connecting to Zebra…",
   "Scanning shielded notes…",
   "First scan can take several minutes…",
@@ -34,6 +46,21 @@ function formatElapsed(seconds: number): string {
   const m = Math.floor(seconds / 60);
   const s = seconds % 60;
   return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
+const ZAT = 100_000_000;
+
+function splitPools(
+  available: number,
+  orchard?: number,
+  ironwood?: number,
+): { orchard: number; ironwood: number } {
+  let orchardZec = orchard ?? 0;
+  let ironwoodZec = ironwood ?? 0;
+  if (orchardZec + ironwoodZec === 0 && available > 0) {
+    orchardZec = available;
+  }
+  return { orchard: orchardZec, ironwood: ironwoodZec };
 }
 
 export function DashboardScreen({ navigation }: Props) {
@@ -47,7 +74,13 @@ export function DashboardScreen({ navigation }: Props) {
   const [error, setError] = useState("");
   const [legacyStatus, setLegacyStatus] = useState<SaplingStatusResponse | null>(null);
   const [legacyBusy, setLegacyBusy] = useState(false);
+  const [hideBalances, setHideBalances] = useState(false);
+  const [usdPerZec, setUsdPerZec] = useState<number | null>(null);
+  const [accountName, setAccountName] = useState("");
+  const [orchardZec, setOrchardZec] = useState(0);
+  const [ironwoodZec, setIronwoodZec] = useState(0);
   const autoSyncRan = useRef(false);
+  const syncingRef = useRef(false);
   const onDevice = backendMode === "on_device";
 
   const loadLegacyStatus = useCallback(async () => {
@@ -75,46 +108,101 @@ export function DashboardScreen({ navigation }: Props) {
     }
   }, [onDevice]);
 
+  const applyPools = useCallback(
+    (available: number, orchard?: number, ironwood?: number) => {
+      const split = splitPools(available, orchard, ironwood);
+      setOrchardZec(split.orchard);
+      setIronwoodZec(split.ironwood);
+    },
+    [],
+  );
+
   const loadDashboard = useCallback(async () => {
     setError("");
     try {
       if (onDevice) {
         await loadLegacyStatus();
+        const snap = await onDeviceShieldedSnapshot();
+        setBalance(snap.unspentZec);
+        applyPools(snap.unspentZec, snap.orchardZec, snap.ironwoodZec);
         return;
       }
       const balanceRes = await api.getBalance();
-      setBalance(balanceRes.balance_zec);
+      const available = balanceRes.available_zec ?? balanceRes.balance_zec;
+      setBalance(available);
+      let orchard = balanceRes.orchard_zec ?? 0;
+      let ironwood = balanceRes.ironwood_zec ?? 0;
+      try {
+        const iw = await api.getIronwoodStatus();
+        if (orchard + ironwood === 0) {
+          orchard = iw.orchard_wallet_zat / ZAT;
+          ironwood = iw.ironwood_wallet_zat / ZAT;
+        }
+      } catch {
+        // companion ironwood status is optional
+      }
+      applyPools(available, orchard, ironwood);
       await Promise.all([loadWalletStatus(), loadLegacyStatus()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load wallet");
     } finally {
       setLoading(false);
     }
-  }, [loadWalletStatus, loadLegacyStatus, onDevice]);
+  }, [loadWalletStatus, loadLegacyStatus, onDevice, applyPools]);
 
   const runSync = useCallback(async () => {
-    if (syncing) return;
+    if (syncingRef.current) return;
+    syncingRef.current = true;
     setSyncing(true);
     setSyncPhase(0);
     setSyncElapsed(0);
     setError("");
     try {
+      if (onDevice) {
+        const result = await onDeviceCompactSync();
+        setBalance(result.unspentZec);
+        applyPools(result.unspentZec, result.orchardZec, result.ironwoodZec);
+        setWalletStatus({
+          balance_zec: result.unspentZec,
+          pending_transactions: 0,
+          total_transactions: 0,
+          last_sync_height: result.chainTip,
+          current_block_height: result.chainTip,
+          blocks_behind: 0,
+          witness_lag_blocks: 0,
+          witness_fresh_for_send: false,
+          max_send_witness_lag_blocks: 0,
+          ready_for_send: false,
+        });
+        await loadLegacyStatus();
+        return;
+      }
       const result = await api.syncWallet(password || undefined);
       setBalance(result.balance_zec);
       await loadWalletStatus();
       await loadLegacyStatus();
+      await loadDashboard();
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
     } finally {
+      syncingRef.current = false;
       setSyncing(false);
     }
-  }, [password, loadWalletStatus, loadLegacyStatus, syncing]);
+  }, [password, loadWalletStatus, loadLegacyStatus, onDevice, applyPools, loadDashboard]);
 
   useFocusEffect(
     useCallback(() => {
+      void loadHideBalances().then(setHideBalances);
+      if (onDevice) {
+        void getActiveOnDeviceAccount()
+          .then((a) => setAccountName(a.name))
+          .catch(() => setAccountName(""));
+      } else {
+        setAccountName("");
+      }
       setLoading(true);
       void loadDashboard();
-      if (autoSync && !onDevice && !autoSyncRan.current) {
+      if (autoSync && !autoSyncRan.current) {
         autoSyncRan.current = true;
         void runSync();
       }
@@ -125,14 +213,26 @@ export function DashboardScreen({ navigation }: Props) {
   );
 
   useEffect(() => {
+    void (async () => {
+      const rate = await getZecUsdPrice();
+      setUsdPerZec(rate);
+    })();
+  }, []);
+
+  useEffect(() => {
     if (!syncing) return;
     const started = Date.now();
     const tick = setInterval(() => {
       setSyncElapsed(Math.floor((Date.now() - started) / 1000));
-      setSyncPhase((i) => (i + 1) % SYNC_PHASES.length);
+      setSyncPhase((i) => (i + 1) % (onDevice ? SYNC_PHASES_LWD : SYNC_PHASES_API).length);
     }, 4000);
     return () => clearInterval(tick);
-  }, [syncing]);
+  }, [syncing, onDevice]);
+
+  useEffect(() => {
+    if (!onDevice) return;
+    applyPools(balance);
+  }, [onDevice, balance, applyPools]);
 
   const blocksBehind = walletStatus?.blocks_behind ?? null;
   const isSynced = blocksBehind === 0;
@@ -168,7 +268,7 @@ export function DashboardScreen({ navigation }: Props) {
       : "Tap to sync wallet";
 
   const syncDetail = syncing
-    ? SYNC_PHASES[syncPhase]
+    ? (onDevice ? SYNC_PHASES_LWD : SYNC_PHASES_API)[syncPhase]
     : scannedHeight != null && chainTip != null
       ? `Height ${scannedHeight.toLocaleString()} / ${chainTip.toLocaleString()}`
       : "Use Send and Receive tabs below";
@@ -183,14 +283,31 @@ export function DashboardScreen({ navigation }: Props) {
         <AppLogo variant="header" />
 
         <View style={styles.balanceRow}>
-          <Text style={styles.eyebrow}>Shielded balance</Text>
+          <Text style={styles.eyebrow}>
+            {accountName ? `${accountName} · shielded` : "Shielded balance"}
+          </Text>
           <SyncPill label={pillLabel} tone={pillTone} onPress={() => void runSync()} />
         </View>
 
         <Text style={styles.balance}>
-          {loading && !syncing ? "—" : balance.toFixed(8)}
+          {loading && !syncing ? "—" : hideBalances ? "••••••••" : balance.toFixed(8)}
           <Text style={styles.zec}> ZEC</Text>
         </Text>
+        {hideBalances ? null : usdPerZec != null && usdPerZec > 0 ? (
+          <Text style={styles.fiat}>≈ {formatUsd(balance * usdPerZec)}</Text>
+        ) : null}
+
+        <PoolAmountsRow
+          orchardZec={orchardZec}
+          ironwoodZec={ironwoodZec}
+          hideBalances={hideBalances}
+        />
+
+        <ZecPriceBar
+          zecAmount={balance}
+          usdPerZec={usdPerZec}
+          hideBalances={hideBalances}
+        />
 
         <View style={styles.actions}>
           <Button
@@ -289,6 +406,12 @@ const styles = StyleSheet.create({
     fontSize: fontSize.sm,
     fontWeight: "600",
     color: colors.textFaint,
+  },
+  fiat: {
+    color: "rgba(57, 255, 159, 0.7)",
+    fontSize: fontSize.sm,
+    fontWeight: "600",
+    marginTop: -8,
   },
   actions: {
     flexDirection: "row",

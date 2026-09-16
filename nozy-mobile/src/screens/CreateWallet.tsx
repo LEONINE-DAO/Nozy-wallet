@@ -53,6 +53,11 @@ export function CreateWalletScreen({ navigation }: Props) {
         <ScrollView contentContainerStyle={styles.container}>
           <Text style={styles.title}>Create wallet</Text>
           <Text style={styles.subtitle}>
+            Only if you have never created a Nozy wallet. Restore the Desktop
+            phrase instead so this phone matches Desktop and the extension.
+            Optional password encrypts your wallet on the API server.
+          </Text>
+          <Text style={styles.subtitle}>
             Optional password encrypts your wallet on the API server. Leave blank
             for no password.
           </Text>

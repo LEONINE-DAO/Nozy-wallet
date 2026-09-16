@@ -4,8 +4,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { ConnectionSetupFields } from "../ConnectionSetupFields";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useWalletSession } from "../../context/WalletSessionContext";
-import { requireHostedApiKey } from "../../lib/buildProfile";
-import { isHostedApiUrl } from "../../lib/connectionPresets";
 import { api } from "../../services/api";
 import { colors, fontSize, spacing } from "../../theme";
 
@@ -31,16 +29,6 @@ export function MobileConnectionSettings({ onBack }: Props) {
     const previousUrl = apiUrl;
     const previousKey = apiKey;
     try {
-      if (
-        requireHostedApiKey() &&
-        isHostedApiUrl(urlDraft) &&
-        !keyDraft.trim()
-      ) {
-        const msg = "API key is required for the hosted API.";
-        setError(msg);
-        Alert.alert("Cannot save", msg);
-        return;
-      }
       await setApiUrl(urlDraft);
       await setApiKey(keyDraft);
       await Promise.race([
@@ -75,16 +63,16 @@ export function MobileConnectionSettings({ onBack }: Props) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
+      <SettingsBackButton onPress={onBack} />
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <SettingsBackButton onPress={onBack} />
         <Text style={styles.title}>Mobile connection</Text>
         <Text style={styles.subtitle}>
-          Sync needs a working Zebrad behind the API. Use your own home PC / VPS
-          node, or another operator you trust. Nozy hosted API has no Nozy Zebrad
-          until funding — it will not sync by itself.
+          Default sync is lightwalletd on lwd.nozywallet.org — your seed stays on
+          this phone. Optional companion API is only if you run nozywallet-api
+          yourself. Do not use LEONINE’s api.nozywallet.org as a shared wallet.
         </Text>
         <ConnectionSetupFields
           urlDraft={urlDraft}

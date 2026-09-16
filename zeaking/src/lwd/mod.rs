@@ -11,18 +11,23 @@ mod client;
 mod compact_orchard;
 mod compact_sapling;
 mod store;
+mod submit;
 mod sync;
 
 pub use block_source::LightwalletdBlockSource;
 pub use client::{
     connect_lightwalletd, connect_lightwalletd_with_connector, normalize_lwd_uri, LwdClient,
 };
-pub use compact_orchard::orchard_cmx_bytes_from_compact_block;
+pub use compact_orchard::{
+    orchard_cmx_bytes_from_compact_block, orchard_slice_from_compact_block,
+    OrchardCompactActionBytes, OrchardCompactBlockSlice, OrchardCompactTxSlice,
+};
 pub use compact_sapling::{
     sapling_slice_from_compact_block, SaplingCompactBlockSlice, SaplingCompactOutputBytes,
     SaplingCompactTxSlice,
 };
 pub use store::LwdCompactStore;
+pub use submit::{get_latest_tree_state, get_tree_state, send_transaction, LwdTreeState};
 pub use sync::{
     chain_tip_height, compact_sync_progress_height, prune_stale_compact_cache,
     requested_start_height_for_tip_sync, sync_compact_range, sync_compact_range_with_options,

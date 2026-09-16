@@ -135,11 +135,7 @@ pub async fn legacy_hardware_send_blocker(
         return Ok(None);
     }
     if orchard_notes_unspent_zat > 0 {
-        return Ok(Some(
-            "Orchard notes remain after Ironwood activation. Run Ironwood Plan → Migrate → Broadcast \
-             (or `nozy ironwood migrate`) before sending from a hardware wallet."
-                .to_string(),
-        ));
+        return Ok(Some("Orchard notes remain migrate if able.".to_string()));
     }
     Ok(None)
 }

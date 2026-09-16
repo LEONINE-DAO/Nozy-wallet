@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { SettingsItem } from "../components/settings/SettingsItem";
 import { PageHeader } from "../components/PageHeader";
 import { useWalletSession } from "../context/WalletSessionContext";
-import { enableExperimentalFeatures } from "../lib/buildProfile";
 import { colors, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
@@ -13,8 +12,8 @@ type Nav = NativeStackNavigationProp<RootStackParamList>;
 
 export function MoreScreen() {
   const navigation = useNavigation<Nav>();
-  const { clearPassword } = useWalletSession();
-  const showExperimental = enableExperimentalFeatures();
+  const { clearPassword, backendMode } = useWalletSession();
+  const onDevice = backendMode === "on_device";
 
   async function logout() {
     await clearPassword();
@@ -24,7 +23,7 @@ export function MoreScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
       <ScrollView contentContainerStyle={styles.container}>
-        <PageHeader title="More" description="History and advanced tools." />
+        <PageHeader title="More" description="History and tools." />
         <SettingsItem
           title="Transaction history"
           onPress={() => navigation.navigate("TransactionHistory")}
@@ -37,16 +36,21 @@ export function MoreScreen() {
           title="Ironwood"
           onPress={() => navigation.navigate("Ironwood")}
         />
-        {showExperimental ? (
-          <SettingsItem
-            title="NU7 Vote"
-            onPress={() => navigation.navigate("Vote")}
-          />
-        ) : null}
         <SettingsItem
-          title="Keystone wallet"
-          onPress={() => navigation.navigate("Keystone")}
+          title="Crosslink"
+          description="Finalizer scoreboard"
+          onPress={() => navigation.navigate("Crosslink")}
         />
+        <SettingsItem
+          title="NU7 Vote"
+          onPress={() => navigation.navigate("Vote")}
+        />
+        {onDevice ? null : (
+          <SettingsItem
+            title="Keystone wallet"
+            onPress={() => navigation.navigate("Keystone")}
+          />
+        )}
         <SettingsItem
           title="About & privacy"
           onPress={() => navigation.navigate("About")}

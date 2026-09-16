@@ -31,7 +31,7 @@ async function resolveRecipientOrThrow(raw: string): Promise<string> {
 }
 
 export function KeystoneScreen({ navigation }: Props) {
-  const { password } = useWalletSession();
+  const { password, backendMode } = useWalletSession();
   const [status, setStatus] = useState<Awaited<ReturnType<typeof api.keystoneStatus>> | null>(null);
   const [deviceLabel, setDeviceLabel] = useState("My Keystone");
   const [recipient, setRecipient] = useState("");
@@ -44,6 +44,7 @@ export function KeystoneScreen({ navigation }: Props) {
   const [loading, setLoading] = useState(false);
 
   async function refreshStatus() {
+    if (backendMode === "on_device") return;
     try {
       const s = await api.keystoneStatus();
       setStatus(s);
@@ -141,6 +142,16 @@ export function KeystoneScreen({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
+  }
+
+  if (backendMode === "on_device") {
+    return (
+      <SafeAreaView style={styles.safe} edges={["bottom"]}>
+        <ScrollView contentContainerStyle={styles.container}>
+          <Text style={styles.subtitle}>No Keystone paired.</Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
   }
 
   return (

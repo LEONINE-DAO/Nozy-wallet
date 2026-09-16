@@ -17,8 +17,10 @@ import {
   isOnDeviceBackendAvailable,
   type WalletBackendMode,
 } from "../lib/walletBackend";
-import { enableExperimentalFeatures, isProductionBuild } from "../lib/buildProfile";
-import { defaultHostedApiUrl } from "../lib/connectionPresets";
+import {
+  defaultSelfHostedApiUrl,
+  isRetiredNozyHostedApiUrl,
+} from "../lib/connectionPresets";
 import { lockOnDeviceWallet } from "nozy-wallet";
 
 const PASSWORD_KEY = "nozy.session.password";
@@ -60,13 +62,10 @@ export function WalletSessionProvider({
   const [apiUrl, setApiUrlState] = useState(getApiBaseUrl());
   const [apiKey, setApiKeyState] = useState(getApiKey() ?? "");
   const [autoSync, setAutoSyncState] = useState(true);
-  const [backendMode, setBackendModeState] =
-    useState<WalletBackendMode>("companion");
-  const [onDeviceNative, setOnDeviceNative] = useState(false);
-
-  useEffect(() => {
-    setOnDeviceNative(isOnDeviceBackendAvailable());
-  }, []);
+  const [backendMode, setBackendModeState] = useState<WalletBackendMode>(() =>
+    isOnDeviceBackendAvailable() ? "on_device" : "companion",
+  );
+  const [onDeviceNative] = useState(() => isOnDeviceBackendAvailable());
 
   useEffect(() => {
     void (async () => {
@@ -88,20 +87,18 @@ export function WalletSessionProvider({
         // until the user (or Welcome) successfully calls unlock on the API.
         setPasswordState(storedPassword);
       }
-      if (storedApiUrl) {
+      if (storedApiUrl && !isRetiredNozyHostedApiUrl(storedApiUrl)) {
         setApiBaseUrl(storedApiUrl);
         setApiUrlState(storedApiUrl);
       } else {
-        // Preview/production bake hosted URL into extra.defaultApiUrl; keep
-        // session state aligned when nothing was saved yet.
-        const initial = getApiBaseUrl();
-        if (
-          isProductionBuild() ||
-          initial.includes("nozywallet.leoninedao.org")
-        ) {
-          const hosted = defaultHostedApiUrl();
-          setApiBaseUrl(hosted);
-          setApiUrlState(hosted);
+        const local = defaultSelfHostedApiUrl();
+        setApiBaseUrl(local);
+        setApiUrlState(local);
+        if (storedApiUrl && isRetiredNozyHostedApiUrl(storedApiUrl)) {
+          await AsyncStorage.setItem(API_URL_KEY, local);
+          await AsyncStorage.removeItem(API_KEY_KEY);
+          setApiKeyHeader(null);
+          setApiKeyState("");
         }
       }
       if (storedApiKey) {
@@ -112,18 +109,15 @@ export function WalletSessionProvider({
       }
       if (storedAutoSync === "false") setAutoSyncState(false);
       else setAutoSyncState(true);
-      // Stale on_device mode leaves Dashboard on empty FFI wallet after companion Unlock.
-      if (
-        storedBackend === "on_device" &&
-        enableExperimentalFeatures() &&
-        isProductionBuild()
-      ) {
+      const nativeReady = isOnDeviceBackendAvailable();
+      if (storedBackend === "on_device" && nativeReady) {
+        setBackendModeState("on_device");
+      } else if (storedBackend === "companion") {
+        setBackendModeState("companion");
+      } else if (nativeReady) {
         setBackendModeState("on_device");
       } else {
         setBackendModeState("companion");
-        if (storedBackend === "on_device") {
-          await AsyncStorage.setItem(BACKEND_MODE_KEY, "companion");
-        }
       }
     })();
   }, []);
@@ -182,15 +176,10 @@ export function WalletSessionProvider({
   }, []);
 
   const setBackendMode = useCallback(async (mode: WalletBackendMode) => {
-    if (mode === "on_device") {
-      if (!enableExperimentalFeatures()) {
-        throw new Error("On-device wallet is not available in this release.");
-      }
-      if (!isOnDeviceBackendAvailable()) {
-        throw new Error(
-          "On-device wallet requires a dev client build with libnozy_ffi.so",
-        );
-      }
+    if (mode === "on_device" && !isOnDeviceBackendAvailable()) {
+      throw new Error(
+        "On-device wallet requires a native build with libnozy_ffi (not Expo Go).",
+      );
     }
     setBackendModeState(mode);
     await AsyncStorage.setItem(BACKEND_MODE_KEY, mode);

@@ -7,6 +7,8 @@ import { Input } from "../Input";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useWalletSession } from "../../context/WalletSessionContext";
 import { isOnDeviceBackendAvailable } from "../../lib/walletBackend";
+import { defaultHostedLwdUrl } from "../../lib/connectionPresets";
+import { NU5_ORCHARD_MAINNET, parseRestoreHeight } from "../../lib/zcashHeights";
 import { colors, fontSize, spacing } from "../../theme";
 
 export const ONDEVICE_MNEMONIC_KEY = "nozy.ondevice.mnemonic";
@@ -14,6 +16,11 @@ export const ONDEVICE_DATA_DIR_KEY = "nozy.ondevice.dataDir";
 export const ONDEVICE_COMPACT_DB_KEY = "nozy.ondevice.compactDb";
 export const ONDEVICE_ZEBRA_URL_KEY = "nozy.ondevice.zebraUrl";
 export const ONDEVICE_LWD_URL_KEY = "nozy.ondevice.lwdUrl";
+export const ONDEVICE_PASSWORD_KEY = "nozy.ondevice.password";
+/** Compact-sync birthday (first height to fetch). Create = LWD tip; restore = NU5 unless set. */
+export const ONDEVICE_BIRTHDAY_KEY = "nozy.ondevice.birthday";
+/** "create" (scan from tip) or "restore" (scan from birthday / NU5). */
+export const ONDEVICE_WALLET_KIND_KEY = "nozy.ondevice.walletKind";
 
 type Props = { onBack: () => void };
 
@@ -23,26 +30,30 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
   const [mnemonic, setMnemonic] = useState("");
   const [dataDir, setDataDir] = useState("nozy-wallet-data");
   const [compactDb, setCompactDb] = useState("nozy-wallet-data/lwd_compact.sqlite");
-  const [zebraUrl, setZebraUrl] = useState("http://127.0.0.1:8232");
-  const [lwdUrl, setLwdUrl] = useState("http://127.0.0.1:9067");
+  const [zebraUrl, setZebraUrl] = useState("");
+  const [lwdUrl, setLwdUrl] = useState(defaultHostedLwdUrl());
+  const [birthday, setBirthday] = useState(String(NU5_ORCHARD_MAINNET));
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
   const available = isOnDeviceNativeAvailable || isOnDeviceBackendAvailable();
 
   useEffect(() => {
     void (async () => {
-      const [m, d, c, z, l] = await Promise.all([
+      const [m, d, c, z, l, b] = await Promise.all([
         AsyncStorage.getItem(ONDEVICE_MNEMONIC_KEY),
         AsyncStorage.getItem(ONDEVICE_DATA_DIR_KEY),
         AsyncStorage.getItem(ONDEVICE_COMPACT_DB_KEY),
         AsyncStorage.getItem(ONDEVICE_ZEBRA_URL_KEY),
         AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY),
+        AsyncStorage.getItem(ONDEVICE_BIRTHDAY_KEY),
       ]);
       if (m) setMnemonic(m);
       if (d) setDataDir(d);
       if (c) setCompactDb(c);
       if (z) setZebraUrl(z);
       if (l) setLwdUrl(l);
+      else setLwdUrl(defaultHostedLwdUrl());
+      if (b) setBirthday(b);
     })();
   }, []);
 
@@ -53,6 +64,7 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
       [ONDEVICE_COMPACT_DB_KEY, compactDb.trim()],
       [ONDEVICE_ZEBRA_URL_KEY, zebraUrl.trim()],
       [ONDEVICE_LWD_URL_KEY, lwdUrl.trim()],
+      [ONDEVICE_BIRTHDAY_KEY, String(parseRestoreHeight(birthday))],
     ]);
     if (mnemonic.trim()) {
       await AsyncStorage.setItem(ONDEVICE_MNEMONIC_KEY, mnemonic.trim());
@@ -65,7 +77,7 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
     try {
       await savePaths();
       await setBackendMode("on_device");
-      setStatus("Backend mode: on-device (experimental).");
+      setStatus("Using the wallet on this phone.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setError(msg);
@@ -81,16 +93,19 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
+      <SettingsBackButton onPress={onBack} />
       <ScrollView
         contentContainerStyle={styles.container}
         keyboardShouldPersistTaps="handled"
       >
-        <SettingsBackButton onPress={onBack} />
         <Text style={styles.title}>On-device wallet</Text>
         <Text style={styles.body}>
-          Experimental Sapling shield-to-self via libnozy_ffi (#208). Still needs
-          reachable Zebrad JSON-RPC and lightwalletd. Companion mode is unchanged
-          for store builds.
+          This is Nozy’s on-device wallet. Keys stay on this phone. Compact
+          sync uses lightwalletd (default https://lwd.nozywallet.org:443). To
+          use a node you run, set your lightwalletd gRPC URL below — and
+          Zebrad JSON-RPC if you have one. Companion API is only if you run
+          nozywallet-api on your own machine; it is not a shared hosted
+          wallet.
         </Text>
         <Text style={styles.meta}>
           Native FFI: {available ? "available" : "not loaded"} · Mode:{" "}
@@ -129,6 +144,19 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
           onChangeText={setLwdUrl}
           autoCapitalize="none"
         />
+        <Input
+          label="Sync from height (wallet birthday)"
+          value={birthday}
+          onChangeText={setBirthday}
+          keyboardType="number-pad"
+          autoCapitalize="none"
+        />
+        <Text style={styles.body}>
+          Create uses current LWD tip. Restore defaults to NU5 / Orchard
+          ({NU5_ORCHARD_MAINNET.toLocaleString()}). Never genesis. Raise this
+          if a brand-new wallet was created on this phone and you do not need
+          history.
+        </Text>
 
         <View style={styles.actions}>
           <Button label="Save paths" onPress={() => void savePaths()} />

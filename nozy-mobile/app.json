@@ -37,7 +37,7 @@
     },
     "extra": {
       "defaultApiUrl": "http://10.0.2.2:3000",
-      "hostedApiUrl": "https://nozywallet.leoninedao.org",
+      "hostedLwdUrl": "https://lwd.nozywallet.org:443",
       "eas": {
         "projectId": "13205ab5-3b91-42ae-b7b9-b14eded62a1c"
       }

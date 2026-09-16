@@ -22,6 +22,19 @@ use crate::privacy_network::proxy::{PrivacyNetwork, ProxyConfig};
 use crate::zebra_integration::ZebraClient;
 use serde::{Deserialize, Serialize};
 
+/// Harry / Nym: free NymVPN month for shielded ZEC holders (Ironwood stopgap).
+pub const ZCASH_NYM_FREE_URL: &str = "https://zcash.nym.com";
+
+/// User-facing hybrid stopgap. Prefer local Zebrad; consumer NymVPN is not in-app Nym.
+pub fn nymvpn_ironwood_stopgap_hint() -> String {
+    format!(
+        "Stopgap if you are not on local Zebrad: prove shielded ZEC at {ZCASH_NYM_FREE_URL} for a free \
+         NymVPN month. Use Fast mode for compact sync; Mixnet mode and a new exit for Ironwood \
+         send/broadcast. Do not sync and migrate-broadcast through the same hosted lightwalletd a \
+         minute later."
+    )
+}
+
 /// How the wallet chose amounts and broadcast windows for migration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -270,12 +283,12 @@ pub async fn assess_migration_network_privacy(
         };
     }
 
-    blockers.push(
+    blockers.push(format!(
         "Safer migration (Priority 1): refuse clearnet broadcast to a remote node. \
          Use a local Zebrad (127.0.0.1), start Tor/I2P (SOCKS), pass --attest-private-network if NymVPN/Tor \
-         is already protecting this machine, or --force-clearnet to override (discouraged)."
-            .to_string(),
-    );
+         is already protecting this machine, or --force-clearnet to override (discouraged). {}",
+        nymvpn_ironwood_stopgap_hint()
+    ));
 
     MigrationNetworkPrivacyAssessment {
         allowed: false,
@@ -405,9 +418,11 @@ pub fn amount_timing_status() -> AmountTimingStatus {
             "Invariant: only canonical bucket amounts cross the turnstile; residual below \
              0.001 ZEC is abandoned (not one-off turnstile sizes)."
                 .to_string(),
-            "Network privacy (Defense A) is required before Broadcast: local Zebrad, Nym, or Tor. \
-             Clearnet links revealed turnstile amounts to your IP/session."
-                .to_string(),
+            format!(
+                "Network privacy (Defense A) is required before Broadcast: local Zebrad, Nym, or Tor. \
+                 Clearnet links revealed turnstile amounts to your IP/session. {}",
+                nymvpn_ironwood_stopgap_hint()
+            ),
             "Memoryless randomized timing (Appendix A) and consolidation rounds are the next \
              cover-traffic steps; ZIP 318 power-of-ten remains a compatibility ladder."
                 .to_string(),
@@ -512,6 +527,10 @@ mod tests {
         if !assessment.privacy_proxy_detected {
             assert!(!assessment.allowed);
             assert!(assessment.mode.is_none());
+            assert!(assessment
+                .blockers
+                .iter()
+                .any(|b| b.contains(ZCASH_NYM_FREE_URL)));
         }
     }
 

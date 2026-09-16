@@ -30,6 +30,8 @@ pub mod bridge;
 #[cfg(feature = "native")]
 pub mod cache;
 #[cfg(feature = "native")]
+pub mod cli_art;
+#[cfg(feature = "native")]
 pub mod cli_helpers;
 #[cfg(feature = "native")]
 pub mod config;
@@ -74,7 +76,11 @@ pub mod nym_dvpn_sync;
 #[cfg(feature = "native")]
 pub mod nym_mixnet_broadcast;
 #[cfg(feature = "native")]
+pub mod nym_vpn_app;
+#[cfg(feature = "native")]
 pub mod orchard_chain_tree;
+#[cfg(feature = "native")]
+pub mod orchard_compact_scan;
 #[cfg(feature = "native")]
 pub mod orchard_tree_codec;
 #[cfg(feature = "native")]
@@ -145,6 +151,8 @@ pub mod zebra_integration;
 pub mod zebra_tree_rpc;
 #[cfg(feature = "native")]
 pub mod zip321;
+#[cfg(feature = "native")]
+pub mod zk_cosmwasm_claim;
 #[cfg(feature = "native")]
 pub mod zns;
 
@@ -258,6 +266,10 @@ pub use notes::{
     NoteScanner, OrchardNote, SerializableOrchardNote, SpendableNote,
 };
 #[cfg(feature = "native")]
+pub use orchard_compact_scan::{
+    scan_orchard_wallet_from_compact_store, OrchardCompactScanProgress, OrchardCompactScanStats,
+};
+#[cfg(feature = "native")]
 pub use orchard_tx::{
     select_single_spend_note, warm_orchard_proving_key, OrchardBuiltSpend,
     OrchardTransactionBuilder, OrchardWitnessProvider, ZebraJsonRpcOrchardWitnessProvider,
@@ -325,10 +337,12 @@ pub use transaction_history::{
 #[cfg(feature = "native")]
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
 #[cfg(feature = "native")]
-pub use vote_export::{export_ironwood_vote_notes_at_snapshot, NU7_SNAPSHOT_HEIGHT_MAINNET};
-pub use vote_sign::sign_delegation_request_json;
+pub use vote_export::{
+    export_ironwood_vote_notes, export_ironwood_vote_notes_at_snapshot, NU7_SNAPSHOT_HEIGHT_MAINNET,
+};
 #[cfg(feature = "native")]
 pub use vote_sign::sign_delegation_request;
+pub use vote_sign::sign_delegation_request_json;
 #[cfg(feature = "native")]
 pub use wallet_profiles::{
     active_profile_id, active_wallet_exists, apply_profile_connection_to_config,

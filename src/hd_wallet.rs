@@ -1,5 +1,6 @@
 use crate::error::{NozyError, NozyResult};
 use crate::key_management::SecureSeed;
+use crate::shielded_pool::ShieldedPool;
 use argon2::password_hash::{rand_core::OsRng, SaltString};
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier};
 use bip32::{DerivationPath, XPrv};
@@ -286,11 +287,12 @@ impl HDWallet {
         address: &str,
         block_height: u32,
         txid: &str,
+        pool: ShieldedPool,
     ) -> NozyResult<Option<OrchardDecryptionResult>> {
         use orchard::{
             keys::PreparedIncomingViewingKey,
             note::ExtractedNoteCommitment,
-            note_encryption::{CompactAction, OrchardDomain},
+            note_encryption::{CompactAction, IronwoodDomain, OrchardDomain},
         };
         use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
 
@@ -315,7 +317,6 @@ impl HDWallet {
 
         let compact_action =
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
-        let domain = OrchardDomain::for_compact_action(&compact_action);
 
         for scope in [
             orchard::keys::Scope::External,
@@ -323,9 +324,17 @@ impl HDWallet {
         ] {
             let ivk = self.derive_incoming_viewing_key_for_address_scoped(address, scope)?;
             let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
-            if let Some((note, note_address)) =
-                try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
-            {
+            let decrypted = match pool {
+                ShieldedPool::Orchard => {
+                    let domain = OrchardDomain::for_compact_action(&compact_action);
+                    try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+                }
+                ShieldedPool::Ironwood => {
+                    let domain = IronwoodDomain::for_compact_action(&compact_action);
+                    try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+                }
+            };
+            if let Some((note, note_address)) = decrypted {
                 return Ok(Some(OrchardDecryptionResult {
                     value: note.value().inner(),
                     address: format!("{:?}", note_address),

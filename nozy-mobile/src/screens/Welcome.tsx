@@ -10,9 +10,13 @@ import { ConnectionSetupFields } from "../components/ConnectionSetupFields";
 import { Input } from "../components/Input";
 import { Textarea } from "../components/Textarea";
 import { useWalletSession } from "../context/WalletSessionContext";
-import { requireHostedApiKey } from "../lib/buildProfile";
-import { isHostedApiUrl } from "../lib/connectionPresets";
 import { api } from "../services/api";
+import {
+  createOnDeviceWallet,
+  onDeviceWalletMeta,
+  restoreOnDeviceWallet,
+  unlockOnDeviceWallet,
+} from "../services/onDeviceWallet";
 import { colors, fontSize, radius, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
@@ -24,8 +28,15 @@ type ViewState = "initial" | "create" | "restore" | "securityTips";
  * logo, Privacy by Default, Unlock / Create / Restore / mnemonic / security tips.
  */
 export function WelcomeScreen({ navigation }: Props) {
-  const { unlockSession, apiUrl, setApiUrl, apiKey, setApiKey } =
-    useWalletSession();
+  const {
+    unlockSession,
+    apiUrl,
+    setApiUrl,
+    apiKey,
+    setApiKey,
+    setBackendMode,
+    isOnDeviceNativeAvailable,
+  } = useWalletSession();
   const [view, setView] = useState<ViewState>("initial");
   const [isLoading, setIsLoading] = useState(false);
   const [checking, setChecking] = useState(true);
@@ -50,7 +61,9 @@ export function WelcomeScreen({ navigation }: Props) {
 
   const [mnemonic, setMnemonic] = useState("");
   const [restorePassword, setRestorePassword] = useState("");
+  const [restoreHeight, setRestoreHeight] = useState("");
   const [showRestorePass, setShowRestorePass] = useState(false);
+  const [replaceExisting, setReplaceExisting] = useState(false);
   const [unlockPassword, setUnlockPassword] = useState("");
   const [showUnlockPass, setShowUnlockPass] = useState(false);
 
@@ -64,6 +77,23 @@ export function WelcomeScreen({ navigation }: Props) {
     let cancelled = false;
     setChecking(true);
     void (async () => {
+      if (isOnDeviceNativeAvailable) {
+        try {
+          const meta = await onDeviceWalletMeta();
+          if (cancelled) return;
+          setApiReachable(true);
+          setWalletExistsOnDisk(meta.exists);
+          setRequiresPassword(meta.hasPassword);
+        } catch {
+          if (cancelled) return;
+          setApiReachable(true);
+          setWalletExistsOnDisk(false);
+          setRequiresPassword(false);
+        } finally {
+          if (!cancelled) setChecking(false);
+        }
+        return;
+      }
       try {
         await Promise.race([
           api.health(),
@@ -90,7 +120,7 @@ export function WelcomeScreen({ navigation }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [apiUrl, apiKey]);
+  }, [apiUrl, apiKey, isOnDeviceNativeAvailable]);
 
   async function handleSaveConnection() {
     setConnSaving(true);
@@ -100,14 +130,6 @@ export function WelcomeScreen({ navigation }: Props) {
     const previousUrl = apiUrl;
     const previousKey = apiKey;
     try {
-      if (
-        requireHostedApiKey() &&
-        isHostedApiUrl(urlDraft) &&
-        !keyDraft.trim()
-      ) {
-        setConnError("API key is required for the hosted API.");
-        return;
-      }
       await setApiUrl(urlDraft);
       await setApiKey(keyDraft);
       await api.health();
@@ -137,6 +159,13 @@ export function WelcomeScreen({ navigation }: Props) {
     setIsLoading(true);
     setError(null);
     try {
+      if (isOnDeviceNativeAvailable) {
+        await unlockOnDeviceWallet(unlockPassword);
+        await setBackendMode("on_device");
+        await unlockSession(unlockPassword);
+        navigation.replace("Main");
+        return;
+      }
       const info = await api.walletExists();
       setWalletExistsOnDisk(info.exists);
       setRequiresPassword(Boolean(info.has_password));
@@ -171,6 +200,15 @@ export function WelcomeScreen({ navigation }: Props) {
     setIsLoading(true);
     setError(null);
     try {
+      if (isOnDeviceNativeAvailable) {
+        const mnemonic = await createOnDeviceWallet(createPassword);
+        setGeneratedMnemonic(mnemonic);
+        setWalletExistsOnDisk(true);
+        setRequiresPassword(Boolean(createPassword));
+        await setBackendMode("on_device");
+        await unlockSession(createPassword);
+        return;
+      }
       const response = await api.createWallet(createPassword);
       if (response.mnemonic) {
         setGeneratedMnemonic(response.mnemonic);
@@ -200,7 +238,22 @@ export function WelcomeScreen({ navigation }: Props) {
     setIsLoading(true);
     setError(null);
     try {
-      await api.restoreWallet(mnemonic.trim(), restorePassword);
+      if (isOnDeviceNativeAvailable) {
+        await restoreOnDeviceWallet(
+          mnemonic.trim(),
+          restorePassword,
+          restoreHeight,
+        );
+        setWalletExistsOnDisk(true);
+        setRequiresPassword(Boolean(restorePassword));
+        await setBackendMode("on_device");
+        await unlockSession(restorePassword);
+        setView("securityTips");
+        return;
+      }
+      await api.restoreWallet(mnemonic.trim(), restorePassword, {
+        confirmOverwrite: replaceExisting,
+      });
       setWalletExistsOnDisk(true);
       setRequiresPassword(Boolean(restorePassword));
       await unlockSession(restorePassword);
@@ -239,10 +292,12 @@ export function WelcomeScreen({ navigation }: Props) {
   }
 
   async function handleGetStarted() {
-    try {
-      await api.walletStatus();
-    } catch {
-      // Best-effort; session should already be open after create/restore.
+    if (!isOnDeviceNativeAvailable) {
+      try {
+        await api.walletStatus();
+      } catch {
+        // Best-effort; session should already be open after create/restore.
+      }
     }
     setView("initial");
     navigation.replace("Main");
@@ -303,18 +358,19 @@ export function WelcomeScreen({ navigation }: Props) {
           <View style={styles.section}>
             {!walletExistsOnDisk && !checking ? (
               <Text style={styles.lead}>
-                Experience the future of private finance. Nozy Wallet combines
-                speed and anonymity in a beautiful, easy-to-use interface.
+                {isOnDeviceNativeAvailable
+                  ? "Keys stay on this phone. Sync uses lightwalletd at lwd.nozywallet.org, or your own node if you set it in Settings."
+                  : "Experience private finance. Keys stay on this phone."}
               </Text>
             ) : null}
 
-            {!checking && !apiReachable ? (
+            {!checking && !apiReachable && !isOnDeviceNativeAvailable ? (
               <Card variant="elevated" padding="lg">
                 <Text style={styles.sectionTitle}>Connect API first</Text>
                 <Text style={styles.subtitle}>
-                  This phone cannot reach the companion API. Emulator default
-                  (10.0.2.2) does not work on a real device — use Nozy hosted
-                  HTTPS or your own VPS URL.
+                  This Expo Go / companion build cannot reach nozywallet-api.
+                  Emulator default is http://10.0.2.2:3000. A native store
+                  build keeps keys on the phone and does not need this.
                 </Text>
                 <ConnectionSetupFields
                   urlDraft={urlDraft}
@@ -364,7 +420,7 @@ export function WelcomeScreen({ navigation }: Props) {
                 loading={isLoading}
                 disabled={
                   isLoading ||
-                  !apiReachable ||
+                  (!isOnDeviceNativeAvailable && !apiReachable) ||
                   (requiresPassword && !unlockPassword.trim())
                 }
                 size="lg"
@@ -372,25 +428,30 @@ export function WelcomeScreen({ navigation }: Props) {
             </View>
 
             <Text style={styles.orSetup}>or set up a different wallet</Text>
+            <Text style={styles.subtitle}>
+              {isOnDeviceNativeAvailable
+                ? "Restore the same 24-word phrase as Desktop. Create makes a new seed on this phone."
+                : "Use the same 24-word phrase as Nozy Desktop. Create makes a new address that will not match Desktop."}
+            </Text>
 
             <View style={styles.actions}>
               <Button
-                label="Create New Wallet"
-                onPress={() => {
-                  setError(null);
-                  setView("create");
-                }}
-                disabled={!apiReachable}
-                size="lg"
-              />
-              <Button
-                label="Restore Wallet"
-                variant="secondary"
+                label="Restore Desktop wallet"
                 onPress={() => {
                   setError(null);
                   setView("restore");
                 }}
-                disabled={!apiReachable}
+                disabled={!isOnDeviceNativeAvailable && !apiReachable}
+                size="lg"
+              />
+              <Button
+                label="Create New Wallet"
+                variant="secondary"
+                onPress={() => {
+                  setError(null);
+                  setView("create");
+                }}
+                disabled={!isOnDeviceNativeAvailable && !apiReachable}
                 size="lg"
               />
             </View>
@@ -402,8 +463,8 @@ export function WelcomeScreen({ navigation }: Props) {
             <Card variant="elevated" padding="lg">
               <Text style={styles.sectionTitle}>Create New Wallet</Text>
               <Text style={styles.subtitle}>
-                Set a password to secure your wallet. You can create as many
-                wallets as you need.
+                Only if you have never created a Nozy wallet. This will not
+                match Desktop if you already have a recovery phrase.
               </Text>
               <Input
                 label="Password"
@@ -444,9 +505,12 @@ export function WelcomeScreen({ navigation }: Props) {
         {!generatedMnemonic && view === "restore" ? (
           <View style={styles.section}>
             <Card variant="elevated" padding="lg">
-              <Text style={styles.sectionTitle}>Restore Wallet</Text>
+              <Text style={styles.sectionTitle}>Restore Desktop wallet</Text>
               <Text style={styles.subtitle}>
-                Enter your seed phrase to recover your wallet
+                Enter the same 24-word phrase as Nozy Desktop. Phone, Desktop,
+                CLI, and the browser extension should all show that wallet.
+                On-device sync starts at NU5 / Orchard unless you set an earlier
+                restore height (needed for pre-2022 Sapling notes).
               </Text>
               <Textarea
                 label="Seed Phrase (Mnemonic)"
@@ -463,16 +527,45 @@ export function WelcomeScreen({ navigation }: Props) {
                 onChangeText={setRestorePassword}
                 secureTextEntry={!showRestorePass}
               />
+              {isOnDeviceNativeAvailable ? (
+                <Input
+                  label="Restore from height (optional)"
+                  placeholder="1687104 — NU5 / Orchard if blank"
+                  value={restoreHeight}
+                  onChangeText={setRestoreHeight}
+                  keyboardType="number-pad"
+                  autoCapitalize="none"
+                />
+              ) : null}
               <Pressable onPress={() => setShowRestorePass((v) => !v)}>
                 <Text style={styles.toggle}>
                   {showRestorePass ? "Hide password" : "Show password"}
                 </Text>
               </Pressable>
+              {walletExistsOnDisk && !isOnDeviceNativeAvailable ? (
+                <Pressable
+                  onPress={() => setReplaceExisting((v) => !v)}
+                  style={{ marginBottom: spacing.md }}
+                >
+                  <Text style={styles.subtitle}>
+                    {replaceExisting ? "☑" : "☐"} Replace the wallet on this API
+                    with this phrase. Required if the phone was pointing at a
+                    different wallet. Do not check this against Desktop on this
+                    PC unless you intend to overwrite it.
+                  </Text>
+                </Pressable>
+              ) : null}
               {error ? <Text style={styles.error}>{error}</Text> : null}
               <Button
-                label={isLoading ? "Restoring..." : "Restore Wallet"}
+                label={isLoading ? "Restoring..." : "Restore Desktop wallet"}
                 onPress={() => void handleRestoreWallet()}
                 loading={isLoading}
+                disabled={
+                  isLoading ||
+                  (!isOnDeviceNativeAvailable &&
+                    walletExistsOnDisk &&
+                    !replaceExisting)
+                }
                 size="lg"
               />
               <Button label="Back" variant="ghost" onPress={handleBack} />

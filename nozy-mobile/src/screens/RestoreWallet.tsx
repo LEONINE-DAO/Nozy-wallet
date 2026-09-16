@@ -28,7 +28,9 @@ export function RestoreWalletScreen({ navigation }: Props) {
     setError("");
     setLoading(true);
     try {
-      await api.restoreWallet(mnemonic.trim(), password);
+      await api.restoreWallet(mnemonic.trim(), password, {
+        confirmOverwrite: true,
+      });
       await setPassword(password);
       navigation.replace("Main");
     } catch (e) {

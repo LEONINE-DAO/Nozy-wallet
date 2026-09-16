@@ -1,30 +1,44 @@
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "@react-navigation/native";
 import { useCallback, useState } from "react";
-import { StyleSheet, Text, View } from "react-native";
+import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
 import { Card } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
+import { ReceiveQr } from "../components/ReceiveQr";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { onDeviceReceiveAddress } from "../services/onDeviceWallet";
+import { getActiveOnDeviceAccount } from "../services/onDeviceAccounts";
 import { colors, fontSize, spacing } from "../theme";
 
 export function ReceiveScreen() {
-  const { password } = useWalletSession();
+  const { password, backendMode } = useWalletSession();
   const [address, setAddress] = useState("");
+  const [accountName, setAccountName] = useState("");
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
     try {
+      if (backendMode === "on_device") {
+        const [res, account] = await Promise.all([
+          onDeviceReceiveAddress(),
+          getActiveOnDeviceAccount(),
+        ]);
+        setAddress(res.address);
+        setAccountName(account.name);
+        return;
+      }
+      setAccountName("");
       const res = await api.generateAddress(password || undefined);
       setAddress(res.address);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not load address");
     }
-  }, [password]);
+  }, [password, backendMode]);
 
   useFocusEffect(
     useCallback(() => {
@@ -41,10 +55,17 @@ export function ReceiveScreen() {
 
   return (
     <SafeAreaView style={styles.safe} edges={["top"]}>
-      <View style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
         <PageHeader
           title="Receive"
-          description="Unified address for shielded ZEC."
+          description={
+            accountName
+              ? `Unified address for ${accountName}.`
+              : "Unified address for shielded ZEC."
+          }
         />
 
         <Card variant="elevated" padding="lg">
@@ -63,6 +84,7 @@ export function ReceiveScreen() {
             disabled={!address}
             variant={copied ? "secondary" : "primary"}
           />
+          {address ? <ReceiveQr address={address} /> : null}
         </Card>
 
         <Text style={styles.hint}>
@@ -70,14 +92,14 @@ export function ReceiveScreen() {
           in your balance.
         </Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
-  container: { flex: 1, padding: spacing.lg, gap: spacing.md },
+  container: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
   address: {
     color: colors.textMuted,
     fontSize: 11,

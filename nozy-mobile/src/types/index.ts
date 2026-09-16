@@ -14,6 +14,9 @@ export type BalanceResponse = {
   available_zec?: number;
   available_zatoshis?: number;
   unspent_note_count?: number;
+  orchard_zec?: number;
+  ironwood_zec?: number;
+  sapling_zec?: number;
 };
 
 export type SyncResponse = {
@@ -324,6 +327,100 @@ export type ApiError = {
   code?: string;
 };
 
+/** Crosslink Season 1 Protocol Guardian (feature-net cTAZ via companion). */
+export type CrosslinkStakingDay = {
+  height: number;
+  offset: number;
+  cycle: number;
+  window: number;
+  open: boolean;
+  blocks_remaining_in_window: number | null;
+  blocks_until_next: number | null;
+};
+
+export type CrosslinkBondPosition = {
+  pk: string;
+  create_height: number | null;
+  initial_val: number;
+  latest_val: number;
+  finalizer: string | null;
+};
+
+export type CrosslinkStakingPositions = {
+  active: Record<string, CrosslinkBondPosition[]>;
+  withdrawable: CrosslinkBondPosition[];
+};
+
+export type CrosslinkNextAction =
+  | { wait_for_staking_day: { blocks: number } }
+  | { withdraw_ready: { count: number } }
+  | "unbond_to_exit"
+  | "stake_or_guardian"
+  | "retarget_if_needed";
+
+export type CrosslinkWalletSyncStatus = {
+  sync_height: number;
+  tip_height: number;
+  user_shielded_spendable_zats: number;
+  user_shielded_pending_zats: number;
+  user_unshielded_zats: number;
+  staked_zats: number;
+  withdrawable_zats: number;
+};
+
+export type CrosslinkGuardianSnapshot = {
+  rpc_url: string;
+  height: number;
+  staking_day: CrosslinkStakingDay;
+  tfl_activated: boolean | null;
+  finalized_tip: { height: number | null; hash: string | null } | null;
+  positions: CrosslinkStakingPositions;
+  finalizer_count: number | null;
+  pos_height: number | null;
+  next_action: CrosslinkNextAction;
+  privacy_notes: string[];
+  wallet: CrosslinkWalletSyncStatus | null;
+};
+
+export type CrosslinkRosterEntry = {
+  finalizer: string;
+  stake_zat: number;
+  share: number;
+};
+
+export type CrosslinkActionResponse = {
+  action: string;
+  result: unknown;
+};
+
+export type CrosslinkPayoutClaimPack = {
+  feature_net_ufvk: string;
+  ufvk_fingerprint: string;
+  mainnet_orchard: string | null;
+  mobile_ufvk: string | null;
+  height: number;
+  cutoff_height: number | null;
+  earned_zat: number;
+  bonded_zat: number;
+  active_bonds: number;
+  complete: boolean;
+  notes: string[];
+  paste_body: string;
+};
+
+export type CrosslinkDoctorReport = {
+  ok: boolean;
+  height: number;
+  tfl_lag: number | null;
+  ufvk_fingerprint: string | null;
+  paste_body: string;
+  lifecycle: {
+    note: string;
+    can_unbond: boolean;
+    can_withdraw: boolean;
+  };
+};
+
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type MainTabParamList = {
@@ -352,4 +449,5 @@ export type RootStackParamList = {
   Keystone: undefined;
   Ironwood: undefined;
   Vote: undefined;
+  Crosslink: undefined;
 };

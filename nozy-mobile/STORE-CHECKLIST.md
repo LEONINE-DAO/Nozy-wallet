@@ -2,7 +2,9 @@
 
 **Status:** In progress — production build profile wired; infra + listing still open  
 **Bundle ID:** `com.leoninedao.nozywallet`  
-**Store strategy (v1):** **Companion-only** — hosted HTTPS API; experimental FFI hidden in production builds
+**Store strategy (v1):** Light wallet like Zodl — keys on the phone, compact sync to `https://lwd.nozywallet.org:443`. UniFFI Expo module is wired; rebuild `libnozy_ffi` + Kotlin bindings before a store binary.
+
+**Do not** ship `https://api.nozywallet.org` or `NOZY_API_KEY` as a public default. That box is one wallet (LEONINE operator). Mass users must not share it.
 
 ---
 
@@ -23,9 +25,8 @@
 
 - [x] `app.config.js` — production vs development (`EXPO_PUBLIC_APP_VARIANT` / EAS profile)
 - [x] Production: `usesCleartextTraffic: false` (HTTPS only for Play review)
-- [x] Production: default API URL → hosted preset
-- [x] Production: hide on-device wallet + light client settings
-- [x] Production: require API key when using hosted URL
+- [x] Production: default LWD → `https://lwd.nozywallet.org:443` (keys on phone)
+- [ ] Production: on-device create/restore/sync smoke on a physical device
 - [x] iOS: `ITSAppUsesNonExemptEncryption: false`
 - [x] `eas.json` production env + submit placeholders
 - [ ] Replace `eas.json` submit placeholders with real Apple / Play credentials
@@ -56,7 +57,7 @@
 
 - [ ] EAS production build: `eas build --platform android --profile production`
 - [ ] Install AAB/APK on physical device (not emulator-only)
-- [ ] End-to-end: connect hosted API + key → create/restore → sync → send (testnet or small mainnet)
+- [ ] End-to-end: create/restore on device → compact sync via lwd.nozywallet.org → receive address (send proving is next slice)
 - [ ] Verify experimental settings **not** visible in production build
 - [ ] Verify cleartext `http://` blocked (hosted HTTPS works)
 

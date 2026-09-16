@@ -1,11 +1,10 @@
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
-import { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { useEffect, useState } from "react";
+import { BackHandler, ScrollView, StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { PageHeader } from "../components/PageHeader";
 import { AccountSettings } from "../components/settings/AccountSettings";
 import { DisplaySettings } from "../components/settings/DisplaySettings";
-import { LightClientSettings } from "../components/settings/LightClientSettings";
 import { MobileConnectionSettings } from "../components/settings/MobileConnectionSettings";
 import { OnDeviceWalletSettings } from "../components/settings/OnDeviceWalletSettings";
 import { NetworkPrivacySettings } from "../components/settings/NetworkPrivacySettings";
@@ -13,7 +12,6 @@ import { NetworkSettings } from "../components/settings/NetworkSettings";
 import { SettingsItem } from "../components/settings/SettingsItem";
 import { SyncSettings } from "../components/settings/SyncSettings";
 import { WalletsAccountsSettings } from "../components/settings/WalletsAccountsSettings";
-import { enableExperimentalFeatures } from "../lib/buildProfile";
 import { colors, spacing } from "../theme";
 import type { MainTabParamList } from "../types";
 
@@ -24,7 +22,6 @@ type SettingsSection =
   | "network"
   | "privacy"
   | "mobile"
-  | "lightclient"
   | "ondevice"
   | "display"
   | "sync"
@@ -33,7 +30,15 @@ type SettingsSection =
 
 export function SettingsScreen({}: Props) {
   const [section, setSection] = useState<SettingsSection>("main");
-  const showExperimental = enableExperimentalFeatures();
+
+  useEffect(() => {
+    if (section === "main") return;
+    const sub = BackHandler.addEventListener("hardwareBackPress", () => {
+      setSection("main");
+      return true;
+    });
+    return () => sub.remove();
+  }, [section]);
 
   if (section === "network") {
     return <NetworkSettings onBack={() => setSection("main")} />;
@@ -43,9 +48,6 @@ export function SettingsScreen({}: Props) {
   }
   if (section === "mobile") {
     return <MobileConnectionSettings onBack={() => setSection("main")} />;
-  }
-  if (section === "lightclient") {
-    return <LightClientSettings onBack={() => setSection("main")} />;
   }
   if (section === "ondevice") {
     return <OnDeviceWalletSettings onBack={() => setSection("main")} />;
@@ -68,18 +70,10 @@ export function SettingsScreen({}: Props) {
       <ScrollView contentContainerStyle={styles.container}>
         <PageHeader title="Settings" description="Connection, sync, and account." />
         <View style={styles.list}>
-          {showExperimental ? (
-            <>
-              <SettingsItem
-                title="On-device wallet"
-                onPress={() => setSection("ondevice")}
-              />
-              <SettingsItem
-                title="Light client"
-                onPress={() => setSection("lightclient")}
-              />
-            </>
-          ) : null}
+          <SettingsItem
+            title="On-device wallet"
+            onPress={() => setSection("ondevice")}
+          />
           <SettingsItem
             title="Mobile connection"
             onPress={() => setSection("mobile")}

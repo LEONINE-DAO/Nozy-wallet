@@ -1,6 +1,6 @@
 # NozyWallet Mobile
 
-Expo / React Native companion app for [NozyWallet](https://github.com/LEONINE-DAO/Nozy-wallet). Connects to **nozywallet-api** on your PC or a hosted VPS to manage a private (Orchard) Zcash wallet.
+Expo / React Native **light wallet** (Zodl-style): keys on the phone, compact sync to `https://lwd.nozywallet.org:443`. Optional companion HTTP (`nozywallet-api` on your PC) for Expo Go and self-hosters. See [`HANDOFF.md`](HANDOFF.md).
 
 ---
 
@@ -34,14 +34,15 @@ For a standalone APK that does not need Metro, use an EAS production build (`npm
 ## Architecture
 
 ```text
-Mobile app  →  nozywallet-api (API URL)  →  Zebra node (Zebra URL)
+Mobile app  →  lightwalletd (lwd.nozywallet.org)   [store / native]
+            →  nozywallet-api → Zebra               [optional companion]
 ```
 
 | Context | API URL |
 |---------|---------|
 | Android emulator | `http://10.0.2.2:3000` |
 | Browser | `http://localhost:3000` |
-| Phone / public VPS | `https://nozywallet.leoninedao.org` + API key |
+| Real phone | Your PC LAN IP (`http://192.168.x.x:3000`) or HTTPS on a VPS you run |
 
 ---
 

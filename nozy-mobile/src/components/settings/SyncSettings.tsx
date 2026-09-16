@@ -12,13 +12,15 @@ export function SyncSettings({ onBack }: Props) {
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <SettingsBackButton onPress={onBack} />
+      <SettingsBackButton onPress={onBack} />
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+      >
         <Text style={styles.title}>Sync</Text>
         <Text style={styles.subtitle}>
-          Keep the wallet near chain tip while unlocked so you stay ready to send.
-          Needs a reachable companion API; Zebrad must be reachable from that API
-          host (not from the phone).
+          Keep the wallet near chain tip while unlocked. On this phone, sync
+          uses lightwalletd (default lwd.nozywallet.org).
         </Text>
         {autoSync ? (
           <CyberpunkSyncPanel
@@ -70,4 +72,3 @@ const styles = StyleSheet.create({
   toggleTitle: { color: colors.text, fontSize: fontSize.md, fontWeight: "600" },
   toggleDesc: { color: colors.textMuted, fontSize: fontSize.sm, lineHeight: 20 },
 });
-//Lowo do this in his sleep

@@ -16,7 +16,6 @@ use crate::scan_log;
 use crate::scan_verbose;
 use crate::shielded_pool::ShieldedPool;
 use crate::zebra_integration::ZebraClient;
-use futures::future::join_all;
 use indicatif::{ProgressBar, ProgressStyle};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -722,6 +721,25 @@ pub fn note_cache_integrity(notes: &[SerializableOrchardNote]) -> NoteCacheInteg
 }
 
 #[cfg(feature = "native")]
+fn take_newer_witness(
+    existing_hex: &mut Option<String>,
+    existing_tip: &mut Option<u32>,
+    new_hex: &Option<String>,
+    new_tip: Option<u32>,
+) {
+    let Some(new) = new_hex.as_ref().filter(|w| !w.is_empty()) else {
+        return;
+    };
+    let old_empty = existing_hex.as_ref().is_none_or(|h| h.is_empty());
+    let new_t = new_tip.unwrap_or(0);
+    let old_t = existing_tip.unwrap_or(0);
+    if old_empty || new_t >= old_t {
+        *existing_hex = Some(new.clone());
+        *existing_tip = new_tip;
+    }
+}
+
+#[cfg(feature = "native")]
 fn merge_note_scan_fields(
     existing: &mut SerializableOrchardNote,
     new_note: &SerializableOrchardNote,
@@ -732,23 +750,18 @@ fn merge_note_scan_fields(
         existing.rho_bytes = new_note.rho_bytes.clone();
         existing.rseed_bytes = new_note.rseed_bytes.clone();
     }
-    if new_note
-        .orchard_incremental_witness_hex
-        .as_ref()
-        .is_some_and(|w| !w.is_empty())
-    {
-        existing.orchard_incremental_witness_hex = new_note.orchard_incremental_witness_hex.clone();
-        existing.orchard_witness_tip_height = new_note.orchard_witness_tip_height;
-    }
-    if new_note
-        .ironwood_incremental_witness_hex
-        .as_ref()
-        .is_some_and(|w| !w.is_empty())
-    {
-        existing.ironwood_incremental_witness_hex =
-            new_note.ironwood_incremental_witness_hex.clone();
-        existing.ironwood_witness_tip_height = new_note.ironwood_witness_tip_height;
-    }
+    take_newer_witness(
+        &mut existing.orchard_incremental_witness_hex,
+        &mut existing.orchard_witness_tip_height,
+        &new_note.orchard_incremental_witness_hex,
+        new_note.orchard_witness_tip_height,
+    );
+    take_newer_witness(
+        &mut existing.ironwood_incremental_witness_hex,
+        &mut existing.ironwood_witness_tip_height,
+        &new_note.ironwood_incremental_witness_hex,
+        new_note.ironwood_witness_tip_height,
+    );
     if existing.spent_in_txid.is_none() {
         existing.spent_in_txid = new_note.spent_in_txid.clone();
     }
@@ -857,6 +870,9 @@ impl<'a> NoteScanner<'a> {
         let end_height = requested_end.min(chain_tip);
 
         let start_height = start_height.min(end_height);
+        // Full-range in-scan trees hung this Zebrad path. Only single-block rescan is used
+        // to bootstrap witnesses for notes that were persisted without hex.
+        let track_in_scan_witnesses = start_height == end_height;
 
         let total_blocks = (end_height - start_height + 1) as u64;
         if scan_log::scan_progress_enabled() {
@@ -921,11 +937,10 @@ impl<'a> NoteScanner<'a> {
             .unwrap_or_else(|| Arc::new(SimpleCache::new(3600)));
 
         let mut current_height = start_height;
-        let batch_size = self.parallel_blocks;
         let zebra_client = &self.zebra_client;
 
         let mut witness_tracker: Option<OrchardWitnessTracker> =
-            if matches!(zebra_client.protocol(), Protocol::JsonRpc) {
+            if track_in_scan_witnesses && matches!(zebra_client.protocol(), Protocol::JsonRpc) {
                 let initial_tree: OrchardCommitmentTree = if start_height <= 1 {
                     OrchardCommitmentTree::empty()
                 } else {
@@ -941,153 +956,118 @@ impl<'a> NoteScanner<'a> {
             } else {
                 None
             };
-        let mut ironwood_witness_tracker: Option<IronwoodWitnessTracker> = if matches!(
-            zebra_client.protocol(),
-            Protocol::JsonRpc
-        ) {
-            let initial_tree: Option<IronwoodCommitmentTree> = if start_height <= 1 {
-                Some(IronwoodCommitmentTree::empty())
-            } else {
-                let cp = start_height.saturating_sub(1);
-                match zebra_client.get_ironwood_treestate_parsed(cp).await {
-                    Ok(parsed) => {
-                        if let Some(fs) = parsed.final_state {
-                            Some(ironwood_commitment_tree_from_final_state(&fs)?)
-                        } else {
-                            Some(IronwoodCommitmentTree::empty())
+        let mut ironwood_witness_tracker: Option<IronwoodWitnessTracker> =
+            if track_in_scan_witnesses && matches!(zebra_client.protocol(), Protocol::JsonRpc) {
+                let initial_tree: Option<IronwoodCommitmentTree> = if start_height <= 1 {
+                    Some(IronwoodCommitmentTree::empty())
+                } else {
+                    let cp = start_height.saturating_sub(1);
+                    match zebra_client.get_ironwood_treestate_parsed(cp).await {
+                        Ok(parsed) => {
+                            if let Some(fs) = parsed.final_state {
+                                Some(ironwood_commitment_tree_from_final_state(&fs)?)
+                            } else {
+                                Some(IronwoodCommitmentTree::empty())
+                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                error = %e,
+                                checkpoint_height = cp,
+                                "Ironwood treestate unavailable; skipping Ironwood witness tracking for this scan"
+                            );
+                            None
                         }
                     }
-                    Err(e) => {
-                        tracing::debug!(
-                            error = %e,
-                            checkpoint_height = cp,
-                            "Ironwood treestate unavailable; skipping Ironwood witness tracking for this scan"
-                        );
-                        None
-                    }
+                };
+                initial_tree.map(IronwoodWitnessTracker::new)
+            } else {
+                None
+            };
+
+        // One block at a time: overlapping verbosity-2 getblock calls hung Zebrad after the
+        // first height.
+        while current_height <= end_height {
+            let height = current_height;
+            pb.set_message(format!("Block {}", height));
+            let cache_key = format!("block_{}", height);
+            let block_result = if let Some(cached) = block_cache.get(&cache_key) {
+                Ok(cached)
+            } else {
+                match zebra_client.get_block(height).await {
+                    Ok(block_data) => match serde_json::to_value(&block_data) {
+                        Ok(block_value) => {
+                            let result = Self::parse_block_data(&block_value, height);
+                            if let Ok(ref txs) = result {
+                                block_cache.set(cache_key, txs.clone());
+                            }
+                            result
+                        }
+                        Err(e) => Err(NozyError::InvalidOperation(format!(
+                            "Failed to serialize block data: {}",
+                            e
+                        ))),
+                    },
+                    Err(e) => Err(NozyError::NetworkError(format!(
+                        "Failed to fetch block while scanning notes: {}",
+                        e
+                    ))),
                 }
             };
-            initial_tree.map(IronwoodWitnessTracker::new)
-        } else {
-            None
-        };
 
-        while current_height <= end_height {
-            let batch_end = (current_height + batch_size as u32 - 1).min(end_height);
-
-            let block_futures: Vec<_> = (current_height..=batch_end)
-                .map(|height| {
-                    let cache = block_cache.clone();
-                    let client = zebra_client.clone();
-                    async move {
-                        let cache_key = format!("block_{}", height);
-                        if let Some(cached) = cache.get(&cache_key) {
-                            return (height, Ok(cached));
-                        }
-
-                        let block_hash = match client.get_block_hash(height).await {
-                            Ok(hash) => hash,
-                            Err(e) => {
-                                return (
-                                    height,
-                                    Err(NozyError::NetworkError(format!(
-                                        "Failed to get block hash: {}",
-                                        e
-                                    ))),
-                                )
-                            }
-                        };
-
-                        let block_data = match client.get_block_by_hash(&block_hash, 2).await {
-                            Ok(data) => data,
-                            Err(e) => {
-                                return (
-                                    height,
-                                    Err(NozyError::NetworkError(format!(
-                                        "Failed to get block: {}",
-                                        e
-                                    ))),
-                                )
-                            }
-                        };
-
-                        let block_value = match serde_json::to_value(&block_data) {
-                            Ok(value) => value,
-                            Err(e) => {
-                                return (
-                                    height,
-                                    Err(NozyError::InvalidOperation(format!(
-                                        "Failed to serialize block data: {}",
-                                        e
-                                    ))),
-                                )
-                            }
-                        };
-                        let result = Self::parse_block_data(&block_value, height);
-                        if let Ok(ref txs) = result {
-                            cache.set(cache_key, txs.clone());
-                        }
-                        (height, result)
-                    }
-                })
-                .collect();
-
-            let block_results = join_all(block_futures).await;
-
-            for (height, block_result) in block_results {
-                pb.set_message(format!("Block {}", height));
-
-                match block_result {
-                    Ok(transactions) => {
-                        if let Err(e) = self.process_block_orchard_actions(
-                            &transactions,
-                            height,
-                            &orchard_fvk,
-                            &orchard_ivk_external,
-                            &orchard_ivk_internal,
-                            &orchard_sk,
-                            witness_tracker.as_mut(),
-                            &mut note_index,
-                            &mut all_notes,
-                            &mut spendable_notes,
-                            &pb,
-                        ) {
-                            return Err(NozyError::ScanAtBlock {
-                                height,
-                                detail: e.to_string(),
-                            });
-                        }
-                        if let Err(e) = self.process_block_ironwood_actions(
-                            &transactions,
-                            height,
-                            &orchard_fvk,
-                            &orchard_ivk_external,
-                            &orchard_ivk_internal,
-                            &orchard_sk,
-                            ironwood_witness_tracker.as_mut(),
-                            &mut note_index,
-                            &mut all_notes,
-                            &mut spendable_notes,
-                            &pb,
-                        ) {
-                            return Err(NozyError::ScanAtBlock {
-                                height,
-                                detail: e.to_string(),
-                            });
-                        }
-                    }
-                    Err(e) => {
+            match block_result {
+                Ok(transactions) => {
+                    if let Err(e) = self.process_block_orchard_actions(
+                        &transactions,
+                        height,
+                        &orchard_fvk,
+                        &orchard_ivk_external,
+                        &orchard_ivk_internal,
+                        &orchard_sk,
+                        witness_tracker.as_mut(),
+                        &mut note_index,
+                        &mut all_notes,
+                        &mut spendable_notes,
+                        &pb,
+                    ) {
                         return Err(NozyError::ScanAtBlock {
                             height,
-                            detail: format!("Failed to fetch block while scanning notes: {}", e),
+                            detail: e.to_string(),
+                        });
+                    }
+                    if let Err(e) = self.process_block_ironwood_actions(
+                        &transactions,
+                        height,
+                        &orchard_fvk,
+                        &orchard_ivk_external,
+                        &orchard_ivk_internal,
+                        &orchard_sk,
+                        ironwood_witness_tracker.as_mut(),
+                        &mut note_index,
+                        &mut all_notes,
+                        &mut spendable_notes,
+                        &pb,
+                    ) {
+                        return Err(NozyError::ScanAtBlock {
+                            height,
+                            detail: e.to_string(),
                         });
                     }
                 }
-
-                pb.inc(1);
+                Err(e) => {
+                    return Err(NozyError::ScanAtBlock {
+                        height,
+                        detail: e.to_string(),
+                    });
+                }
             }
 
-            current_height = batch_end + 1;
+            pb.inc(1);
+            if !track_in_scan_witnesses {
+                let _ = crate::config::update_last_scan_height(height);
+                let _ = crate::wallet_profiles::touch_active_profile_scan_height(height);
+            }
+            current_height += 1;
         }
 
         if let Some(ref tr) = witness_tracker {

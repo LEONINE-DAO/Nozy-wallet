@@ -22,32 +22,33 @@ function expoExtra(key: string): string | undefined {
   return typeof v === "string" && v.trim() ? v.trim() : undefined;
 }
 
-/** Default API URL for emulator / home PC companion — never the hosted preset. */
+/** Default API URL for emulator / home PC companion. */
 export function defaultSelfHostedApiUrl(): string {
-  // Do not read extra.defaultApiUrl — preview/production overwrite that with hosted.
   const fromConfig = expoExtra("selfHostedApiUrl");
   if (fromConfig) return fromConfig;
   if (Platform.OS === "android") return "http://10.0.2.2:3000";
   return "http://localhost:3000";
 }
 
-/**
- * Optional lightwalletd URL for experimental on-device compact sync.
- * NozyWallet companion mode does not use zec.rocks — leave unset unless you run your own LWD.
- */
-export function defaultHostedLwdUrl(): string {
-  return expoExtra("hostedLwdUrl") ?? "";
+/** @deprecated No Nozy-hosted companion. Kept so Fast Refresh does not crash old bundles. */
+export function defaultHostedApiUrl(): string {
+  return defaultSelfHostedApiUrl();
 }
 
 /**
- * Preset HTTPS API — NozyWallet hosted companion (`nozywallet.leoninedao.org`).
- * API-only until funding: Nozy does not operate a Zebrad for mobile yet.
- * Users need their own node (or another operator’s) for sync.
+ * Optional lightwalletd URL for on-device compact sync.
+ * Public Nozy node — keys stay on the phone; this is not the companion API.
  */
-export function defaultHostedApiUrl(): string {
-  return (
-    expoExtra("hostedApiUrl") ?? "https://nozywallet.leoninedao.org"
-  );
+export function defaultHostedLwdUrl(): string {
+  return expoExtra("hostedLwdUrl") ?? "https://lwd.nozywallet.org:443";
+}
+
+/** Retired Nozy-operated companion hostname — never a product default. */
+export const RETIRED_NOZY_HOSTED_API_HOST = "nozywallet.leoninedao.org";
+
+export function isRetiredNozyHostedApiUrl(url: string): boolean {
+  const host = hostFromUrl(url);
+  return host === RETIRED_NOZY_HOSTED_API_HOST;
 }
 
 /**
@@ -103,13 +104,11 @@ export function isLocalApiUrl(url: string): boolean {
   return isPrivateLanHost(host);
 }
 
-/** True when the API URL matches the hosted preset or is clearly public HTTPS. */
+/** True when the API URL is a public HTTPS host (not LAN / emulator). */
 export function isHostedApiUrl(url: string): boolean {
-  const normalized = url.trim().replace(/\/$/, "");
-  const preset = defaultHostedApiUrl().replace(/\/$/, "");
-  if (normalized.toLowerCase() === preset.toLowerCase()) return true;
+  if (isRetiredNozyHostedApiUrl(url)) return true;
   if (isLocalApiUrl(url)) return false;
-  return /^https:\/\//i.test(normalized);
+  return /^https:\/\//i.test(url.trim());
 }
 
 export function inferApiConnectionMode(url: string): ApiConnectionMode {

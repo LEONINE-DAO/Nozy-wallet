@@ -6,13 +6,15 @@ import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { unlockOnDeviceWallet } from "../services/onDeviceWallet";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Unlock">;
 
 export function UnlockScreen({ navigation }: Props) {
-  const { setPassword } = useWalletSession();
+  const { setPassword, setBackendMode, isOnDeviceNativeAvailable } =
+    useWalletSession();
   const [password, setPasswordDraft] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -21,6 +23,13 @@ export function UnlockScreen({ navigation }: Props) {
     setError("");
     setLoading(true);
     try {
+      if (isOnDeviceNativeAvailable) {
+        await unlockOnDeviceWallet(password);
+        await setBackendMode("on_device");
+        await setPassword(password);
+        navigation.replace("Main");
+        return;
+      }
       await api.unlockWallet(password);
       await setPassword(password);
       navigation.replace("Main");

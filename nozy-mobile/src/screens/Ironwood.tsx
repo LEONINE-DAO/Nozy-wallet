@@ -31,7 +31,7 @@ function formatOptZec(value: number | null | undefined): string {
 }
 
 export function IronwoodScreen({}: Props) {
-  const { password } = useWalletSession();
+  const { password, backendMode } = useWalletSession();
   const [status, setStatus] = useState<IronwoodStatusResponse | null>(null);
   const [actionPassword, setActionPassword] = useState(password);
   const [busy, setBusy] = useState<"plan" | "split" | "migrate" | "broadcast" | null>(null);
@@ -39,13 +39,14 @@ export function IronwoodScreen({}: Props) {
   const [message, setMessage] = useState("");
 
   const load = useCallback(async () => {
+    if (backendMode === "on_device") return;
     try {
       setStatus(await api.getIronwoodStatus());
       setError("");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load Ironwood status");
     }
-  }, []);
+  }, [backendMode]);
 
   useEffect(() => {
     void load();
@@ -77,6 +78,26 @@ export function IronwoodScreen({}: Props) {
       : status?.ironwood_rpc_detected
         ? "RPC ready"
         : "Mainnet pending";
+
+  if (backendMode === "on_device") {
+    return (
+      <SafeAreaView style={styles.safe} edges={["bottom"]}>
+        <ScrollView contentContainerStyle={styles.container}>
+          <PageHeader
+            title="Ironwood"
+            description="This wallet is Orchard-first. Migration tools apply when you hold notes after Ironwood activates."
+          />
+          <Card>
+            <Text style={styles.badge}>No notes to migrate</Text>
+            <Text style={styles.body}>
+              A new wallet has nothing to move. Receive shielded ZEC here; Home
+              shows your balance after sync.
+            </Text>
+          </Card>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>

@@ -10,18 +10,47 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
+import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList, TransactionRecord } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionHistory">;
 
 export function TransactionHistoryScreen({ navigation }: Props) {
+  const { backendMode } = useWalletSession();
+  const onDevice = backendMode === "on_device";
   const [items, setItems] = useState<TransactionRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
+    if (onDevice) {
+      setError("");
+      try {
+        const snap = await onDeviceShieldedSnapshot();
+        setItems(
+          snap.notes.map((note) => ({
+            txid: note.txid,
+            status: note.spent ? "spent" : "received",
+            amount_zec: note.value_zec,
+            fee_zec: 0,
+            recipient: note.pool,
+            block_height: note.block_height,
+            confirmations: null,
+            broadcast_at: null,
+            memo: null,
+          })),
+        );
+      } catch (e) {
+        setItems([]);
+        setError(e instanceof Error ? e.message : "Could not load notes");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     setError("");
     try {
       const res = await api.getTransactionHistory();
@@ -31,7 +60,7 @@ export function TransactionHistoryScreen({ navigation }: Props) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onDevice]);
 
   useEffect(() => {
     void load();
@@ -69,7 +98,10 @@ export function TransactionHistoryScreen({ navigation }: Props) {
             }
           >
             <View style={styles.rowTop}>
-              <Text style={styles.amount}>-{item.amount_zec.toFixed(8)} ZEC</Text>
+              <Text style={styles.amount}>
+                {item.status === "received" ? "+" : "-"}
+                {item.amount_zec.toFixed(8)} ZEC
+              </Text>
               <Text style={styles.status}>{item.status}</Text>
             </View>
             <Text style={styles.recipient} numberOfLines={1}>

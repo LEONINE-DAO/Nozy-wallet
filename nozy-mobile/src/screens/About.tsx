@@ -21,9 +21,10 @@ function openUrl(url: string) {
 }
 
 export function AboutScreen({ navigation }: Props) {
-  const { apiUrl } = useWalletSession();
+  const { apiUrl, backendMode } = useWalletSession();
   const expoVersion =
     Constants.expoConfig?.version ?? APP_VERSION;
+  const onDevice = backendMode === "on_device";
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
@@ -34,36 +35,34 @@ export function AboutScreen({ navigation }: Props) {
 
         <Text style={styles.section}>How this app works</Text>
         <Text style={styles.body}>
-          NozyWallet Mobile is a companion app. It connects to a NozyWallet API
-          server you configure — on your PC at home or on a hosted VPS — which
-          syncs with a Zebra node and holds wallet scan data.
-        </Text>
-        <Text style={styles.body}>
-          Your phone sends requests to the API URL in Settings. The API talks to
-          Zcash through Zebra. First sync can take several minutes.
+          {onDevice
+            ? "Keys stay on this phone. Compact sync uses lightwalletd (default lwd.nozywallet.org). Set your own node in Settings if you run one."
+            : "This build talks to a nozywallet-api you run. The API syncs with Zebra. Your phone sends requests to the API URL in Settings."}
         </Text>
 
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Current API URL</Text>
-          <Text style={styles.cardValue} selectable>
-            {apiUrl || "Not set"}
-          </Text>
-        </View>
+        {onDevice ? (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Lightwalletd</Text>
+            <Text style={styles.cardValue} selectable>
+              lwd.nozywallet.org
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.card}>
+            <Text style={styles.cardLabel}>Current API URL</Text>
+            <Text style={styles.cardValue} selectable>
+              {apiUrl || "Not set"}
+            </Text>
+          </View>
+        )}
 
         <Text style={styles.section}>Privacy & data</Text>
         <Text style={styles.body}>
-          Wallet passwords and API keys are stored on this device only
-          (AsyncStorage). Seed phrases shown during setup are handled by the API
-          server according to your deployment — self-hosted or VPS.
+          Seed, keys, and password stay on this device. Compact sync does not
+          send your seed to the server.
         </Text>
         <Text style={styles.body}>
-          If you use a public hosted API, the operator of that server can access
-          wallet data stored there. Use your own server when you need full
-          control.
-        </Text>
-        <Text style={styles.body}>
-          NozyWallet enforces shielded (Orchard) privacy on-chain. Network
-          traffic to your API uses HTTPS when configured on a public host.
+          NozyWallet uses shielded (Orchard) addresses on-chain.
         </Text>
 
         <Text style={styles.section}>Links</Text>

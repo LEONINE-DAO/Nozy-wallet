@@ -2,6 +2,7 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList } from "../types";
@@ -22,17 +23,30 @@ function row(label: string, value: string | number | null | undefined) {
 
 export function TransactionDetailScreen({ route }: Props) {
   const { txid } = route.params;
+  const { backendMode } = useWalletSession();
   const [tx, setTx] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (backendMode === "on_device") return;
     void api
       .getTransaction(txid)
       .then(setTx)
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Failed to load transaction"),
       );
-  }, [txid]);
+  }, [txid, backendMode]);
+
+  if (backendMode === "on_device") {
+    return (
+      <SafeAreaView style={styles.safe} edges={["bottom"]}>
+        <ScrollView contentContainerStyle={styles.container}>
+          {row("TXID", txid)}
+          <Text style={styles.loading}>No details for this transaction yet.</Text>
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safe} edges={["bottom"]}>

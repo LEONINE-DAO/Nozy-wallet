@@ -1,22 +1,26 @@
 # NozyWallet Mobile — contributor handoff
 
+**Next session (Nym / public LWD session split):** [`docs/reference/NEXT_SESSION_NYM_LWD_SESSION_SPLIT.md`](../docs/reference/NEXT_SESSION_NYM_LWD_SESSION_SPLIT.md)
+
 Read this before changing `nozy-mobile/` or the hosted API story.
 
 ---
 
 ## What it is
 
-Expo / React Native **companion** — UI on phone, wallet logic on **`nozywallet-api`** (PC or VPS). Not a standalone on-device full node wallet yet.
+Expo / React Native **light wallet** (Zodl-style): keys on the phone, compact sync to **`https://lwd.nozywallet.org:443`**. Optional companion HTTP (`nozywallet-api` on the user’s PC) for self-hosters and Expo Go.
+
+**`api.nozywallet.org` is not a public multi-user host.** It is LEONINE’s operator companion. Store/default clients must not auto-join that wallet.
 
 ---
 
 ## Read order
 
-1. [`README.md`](README.md) — quick start, emulator API URL (`http://10.0.2.2:3000`)
-2. [`VPS-DEPLOY.md`](VPS-DEPLOY.md) — public HTTPS API for mobile data
-3. [`STORE-CHECKLIST.md`](STORE-CHECKLIST.md) — App Store / Play when ready
-4. [`../ENHANCEMENT_ROADMAP.md`](../ENHANCEMENT_ROADMAP.md) — mobile vs web-app priority
-5. [`../api-server/README.md`](../api-server/README.md) — HTTP routes the app calls
+1. [`README.md`](README.md) — quick start
+2. [`STORE-CHECKLIST.md`](STORE-CHECKLIST.md) — App Store / Play
+3. [`../nozy-ffi/README.md`](../nozy-ffi/README.md) — UniFFI + Android `.so`
+4. [`../ENHANCEMENT_ROADMAP.md`](../ENHANCEMENT_ROADMAP.md)
+5. [`../api-server/README.md`](../api-server/README.md) — companion HTTP (optional)
 
 ---
 
@@ -24,26 +28,31 @@ Expo / React Native **companion** — UI on phone, wallet logic on **`nozywallet
 
 | File | Role |
 |------|------|
-| `src/services/api.ts` | All companion HTTP calls |
-| `src/context/WalletSessionContext.tsx` | API URL, API key, password session |
-| `src/screens/` | UI flows (Welcome, Dashboard, Send, …) |
-| `App.tsx` | Entry + navigation |
+| `modules/nozy-wallet/` | Expo module wrapping `libnozy_ffi` |
+| `src/services/onDeviceWallet.ts` | Create / restore / unlock / compact sync |
+| `src/services/api.ts` | Optional companion HTTP |
+| `src/context/WalletSessionContext.tsx` | Session + backend mode |
+| `src/screens/Welcome.tsx` | Create / restore / unlock |
 
 ---
 
-## Local dev checklist
+## Native build
 
-- [ ] `nozywallet-api` listening (e.g. port 3000)
-- [ ] Zebrad + lightwalletd reachable from API config
-- [ ] Emulator uses `10.0.2.2` for host localhost
-- [ ] `npm run typecheck` clean before PR
+From repo root:
+
+```powershell
+.\scripts\build-nozy-ffi.ps1 -Target host -Bindgen kotlin
+.\scripts\build-nozy-ffi.ps1 -Target android
+```
+
+Then rebuild the Android app (`npx expo run:android`). Expo Go cannot load `libnozy_ffi`.
 
 ---
 
-## Out of scope (mobile v1)
+## Out of scope (this slice)
 
-- In-app Zebrad / lightwalletd
-- Namada / Penumbra native SDK in the bundle (see multichain RFC — companion-only)
+- iOS `libnozy_ffi` staticlib (needs macOS)
+- On-device Orchard send proving (receive + compact sync land first)
 
 ---
 

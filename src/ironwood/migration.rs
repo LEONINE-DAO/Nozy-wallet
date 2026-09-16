@@ -209,6 +209,8 @@ pub struct MigrationBroadcastResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MigrationReadinessState {
     PlanningOnly,
+    /// Orchard notes exist and Ironwood is active, but no schedule file was saved yet.
+    NeedsPlan,
     NoOrchardNotes,
     SplitRequired,
     ReadyToPrebuild,
@@ -222,6 +224,7 @@ impl MigrationReadinessState {
     pub fn label(self) -> &'static str {
         match self {
             Self::PlanningOnly => "planning-only",
+            Self::NeedsPlan => "needs-plan",
             Self::NoOrchardNotes => "no-orchard-notes",
             Self::SplitRequired => "split-required",
             Self::ReadyToPrebuild => "ready-to-prebuild",
@@ -949,18 +952,59 @@ pub fn assess_orchard_migration_readiness_with_spendability(
             blockers.push(format!(
                 "Orchard witnesses are {lag} blocks behind chain tip; sync before migration (max {max_lag})."
             ));
+            return MigrationReadinessReport {
+                state: MigrationReadinessState::Blocked,
+                blockers,
+                validation: schedule
+                    .map(|s| validate_orchard_migration_schedule(s, plan, chain_tip)),
+                next_eligible_transfer: None,
+                next_waiting_transfer: schedule.and_then(next_waiting_pending_transfer),
+                active_presigned_transfer: schedule
+                    .and_then(|s| active_presigned_transfer(s, chain_tip)),
+            };
         }
     }
 
     if plan.zip318.note_split_required {
         blockers.push(
-            "ZIP 318 note splitting is required before safe turnstile prebuilds. \
-             Run planning/preflight only until the split phase is implemented."
+            "ZIP 318 note splitting is required before turnstile prebuilds. \
+             Use Split notes on the Ironwood tab (or `nozy ironwood split`)."
                 .to_string(),
         );
     }
 
-    let validation = schedule.map(|s| validate_orchard_migration_schedule(s, plan, chain_tip));
+    let Some(sched) = schedule else {
+        if plan.zip318.note_split_required
+            && blockers.len() == 1
+            && blockers
+                .first()
+                .is_some_and(|b| b.contains("note splitting is required"))
+        {
+            return MigrationReadinessReport {
+                state: MigrationReadinessState::SplitRequired,
+                blockers,
+                validation: None,
+                next_eligible_transfer: None,
+                next_waiting_transfer: None,
+                active_presigned_transfer: None,
+            };
+        }
+        blockers.push(
+            "No saved ZIP 318 schedule yet. Click Plan migration (or `nozy ironwood plan --save`), \
+             then Start migration → Broadcast."
+                .to_string(),
+        );
+        return MigrationReadinessReport {
+            state: MigrationReadinessState::NeedsPlan,
+            blockers,
+            validation: None,
+            next_eligible_transfer: None,
+            next_waiting_transfer: None,
+            active_presigned_transfer: None,
+        };
+    };
+
+    let validation = Some(validate_orchard_migration_schedule(sched, plan, chain_tip));
     if let Some(validation) = validation.as_ref() {
         blockers.extend(validation.errors.iter().cloned());
     }
@@ -982,24 +1026,24 @@ pub fn assess_orchard_migration_readiness_with_spendability(
             blockers,
             validation,
             next_eligible_transfer: None,
-            next_waiting_transfer: schedule.and_then(next_waiting_pending_transfer),
-            active_presigned_transfer: schedule
-                .and_then(|s| active_presigned_transfer(s, chain_tip)),
+            next_waiting_transfer: next_waiting_pending_transfer(sched),
+            active_presigned_transfer: active_presigned_transfer(sched, chain_tip),
         };
     }
 
-    let active_presigned_transfer = schedule.and_then(|s| active_presigned_transfer(s, chain_tip));
+    let active_presigned_transfer = active_presigned_transfer(sched, chain_tip);
     if let Some(ref transfer) = active_presigned_transfer {
         if presigned_transfer_broadcastable(transfer, chain_tip).is_ok() {
             return MigrationReadinessReport {
                 state: MigrationReadinessState::ReadyToBroadcast,
                 blockers: vec![
-                    "Run `nozy ironwood broadcast` to submit the presigned turnstile transaction."
+                    "Run `nozy ironwood broadcast` (or Broadcast on the Ironwood tab) to submit \
+                     the presigned turnstile transaction."
                         .to_string(),
                 ],
                 validation,
                 next_eligible_transfer: None,
-                next_waiting_transfer: schedule.and_then(next_waiting_pending_transfer),
+                next_waiting_transfer: next_waiting_pending_transfer(sched),
                 active_presigned_transfer: active_presigned_transfer.clone(),
             };
         }
@@ -1011,64 +1055,55 @@ pub fn assess_orchard_migration_readiness_with_spendability(
             blockers: vec![blocker],
             validation,
             next_eligible_transfer: None,
-            next_waiting_transfer: schedule.and_then(next_waiting_pending_transfer),
+            next_waiting_transfer: next_waiting_pending_transfer(sched),
             active_presigned_transfer: active_presigned_transfer.clone(),
         };
     }
 
-    let next_eligible_transfer =
-        schedule.and_then(|s| next_eligible_pending_transfer(s, chain_tip));
-    if let Some(sched) = schedule {
-        if let (Some(values), Some(fee)) = (orchard_note_values, migration_fee_zatoshis) {
-            if let Some(spendable) =
-                next_spendable_eligible_pending_transfer(sched, chain_tip, values, fee)
+    let next_eligible_transfer = next_eligible_pending_transfer(sched, chain_tip);
+    if let (Some(values), Some(fee)) = (orchard_note_values, migration_fee_zatoshis) {
+        if let Some(spendable) =
+            next_spendable_eligible_pending_transfer(sched, chain_tip, values, fee)
+        {
+            if next_eligible_transfer
+                .as_ref()
+                .is_some_and(|t| t.sequence != spendable.sequence)
             {
-                if next_eligible_transfer
-                    .as_ref()
-                    .is_some_and(|t| t.sequence != spendable.sequence)
-                {
-                    blockers.push(format!(
-                        "Scheduled transfer #{} ({} zat) is not fundable from current Orchard notes; \
-                         next spendable transfer is #{} ({} zat).",
-                        next_eligible_transfer.as_ref().map(|t| t.sequence).unwrap_or(0),
-                        next_eligible_transfer
-                            .as_ref()
-                            .map(|t| t.value_zat)
-                            .unwrap_or(0),
-                        spendable.sequence,
-                        spendable.value_zat
-                    ));
-                }
-                return MigrationReadinessReport {
-                    state: MigrationReadinessState::ReadyToPrebuild,
-                    blockers,
-                    validation,
-                    next_eligible_transfer: Some(spendable),
-                    next_waiting_transfer: next_waiting_pending_transfer(sched),
-                    active_presigned_transfer: None,
-                };
+                blockers.push(format!(
+                    "Scheduled transfer #{} ({} zat) is not fundable from current Orchard notes; \
+                     next spendable transfer is #{} ({} zat).",
+                    next_eligible_transfer
+                        .as_ref()
+                        .map(|t| t.sequence)
+                        .unwrap_or(0),
+                    next_eligible_transfer
+                        .as_ref()
+                        .map(|t| t.value_zat)
+                        .unwrap_or(0),
+                    spendable.sequence,
+                    spendable.value_zat
+                ));
             }
-            if next_eligible_transfer.is_some() {
-                blockers.push(
-                    "No in-window ZIP 318 transfer can be funded from current Orchard notes plus fee. \
-                     Consolidate fee-dust notes or wait for note splitting support."
-                        .to_string(),
-                );
-                return MigrationReadinessReport {
-                    state: MigrationReadinessState::SplitRequired,
-                    blockers,
-                    validation,
-                    next_eligible_transfer: None,
-                    next_waiting_transfer: next_waiting_pending_transfer(sched),
-                    active_presigned_transfer: None,
-                };
-            }
-        } else if next_eligible_transfer.is_some() {
             return MigrationReadinessReport {
                 state: MigrationReadinessState::ReadyToPrebuild,
                 blockers,
                 validation,
-                next_eligible_transfer,
+                next_eligible_transfer: Some(spendable),
+                next_waiting_transfer: next_waiting_pending_transfer(sched),
+                active_presigned_transfer: None,
+            };
+        }
+        if next_eligible_transfer.is_some() {
+            blockers.push(
+                "No in-window ZIP 318 transfer can be funded from current Orchard notes plus fee. \
+                 Use Split notes or consolidate fee-dust notes, then Plan again."
+                    .to_string(),
+            );
+            return MigrationReadinessReport {
+                state: MigrationReadinessState::SplitRequired,
+                blockers,
+                validation,
+                next_eligible_transfer: None,
                 next_waiting_transfer: next_waiting_pending_transfer(sched),
                 active_presigned_transfer: None,
             };
@@ -1079,7 +1114,7 @@ pub fn assess_orchard_migration_readiness_with_spendability(
             blockers,
             validation,
             next_eligible_transfer,
-            next_waiting_transfer: schedule.and_then(next_waiting_pending_transfer),
+            next_waiting_transfer: next_waiting_pending_transfer(sched),
             active_presigned_transfer: None,
         };
     }
@@ -1089,7 +1124,7 @@ pub fn assess_orchard_migration_readiness_with_spendability(
         blockers,
         validation,
         next_eligible_transfer: None,
-        next_waiting_transfer: schedule.and_then(next_waiting_pending_transfer),
+        next_waiting_transfer: next_waiting_pending_transfer(sched),
         active_presigned_transfer: None,
     }
 }
@@ -1570,7 +1605,8 @@ pub async fn execute_orchard_migration(
         MigrationReadinessState::SplitRequired
         | MigrationReadinessState::WaitingForWindow
         | MigrationReadinessState::PresignedWaitingForBroadcast
-        | MigrationReadinessState::ReadyToBroadcast => {
+        | MigrationReadinessState::ReadyToBroadcast
+        | MigrationReadinessState::NeedsPlan => {
             return Ok(MigrationExecutionResult {
                 orchard_notes_to_migrate: plan.orchard_notes_to_migrate,
                 total_zatoshis: plan.total_zatoshis,
@@ -2520,6 +2556,20 @@ mod tests {
             "expected valid schedule with abandoned residual; errors: {:?}",
             validation.errors
         );
+    }
+
+    #[test]
+    fn readiness_reports_needs_plan_without_saved_schedule() {
+        let plan = sample_plan(1_000);
+
+        let readiness =
+            assess_orchard_migration_readiness(true, 1_024, &plan, None, Some(0), Some(50));
+
+        assert_eq!(readiness.state, MigrationReadinessState::NeedsPlan);
+        assert!(readiness
+            .blockers
+            .iter()
+            .any(|blocker| blocker.contains("No saved ZIP 318 schedule")));
     }
 
     #[test]

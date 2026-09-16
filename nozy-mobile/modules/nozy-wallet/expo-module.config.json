@@ -1,0 +1,12 @@
+{
+  "platforms": ["apple", "android"],
+  "apple": {
+    "modules": ["NozyFfiModule"]
+  },
+  "ios": {
+    "modules": ["NozyFfiModule"]
+  },
+  "android": {
+    "modules": ["com.leoninedao.nozywallet.ffi.NozyFfiModule"]
+  }
+}
