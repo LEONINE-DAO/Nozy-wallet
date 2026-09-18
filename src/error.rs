@@ -120,9 +120,17 @@ impl NozyError {
             NozyError::KeyDerivation(_) => {
                 "Key derivation failed. Please check your wallet seed and try again.".to_string()
             }
-            NozyError::Storage(_) => {
-                "Storage error. Please check your wallet file permissions and try again."
-                    .to_string()
+            NozyError::Storage(msg) => {
+                format!("Storage error: {msg}")
+            }
+            NozyError::Cryptographic(msg) => {
+                if msg.to_ascii_lowercase().contains("password")
+                    || msg.to_ascii_lowercase().contains("decrypt")
+                {
+                    format!("{msg}")
+                } else {
+                    format!("Cryptographic error: {msg}")
+                }
             }
             NozyError::InsufficientFunds(_) => {
                 "Insufficient funds. Please check your balance and try again.".to_string()
@@ -158,10 +166,29 @@ impl NozyError {
                 "Ensure sufficient funds including fees".to_string(),
                 "Try again after a few moments".to_string(),
             ],
-            NozyError::Storage(_) => vec![
-                "Check wallet file permissions".to_string(),
-                "Ensure sufficient disk space".to_string(),
-                "Verify wallet directory is writable".to_string(),
+            NozyError::Storage(msg) => {
+                let mut hints = Vec::new();
+                let lower = msg.to_ascii_lowercase();
+                if lower.contains("decrypt") || lower.contains("hex") {
+                    hints.push(
+                        "Wrong password, or the CLI is not reading the same wallet.dat you unlocked before."
+                            .to_string(),
+                    );
+                    hints.push(
+                        "The File/Size/Vault lines name the blob that failed."
+                            .to_string(),
+                    );
+                } else {
+                    hints.push("Check wallet file permissions".to_string());
+                    hints.push("Ensure sufficient disk space".to_string());
+                    hints.push("Verify wallet directory is writable".to_string());
+                }
+                hints
+            }
+            NozyError::Cryptographic(_) => vec![
+                "Re-enter the wallet password (typos fail AES-GCM as a decrypt error).".to_string(),
+                "This build retries NZK2 Argon2id, unversioned Argon2id, legacy SHA-256, v1 embedded-key (raw AES key in blob), and an empty vault key when the password hash matches."
+                    .to_string(),
             ],
             NozyError::KeyDerivation(_) => vec![
                 "Verify mnemonic phrase is correct".to_string(),

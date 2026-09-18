@@ -239,10 +239,13 @@ pub(crate) async fn load_wallet_with_password(
     }
 
     let pwd = password.unwrap_or_default();
-    let wallet = storage
-        .load_wallet(&pwd)
-        .await
-        .map_err(|e| format!("Failed to load wallet: {e}. Please check your password."))?;
+    let wallet = storage.load_wallet(&pwd).await.map_err(|e| {
+        format!(
+            "Failed to load wallet: {}. File: {}. Please check your password.",
+            e.user_friendly_message(),
+            wallet_path.display()
+        )
+    })?;
     let _ = nozy::notes_vault::unlock_notes_vault(&pwd);
 
     Ok((wallet, storage))
