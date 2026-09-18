@@ -187,7 +187,7 @@ impl NozyError {
             }
             NozyError::Cryptographic(_) => vec![
                 "Re-enter the wallet password (typos fail AES-GCM as a decrypt error).".to_string(),
-                "This build retries NZK2 Argon2id, unversioned Argon2id, legacy SHA-256, and an empty vault key when the password hash matches."
+                "This build retries NZK2 Argon2id, unversioned Argon2id, legacy SHA-256, v1 embedded-key (raw AES key in blob), and an empty vault key when the password hash matches."
                     .to_string(),
             ],
             NozyError::KeyDerivation(_) => vec![

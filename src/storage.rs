@@ -17,6 +17,9 @@ const LEGACY_HEADER_LEN: usize = 28;
 /// Versioned Argon2id blob: magic(4) || salt(16) || nonce(12) || ciphertext.
 const VAULT_MAGIC_V2: &[u8; 4] = b"NZK2";
 const V2_HEADER_LEN: usize = 4 + 16 + 12;
+/// Pre-security-fix v1.0 vault: raw AES key(32) || nonce(12) || ciphertext(+tag).
+/// Password was ignored at encrypt time; key bytes lived in the hex blob.
+const V1_EMBEDDED_KEY_MIN_LEN: usize = 32 + 12 + 16;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct WalletData {
@@ -175,6 +178,10 @@ impl WalletStorage {
         })?;
         let size = encrypted.len();
         let kind = vault_kind_label(&encrypted);
+        let already_nzk2 = matches!(
+            decode_vault_bytes(&encrypted),
+            Ok(ref data) if data.len() >= V2_HEADER_LEN && data.starts_with(VAULT_MAGIC_V2)
+        );
 
         let mut enc_passwords = password_unlock_candidates(password);
         // Wallets saved with an empty vault key but a real password_hash inside
@@ -189,7 +196,9 @@ impl WalletStorage {
             match self.decrypt_wallet_bytes(&encrypted, enc_pw) {
                 Ok(plain) => match self.wallet_from_plaintext(&plain, password, enc_pw) {
                     Ok(wallet) => {
-                        if enc_pw != password {
+                        // Upgrade empty-key, legacy SHA-256/Argon2, and v1 embedded-key
+                        // vaults to NZK2 on successful unlock.
+                        if enc_pw != password || !already_nzk2 {
                             let verified = password_unlock_candidates(password)
                                 .into_iter()
                                 .find(|pw| wallet.verify_password(pw).unwrap_or(false))
@@ -206,7 +215,7 @@ impl WalletStorage {
                                 );
                             } else {
                                 eprintln!(
-                                    "✅ Rewrote {} as NZK2 using your password (previous vault key was a compatibility fallback).",
+                                    "✅ Rewrote {} as NZK2 using your password (previous vault was a compatibility/legacy format).",
                                     wallet_path.display()
                                 );
                             }
@@ -287,9 +296,9 @@ impl WalletStorage {
             None => "Decryption failed: Invalid password or corrupted data".to_string(),
         };
         let hint = if password.is_empty() {
-            "Tried the empty vault key."
+            "Tried the empty vault key and v1 embedded-key layout."
         } else {
-            "Tried your password, trimmed password, empty vault key, NZK2 Argon2id, unversioned Argon2id, and legacy SHA-256."
+            "Tried your password, trimmed password, empty vault key, NZK2 Argon2id, unversioned Argon2id, legacy SHA-256, and v1 embedded-key (raw AES key in blob)."
         };
         NozyError::Cryptographic(format!(
             "Decryption failed: Invalid password or corrupted data ({detail})\n  File: {}\n  Size: {size} bytes\n  Vault: {kind}\n  {hint}",
@@ -364,8 +373,31 @@ impl WalletStorage {
 
         // WASM / unversioned Argon2id used the same salt||nonce||ct layout as SHA-256
         // but Argon2::default() (same 19MiB params as NZK2) — without the NZK2 prefix.
-        let argon_key = self.derive_key_argon2id(password, salt)?;
-        self.decrypt_aes_gcm(&argon_key, nonce, ciphertext)
+        if let Ok(argon_key) = self.derive_key_argon2id(password, salt) {
+            if let Ok(plain) = self.decrypt_aes_gcm(&argon_key, nonce, ciphertext) {
+                return Ok(plain);
+            }
+        }
+
+        // v1.0 (e1218f6b): encrypt ignored the password and prepended the raw AES key.
+        // Removed briefly after the Nov 2025 storage security fix; still needed to open
+        // wallets created before password-derived keys existed (e.g. Gilmore's 554-byte file).
+        self.decrypt_v1_embedded_key(data)
+    }
+
+    /// Pre-password vault: `key(32) || nonce(12) || ciphertext`. Password is unused.
+    fn decrypt_v1_embedded_key(&self, data: &[u8]) -> NozyResult<String> {
+        if data.len() < V1_EMBEDDED_KEY_MIN_LEN {
+            return Err(NozyError::Cryptographic(
+                "Decryption failed: Invalid password or corrupted data".to_string(),
+            ));
+        }
+        let key = &data[0..32];
+        let nonce = &data[32..44];
+        let ciphertext = &data[44..];
+        let mut key_arr = [0u8; 32];
+        key_arr.copy_from_slice(key);
+        self.decrypt_aes_gcm(&key_arr, nonce, ciphertext)
     }
 
     fn decrypt_aes_gcm(
@@ -535,7 +567,7 @@ fn vault_kind_label(raw: &[u8]) -> &'static str {
         Ok(data) if data.len() >= V2_HEADER_LEN && data.starts_with(VAULT_MAGIC_V2) => {
             "NZK2 (Argon2id)"
         }
-        Ok(_) => "unversioned (SHA-256 or Argon2id)",
+        Ok(_) => "unversioned (SHA-256, Argon2id, or v1 embedded-key)",
         Err(_) => "not-hex / too short",
     }
 }
@@ -651,6 +683,58 @@ mod tests {
             .decrypt_data(&blob, "secret")
             .expect("unversioned argon2 decrypt");
         assert_eq!(plain, "wasm-or-pre-nzk2-json");
+    }
+
+    /// v1.0 encrypt_data ignored the password and stored key||nonce||ct in the hex blob.
+    fn encrypt_v1_embedded_key(data: &str) -> String {
+        let mut key = [0u8; 32];
+        let mut nonce = [0u8; 12];
+        OsRng.fill_bytes(&mut key);
+        OsRng.fill_bytes(&mut nonce);
+        let cipher = Aes256Gcm::new_from_slice(&key).unwrap();
+        let ciphertext = cipher
+            .encrypt(Nonce::from_slice(&nonce), data.as_bytes())
+            .unwrap();
+        let mut raw = Vec::new();
+        raw.extend_from_slice(&key);
+        raw.extend_from_slice(&nonce);
+        raw.extend_from_slice(&ciphertext);
+        hex::encode(raw)
+    }
+
+    #[test]
+    fn vault_v1_embedded_key_still_decrypts_and_upgrades() {
+        let dir = temp_wallet_dir();
+        let storage = WalletStorage::new(dir.clone());
+        let mnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
+        let json = serde_json::to_string(&WalletData::new(mnemonic.to_string())).unwrap();
+        let blob = encrypt_v1_embedded_key(&json);
+        assert!(blob.len() > 100, "v1 hex blob should be wallet-sized");
+        let raw = hex::decode(&blob).unwrap();
+        assert!(!raw.starts_with(VAULT_MAGIC_V2));
+        assert!(raw.len() >= V1_EMBEDDED_KEY_MIN_LEN);
+        fs::write(dir.join("wallet.dat"), blob.as_bytes()).unwrap();
+
+        // Password was never used for v1 encryption; typed password still unlocks,
+        // then the file is rewritten as NZK2 under that password.
+        let loaded = storage
+            .load_wallet_blocking("gilmore-recovery-pw")
+            .expect("v1 embedded-key unlock");
+        assert_eq!(loaded.get_mnemonic(), mnemonic);
+
+        let rewritten = fs::read_to_string(dir.join("wallet.dat")).unwrap();
+        let rewritten_raw = hex::decode(rewritten.trim()).unwrap();
+        assert!(
+            rewritten_raw.starts_with(VAULT_MAGIC_V2),
+            "v1 unlock should rewrite NZK2"
+        );
+        storage
+            .load_wallet_blocking("gilmore-recovery-pw")
+            .expect("unlock after NZK2 rewrite");
+        storage
+            .load_wallet_blocking("wrong")
+            .expect_err("NZK2 must reject wrong password");
+        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
