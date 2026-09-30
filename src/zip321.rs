@@ -94,9 +94,8 @@ pub fn looks_like_zgo_page(raw: &str) -> bool {
 
 fn parse_zip321_strict(raw: &str) -> NozyResult<PaymentRequest> {
     let s = raw.trim();
-    let rest = strip_scheme(s).ok_or_else(|| {
-        NozyError::InvalidInput("Not a zcash: payment URI".into())
-    })?;
+    let rest = strip_scheme(s)
+        .ok_or_else(|| NozyError::InvalidInput("Not a zcash: payment URI".into()))?;
     if rest.starts_with("//") {
         return Err(NozyError::InvalidInput(
             "ZIP-321 URIs must not use // (not a hierarchical URI)".into(),
@@ -129,7 +128,9 @@ fn parse_zip321_strict(raw: &str) -> NozyResult<PaymentRequest> {
 
     if let Some(q) = query {
         if q.is_empty() {
-            return Err(NozyError::InvalidInput("ZIP-321 URI has an empty query".into()));
+            return Err(NozyError::InvalidInput(
+                "ZIP-321 URI has an empty query".into(),
+            ));
         }
         for pair in q.split('&') {
             if pair.is_empty() {
@@ -365,9 +366,10 @@ fn parse_zip321_amount(val: &str) -> NozyResult<f64> {
 }
 
 fn decode_zip321_memo(val: &str) -> NozyResult<String> {
-    if val.chars().any(|c| {
-        !(c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    }) {
+    if val
+        .chars()
+        .any(|c| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+    {
         return Err(NozyError::InvalidInput(
             "ZIP-321 memo must be unpadded base64url".into(),
         ));
@@ -438,9 +440,21 @@ fn base64url_decode(s: &str) -> NozyResult<Vec<u8>> {
     let mut i = 0;
     while i < vals.len() {
         let v0 = vals[i] as u32;
-        let v1 = if i + 1 < vals.len() { vals[i + 1] as u32 } else { 0 };
-        let v2 = if i + 2 < vals.len() { vals[i + 2] as u32 } else { 0 };
-        let v3 = if i + 3 < vals.len() { vals[i + 3] as u32 } else { 0 };
+        let v1 = if i + 1 < vals.len() {
+            vals[i + 1] as u32
+        } else {
+            0
+        };
+        let v2 = if i + 2 < vals.len() {
+            vals[i + 2] as u32
+        } else {
+            0
+        };
+        let v3 = if i + 3 < vals.len() {
+            vals[i + 3] as u32
+        } else {
+            0
+        };
         let n = (v0 << 18) | (v1 << 12) | (v2 << 6) | v3;
         if i + 1 < vals.len() {
             out.push(((n >> 16) & 0xff) as u8);
@@ -491,7 +505,8 @@ fn from_hex(b: u8) -> Option<u8> {
 mod tests {
     use super::*;
 
-    const UA: &str = "u1testaddressplaceholder00000000000000000000000000000000000000000000000000000000000";
+    const UA: &str =
+        "u1testaddressplaceholder00000000000000000000000000000000000000000000000000000000000";
 
     #[test]
     fn round_trip_amount_memo_base64url() {

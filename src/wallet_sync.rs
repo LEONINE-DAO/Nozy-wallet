@@ -326,7 +326,10 @@ pub(crate) fn apply_start_height_obfuscation(
     config: &WalletConfig,
     options: &WalletSyncOptions,
 ) {
-    if options.start_height.is_some() || options.end_height.is_some() || config.last_scan_height.is_some() {
+    if options.start_height.is_some()
+        || options.end_height.is_some()
+        || config.last_scan_height.is_some()
+    {
         return;
     }
     if range.scan_start > range.scan_end {

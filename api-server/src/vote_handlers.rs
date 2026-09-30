@@ -693,6 +693,7 @@ pub struct VoteSubmitSigBody {
 pub async fn vote_submit_delegation_sig(
     Json(body): Json<VoteSubmitSigBody>,
 ) -> Result<ResponseJson<VoteSignResponse>, ApiError> {
+    let env = body.env;
     let parsed: Value = serde_json::from_str(&body.sig_json).map_err(|e| {
         vote_err(
             StatusCode::BAD_REQUEST,
@@ -722,6 +723,6 @@ pub async fn vote_submit_delegation_sig(
     Ok(ResponseJson(VoteSignResponse {
         round_id,
         sig_path: out.display().to_string(),
-        message: "Delegation signed with the extension wallet.".into(),
+        message: format!("Delegation signed with the extension wallet ({env})."),
     }))
 }
