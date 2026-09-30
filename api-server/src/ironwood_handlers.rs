@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::handlers::{error_response_with_code, load_wallet_with_password};
 use nozy::{
-    assess_orchard_migration_readiness, execute_orchard_migration,
+    assess_orchard_migration_readiness, assess_send_egress, execute_orchard_migration,
     execute_orchard_migration_broadcast, execute_orchard_note_split, fetch_pool_balances,
     ironwood::ironwood_software_send_available, ironwood_user_notices, is_ironwood_active,
     load_config, load_orchard_migration_schedule, load_wallet_notes,
@@ -66,6 +66,7 @@ pub struct IronwoodStatusResponse {
     pub migration_privacy_warnings: Vec<String>,
     pub orchard_funds_at_risk: bool,
     pub safer_migration: IronwoodSaferMigrationResponse,
+    pub send_egress: nozy::SendEgressSnapshot,
 }
 
 fn migration_schedule_tip(
@@ -189,10 +190,7 @@ pub async fn get_ironwood_status(
             .push("Connected Zebra RPC does not expose the Ironwood value pool yet.".to_string());
     }
     if ironwood_active && orchard_wallet_zat > 0 {
-        blockers.push(
-            "Orchard notes remain — run Ironwood Plan → Split (if required) → Migrate → Broadcast."
-                .to_string(),
-        );
+        blockers.push("Orchard notes remain migrate if able.".to_string());
     }
     if plan.zip318.note_split_required {
         blockers.push(
@@ -231,8 +229,10 @@ pub async fn get_ironwood_status(
 
     if !safer.network_privacy_allowed {
         blockers.push(
-            "Safer migration Priority 1: broadcast would be blocked until local Zebrad, Tor/I2P, Nym mixnet broadcast helper, or Nym/Tor attestation."
-                .to_string(),
+            format!(
+                "Safer migration Priority 1: broadcast would be blocked until local Zebrad, Tor/I2P, Nym mixnet broadcast helper, or Nym/Tor attestation. {}",
+                nozy::ironwood::nymvpn_ironwood_stopgap_hint()
+            ),
         );
     }
     for warning in &safer.cover_warnings {
@@ -271,6 +271,7 @@ pub async fn get_ironwood_status(
         && orchard_wallet_zat == 0
         && blockers.is_empty();
     let notices = ironwood_user_notices(ironwood_active, orchard_wallet_zat);
+    let send_egress = assess_send_egress(&config);
 
     Ok(ResponseJson(IronwoodStatusResponse {
         network: config.network,
@@ -320,6 +321,7 @@ pub async fn get_ironwood_status(
             amount_timing_notes: safer.amount_timing_notes,
             baseline_hygiene_notes: safer.baseline_hygiene_notes,
         },
+        send_egress,
     }))
 }
 
@@ -541,6 +543,9 @@ pub async fn ironwood_migrate(
         match result.readiness_state {
             MigrationReadinessState::NoOrchardNotes => {
                 "No Orchard notes require Ironwood migration.".to_string()
+            }
+            MigrationReadinessState::NeedsPlan => {
+                "Save a ZIP 318 schedule first — POST /ironwood/plan, then migrate.".to_string()
             }
             MigrationReadinessState::SplitRequired => {
                 "ZIP 318 note splitting is required before migrate. Use Split, then retry."

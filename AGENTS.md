@@ -6,6 +6,8 @@ This file is **machine-readable project policy**. Tools (Cursor, Copilot, Claude
 
 - **This repository is a wallet and related services**, not a Zcash consensus node. Do **not** treat it as Zebra; do not propose consensus-rule changes here.
 - **Default privacy product stance:** shielded-first on a Zebrad + lightwalletd stack with local witness derivation.
+- **Hosted node vs hosted wallet:** `lwd.nozywallet.org` is public compact-sync (zec.rocks-style) — keys stay on each user’s device. `api.nozywallet.org` is the operator companion (one LEONINE wallet). **Do not** build multi-user hosted wallets, bake the API key into clients, or auto-connect store/web/extension users to that one VPS wallet. Joint wallets are out of scope.
+- **Merchant path on this node:** Shielded invoices ([ZekuraPay](https://github.com/Lowo88/ZekuraPay) or native `/api/business/invoices`) detect pays on the public LWD / local RPC. Funds settle to **the merchant’s** Nozy UA. **Do not** settle customer money into `api.nozywallet.org`.
 
 ---
 

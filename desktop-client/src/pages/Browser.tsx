@@ -371,7 +371,7 @@ export function BrowserPage({ onBack: _onBack }: BrowserPageProps) {
                           resolve(true);
                           toast.dismiss(t.id);
                         }}
-                        className="px-3 py-1 bg-primary-600 text-white rounded text-sm"
+                        className="px-3 py-1 bg-primary-600 text-primary-100 rounded text-sm"
                       >
                         Allow
                       </button>

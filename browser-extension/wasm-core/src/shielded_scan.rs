@@ -1,5 +1,6 @@
 //! Block-by-block Orchard + Ironwood scan with incremental witnesses (Zebrad JSON-RPC).
 
+use serde::Serialize;
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
@@ -37,14 +38,8 @@ impl TrackerPair {
         }
         if let Ok(v) = serde_json::from_str::<Value>(raw) {
             if v.is_object() {
-                let orchard = v
-                    .get("orchard")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("");
-                let ironwood = v
-                    .get("ironwood")
-                    .and_then(|x| x.as_str())
-                    .unwrap_or("");
+                let orchard = v.get("orchard").and_then(|x| x.as_str()).unwrap_or("");
+                let ironwood = v.get("ironwood").and_then(|x| x.as_str()).unwrap_or("");
                 return Ok(Self {
                     orchard: OrchardWitnessTracker::deserialize_json(orchard)?,
                     ironwood: OrchardWitnessTracker::deserialize_json(ironwood)?,
@@ -80,7 +75,9 @@ fn hex32(s: &str) -> Result<[u8; 32], String> {
 fn action_json_to_compact(action: &Value) -> Option<OrchardActionCompactData> {
     let nullifier = action.get("nullifier")?.as_str()?;
     let cmx = action.get("cmx")?.as_str()?;
-    let ephemeral_key = action.get("ephemeralKey").or_else(|| action.get("ephemeral_key"))?;
+    let ephemeral_key = action
+        .get("ephemeralKey")
+        .or_else(|| action.get("ephemeral_key"))?;
     let ephemeral_key = ephemeral_key.as_str()?;
     let enc_hex = action
         .get("encCiphertext")
@@ -133,6 +130,47 @@ fn note_to_json(note: &OrchardDecryptionResult, pool: ShieldedPool) -> Value {
     v
 }
 
+fn nozy_pool(pool: ShieldedPool) -> nozy::shielded_pool::ShieldedPool {
+    match pool {
+        ShieldedPool::Orchard => nozy::shielded_pool::ShieldedPool::Orchard,
+        ShieldedPool::Ironwood => nozy::shielded_pool::ShieldedPool::Ironwood,
+    }
+}
+
+#[derive(Default)]
+struct ScanDebug {
+    ow_seen: u32,
+    ow_compact_ok: u32,
+    ow_decrypt_ok: u32,
+    ow_other_domain: u32,
+    iw_seen: u32,
+    iw_compact_ok: u32,
+    iw_decrypt_ok: u32,
+    iw_other_domain: u32,
+}
+
+impl ScanDebug {
+    fn note_seen(&mut self, pool: ShieldedPool, n: u32) {
+        match pool {
+            ShieldedPool::Orchard => self.ow_seen = self.ow_seen.saturating_add(n),
+            ShieldedPool::Ironwood => self.iw_seen = self.iw_seen.saturating_add(n),
+        }
+    }
+
+    fn to_json(&self) -> Value {
+        json!({
+            "owSeen": self.ow_seen,
+            "owCompactOk": self.ow_compact_ok,
+            "owDecryptOk": self.ow_decrypt_ok,
+            "owOtherDomain": self.ow_other_domain,
+            "iwSeen": self.iw_seen,
+            "iwCompactOk": self.iw_compact_ok,
+            "iwDecryptOk": self.iw_decrypt_ok,
+            "iwOtherDomain": self.iw_other_domain,
+        })
+    }
+}
+
 fn apply_pool_actions(
     tracker: &mut OrchardWitnessTracker,
     wallet: &HDWallet,
@@ -141,18 +179,69 @@ fn apply_pool_actions(
     txid: &str,
     actions: &[Value],
     pool: ShieldedPool,
+    debug: &mut ScanDebug,
 ) -> Result<Vec<Value>, String> {
     let mut discovered = Vec::new();
+    debug.note_seen(pool, actions.len() as u32);
+    let other_pool = match pool {
+        ShieldedPool::Orchard => ShieldedPool::Ironwood,
+        ShieldedPool::Ironwood => ShieldedPool::Orchard,
+    };
     for action in actions {
         let Some(compact) = action_json_to_compact(action) else {
             continue;
         };
+        match pool {
+            ShieldedPool::Orchard => debug.ow_compact_ok = debug.ow_compact_ok.saturating_add(1),
+            ShieldedPool::Ironwood => debug.iw_compact_ok = debug.iw_compact_ok.saturating_add(1),
+        }
         let cmx_node = merkle_hash_from_cmx_bytes(&compact.cmx)?;
         tracker.append_cmx(cmx_node)?;
 
         let decrypted = wallet
-            .decrypt_orchard_action_compact(&compact, wallet_address, block_height, txid)
+            .decrypt_orchard_action_compact(
+                &compact,
+                wallet_address,
+                block_height,
+                txid,
+                nozy_pool(pool),
+            )
             .map_err(|e| format!("{:?}", e))?;
+        let decrypted = match decrypted {
+            Some(note) => {
+                match pool {
+                    ShieldedPool::Orchard => {
+                        debug.ow_decrypt_ok = debug.ow_decrypt_ok.saturating_add(1)
+                    }
+                    ShieldedPool::Ironwood => {
+                        debug.iw_decrypt_ok = debug.iw_decrypt_ok.saturating_add(1)
+                    }
+                }
+                Some(note)
+            }
+            None => {
+                let other = wallet
+                    .decrypt_orchard_action_compact(
+                        &compact,
+                        wallet_address,
+                        block_height,
+                        txid,
+                        nozy_pool(other_pool),
+                    )
+                    .map_err(|e| format!("{:?}", e))?;
+                if other.is_some() {
+                    match pool {
+                        ShieldedPool::Orchard => {
+                            debug.ow_other_domain = debug.ow_other_domain.saturating_add(1)
+                        }
+                        ShieldedPool::Ironwood => {
+                            debug.iw_other_domain = debug.iw_other_domain.saturating_add(1)
+                        }
+                    }
+                }
+                None
+            }
+        };
         if let Some(mut note) = decrypted {
             tracker.register_discovered_note(note.nullifier)?;
             let wh = tracker
@@ -176,7 +265,8 @@ pub fn shielded_scan_tracker_apply_block_json(
 ) -> Result<String, String> {
     let mut trackers = TrackerPair::deserialize(tracker_state_json)?;
     let wallet = HDWallet::from_mnemonic(mnemonic_str).map_err(|e| e.to_string())?;
-    let block: Value = serde_json::from_str(block_json).map_err(|e| format!("block json: {}", e))?;
+    let block: Value =
+        serde_json::from_str(block_json).map_err(|e| format!("block json: {}", e))?;
 
     let tx_array = block
         .get("tx")
@@ -184,6 +274,7 @@ pub fn shielded_scan_tracker_apply_block_json(
         .ok_or_else(|| "block.tx missing".to_string())?;
 
     let mut discovered: Vec<Value> = Vec::new();
+    let mut scan_debug = ScanDebug::default();
 
     for tx in tx_array {
         if tx.as_str().is_some() {
@@ -205,6 +296,7 @@ pub fn shielded_scan_tracker_apply_block_json(
                     &txid,
                     actions,
                     ShieldedPool::Orchard,
+                    &mut scan_debug,
                 )?);
             }
         }
@@ -219,6 +311,7 @@ pub fn shielded_scan_tracker_apply_block_json(
                     &txid,
                     actions,
                     ShieldedPool::Ironwood,
+                    &mut scan_debug,
                 )?);
             }
         }
@@ -229,6 +322,7 @@ pub fn shielded_scan_tracker_apply_block_json(
         "orchard_tracker_state": trackers.orchard.serialize_json()?,
         "ironwood_tracker_state": trackers.ironwood.serialize_json()?,
         "notes": discovered,
+        "scanDebug": scan_debug.to_json(),
     });
     serde_json::to_string(&out).map_err(|e| e.to_string())
 }
@@ -251,17 +345,21 @@ pub fn shielded_scan_tracker_new(
     ironwood_final_state_hex: &str,
 ) -> Result<String, JsError> {
     let pair = TrackerPair {
-        orchard: OrchardWitnessTracker::from_final_state_hex(if orchard_final_state_hex.is_empty() {
-            None
-        } else {
-            Some(orchard_final_state_hex)
-        })
+        orchard: OrchardWitnessTracker::from_final_state_hex(
+            if orchard_final_state_hex.is_empty() {
+                None
+            } else {
+                Some(orchard_final_state_hex)
+            },
+        )
         .map_err(|e| JsError::new(&e))?,
-        ironwood: OrchardWitnessTracker::from_final_state_hex(if ironwood_final_state_hex.is_empty() {
-            None
-        } else {
-            Some(ironwood_final_state_hex)
-        })
+        ironwood: OrchardWitnessTracker::from_final_state_hex(
+            if ironwood_final_state_hex.is_empty() {
+                None
+            } else {
+                Some(ironwood_final_state_hex)
+            },
+        )
         .map_err(|e| JsError::new(&e))?,
     };
     pair.serialize_json().map_err(|e| JsError::new(&e))
@@ -284,6 +382,9 @@ pub fn orchard_scan_tracker_apply_block(
     )
     .map_err(|e| JsError::new(&e))?;
     let v: Value = serde_json::from_str(&s).map_err(|e| JsError::new(&format!("json: {}", e)))?;
-    serde_wasm_bindgen::to_value(&v).map_err(|e| JsError::new(&format!("{}", e)))
+    // serde_json::Value objects become JS Maps by default; the service worker reads
+    // `out.notes` as a plain object property.
+    v.serialize(&serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true))
+        .map_err(|e| JsError::new(&format!("{}", e)))
 }
 //Nozy people dont use zebra, they use zcashd

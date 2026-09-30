@@ -521,17 +521,19 @@ export function useCopy(resetMs = 1500): [boolean, (text: string) => void] {
 export function CopyButton({
   value,
   label = "Copy",
-  fullWidth
+  fullWidth,
+  variant = "secondary"
 }: {
   value: string;
   label?: string;
   fullWidth?: boolean;
+  variant?: "primary" | "secondary" | "ghost";
 }) {
   const [copied, copy] = useCopy();
   return (
     <Button
-      size="sm"
-      variant="secondary"
+      size={variant === "primary" ? "md" : "sm"}
+      variant={variant}
       fullWidth={fullWidth}
       icon={copied ? "check" : "copy"}
       disabled={!value}

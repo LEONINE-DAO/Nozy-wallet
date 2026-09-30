@@ -32,6 +32,8 @@ Web app starter doc: [web-app/README.md](https://github.com/LEONINE-DAO/Nozy-wal
 ## Planned (aligned issues / RFCs)
 
 - **Business / POS + ZNS** — [Issue #85](https://github.com/LEONINE-DAO/Nozy-wallet/issues/85)
+- **Nozy Agent** — self-hosted Rust agent (local LLM, Nym-mandatory egress); see [ENHANCEMENT_ROADMAP.md](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/ENHANCEMENT_ROADMAP.md) and [Medium draft](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md)
+- **Bounded trading** — separate capped trading wallet; prefer shielded/private flows; **NEAR Intents is paper/canary-only** (demoted after [forum #57497](https://forum.zcashcommunity.com/t/my-experience-exiting-shielded-zec-from-zodl-to-near-intents-589k-usdt-still-held-50-days-despite-a-written-compliance-clearance/57497)); private→transparent exits are an explicit trust demotion, not “still private”
 - **Multichain privacy** (Namada, Penumbra) — [Multichain RFC](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/docs/rfcs/MULTICHAIN_PRIVACY_CHAINS_RFC.md)
 
 ---

@@ -10,6 +10,8 @@
 //! - <https://github.com/dismad/zcash-explorer/tree/crosslink>
 
 mod display;
+mod doctor;
+mod payout;
 mod rpc;
 mod types;
 
@@ -17,10 +19,18 @@ pub use display::{
     display_bond, display_finality, display_positions, display_roster, display_status,
     display_wallet, print_feature_net_banner,
 };
+pub use doctor::{
+    display_doctor, grades_for_bonds, DoctorCheck, DoctorInput, DoctorReport, LifecycleHint,
+    ObserverGrade,
+};
+pub use payout::{
+    display_payout_claim, looks_like_mainnet_orchard, ufvk_fingerprint, PayoutClaimInput,
+    PayoutClaimPack,
+};
 pub use rpc::{
-    block_finality, bond_info, build_crosslink_client, fetch_guardian_snapshot, finality_tip,
-    is_tfl_activated, roster, staking_action, staking_positions, tx_finality, wallet_sync_status,
-    wallet_ufvk,
+    block_finality, bond_info, build_crosslink_client, fetch_doctor_report,
+    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, is_tfl_activated, roster,
+    staking_action, staking_positions, tx_finality, wallet_sync_status, wallet_ufvk,
 };
 pub use types::{
     BondPosition, FinalizedTip, GuardianSnapshot, NextAction, RosterEntry, StakingAction,

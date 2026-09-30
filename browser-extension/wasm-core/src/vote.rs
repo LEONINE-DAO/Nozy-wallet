@@ -17,8 +17,8 @@ use crate::orchard_witness_local::merkle_path_from_witness;
 
 #[wasm_bindgen]
 pub fn sign_vote_delegation(mnemonic_str: &str, request_json: &str) -> Result<String, JsError> {
-    let wallet = HDWallet::from_mnemonic(mnemonic_str)
-        .map_err(|e| JsError::new(&format!("wallet: {e}")))?;
+    let wallet =
+        HDWallet::from_mnemonic(mnemonic_str).map_err(|e| JsError::new(&format!("wallet: {e}")))?;
     let sig = nozy::sign_delegation_request_json(&wallet, request_json.as_bytes())
         .map_err(|e| JsError::new(&e.user_friendly_message()))?;
     serde_json::to_string(&sig).map_err(|e| JsError::new(&format!("serialize sig: {e}")))
@@ -31,8 +31,8 @@ pub fn export_ironwood_vote_notes_json(
     notes_json: &str,
     network: &str,
 ) -> Result<String, JsError> {
-    let wallet = HDWallet::from_mnemonic(mnemonic_str)
-        .map_err(|e| JsError::new(&format!("wallet: {e}")))?;
+    let wallet =
+        HDWallet::from_mnemonic(mnemonic_str).map_err(|e| JsError::new(&format!("wallet: {e}")))?;
     let net = if network.eq_ignore_ascii_case("testnet") {
         NetworkType::Test
     } else {
@@ -50,8 +50,8 @@ pub fn export_ironwood_vote_notes_json(
         .generate_orchard_address(0, 0, net)
         .map_err(|e| JsError::new(&format!("address: {e}")))?;
 
-    let raw: Value = serde_json::from_str(notes_json)
-        .map_err(|e| JsError::new(&format!("notes json: {e}")))?;
+    let raw: Value =
+        serde_json::from_str(notes_json).map_err(|e| JsError::new(&format!("notes json: {e}")))?;
     let rows = raw
         .as_array()
         .ok_or_else(|| JsError::new("notes json must be an array"))?;
@@ -109,10 +109,8 @@ fn export_one_note(row: &Value, note: &Value) -> Result<Value, JsError> {
         })?;
     let wbytes = hex::decode(wit_hex.trim_start_matches("0x"))
         .map_err(|e| JsError::new(&format!("witness hex: {e}")))?;
-    let witness = orchard_incremental_witness_from_bytes(&wbytes)
-        .map_err(|e| JsError::new(&e))?;
-    let (anchor, merkle_path) =
-        merkle_path_from_witness(&witness).map_err(|e| JsError::new(&e))?;
+    let witness = orchard_incremental_witness_from_bytes(&wbytes).map_err(|e| JsError::new(&e))?;
+    let (anchor, merkle_path) = merkle_path_from_witness(&witness).map_err(|e| JsError::new(&e))?;
     let auth_path_hex: Vec<String> = merkle_path
         .auth_path()
         .iter()

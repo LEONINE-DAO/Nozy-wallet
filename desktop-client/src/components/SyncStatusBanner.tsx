@@ -7,36 +7,34 @@ import {
 } from "../lib/syncHelpers";
 import type { SyncStatusResponse } from "../lib/types";
 import { useWalletStore } from "../store/walletStore";
-import { Button } from "./Button";
+import { SyncControlButton } from "./SyncControlButton";
 
 interface SyncStatusBannerProps {
-  onSync?: () => void;
   isSyncing?: boolean;
   refreshToken?: number;
 }
 
-function bannerTone(status: SyncStatusResponse): "offline" | "warn" | "info" {
+function bannerTone(status: SyncStatusResponse): "offline" | "warn" | "ok" {
   if (status.zebra_tip == null) return "offline";
   const gap = status.scan_gap_blocks ?? 0;
   if (gap > 0 || !status.witness_fresh_for_send) return "warn";
-  return "info";
+  return "ok";
 }
 
-const toneClasses = {
-  offline:
-    "bg-red-100 dark:bg-red-950/50 border-red-300 dark:border-red-700 text-red-950 dark:text-red-50",
-  warn:
-    "bg-amber-100 dark:bg-amber-950/50 border-amber-300 dark:border-amber-700 text-amber-950 dark:text-amber-50",
-  info:
-    "bg-sky-100 dark:bg-sky-950/50 border-sky-300 dark:border-sky-700 text-sky-950 dark:text-sky-50",
-  syncing:
-    "bg-sky-100 dark:bg-sky-950/50 border-sky-300 dark:border-sky-700 text-sky-950 dark:text-sky-50",
+const tonePanelClass = {
+  offline: "nw-sync-panel nw-sync-panel--offline",
+  warn: "nw-sync-panel nw-sync-panel--warn",
+  ok: "nw-sync-panel",
+  syncing: "nw-sync-panel",
 };
 
-export function SyncStatusBanner({ onSync, isSyncing, refreshToken = 0 }: SyncStatusBannerProps) {
+export function SyncStatusBanner({ isSyncing, refreshToken = 0 }: SyncStatusBannerProps) {
   const [status, setStatus] = useState<SyncStatusResponse | null>(null);
   const syncProgressPercent = useWalletStore((s) => s.syncProgressPercent);
   const syncProgressLabel = useWalletStore((s) => s.syncProgressLabel);
+  const isStoppingSync = useWalletStore((s) => s.isStoppingSync);
+  const syncPausedByUser = useWalletStore((s) => s.syncPausedByUser);
+  const syncStatusEpoch = useWalletStore((s) => s.syncStatusEpoch);
 
   useEffect(() => {
     let cancelled = false;
@@ -55,15 +53,16 @@ export function SyncStatusBanner({ onSync, isSyncing, refreshToken = 0 }: SyncSt
       cancelled = true;
       clearInterval(id);
     };
-  }, [refreshToken, isSyncing]);
+  }, [refreshToken, isSyncing, syncStatusEpoch]);
 
   if (!status && !isSyncing) return null;
 
+  const gap = status?.scan_gap_blocks ?? 0;
   const needsSync =
     isSyncing ||
     !status ||
     status.zebra_tip == null ||
-    (status.scan_gap_blocks ?? 0) > 0 ||
+    gap > 0 ||
     !status.witness_fresh_for_send;
 
   if (!needsSync) return null;
@@ -74,37 +73,47 @@ export function SyncStatusBanner({ onSync, isSyncing, refreshToken = 0 }: SyncSt
       : bannerTone(status)
     : "syncing";
 
-  const percent =
-    syncProgressPercent ?? (status ? progressPercent(status) : null);
-  const message = isSyncing
-    ? syncProgressLabel ||
-      (status ? formatSyncProgressMessage(status) : "Syncing wallet with the network…")
-    : status?.message || "Wallet needs to sync with the network.";
+  const percent = status ? progressPercent(status) : syncProgressPercent;
+  const stopping = Boolean(isSyncing && isStoppingSync);
+  const message = stopping
+    ? "Stopping…"
+    : isSyncing
+      ? status
+        ? formatSyncProgressMessage(status)
+        : syncProgressLabel || "Syncing wallet with the network…"
+      : syncPausedByUser && gap > 0
+        ? `Sync paused · ${gap.toLocaleString()} blocks behind tip.`
+        : status?.message || "Wallet is behind the network and not currently syncing.";
 
   return (
     <div
-      className={`shrink-0 px-4 py-3 border-b-2 flex flex-col gap-2 text-sm ${toneClasses[tone]}`}
+      className={`shrink-0 border-b px-4 py-3 ${tonePanelClass[tone]}`}
       aria-live="polite"
     >
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <p className="font-semibold text-base min-w-0 leading-snug">{message}</p>
-        {onSync && !isSyncing && (
-          <Button size="sm" onClick={onSync} className="shrink-0 font-semibold">
-            Sync to tip
-          </Button>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p
+          className="nw-sync-glitch min-w-0 text-sm font-semibold leading-snug text-emerald-100"
+          data-text={message}
+        >
+          {message}
+        </p>
+        <SyncControlButton compact={false} />
       </div>
       {isSyncing && percent != null && (
         <div
-          className="h-2.5 rounded-full bg-black/20 dark:bg-white/20 overflow-hidden"
+          className="nw-sync-bar mt-2.5 h-2.5 overflow-hidden rounded-full"
           role="progressbar"
           aria-valuenow={percent}
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-label={`Wallet sync ${percent} percent`}
+          aria-label={
+            percent != null && (status?.scan_gap_blocks ?? 0) > 0
+              ? `Catch-up ${percent} percent`
+              : `Wallet scan ${percent} percent`
+          }
         >
           <div
-            className="h-full rounded-full bg-sky-600 dark:bg-sky-400 transition-all duration-500"
+            className="nw-sync-bar-fill h-full rounded-full transition-all duration-500"
             style={{ width: `${percent}%` }}
           />
         </div>

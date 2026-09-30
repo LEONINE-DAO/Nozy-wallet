@@ -16,12 +16,27 @@ import {
   ConfigResponse,
   NymDvpnSyncStatus,
   NymDvpnSyncProbeResult,
+  SendEgressSnapshot,
   SetZebraUrlRequest,
   SetThemeRequest,
   ProvingStatusResponse,
   VerifyPasswordRequest as _VerifyPasswordRequest,
   SignMessageRequest,
   SignMessageResponse,
+  VoteStatusResponse,
+  VoteActiveRound,
+  VoteExportNotesResponse,
+  VotePrepareResult,
+  VoteDelegatePrepareResult,
+  VoteSignResponse,
+  VoteDelegateFinishResult,
+  VoteCastResult,
+  CrosslinkGuardianSnapshot,
+  CrosslinkStakingPositions,
+  CrosslinkRosterEntry,
+  CrosslinkActionResponse,
+  CrosslinkPayoutClaimPack,
+  CrosslinkDoctorReport,
   AddressBookEntry,
   AddAddressBookRequest,
   BackupPathRequest,
@@ -385,6 +400,10 @@ export const walletApi = {
     return { data: result };
   },
 
+  stopSync: async (): Promise<void> => {
+    // Stop is handled in the frontend sync loop after the current `sync_wallet` returns.
+  },
+
   sendTransaction: async (data: SendTransactionRequest): Promise<{ data: { success: boolean; txid?: string; message: string } }> => {
     const result = await invoke<{ success: boolean; txid?: string; message: string }>("send_transaction", { request: data });
     if (!result.success) {
@@ -480,6 +499,11 @@ export const walletApi = {
     return { data: result };
   },
 
+  getSendEgress: async (): Promise<{ data: SendEgressSnapshot }> => {
+    const result = await invoke<SendEgressSnapshot>("get_send_egress");
+    return { data: result };
+  },
+
   setTheme: async (_data: SetThemeRequest) => {
     
     return { data: null };
@@ -558,5 +582,176 @@ export const walletApi = {
   listBackups: async (): Promise<{ data: string[] }> => {
     const result = await invoke<string[]>("list_backups");
     return { data: result ?? [] };
+  },
+
+  voteStatus: async (env = "prod"): Promise<{ data: VoteStatusResponse }> => {
+    const result = await invoke<VoteStatusResponse>("vote_status", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteActive: async (env = "prod"): Promise<{ data: VoteActiveRound }> => {
+    const result = await invoke<VoteActiveRound>("vote_active", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteExportNotes: async (
+    password?: string
+  ): Promise<{ data: VoteExportNotesResponse }> => {
+    const result = await invoke<VoteExportNotesResponse>("vote_export_notes", {
+      password: password ?? null,
+    });
+    return { data: result };
+  },
+
+  votePrepare: async (env = "prod"): Promise<{ data: VotePrepareResult }> => {
+    const result = await invoke<VotePrepareResult>("vote_prepare", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteDelegate: async (
+    env = "prod"
+  ): Promise<{ data: VoteDelegatePrepareResult }> => {
+    const result = await invoke<VoteDelegatePrepareResult>("vote_delegate", {
+      request: { env },
+    });
+    return { data: result };
+  },
+
+  voteSignDelegation: async (
+    password?: string,
+    env = "prod"
+  ): Promise<{ data: VoteSignResponse }> => {
+    const result = await invoke<VoteSignResponse>("vote_sign_delegation", {
+      request: { password: password ?? null, env },
+    });
+    return { data: result };
+  },
+
+  voteDelegateFinish: async (
+    env = "prod",
+    wait = true
+  ): Promise<{ data: VoteDelegateFinishResult }> => {
+    const result = await invoke<VoteDelegateFinishResult>("vote_delegate_finish", {
+      request: { env, wait },
+    });
+    return { data: result };
+  },
+
+  voteCast: async (args: {
+    env?: string;
+    choices: Record<string, number>;
+    delegation_tx?: string;
+    single_share?: boolean;
+    wait?: boolean;
+  }): Promise<{ data: VoteCastResult }> => {
+    const result = await invoke<VoteCastResult>("vote_cast", {
+      request: {
+        env: args.env ?? "prod",
+        choices: args.choices,
+        delegation_tx: args.delegation_tx ?? null,
+        single_share: args.single_share ?? false,
+        wait: args.wait ?? true,
+      },
+    });
+    return { data: result };
+  },
+
+  crosslinkStatus: async (): Promise<{ data: CrosslinkGuardianSnapshot }> => {
+    const result = await invoke<CrosslinkGuardianSnapshot>("crosslink_status");
+    return { data: result };
+  },
+
+  crosslinkPositions: async (): Promise<{ data: CrosslinkStakingPositions }> => {
+    const result = await invoke<CrosslinkStakingPositions>("crosslink_positions");
+    return { data: result };
+  },
+
+  crosslinkRoster: async (
+    zats = false,
+  ): Promise<{ data: CrosslinkRosterEntry[] }> => {
+    const result = await invoke<CrosslinkRosterEntry[]>("crosslink_roster", {
+      request: { zats },
+    });
+    return { data: result };
+  },
+
+  crosslinkStake: async (args: {
+    amount_ctaz: number;
+    finalizer: string;
+    force?: boolean;
+  }): Promise<{ data: CrosslinkActionResponse }> => {
+    const result = await invoke<CrosslinkActionResponse>("crosslink_stake", {
+      request: {
+        amount_ctaz: args.amount_ctaz,
+        finalizer: args.finalizer,
+        force: args.force ?? false,
+      },
+    });
+    return { data: result };
+  },
+
+  crosslinkRetarget: async (args: {
+    bond: string;
+    finalizer: string;
+  }): Promise<{ data: CrosslinkActionResponse }> => {
+    const result = await invoke<CrosslinkActionResponse>("crosslink_retarget", {
+      request: { bond: args.bond, finalizer: args.finalizer },
+    });
+    return { data: result };
+  },
+
+  crosslinkUnbond: async (args: {
+    bond: string;
+    force?: boolean;
+  }): Promise<{ data: CrosslinkActionResponse }> => {
+    const result = await invoke<CrosslinkActionResponse>("crosslink_unbond", {
+      request: { bond: args.bond, force: args.force ?? false },
+    });
+    return { data: result };
+  },
+
+  crosslinkWithdraw: async (args: {
+    bond: string;
+    force?: boolean;
+  }): Promise<{ data: CrosslinkActionResponse }> => {
+    const result = await invoke<CrosslinkActionResponse>("crosslink_withdraw", {
+      request: { bond: args.bond, force: args.force ?? false },
+    });
+    return { data: result };
+  },
+
+  crosslinkWalletUfvk: async (): Promise<{ data: { ufvk: string } }> => {
+    const result = await invoke<{ ufvk: string }>("crosslink_wallet_ufvk");
+    return { data: result };
+  },
+
+  crosslinkPayoutClaim: async (args?: {
+    payout_address?: string;
+    mobile_ufvk?: string;
+    cutoff_height?: number;
+  }): Promise<{ data: CrosslinkPayoutClaimPack }> => {
+    const result = await invoke<CrosslinkPayoutClaimPack>("crosslink_payout_claim", {
+      request: {
+        payout_address: args?.payout_address || null,
+        mobile_ufvk: args?.mobile_ufvk || null,
+        cutoff_height: args?.cutoff_height ?? null,
+      },
+    });
+    return { data: result };
+  },
+
+  crosslinkDoctor: async (args?: {
+    observer?: boolean;
+  }): Promise<{ data: CrosslinkDoctorReport }> => {
+    const result = await invoke<CrosslinkDoctorReport>("crosslink_doctor", {
+      request: { observer: args?.observer ?? true },
+    });
+    return { data: result };
   },
 };

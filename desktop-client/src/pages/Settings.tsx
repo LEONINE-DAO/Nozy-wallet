@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "../components/Button";
 import { PageHeader } from "../components/PageHeader";
 import toast from "react-hot-toast";
@@ -19,6 +19,7 @@ import { AccountListSettings } from "../components/settings/AccountListSettings"
 import { NetworkPrivacySettings } from "../components/settings/NetworkPrivacySettings";
 import { walletApi } from "../lib/api";
 import { useWalletStore } from "../store/walletStore";
+import { useSettingsStore } from "../store/settingsStore";
 
 type SettingsSection =
   | "main"
@@ -30,9 +31,29 @@ type SettingsSection =
   | "keystone"
   | "accounts";
 
+const SETTINGS_SECTIONS = new Set<SettingsSection>([
+  "main",
+  "network",
+  "networkprivacy",
+  "account",
+  "security",
+  "display",
+  "keystone",
+  "accounts",
+]);
+
 export function SettingsPage() {
   const [activeSection, setActiveSection] = useState<SettingsSection>("main");
   const { setHasWallet, setBalance, setAddress } = useWalletStore();
+  const { pendingSettingsSection, clearPendingSettingsSection } = useSettingsStore();
+
+  useEffect(() => {
+    if (!pendingSettingsSection) return;
+    if (SETTINGS_SECTIONS.has(pendingSettingsSection as SettingsSection)) {
+      setActiveSection(pendingSettingsSection as SettingsSection);
+    }
+    clearPendingSettingsSection();
+  }, [pendingSettingsSection, clearPendingSettingsSection]);
 
   const handleLogout = async () => {
     const logoutToast = toast.loading("Logging out...");

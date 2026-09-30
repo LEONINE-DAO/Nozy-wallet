@@ -33,7 +33,7 @@ Very old receives may show **Block N** if broadcast timestamp was unavailable (e
 ## Confirmations
 
 ```bash
-nozy check-confirmations -t <txid>
+nozy check-confirmations --txid <txid>
 ```
 
 Or open explorer link from History.

@@ -5,8 +5,8 @@ import { Input } from "../components/Input";
 import { Select } from "../components/Select";
 import { Modal } from "../components/Modal";
 import { Button } from "../components/Button";
-import { Card } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
+import { FeatureShell, MetricTile, Panel } from "../components/FeatureSurface";
 import { Tooltip } from "../components/Tooltip";
 import { useSettingsStore } from "../store/settingsStore";
 import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
@@ -37,11 +37,14 @@ function filterAndSortTxs(
   const q = searchQuery.trim().toLowerCase();
   const now = new Date();
   const cutoffDays = filterDateRange === "all" ? null : parseInt(filterDateRange, 10);
-  const cutoffDate = cutoffDays != null ? (() => {
-    const d = new Date(now);
-    d.setDate(d.getDate() - cutoffDays);
-    return d;
-  })() : null;
+  const cutoffDate =
+    cutoffDays != null
+      ? (() => {
+          const d = new Date(now);
+          d.setDate(d.getDate() - cutoffDays);
+          return d;
+        })()
+      : null;
 
   const filtered = txs
     .filter((t) => filterType === "all" || t.type === filterType)
@@ -68,15 +71,22 @@ function formatStatusLabel(status: string): string {
 }
 
 function txIconClass(tx: HistoryTx): string {
-  if (tx.type === "received") return "bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400";
-  if (tx.type === "change") return "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400";
-  return "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400";
+  if (tx.type === "received") return "border-emerald-400/30 bg-emerald-500/15 text-emerald-300";
+  if (tx.type === "change") return "border-sky-400/30 bg-sky-500/15 text-sky-300";
+  return "border-rose-400/30 bg-rose-500/15 text-rose-300";
 }
 
 function amountClass(tx: HistoryTx): string {
-  if (tx.type === "received") return "text-green-600 dark:text-green-400";
-  if (tx.type === "change") return "text-gray-900 dark:text-gray-100";
-  return "text-gray-900 dark:text-gray-100";
+  if (tx.type === "received") return "text-emerald-300";
+  return "text-gray-100";
+}
+
+function statusPillClass(status: string): string {
+  if (status === "confirmed") return "border-emerald-400/30 bg-emerald-500/15 text-emerald-200";
+  if (status === "pending") return "border-amber-400/30 bg-amber-500/15 text-amber-200";
+  if (status === "failed") return "border-rose-400/30 bg-rose-500/15 text-rose-200";
+  if (status === "expired") return "border-orange-400/30 bg-orange-500/15 text-orange-200";
+  return "border-white/10 bg-white/5 text-gray-300";
 }
 
 function escapeCsvField(value: string): string {
@@ -97,7 +107,9 @@ function downloadCsv(txs: HistoryTx[]): void {
       tx.status,
       tx.memo ?? "",
       tx.id,
-    ].map(escapeCsvField).join(",")
+    ]
+      .map(escapeCsvField)
+      .join(",")
   );
   const csv = [header, ...rows].join("\r\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
@@ -118,7 +130,12 @@ export function HistoryPage() {
   const [filterDateRange, setFilterDateRange] = useState<FilterDateRange>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedTx, setSelectedTx] = useState<HistoryTx | null>(null);
-  const [detailExtra, setDetailExtra] = useState<{ confirmations?: number; block_height?: number; fee_zec?: number; broadcast_at?: string } | null>(null);
+  const [detailExtra, setDetailExtra] = useState<{
+    confirmations?: number;
+    block_height?: number;
+    fee_zec?: number;
+    broadcast_at?: string;
+  } | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [fiatRate, setFiatRate] = useState<number | null>(null);
   const [saveContactOpen, setSaveContactOpen] = useState(false);
@@ -135,7 +152,9 @@ export function HistoryPage() {
     setError(null);
     return walletApi
       .checkTransactionConfirmations()
-      .catch(() => ({ data: { pending_updated: 0, expired_updated: 0, confirmations_updated: 0 } }))
+      .catch(() => ({
+        data: { pending_updated: 0, expired_updated: 0, confirmations_updated: 0 },
+      }))
       .then(() => walletApi.getTransactionHistory())
       .then((res) => {
         const raw = res?.data;
@@ -188,7 +207,12 @@ export function HistoryPage() {
           setDetailExtra({
             confirmations: typeof d.confirmations === "number" ? d.confirmations : undefined,
             block_height: typeof d.block_height === "number" ? d.block_height : undefined,
-            fee_zec: typeof d.fee_zec === "number" ? d.fee_zec : (typeof d.fee_zatoshis === "number" ? d.fee_zatoshis / 100_000_000 : undefined),
+            fee_zec:
+              typeof d.fee_zec === "number"
+                ? d.fee_zec
+                : typeof d.fee_zatoshis === "number"
+                  ? d.fee_zatoshis / 100_000_000
+                  : undefined,
             broadcast_at: typeof d.broadcast_at === "string" ? d.broadcast_at : undefined,
           });
         }
@@ -197,7 +221,6 @@ export function HistoryPage() {
       .finally(() => setDetailLoading(false));
   }, [selectedTx?.id]);
 
-  // Fiat rate: live (CoinGecko) or custom
   useEffect(() => {
     if (!useLiveFiatPrice && customFiatPerZec != null) {
       setFiatRate(customFiatPerZec);
@@ -214,8 +237,7 @@ export function HistoryPage() {
 
   function fiatLine(amountZec: number): string | null {
     if (effectiveFiatRate == null || effectiveFiatRate <= 0) return null;
-    const fiat = amountZec * effectiveFiatRate;
-    return formatFiatAmount(fiat, fiatCurrency);
+    return formatFiatAmount(amountZec * effectiveFiatRate, fiatCurrency);
   }
 
   const handleSpeedUp = async () => {
@@ -275,204 +297,222 @@ export function HistoryPage() {
     }
   };
 
+  const filterSelectClass =
+    "rounded-xl border border-white/10 bg-black/30 px-3 py-2 text-sm text-gray-100 focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20";
+
   return (
-    <div className="space-y-6 animate-fade-in max-w-3xl mx-auto text-left pb-8">
+    <div className="flex flex-col gap-8 animate-fade-in w-full pb-4">
       <PageHeader
-        title="Transaction History"
-        description={
-          !loading && !error && txs.length > 0
-            ? `${sentCount} sent · ${receivedCount} received`
-            : undefined
-        }
+        title="History"
+        description="Local shielded transaction log"
         actions={
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => loadHistory()}
-            disabled={loading}
-          >
+          <Button type="button" variant="outline" onClick={() => loadHistory()} disabled={loading}>
             {loading ? "Refreshing…" : "Refresh"}
           </Button>
         }
       />
 
-      {!loading && !error && txs.length > 0 && (
-        <div className="flex flex-col sm:flex-row gap-4 flex-wrap">
-          <div className="flex-1 min-w-[200px] max-w-md">
-            <Input
-              type="search"
-              placeholder="Search by address, txid, or memo"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Search transactions"
-              className="bg-white/60 border-white/50"
-            />
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value as FilterType)}
-              aria-label="Filter by type"
-              className="w-auto min-w-[8rem]"
-            >
-              <option value="all">All types</option>
-              <option value="sent">Sent</option>
-              <option value="received">Received</option>
-            </Select>
-            <Select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
-              aria-label="Filter by status"
-              className="w-auto min-w-[8rem]"
-            >
-              <option value="all">All statuses</option>
-              <option value="confirmed">Confirmed</option>
-              <option value="pending">Pending</option>
-              <option value="failed">Failed</option>
-              <option value="expired">Expired</option>
-            </Select>
-            <Select
-              value={filterDateRange}
-              onChange={(e) => setFilterDateRange(e.target.value as FilterDateRange)}
-              aria-label="Filter by date range"
-              className="w-auto min-w-[8rem]"
-            >
-              <option value="all">All time</option>
-              <option value="7">Last 7 days</option>
-              <option value="30">Last 30 days</option>
-              <option value="90">Last 90 days</option>
-            </Select>
-            <Tooltip content="Download filtered transactions as CSV">
-              <Button
-                type="button"
-                variant="outline"
-                onClick={() => downloadCsv(filteredTxs)}
-                className="h-11 gap-2 bg-white/60 border-white/50 text-gray-700 hover:bg-white/90"
-              >
-                Export CSV
-              </Button>
-            </Tooltip>
+      <FeatureShell>
+        <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 space-y-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.22em] text-primary">
+                Activity
+              </span>
+              {!loading && !error ? (
+                <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.16em] text-gray-300">
+                  {txs.length} tx{txs.length === 1 ? "" : "s"}
+                </span>
+              ) : null}
+            </div>
+            <div>
+              <h3 className="text-2xl font-extrabold tracking-tight text-primary-100">
+                Transaction history
+              </h3>
+              <p className="mt-2 max-w-2xl text-sm leading-relaxed text-gray-400">
+                Stored on this device. Explorer links are optional for confirmation checks.
+              </p>
+            </div>
           </div>
         </div>
-      )}
 
-      <Card padding="none" className="overflow-hidden">
-        {loading ? (
-          <div className="p-12 flex items-center justify-center gap-2 text-gray-600 dark:text-gray-400">
-            <div className="w-6 h-6 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
-            <span>Loading history…</span>
-          </div>
-        ) : error ? (
-          <div className="p-12 text-center">
-            <p className="text-red-600 mb-2">{error}</p>
-            <p className="text-sm text-gray-500">
-              History is stored locally. You do not need a Zebra node to view past transactions.
-            </p>
-          </div>
-        ) : txs.length === 0 ? (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            <p>No transactions found</p>
-            <p className="text-sm mt-1">
-              Received deposits appear after sync. Sent transactions appear after you send from this wallet.
-            </p>
-          </div>
-        ) : filteredTxs.length === 0 ? (
-          <div className="p-12 text-center text-gray-500 dark:text-gray-400">
-            <p>No transactions match your filters or search</p>
-            <p className="text-sm mt-1">Try changing the filters or search term.</p>
-          </div>
-        ) : (
-          <>
-            {(filterType !== "all" || filterStatus !== "all" || filterDateRange !== "all" || searchQuery.trim()) && (
-              <div className="px-4 py-2 border-b border-gray-100/50 dark:border-gray-700/50 text-sm text-gray-600 dark:text-gray-300 bg-white/30 dark:bg-gray-800/40">
-                Showing {filteredTxs.length} of {txs.length} transactions
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <MetricTile
+            label="Total"
+            value={loading ? "…" : String(txs.length)}
+            accent="gold"
+            hint="All recorded txs"
+          />
+          <MetricTile label="Sent" value={loading ? "…" : String(sentCount)} hint="Outgoing" />
+          <MetricTile
+            label="Received"
+            value={loading ? "…" : String(receivedCount)}
+            accent="emerald"
+            hint="Incoming"
+          />
+        </div>
+
+        {!loading && !error && txs.length > 0 ? (
+          <Panel title="Filters" subtitle="Search and narrow the list" className="mt-4">
+            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="min-w-[200px] flex-1">
+                <Input
+                  type="search"
+                  placeholder="Search by address, txid, or memo"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  aria-label="Search transactions"
+                  className="border-white/10 bg-black/30 text-gray-100"
+                />
               </div>
-            )}
-            <div className="divide-y divide-gray-100/50 dark:divide-gray-700/50">
-            {filteredTxs.map((tx) => (
-              <div
-                key={tx.id}
-                role="button"
-                tabIndex={0}
-                onClick={() => setSelectedTx(tx)}
-                onKeyDown={(e) => e.key === "Enter" && setSelectedTx(tx)}
-                className="p-4 hover:bg-white/40 dark:hover:bg-gray-700/30 transition-colors flex items-center justify-between group cursor-pointer focus:outline-none focus:ring-2 focus:ring-primary/30 focus:ring-inset"
+              <Select
+                value={filterType}
+                onChange={(e) => setFilterType(e.target.value as FilterType)}
+                aria-label="Filter by type"
+                className={`w-auto min-w-[8rem] ${filterSelectClass}`}
               >
-                <div className="flex items-center gap-4">
+                <option value="all">All types</option>
+                <option value="sent">Sent</option>
+                <option value="received">Received</option>
+              </Select>
+              <Select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value as FilterStatus)}
+                aria-label="Filter by status"
+                className={`w-auto min-w-[8rem] ${filterSelectClass}`}
+              >
+                <option value="all">All statuses</option>
+                <option value="confirmed">Confirmed</option>
+                <option value="pending">Pending</option>
+                <option value="failed">Failed</option>
+                <option value="expired">Expired</option>
+              </Select>
+              <Select
+                value={filterDateRange}
+                onChange={(e) => setFilterDateRange(e.target.value as FilterDateRange)}
+                aria-label="Filter by date range"
+                className={`w-auto min-w-[8rem] ${filterSelectClass}`}
+              >
+                <option value="all">All time</option>
+                <option value="7">Last 7 days</option>
+                <option value="30">Last 30 days</option>
+                <option value="90">Last 90 days</option>
+              </Select>
+              <Tooltip content="Download filtered transactions as CSV">
+                <Button type="button" variant="outline" onClick={() => downloadCsv(filteredTxs)} size="sm">
+                  Export CSV
+                </Button>
+              </Tooltip>
+            </div>
+          </Panel>
+        ) : null}
+
+        <div className="mt-4 overflow-hidden rounded-2xl border border-white/10 bg-black/20 backdrop-blur-sm">
+          {loading ? (
+            <div className="flex items-center justify-center gap-2 p-12 text-gray-400">
+              <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary/30 border-t-primary" />
+              <span>Loading history…</span>
+            </div>
+          ) : error ? (
+            <div className="p-12 text-center">
+              <p className="mb-2 text-rose-300">{error}</p>
+              <p className="text-sm text-gray-500">
+                History is stored locally. You do not need a Zebra node to view past transactions.
+              </p>
+            </div>
+          ) : txs.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">
+              <p>No transactions found</p>
+              <p className="mt-1 text-sm text-gray-500">
+                Received deposits appear after sync. Sent transactions appear after you send.
+              </p>
+            </div>
+          ) : filteredTxs.length === 0 ? (
+            <div className="p-12 text-center text-gray-400">
+              <p>No transactions match your filters or search</p>
+              <p className="mt-1 text-sm text-gray-500">Try changing the filters or search term.</p>
+            </div>
+          ) : (
+            <>
+              {(filterType !== "all" ||
+                filterStatus !== "all" ||
+                filterDateRange !== "all" ||
+                searchQuery.trim()) && (
+                <div className="border-b border-white/8 px-4 py-2 text-sm text-gray-400">
+                  Showing {filteredTxs.length} of {txs.length} transactions
+                </div>
+              )}
+              <div className="divide-y divide-white/8">
+                {filteredTxs.map((tx) => (
                   <div
-                    className={`w-10 h-10 rounded-full flex items-center justify-center ${txIconClass(tx)}`}
+                    key={tx.id}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setSelectedTx(tx)}
+                    onKeyDown={(e) => e.key === "Enter" && setSelectedTx(tx)}
+                    className="flex cursor-pointer items-center justify-between p-4 transition-colors hover:bg-white/5 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-primary/30"
                   >
-                    {tx.type === "received" ? (
-                      <ArrowLeftDown size={20} />
-                    ) : (
-                      <ArrowRightUp size={20} />
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-gray-900 dark:text-gray-100">
-                      {historyTypeLabel(tx)}
-                    </p>
-                    <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
-                      <Calendar size={12} />
-                      <span>{formatHistoryDate(tx)}</span>
-                      <span className="w-1 h-1 rounded-full bg-gray-300 dark:bg-gray-600" />
-                      <span className="font-mono truncate max-w-[140px]" title={tx.address}>
-                        {tx.address}
+                    <div className="flex min-w-0 items-center gap-4">
+                      <div
+                        className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full border ${txIconClass(tx)}`}
+                      >
+                        {tx.type === "received" ? (
+                          <ArrowLeftDown size={20} />
+                        ) : (
+                          <ArrowRightUp size={20} />
+                        )}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-gray-100">{historyTypeLabel(tx)}</p>
+                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                          <Calendar size={12} />
+                          <span>{formatHistoryDate(tx)}</span>
+                          <span className="h-1 w-1 rounded-full bg-gray-600" />
+                          <span className="max-w-[140px] truncate font-mono" title={tx.address}>
+                            {tx.address}
+                          </span>
+                        </div>
+                        {tx.memo ? (
+                          <p
+                            className="mt-0.5 max-w-[200px] truncate text-xs text-gray-500"
+                            title={tx.memo}
+                          >
+                            {tx.memo}
+                          </p>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    <div className="shrink-0 pl-3 text-right">
+                      <p className={`font-bold uppercase ${amountClass(tx)}`}>
+                        {historyAmountPrefix(tx)}
+                        {tx.amount.toFixed(4)} ZEC
+                        {fiatLine(tx.amount) ? (
+                          <span className="mt-0.5 block text-xs font-normal normal-case text-gray-500">
+                            ≈ {fiatLine(tx.amount)}
+                          </span>
+                        ) : null}
+                      </p>
+                      <span
+                        className={`mt-1 inline-block rounded-full border px-2 py-0.5 text-xs capitalize ${statusPillClass(tx.status)}`}
+                      >
+                        {tx.status}
+                      </span>
+                      <span
+                        className="mt-1.5 block"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <TxExplorerLink txid={tx.id} label="View on explorer" variant="pill" />
                       </span>
                     </div>
-                    {tx.memo && (
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate max-w-[200px]" title={tx.memo}>
-                        {tx.memo}
-                      </p>
-                    )}
                   </div>
-                </div>
-
-                <div className="text-right">
-                  <p
-                    className={`font-bold uppercase ${amountClass(tx)}`}
-                  >
-                    {historyAmountPrefix(tx)}
-                    {tx.amount.toFixed(4)} ZEC
-                    {fiatLine(tx.amount) && (
-                      <span className="block text-xs font-normal normal-case text-gray-500 dark:text-gray-400 mt-0.5">
-                        ≈ {fiatLine(tx.amount)}
-                      </span>
-                    )}
-                  </p>
-                  <span
-                    className={`text-xs px-2 py-0.5 rounded-full capitalize ${
-                      tx.status === "confirmed"
-                        ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300"
-                        : tx.status === "pending"
-                          ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
-                          : tx.status === "failed"
-                          ? "bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-300"
-                          : tx.status === "expired"
-                            ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
-                            : "bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300"
-                    }`}
-                  >
-                    {tx.status}
-                  </span>
-                  <span
-                    className="block mt-1.5"
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => e.stopPropagation()}
-                  >
-                    <TxExplorerLink
-                      txid={tx.id}
-                      label="View on explorer"
-                      variant="pill"
-                    />
-                  </span>
-                </div>
+                ))}
               </div>
-            ))}
-            </div>
-          </>
-        )}
-      </Card>
+            </>
+          )}
+        </div>
+      </FeatureShell>
 
       <Modal
         isOpen={selectedTx !== null}
@@ -501,7 +541,7 @@ export function HistoryPage() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="shrink-0 text-primary hover:bg-primary/20 font-semibold"
+                  className="shrink-0 font-semibold text-primary hover:bg-primary/20"
                   onClick={() => setSaveContactOpen(true)}
                 >
                   Save to contacts
@@ -510,11 +550,9 @@ export function HistoryPage() {
             </div>
             <DetailRow label="Status" value={formatStatusLabel(selectedTx.status)} />
             {selectedTx.memo && <DetailRow label="Memo" value={selectedTx.memo} />}
-            {detailLoading && (
-              <p className="text-sm text-gray-300">Loading extra details…</p>
-            )}
+            {detailLoading && <p className="text-sm text-gray-300">Loading extra details…</p>}
             {!detailLoading && detailExtra && (
-              <div className="pt-3 mt-3 border-t border-gray-600 space-y-3">
+              <div className="mt-3 space-y-3 border-t border-gray-600 pt-3">
                 {detailExtra.confirmations != null && (
                   <DetailRow label="Confirmations" value={String(detailExtra.confirmations)} />
                 )}
@@ -539,9 +577,10 @@ export function HistoryPage() {
               </div>
             )}
             {selectedTx.type === "sent" && selectedTx.status === "expired" && (
-              <div className="pt-4 mt-2 border-t border-gray-600 space-y-3">
+              <div className="mt-2 space-y-3 border-t border-gray-600 pt-4">
                 <p className="text-sm text-gray-200">
-                  This transaction expired unmined. Speed up rebuilds a new transaction at priority fee (×4).
+                  This transaction expired unmined. Speed up rebuilds a new transaction at priority
+                  fee (×4).
                 </p>
                 <Input
                   type="password"
@@ -581,8 +620,12 @@ export function HistoryPage() {
             value={saveContactNotes}
             onChange={(e) => setSaveContactNotes(e.target.value)}
           />
-          <div className="flex gap-2 justify-end pt-2">
-            <Button variant="outline" onClick={() => setSaveContactOpen(false)} disabled={saveContactSaving}>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              variant="outline"
+              onClick={() => setSaveContactOpen(false)}
+              disabled={saveContactSaving}
+            >
               Cancel
             </Button>
             <Button onClick={handleSaveToContacts} disabled={saveContactSaving}>
@@ -598,8 +641,10 @@ export function HistoryPage() {
 function DetailRow({ label, value, mono }: { label: string; value: string; mono?: boolean }) {
   return (
     <div>
-      <p className="text-xs font-semibold text-gray-300 uppercase tracking-wide">{label}</p>
-      <p className={`mt-1 text-base font-medium text-white break-all ${mono ? "font-mono text-sm" : ""}`}>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-300">{label}</p>
+      <p
+        className={`mt-1 break-all text-base font-medium text-primary-100 ${mono ? "font-mono text-sm" : ""}`}
+      >
         {value}
       </p>
     </div>

@@ -1,7 +1,7 @@
 //! Orchard witness tracker + Merkle helpers (WASM copy of `nozy::orchard_witness`).
 
-use std::collections::HashMap;
 use serde_json::json;
+use std::collections::HashMap;
 
 use incrementalmerkletree::witness::IncrementalWitness;
 use orchard::note::ExtractedNoteCommitment;
@@ -42,9 +42,12 @@ impl OrchardWitnessTracker {
     }
 
     pub fn append_cmx(&mut self, cmx: MerkleHashOrchard) -> Result<(), String> {
-        self.tree.append(cmx).map_err(|_| "Orchard tree full".to_string())?;
+        self.tree
+            .append(cmx)
+            .map_err(|_| "Orchard tree full".to_string())?;
         for w in self.witnesses.values_mut() {
-            w.append(cmx).map_err(|_| "witness append failed".to_string())?;
+            w.append(cmx)
+                .map_err(|_| "witness append failed".to_string())?;
         }
         Ok(())
     }
@@ -56,7 +59,10 @@ impl OrchardWitnessTracker {
         Ok(())
     }
 
-    pub fn serialized_witness_for_nullifier(&self, nf: &[u8; 32]) -> Result<Option<Vec<u8>>, String> {
+    pub fn serialized_witness_for_nullifier(
+        &self,
+        nf: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, String> {
         let Some(w) = self.witnesses.get(nf) else {
             return Ok(None);
         };
@@ -94,9 +100,7 @@ impl OrchardWitnessTracker {
                 }
                 let mut nf_a = [0u8; 32];
                 nf_a.copy_from_slice(&nf_b);
-                let wh = wval
-                    .as_str()
-                    .ok_or_else(|| "witness str".to_string())?;
+                let wh = wval.as_str().ok_or_else(|| "witness str".to_string())?;
                 let wbytes = hex::decode(wh.trim_start_matches("0x"))
                     .map_err(|e| format!("witness hex: {}", e))?;
                 let w = orchard_incremental_witness_from_bytes(&wbytes)?;

@@ -195,9 +195,9 @@ export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
   // Common local Zebrad RPC ports/configs.
   candidates.push(
     "http://127.0.0.1:18232",
-    "http://127.0.0.1:8232",
-    "https://zec.rocks:443",
-    "https://testnet.zec.rocks:443"
+    "http://127.0.0.1:8232"
+    // Public lightwalletd (lwd.nozywallet.org / zec.rocks) is gRPC — not Zebrad JSON-RPC.
+    // Users opt in via "Public sync" in the extension UI.
   );
 
   // Deduplicate while preserving order.

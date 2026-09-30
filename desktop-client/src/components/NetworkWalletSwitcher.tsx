@@ -32,6 +32,10 @@ export function NetworkWalletSwitcher() {
   const [testnetPassword, setTestnetPassword] = useState("");
   const [restoreMnemonic, setRestoreMnemonic] = useState("");
   const [createdMnemonic, setCreatedMnemonic] = useState<string | null>(null);
+  const [mainnetName, setMainnetName] = useState("Wallet");
+  const [mainnetPassword, setMainnetPassword] = useState("");
+  const [mainnetMnemonic, setMainnetMnemonic] = useState("");
+  const [createdMainnetMnemonic, setCreatedMainnetMnemonic] = useState<string | null>(null);
 
   const walletProfiles = useMemo(
     () => status?.profiles.filter((profile) => profile.has_wallet) ?? [],
@@ -79,7 +83,7 @@ export function NetworkWalletSwitcher() {
       setHasWallet(false);
       const profile = res.data.profiles.find((item) => item.id === profileId);
       toast.success(
-        `${profile?.name ?? "Wallet"} selected (${profile?.network ?? res.data.network}). Unlock to continue.`,
+        `${profile?.name ?? "Wallet"} selected (${profile?.network ?? res.data.network}). Your other wallet’s funds are still on this device — unlock this one with its password.`,
       );
     } catch (err) {
       toast.error(formatErrorForDisplay(err, "Could not switch wallet profile."));
@@ -107,6 +111,50 @@ export function NetworkWalletSwitcher() {
       toast.success(`${network === "testnet" ? "Testnet" : "Mainnet"} wallet selected. Unlock it to continue.`);
     } catch (err) {
       toast.error(formatErrorForDisplay(err, "Could not switch wallet network."));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createOrRestoreMainnet = async () => {
+    setBusy(true);
+    setCreatedMainnetMnemonic(null);
+    try {
+      const name = mainnetName.trim() || undefined;
+      if (mainnetMnemonic.trim()) {
+        await walletApi.restoreWallet({
+          mnemonic: mainnetMnemonic.trim(),
+          password: mainnetPassword,
+          name,
+          new_profile: true,
+        });
+        toast.success("Mainnet wallet restored. Unlock if prompted.");
+      } else {
+        const res = await walletApi.createWallet({
+          password: mainnetPassword || undefined,
+          name,
+        });
+        setCreatedMainnetMnemonic(res.data);
+        toast.success("Mainnet wallet created. Save the recovery phrase.");
+      }
+
+      const statusRes = await walletApi.getNetworkWalletStatus();
+      const activeId = statusRes.data.active_profile?.id;
+      if (activeId) {
+        await walletApi.configureNetworkWallet({
+          network: "mainnet",
+          profile_id: activeId,
+          zebra_url: mainnetRpc,
+        });
+      }
+
+      setAddress("");
+      setBalance(0);
+      setHasWallet(true);
+      setMainnetMnemonic("");
+      await loadStatus();
+    } catch (err) {
+      toast.error(formatErrorForDisplay(err, "Could not create or restore mainnet wallet."));
     } finally {
       setBusy(false);
     }
@@ -143,7 +191,7 @@ export function NetworkWalletSwitcher() {
           <p className="text-xs font-bold uppercase tracking-[0.24em] text-primary">
             Wallet profiles
           </p>
-          <h3 className="mt-2 text-2xl font-extrabold text-gray-950 dark:text-gray-50">
+          <h3 className="mt-2 text-2xl font-extrabold text-gray-950 dark:text-primary-100">
             Mainnet and testnet wallets
           </h3>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-gray-600 dark:text-gray-300">
@@ -161,7 +209,7 @@ export function NetworkWalletSwitcher() {
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr]">
+      <div className="mt-5">
         <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/70 dark:bg-gray-900/40 p-4">
           <label className="text-sm font-semibold text-gray-800 dark:text-gray-200">Wallet profile</label>
           <select
@@ -222,6 +270,47 @@ export function NetworkWalletSwitcher() {
               </Button>
             </div>
           </div>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white/80 dark:bg-gray-900/40 p-4">
+          <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Add Mainnet Wallet</p>
+          <p className="mt-1 text-xs leading-5 text-gray-600 dark:text-gray-300">
+            Create another mainnet wallet, or restore from a recovery phrase into a{" "}
+            <span className="font-medium">new</span> profile (your current wallet stays on disk).
+          </p>
+          <div className="mt-3 grid gap-3">
+            <input
+              value={mainnetName}
+              onChange={(event) => setMainnetName(event.target.value)}
+              placeholder="Profile name"
+              className={fieldClass}
+            />
+            <input
+              value={mainnetPassword}
+              onChange={(event) => setMainnetPassword(event.target.value)}
+              placeholder="Optional password"
+              type="password"
+              className={fieldClass}
+            />
+            <textarea
+              value={mainnetMnemonic}
+              onChange={(event) => setMainnetMnemonic(event.target.value)}
+              placeholder="Optional recovery phrase (leave blank to create new)"
+              rows={3}
+              className={textareaClassName}
+            />
+            <Button disabled={busy} onClick={() => void createOrRestoreMainnet()}>
+              {mainnetMnemonic.trim() ? "Restore Mainnet Wallet" : "Create Mainnet Wallet"}
+            </Button>
+          </div>
+          {createdMainnetMnemonic && (
+            <div className="mt-3 rounded-xl border border-emerald-300 dark:border-emerald-700 bg-white dark:bg-gray-900 p-3 text-xs text-gray-700 dark:text-gray-300">
+              <p className="font-bold text-gray-900 dark:text-gray-100">Save this recovery phrase:</p>
+              <p className="mt-2 break-words font-mono">{createdMainnetMnemonic}</p>
+            </div>
+          )}
         </div>
 
         <div className="rounded-2xl border border-amber-200 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-950/30 p-4">

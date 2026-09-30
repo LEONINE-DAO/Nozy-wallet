@@ -4,7 +4,11 @@ use nozy::{
     load_config, sync_wallet_notes, wallet_balance_snapshot, HDWallet, WalletSyncOptions,
 };
 use serde::{Deserialize, Serialize};
+use std::sync::OnceLock;
 use tauri::command;
+use tokio::sync::Mutex;
+
+static SYNC_WALLET_MUTEX: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Serialize)]
 pub struct BalanceResponse {
@@ -16,6 +20,12 @@ pub struct BalanceResponse {
     pub pending_zec: f64,
     pub available_zec: f64,
     pub unspent_note_count: usize,
+    pub orchard_zec: f64,
+    pub ironwood_zec: f64,
+    pub sapling_zec: f64,
+    /// Largest unspent Ironwood note (ZEC). Desktop sends spend one Ironwood note only.
+    pub ironwood_max_note_zec: f64,
+    pub ironwood_max_note_zatoshis: u64,
 }
 
 #[derive(Debug, Serialize)]
@@ -57,11 +67,20 @@ pub async fn get_balance() -> Result<BalanceResponse, TauriError> {
         pending_zec: zats_to_zec(snapshot.pending_zatoshis),
         available_zec: zats_to_zec(snapshot.available_zatoshis),
         unspent_note_count: snapshot.unspent_note_count,
+        orchard_zec: zats_to_zec(snapshot.orchard_unspent_zatoshis),
+        ironwood_zec: zats_to_zec(snapshot.ironwood_unspent_zatoshis),
+        sapling_zec: zats_to_zec(snapshot.sapling_unspent_zatoshis),
+        ironwood_max_note_zec: zats_to_zec(snapshot.ironwood_max_note_zatoshis),
+        ironwood_max_note_zatoshis: snapshot.ironwood_max_note_zatoshis,
     })
 }
 
 #[command]
 pub async fn sync_wallet(request: SyncRequest) -> Result<SyncResponse, TauriError> {
+    let _guard = SYNC_WALLET_MUTEX
+        .get_or_init(|| Mutex::new(()))
+        .lock()
+        .await;
     let wallet = load_wallet(request.password.as_deref()).await?;
 
     let scan_to_tip = request.end_height.is_none();
@@ -69,6 +88,7 @@ pub async fn sync_wallet(request: SyncRequest) -> Result<SyncResponse, TauriErro
         start_height: request.start_height,
         end_height: request.end_height,
         scan_to_tip,
+        incremental_batch: 80,
         zebra_url: request.zebra_url.or_else(|| Some(load_config().zebra_url)),
         ..Default::default()
     };

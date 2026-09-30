@@ -1,15 +1,16 @@
 # Secret Network (ZEC + Secret from One Seed)
 
-NozyWallet can optionally derive **Secret Network (SCRT)** keys from the **same BIP39 mnemonic** as your Zcash Orchard wallet — one backup, two shielded ecosystems.
+NozyWallet can optionally derive **Secret Network (SCRT)** keys from the **same BIP39 mnemonic** as your Zcash Orchard wallet — one backup, two ecosystems.
 
 > **Status:** Optional CLI feature. Build with `--features secret-network`. Not enabled in default desktop release builds.
+
 
 ## One seed, two chains
 
 | Chain | What you get |
 |-------|----------------|
 | **Zcash** | Orchard unified addresses (`u1…`), shielded ZEC |
-| **Secret Network** | SCRT + SNIP-20 / Shade tokens via Shade Protocol integration |
+| **Secret Network** | Native **SCRT** plus optional **generic SNIP-20** by contract address you supply |
 
 The mnemonic is identical; derivation paths differ per chain. **One 24-word backup recovers both** when the feature is enabled.
 
@@ -21,18 +22,19 @@ cargo build --release --features secret-network --bin nozy
 
 Requires network access to Secret RPC endpoints configured in your environment (see repo research doc below).
 
-## CLI (`nozy shade`)
+## CLI (`nozy secret`)
 
 After building with the feature:
 
 ```bash
-nozy shade balance      # SCRT / token balances
-nozy shade receive      # Deposit address
-nozy shade send         # Send SCRT or tokens (subcommands vary by build)
-nozy shade history      # Transaction history
+nozy secret balance              # native SCRT
+nozy secret balance --token <contract>   # SNIP-20 at that contract (needs viewing key work)
+nozy secret receive              # secret1… deposit address
+nozy secret send                 # SNIP-20 send (experimental; signing incomplete)
+nozy secret history              # local send history
 ```
 
-Run `nozy shade --help` for the exact subcommands in your version.
+Run `nozy secret --help` for the exact subcommands in your version.
 
 ## Desktop and mobile
 

@@ -3,7 +3,7 @@ import type { BalanceResponse, SyncStatusResponse } from "./types";
 
 export type { SyncStatusResponse };
 
-export type SyncOutcomeKind = "success" | "info" | "warning";
+export type SyncOutcomeKind = "success" | "info" | "warning" | "stopped";
 
 export interface SyncOutcome {
   status: SyncStatusResponse | null;
@@ -21,24 +21,53 @@ export interface SyncProgressUpdate {
 
 const MAX_SYNC_ROUNDS = 50;
 
-/** Scan progress 0–100 from last scanned height vs chain tip. */
+let stopRequested = false;
+let walletSyncToTipInFlight = false;
+/** Scan height/tip when the current catch-up loop started — used for honest % (not last/tip). */
+let catchUpAnchor: { last: number; tip: number } | null = null;
+
+export function isWalletSyncToTipInFlight(): boolean {
+  return walletSyncToTipInFlight;
+}
+
+export function requestStopSync() {
+  stopRequested = true;
+}
+
+export function clearStopSync() {
+  stopRequested = false;
+}
+
+function stoppedSyncOutcome(status: SyncStatusResponse | null): SyncOutcome {
+  return {
+    status,
+    caughtUp: false,
+    kind: "stopped",
+    message: "Sync stopped.",
+  };
+}
+
+/** Scan progress 0–100. 100 only at tip. While behind, this is catch-up remaining, not last/tip. */
 export function progressPercent(status: SyncStatusResponse | null | undefined): number | null {
   if (!status) return null;
   const tip = status.zebra_tip;
   const last = status.last_scan_height;
   if (tip == null || tip === 0) return null;
   if (last == null) return 0;
-  if (last >= tip) return 100;
-  const gap = status.scan_gap_blocks ?? tip - last;
-  const raw = (last / tip) * 100;
-  // Integer rounding can hit 100% thousands of blocks early — cap while behind.
-  if (gap > 0) {
-    return Math.min(99, Math.max(0, Math.floor(raw)));
+  if (last >= tip) {
+    if (status.witness_fresh_for_send) return 100;
+    return null;
   }
-  return Math.min(100, Math.max(0, Math.round(raw)));
+  // last/tip is ~99.9% near tip even with hundreds of blocks left — do not use it.
+  const start = catchUpAnchor?.last ?? last;
+  const dest = Math.max(tip, catchUpAnchor?.tip ?? tip);
+  const span = dest - start;
+  if (span <= 0) return 0;
+  const done = Math.max(0, last - start);
+  return Math.min(99, Math.max(0, Math.floor((100 * done) / span)));
 }
 
-/** Short user-facing sync line, e.g. "87% synced · 2.1M / 2.4M". */
+/** Short user-facing sync line. Never claims 99% synced while blocks remain. */
 export function formatSyncProgressMessage(status: SyncStatusResponse | null): string {
   if (!status) return "Syncing wallet with the network…";
 
@@ -48,23 +77,26 @@ export function formatSyncProgressMessage(status: SyncStatusResponse | null): st
 
   const tip = status.zebra_tip;
   const last = status.last_scan_height;
-  const percent = progressPercent(status);
   const tipLabel = tip.toLocaleString();
   const lastLabel = last != null ? last.toLocaleString() : "—";
+  const gap = status.scan_gap_blocks ?? (last != null ? Math.max(0, tip - last) : 0);
 
   if (last != null && last > tip) {
     return `Waiting for node catch-up · tip ${tipLabel} (wallet at ${lastLabel})`;
   }
 
-  if (percent != null && percent < 100) {
-    return `${percent}% synced · scanned ${lastLabel} of tip ${tipLabel}`;
+  if (gap > 0) {
+    const pct = progressPercent(status);
+    const catchUp =
+      catchUpAnchor != null && pct != null ? ` · ${pct}% of this catch-up` : "";
+    return `${gap.toLocaleString()} blocks behind tip · scanned ${lastLabel} of ${tipLabel}${catchUp}`;
   }
 
   if (!status.witness_fresh_for_send) {
-    return `Almost done · updating Orchard witnesses (${status.witness_lag_blocks.toLocaleString()} blocks behind)`;
+    return `Scan at tip · updating Orchard witnesses (${status.witness_lag_blocks.toLocaleString()} blocks behind)`;
   }
 
-  return `100% synced · tip ${tipLabel}`;
+  return `Caught up · tip ${tipLabel}`;
 }
 
 function isNodeBehindWalletScan(status: SyncStatusResponse): boolean {
@@ -152,9 +184,19 @@ function emitProgress(
 export async function syncWalletToTip(
   onProgress?: (update: SyncProgressUpdate) => void,
 ): Promise<SyncOutcome> {
+  walletSyncToTipInFlight = true;
+  try {
+    return await syncWalletToTipInner(onProgress);
+  } finally {
+    walletSyncToTipInFlight = false;
+    catchUpAnchor = null;
+  }
+}
+
+async function syncWalletToTipInner(
+  onProgress?: (update: SyncProgressUpdate) => void,
+): Promise<SyncOutcome> {
   let lastStatus: SyncStatusResponse | null = null;
-  let prevGap: number | null = null;
-  let staleRounds = 0;
 
   try {
     const statusRes = await walletApi.getSyncStatus();
@@ -162,12 +204,45 @@ export async function syncWalletToTip(
   } catch {
     lastStatus = null;
   }
+  if (
+    lastStatus?.last_scan_height != null &&
+    lastStatus.zebra_tip != null &&
+    lastStatus.last_scan_height < lastStatus.zebra_tip
+  ) {
+    catchUpAnchor = { last: lastStatus.last_scan_height, tip: lastStatus.zebra_tip };
+  }
   emitProgress(onProgress, lastStatus);
 
   for (let round = 0; round < MAX_SYNC_ROUNDS; round++) {
+    if (stopRequested) {
+      return stoppedSyncOutcome(lastStatus);
+    }
+
     emitProgress(onProgress, lastStatus);
 
-    await walletApi.syncWallet();
+    const pollLive = setInterval(() => {
+      void walletApi
+        .getSyncStatus()
+        .then((res) => {
+          lastStatus = res.data;
+          emitProgress(onProgress, lastStatus);
+        })
+        .catch(() => {});
+    }, 2500);
+    try {
+      await walletApi.syncWallet();
+    } finally {
+      clearInterval(pollLive);
+    }
+    if (stopRequested) {
+      try {
+        const statusRes = await walletApi.getSyncStatus();
+        lastStatus = statusRes.data;
+      } catch {
+        lastStatus = null;
+      }
+      return stoppedSyncOutcome(lastStatus);
+    }
     await walletApi.checkTransactionConfirmations().catch(() => undefined);
 
     try {
@@ -189,16 +264,6 @@ export async function syncWalletToTip(
     }
 
     const gap = lastStatus.scan_gap_blocks ?? 0;
-    if (prevGap !== null && gap === prevGap && gap > 0) {
-      staleRounds += 1;
-      if (staleRounds >= 2) {
-        return outcome;
-      }
-    } else {
-      staleRounds = 0;
-    }
-    prevGap = gap;
-
     if (gap > 0 || !lastStatus.witness_fresh_for_send) {
       continue;
     }

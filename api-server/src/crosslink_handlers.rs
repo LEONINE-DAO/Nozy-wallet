@@ -7,10 +7,11 @@ use serde_json::Value;
 
 use crate::handlers::error_response_with_code;
 use nozy::crosslink::{
-    block_finality, bond_info, build_crosslink_client, ctaz_to_zat, fetch_guardian_snapshot,
-    finality_tip, normalize_finalizer_hex, roster, staking_action, staking_day_at,
-    staking_positions, tx_finality, wallet_sync_status, wallet_ufvk, GuardianSnapshot,
-    StakingAction, StakingPositions, WalletSyncStatus,
+    block_finality, bond_info, build_crosslink_client, ctaz_to_zat, fetch_doctor_report,
+    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_hex, roster,
+    staking_action, staking_day_at, staking_positions, tx_finality, wallet_sync_status,
+    wallet_ufvk, DoctorReport, GuardianSnapshot, PayoutClaimPack, StakingAction, StakingPositions,
+    WalletSyncStatus,
 };
 use nozy::load_config;
 
@@ -46,6 +47,22 @@ pub async fn crosslink_status() -> Result<ResponseJson<GuardianSnapshot>, ApiErr
     let client = client().await?;
     let snap = fetch_guardian_snapshot(&client).await.map_err(map_err)?;
     Ok(ResponseJson(snap))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct DoctorQuery {
+    /// When false, skip Hybrid PoS HTTP. Default true.
+    pub observer: Option<bool>,
+}
+
+pub async fn crosslink_doctor(
+    Query(q): Query<DoctorQuery>,
+) -> Result<ResponseJson<DoctorReport>, ApiError> {
+    let client = client().await?;
+    let report = fetch_doctor_report(&client, q.observer.unwrap_or(true))
+        .await
+        .map_err(map_err)?;
+    Ok(ResponseJson(report))
 }
 
 pub async fn crosslink_positions() -> Result<ResponseJson<StakingPositions>, ApiError> {
@@ -205,6 +222,38 @@ pub async fn crosslink_wallet_ufvk() -> Result<ResponseJson<WalletUfvkResponse>,
     let client = client().await?;
     let ufvk = wallet_ufvk(&client).await.map_err(map_err)?;
     Ok(ResponseJson(WalletUfvkResponse { ufvk }))
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct PayoutClaimBody {
+    #[serde(default)]
+    pub payout_address: Option<String>,
+    #[serde(default)]
+    pub mobile_ufvk: Option<String>,
+    #[serde(default)]
+    pub cutoff_height: Option<u32>,
+}
+
+pub async fn crosslink_payout_claim(
+    Json(body): Json<PayoutClaimBody>,
+) -> Result<ResponseJson<PayoutClaimPack>, ApiError> {
+    let client = client().await?;
+    let pack = fetch_payout_claim(
+        &client,
+        body.payout_address,
+        body.mobile_ufvk,
+        body.cutoff_height,
+    )
+    .await
+    .map_err(|e| {
+        let msg = e.to_string();
+        if msg.contains("u1") || msg.contains("UFVK") || msg.contains("Payout address") {
+            map_user_err(e)
+        } else {
+            map_err(e)
+        }
+    })?;
+    Ok(ResponseJson(pack))
 }
 
 pub async fn crosslink_wallet_status() -> Result<ResponseJson<WalletSyncStatus>, ApiError> {

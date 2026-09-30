@@ -6,21 +6,22 @@
 
 ## What NozyWallet is
 
-NozyWallet helps you create and restore a **shielded Orchard now Ironwood wallet**, scan for incoming notes, build transactions, and (on supported surfaces) send ZEC. The project **does not ship a full blockchain node**. You run **[Zebra](https://github.com/ZcashFoundation/zebra) (`zebrad`)** for JSON-RPC and **[lightwalletd](https://github.com/zcash/lightwalletd)** for compact blocks, then point the wallet at those endpoints.
+NozyWallet helps you create and restore a **shielded Orchard now Ironwood wallet**, scan for incoming notes, build transactions, and (on supported surfaces) send ZEC. The project **does not ship a full blockchain node**. You run **[Zebra](https://github.com/ZcashFoundation/zebra)** / **[Zakura](https://zakura.com/)** for JSON-RPC and the **[Nozy Sync Engine](nozy-sync-engine/README.md)** (or lightwalletd) for compact blocks, then point the wallet at those endpoints.
 
 **Privacy policy in the wallet:** transparent `t1` addresses are **rejected** for user-facing send/receive flows; the product is **shielded-first** (Orchard / unified `u1`), not a mixed transparent wallet. That is a design choice, not a claim of “Monero equivalence.”
 
 | Surface | Path | Role |
 |--------|------|------|
 | **CLI + core library (Nozy Lite)** | `nozy` (`src/`, root `Cargo.toml`) | Wallet logic, ops health/TUI, `ZebraClient`, transaction building |
-| **Zeaking** | `zeaking/` | Compact sync via lightwalletd → SQLite (`zeaking::lwd`) |
+| **Zeaking** | `zeaking/` | Compact sync client → SQLite (`zeaking::lwd`) |
+| **Nozy Sync Engine** | `nozy-sync-engine/` | Zebra/Zakura ingest + CompactTxStreamer for Zeaking ([#274](https://github.com/LEONINE-DAO/Nozy-wallet/issues/274)) |
 | **API server** | `api-server/` | Localhost HTTP companion (`nozywallet-api`) — **production** for same-machine use (not hosted) |
 | **Desktop** | `desktop-client/` | Tauri app — **production** (Hot Lemon Pepper Sprinkles); not a formal GA ceremony |
 | **Browser extension** | `browser-extension/` | MV3 + WASM — **in development**; compact sync via companion API when used |
 | **Mobile (in progress)** | `mobile/` + `zeaking-ffi/` | Expo shell (Phase 1); UniFFI for on-device LWD (Phase 4) |
 | **Landing site** | `landing/` | Marketing/docs site only — **not** the wallet |
 
-**Recommended stack:** `zebrad` (RPC, typically `:8232`) + `lightwalletd` (gRPC, typically `:9067`) + Nozy. Architecture and limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows dev helpers: [`scripts/README.md`](scripts/README.md) (`zebra-wsl-rpc.ps1`, `start-lightwalletd-wsl.ps1`, `run-nozy-api.ps1`).
+**Recommended stack:** `zebrad` or Zakura (RPC `:8232`) + **Nozy Sync Engine** or lightwalletd (gRPC `:9067`) + Nozy. Sync engine: [`nozy-sync-engine/README.md`](nozy-sync-engine/README.md). Limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows helpers: [`scripts/README.md`](scripts/README.md).
 
 **Production-ready today:** the **`nozy` CLI** — productized as **[Nozy Lite](docs/reference/NOZY_LITE.md)** for **uptime & data checks** next to Zebrad (plus sync/send/Ironwood); the **desktop app** ([Hot Lemon Pepper Sprinkles](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.6)); and the **localhost companion API** (`nozywallet-api-*`, default `127.0.0.1:3000`). Extension and mobile remain in active development. Hosted/public companion is **not** claimed. No formal “GA” marketing label for desktop/API.
 
@@ -90,7 +91,7 @@ Incremental CLI sync without `--start-height` scans **~1,000 blocks per run** (t
 | Compact sync | **gRPC** to lightwalletd, **SQLite** cache in `zeaking::lwd` |
 | Node (you run separately) | **[Zebra](https://github.com/ZcashFoundation/zebra)** (`zebrad` JSON-RPC) + **[lightwalletd](https://github.com/zcash/lightwalletd)** — not `zcashd` |
 
-Optional: **Secret Network** CLI features (`--features secret-network`) share the same seed for SCRT/Shade workflows — see docs in `docs/` and the published book.
+Optional: **Secret Network** CLI features (`--features secret-network`) share the same seed for **SCRT** — see docs in `docs/` and the published book.
 
 ## Downloads (latest release)
 
@@ -171,8 +172,8 @@ Not a promoted production download yet. Build from source under `desktop-client/
 
 #### Unified privacy wallet (ZEC + Secret Network)
 
-- **One seed, two chains** — The same BIP39 mnemonic derives both **ZEC (Orchard)** and **Secret Network** (SCRT, SNIP-20 / Shade tokens). One backup recovers both.
-- **CLI:** Build with `cargo build --release --features secret-network`, then use `nozy shade` for balance, send, receive, history (e.g. `nozy shade balance`, `nozy shade receive`).
+- **One seed, two chains** — The same BIP39 mnemonic derives both **ZEC (Orchard)** and **Secret Network** (native **SCRT**; generic SNIP-20 by contract address). One backup recovers both.
+- **CLI:** Build with `cargo build --release --features secret-network`, then use `nozy secret` for balance, send, receive, history (e.g. `nozy secret balance`, `nozy secret receive`).
 - **Docs:** [Secret Network (ZEC + Secret from one seed)](https://leonine-dao.github.io/Nozy-wallet/book/advanced/secret-network.html) in the book; [SECRET_NETWORK_RESEARCH_AND_BUILD.md](SECRET_NETWORK_RESEARCH_AND_BUILD.md) for implementation details and build plan.
 
 ### Upcoming features and roadmap

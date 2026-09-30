@@ -65,7 +65,7 @@ pub trait IronwoodWitnessProvider: Send + Sync {
 
 pub struct ZebraJsonRpcIronwoodWitnessProvider;
 
-async fn fetch_ironwood_cmx_nodes_for_height(
+pub(crate) async fn fetch_ironwood_cmx_nodes_for_height(
     zebra: &ZebraClient,
     height: u32,
 ) -> NozyResult<Vec<orchard::tree::MerkleHashOrchard>> {
@@ -172,8 +172,20 @@ pub fn select_single_ironwood_spend_note<'a>(
         }
     }
     best.ok_or_else(|| {
+        let ironwood_values: Vec<u64> = spendable_notes
+            .iter()
+            .filter(|n| !n.orchard_note.spent && n.pool == ShieldedPool::Ironwood)
+            .map(|n| n.orchard_note.value)
+            .collect();
+        let ironwood_total: u64 = ironwood_values.iter().copied().sum();
+        let ironwood_max = ironwood_values.iter().copied().max().unwrap_or(0);
+        let needed_zec = needed as f64 / 100_000_000.0;
+        let max_zec = ironwood_max as f64 / 100_000_000.0;
+        let total_zec = ironwood_total as f64 / 100_000_000.0;
+        let suggested = ironwood_max.saturating_sub(fee_zatoshis);
+        let suggested_zec = suggested as f64 / 100_000_000.0;
         NozyError::InvalidOperation(format!(
-            "No single Ironwood note covers {needed} zats (multi-note spends are not supported yet)"
+            "Largest Ironwood note is {max_zec:.8} ZEC; this send needs {needed_zec:.8} ZEC including fee. Combined Ironwood is {total_zec:.8} ZEC (still short of amount + fee). Multi-note spends are not supported yet. Send at most {suggested_zec:.8} ZEC."
         ))
     })
 }

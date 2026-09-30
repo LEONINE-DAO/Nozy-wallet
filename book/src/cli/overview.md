@@ -50,7 +50,7 @@ Config persists in platform config dir — see [Zebra Node Setup](../advanced/ze
 Optional feature builds:
 
 ```bash
-cargo build --features secret-network   # adds `shade`
+cargo build --features secret-network   # adds `secret`
 ```
 
 ## Typical workflow

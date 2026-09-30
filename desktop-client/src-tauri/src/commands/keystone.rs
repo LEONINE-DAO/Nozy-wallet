@@ -1,16 +1,15 @@
 use crate::error::TauriError;
 use crate::session::load_session_wallet;
-use nozy::{
-    build_keystone_send_pczt, clear_pending_send, decode_pczt_ur_frames,
-    encode_pczt_ur_frames, estimate_transaction_fee_for_send, export_ufvk_from_wallet,
-    extract_signed_tx_from_pczt_bytes, load_config, load_pending_send,
-    mark_wallet_notes_spent_from_spendables, prepared_send_from_build,
-    save_config, save_pending_send, scan_notes_for_sending, select_single_spend_note,
-    validate_ufvk, ZebraClient, ZebraJsonRpcOrchardWitnessProvider, DEFAULT_UR_FRAGMENT_SIZE,
-    KeystonePreparedSend, PilotSendOptions, NOZY_WALLET_PRIORITY_FEE, PILOT_EXPIRY_DELTA_BLOCKS,
-    UR_TYPE_ZCASH_PCZT,
-};
 use nozy::transaction_history::{SentTransactionRecord, SentTransactionStorage};
+use nozy::{
+    build_keystone_send_pczt, clear_pending_send, decode_pczt_ur_frames, encode_pczt_ur_frames,
+    estimate_transaction_fee_for_send, export_ufvk_from_wallet, extract_signed_tx_from_pczt_bytes,
+    load_config, load_pending_send, mark_wallet_notes_spent_from_spendables,
+    prepared_send_from_build, save_config, save_pending_send, scan_notes_for_sending,
+    select_single_spend_note, validate_ufvk, KeystonePreparedSend, PilotSendOptions, ZebraClient,
+    ZebraJsonRpcOrchardWitnessProvider, DEFAULT_UR_FRAGMENT_SIZE, NOZY_WALLET_PRIORITY_FEE,
+    PILOT_EXPIRY_DELTA_BLOCKS, UR_TYPE_ZCASH_PCZT,
+};
 use serde::{Deserialize, Serialize};
 use tauri::command;
 use zcash_protocol::consensus::NetworkType;
@@ -55,11 +54,7 @@ pub async fn get_keystone_status() -> Result<KeystoneStatusResponse, TauriError>
     Ok(KeystoneStatusResponse {
         enabled: config.keystone.enabled,
         device_label: config.keystone.device_label.clone(),
-        has_ufvk: config
-            .keystone
-            .ufvk
-            .as_ref()
-            .is_some_and(|s| !s.is_empty()),
+        has_ufvk: config.keystone.ufvk.as_ref().is_some_and(|s| !s.is_empty()),
         pending_send,
         network: config.network.clone(),
     })
@@ -120,8 +115,8 @@ pub async fn export_keystone_ufvk(
     ensure_keystone_mainnet()?;
     let wallet = load_session_wallet(request.password.as_deref()).await?;
     let network = network_from_config();
-    let ufvk = export_ufvk_from_wallet(&wallet, network)
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    let ufvk =
+        export_ufvk_from_wallet(&wallet, network).map_err(|e| TauriError::from(e.to_string()))?;
     validate_ufvk(&ufvk, network).map_err(|e| TauriError::from(e.to_string()))?;
 
     let mut config = load_config();
@@ -248,16 +243,11 @@ pub async fn keystone_prepare_send(
     .await
     .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let prepared = prepared_send_from_build(
-        &request.recipient,
-        amount_zatoshis,
-        fee_zatoshis,
-        &build,
-    );
+    let prepared =
+        prepared_send_from_build(&request.recipient, amount_zatoshis, fee_zatoshis, &build);
     save_pending_send(&prepared).map_err(|e| TauriError::from(e.to_string()))?;
-    let ur_frames =
-        encode_pczt_ur_frames(&build.pczt_bytes, DEFAULT_UR_FRAGMENT_SIZE)
-            .map_err(|e| TauriError::from(e.to_string()))?;
+    let ur_frames = encode_pczt_ur_frames(&build.pczt_bytes, DEFAULT_UR_FRAGMENT_SIZE)
+        .map_err(|e| TauriError::from(e.to_string()))?;
 
     Ok(KeystonePrepareResponse {
         success: true,
@@ -325,8 +315,8 @@ pub async fn keystone_complete_send(
         .await
         .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let pending: Option<KeystonePreparedSend> = load_pending_send()
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    let pending: Option<KeystonePreparedSend> =
+        load_pending_send().map_err(|e| TauriError::from(e.to_string()))?;
     if let Some(prepared) = pending {
         if let Ok(wallet) = load_session_wallet(None).await {
             if let Ok(spendable_notes) = scan_notes_for_sending(&wallet, &zebra_url).await {

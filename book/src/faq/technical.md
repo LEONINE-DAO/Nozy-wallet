@@ -22,7 +22,7 @@ Compact block sync for extension/mobile paths via **Zeaking** — optional along
 
 ## Feature flags?
 
-`secret-network` enables `nozy shade`. Monero/swap/bridge may require additional flags — experimental.
+`secret-network` enables `nozy secret`. Monero/swap/bridge may require additional flags — experimental.
 
 ## NU 6.1 / 6.2 support?
 

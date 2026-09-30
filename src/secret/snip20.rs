@@ -1,5 +1,6 @@
 // SNIP-20 Token Support
-// Implements SNIP-20 standard for Secret Network tokens (including Shade tokens)
+// Generic Secret Network SNIP-20 queries. Callers pass a contract address;
+// this crate does not ship a token allowlist.
 
 use crate::error::{NozyError, NozyResult};
 use crate::secret::rpc_client::SecretRpcClient;
@@ -127,10 +128,4 @@ pub struct TokenInfo {
     pub name: String,
     pub symbol: String,
     pub decimals: u8,
-}
-
-// Common Shade Protocol token addresses (mainnet)
-pub mod shade_tokens {
-    pub const SHD: &str = "secret1qfql357amn448duf5gvp9gr48sxx9tsnhupu3d"; // Shade token
-    pub const SILK: &str = "secret1fl449muk5yq8dlad7a22nje4p5d2pnsgymhjfd"; // Silk token
 }

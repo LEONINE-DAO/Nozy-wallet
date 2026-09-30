@@ -15,6 +15,8 @@ export type WalletStatus = {
   rpcEndpoint: string;
   /** First block height to scan for Orchard notes for this install (create/restore tip, or user-set). */
   orchardBirthdayHeight: number | null;
+  /** false = created in extension; true = restored; null/omitted = legacy vault. */
+  restoredFromPhrase?: boolean | null;
 };
 
 export type TxStateEntry = {
@@ -211,11 +213,20 @@ function sendMessage<T>(request: ApiRequest): Promise<T> {
 export const extensionApi = {
   walletStatus: () => sendMessage<WalletStatus>({ method: "wallet_status" }),
   walletCreate: (password: string) =>
-    sendMessage<{ address: string }>({ method: "wallet_create", params: { password } }),
+    sendMessage<{ address: string; mnemonic: string }>({
+      method: "wallet_create",
+      params: { password }
+    }),
   walletRestore: (mnemonic: string, password: string, opts?: { birthdayHeight?: number }) =>
     sendMessage<{ address: string }>({
       method: "wallet_restore",
       params: { mnemonic, password, birthdayHeight: opts?.birthdayHeight }
+    }),
+  /** Re-show recovery phrase; requires vault password even when unlocked. */
+  walletRevealMnemonic: (password: string) =>
+    sendMessage<{ mnemonic: string }>({
+      method: "wallet_reveal_mnemonic",
+      params: { password }
     }),
   walletReset: () => sendMessage<{ exists: boolean }>({ method: "wallet_reset" }),
   walletSetBirthdayHeight: (height: number) =>
@@ -276,13 +287,29 @@ export const extensionApi = {
       connected: boolean;
       source: "manual" | "companion" | "autodetect";
     }>({ method: "rpc_connect", params: opts ?? {} }),
+  /** Opt into Nozy public LWD (lwd.nozywallet.org) — zec.rocks-style compact sync. */
+  connectPublicLwd: () =>
+    sendMessage<{
+      endpoint: string;
+      blockCount: number | null;
+      connected: boolean;
+      source: "public_lwd";
+      message: string;
+    }>({ method: "connect_public_lwd" }),
+  clearPublicLwd: () =>
+    sendMessage<{ cleared: boolean }>({ method: "clear_public_lwd" }),
   rpcProbeEndpoint: (url: string) =>
     sendMessage<{ endpoint: string; connected: boolean }>({
       method: "rpc_probe_endpoint",
       params: { url }
     }),
   rpcGetStatus: () =>
-    sendMessage<{ endpoint: string; connected: boolean; blockCount?: number | null }>({
+    sendMessage<{
+      endpoint: string;
+      connected: boolean;
+      blockCount?: number | null;
+      mode?: "zebrad" | "public_lwd" | "none";
+    }>({
       method: "rpc_get_status"
     }),
   rpcGetBlockCount: () => sendMessage<number>({ method: "rpc_get_block_count" }),
@@ -689,6 +716,37 @@ export const extensionApi = {
       params: params ?? {}
     }),
 
+  companionCrosslinkPayoutClaim: (params?: {
+    baseUrl?: string;
+    payout_address?: string;
+    mobile_ufvk?: string;
+    cutoff_height?: number;
+  }) =>
+    sendMessage<{
+      feature_net_ufvk: string;
+      ufvk_fingerprint: string;
+      mainnet_orchard: string | null;
+      mobile_ufvk: string | null;
+      height: number;
+      cutoff_height: number | null;
+      earned_zat: number;
+      bonded_zat: number;
+      active_bonds: number;
+      complete: boolean;
+      notes: string[];
+      paste_body: string;
+    }>({ method: "companion_crosslink_payout_claim", params: params ?? {} }),
+
+  companionCrosslinkDoctor: (params?: { baseUrl?: string; observer?: boolean }) =>
+    sendMessage<{
+      ok: boolean;
+      height: number;
+      tfl_lag: number | null;
+      ufvk_fingerprint: string | null;
+      paste_body: string;
+      lifecycle: { note: string; can_unbond: boolean; can_withdraw: boolean };
+    }>({ method: "companion_crosslink_doctor", params: params ?? {} }),
+
   companionCrosslinkRoster: (params?: { baseUrl?: string; zats?: boolean }) =>
     sendMessage<
       Array<{ finalizer: string; stake_zat: number; share: number }>
@@ -797,19 +855,36 @@ export const extensionApi = {
     sendMessage<NymDvpnProbeResult>({ method: "companion_nym_dvpn_probe", params }),
 
   companionNymVpnApp: (baseUrl?: string) =>
-    sendMessage<NymVpnAppStatus>({ method: "companion_nym_vpn_app", params: { baseUrl } })
+    sendMessage<NymVpnAppStatus>({ method: "companion_nym_vpn_app", params: { baseUrl } }),
+
+  /** Operator: lwd-mixnet-client :9070 health + companion GetLightdInfo via :9068. */
+  probeLwdMixnetProxy: (params?: {
+    baseUrl?: string;
+    grpc_url?: string;
+    metrics_url?: string;
+  }) =>
+    sendMessage<{
+      grpc_url: string;
+      metrics_url: string;
+      health: unknown;
+      health_error: string | null;
+      lightd: unknown;
+      lightd_error: string | null;
+      ok: boolean;
+    }>({ method: "probe_lwd_mixnet_proxy", params: params ?? {} })
 };
 
 const STORAGE_COMPANION_BASE = "nozy_companion_base_url";
 const STORAGE_LWD_URL = "nozy_lightwalletd_url";
 const STORAGE_COMPANION_API_KEY = "nozy_companion_api_key_v1";
 const DEFAULT_LWD_URL = "http://127.0.0.1:9067";
+/** Nozy public LWD — same product role as zec.rocks for light wallets. */
+export const PUBLIC_LWD_URL = "https://lwd.nozywallet.org:443";
 
 function normalizeStoredLwdUrl(raw: string): string {
   const s = String(raw ?? "").trim();
-  if (!s || /zec\.rocks/i.test(s)) {
-    return DEFAULT_LWD_URL;
-  }
+  if (!s) return DEFAULT_LWD_URL;
+  // Allow explicit public LWD opt-in (lwd.nozywallet.org or community zec.rocks).
   return s;
 }
 

@@ -30,7 +30,7 @@ export function Toggle({
           </div>
         )}
         <div>
-          <p className="font-semibold text-white transition-colors">{title}</p>
+          <p className="font-semibold text-primary-100 transition-colors">{title}</p>
           {description && (
             <p className="text-sm text-gray-300">{description}</p>
           )}

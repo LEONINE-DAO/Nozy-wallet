@@ -3,6 +3,8 @@ import toast from "react-hot-toast";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { logger } from "../utils/logger";
 import { formatErrorForDisplay } from "../utils/errors";
+import { NYMVPN_IRONWOOD_STOPGAP_SHORT } from "../lib/nymIronwoodStopgap";
+import { SendEgressCard } from "./SendEgressCard";
 import { Button } from "../components/Button";
 import { Input } from "../components/Input";
 import { Textarea, textareaClassName } from "../components/Textarea";
@@ -18,6 +20,8 @@ import {
 import QRCode from "react-qr-code";
 import { useWalletStore } from "../store/walletStore";
 import { useTokenStore } from "../store/tokenStore";
+import { useSettingsStore } from "../store/settingsStore";
+import { getZecPriceInFiat, formatFiatAmount } from "../utils/price";
 import { walletApi } from "../lib/api";
 import { isWalletReadyForSend } from "../lib/syncHelpers";
 import type { AddressBookEntry, IronwoodDesktopStatusResponse } from "../lib/types";
@@ -27,6 +31,7 @@ import {
   normalizeUnifiedAddress,
   resolveSendRecipient,
 } from "../lib/zns";
+import { tryParsePaymentInput, type Zip321Payment } from "../lib/zip321";
 import { TransactionIdDetail } from "./TxExplorerLink";
 
 type BackendSendProgress = {
@@ -112,7 +117,12 @@ function parseAmount(value: string): number {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-/** Exact ZEC decimal string → zatoshis (avoids f64 mul truncation). */
+function zatoshisToZecString(zat: number): string {
+  const n = Math.max(0, Math.trunc(zat));
+  const whole = Math.floor(n / 100_000_000);
+  const frac = (n % 100_000_000).toString().padStart(8, "0").replace(/0+$/, "");
+  return frac ? `${whole}.${frac}` : String(whole);
+}
 function zecStringToZatoshis(value: string): number | null {
   const cleaned = value.trim();
   if (!cleaned || cleaned === "." || cleaned === "-") return null;
@@ -227,6 +237,7 @@ function SendProgressPanel({ progress }: { progress: SendProgressState }) {
 export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const { balance } = useWalletStore();
   const { activeTokenId, getToken } = useTokenStore();
+  const { fiatCurrency, useLiveFiatPrice, customFiatPerZec } = useSettingsStore();
 
   const activeToken = activeTokenId ? getToken(activeTokenId) : null;
   const tokenSymbol = activeToken?.symbol || "ZEC";
@@ -236,12 +247,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [resolvedRecipient, setResolvedRecipient] = useState<ResolvedRecipient | null>(null);
   const [znsResolving, setZnsResolving] = useState(false);
   const [znsMessage, setZnsMessage] = useState<string | null>(null);
+  const [paymentRequestNote, setPaymentRequestNote] = useState<string | null>(null);
   const [password, setPassword] = useState("");
   const [memo, setMemo] = useState("");
   const [feeZec, setFeeZec] = useState(0.00015);
+  const [ironwoodMaxNoteZec, setIronwoodMaxNoteZec] = useState(0);
+  const [ironwoodMaxNoteZat, setIronwoodMaxNoteZat] = useState(0);
   const [showMemo, setShowMemo] = useState(false);
   const [showReview, setShowReview] = useState(false);
   const [isSending, setIsSending] = useState(false);
+  const [isReviewing, setIsReviewing] = useState(false);
   const [sendProgress, setSendProgress] = useState<SendProgressState | null>(null);
   const sendProgressTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const sendProgressUnlistenRef = useRef<UnlistenFn | null>(null);
@@ -265,6 +280,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [keystoneUrFrames, setKeystoneUrFrames] = useState<string[]>([]);
   const [keystoneSignedInput, setKeystoneSignedInput] = useState("");
   const [isBroadcasting, setIsBroadcasting] = useState(false);
+  const [fiatRate, setFiatRate] = useState<number | null>(null);
   /* FUTURE: group file co-sign
   const [requireCosigner, setRequireCosigner] = useState(false);
   const [showBroadcastPanel, setShowBroadcastPanel] = useState(false);
@@ -272,6 +288,54 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   const [broadcastPayload, setBroadcastPayload] = useState("");
   const [broadcastPassword, setBroadcastPassword] = useState("");
   */
+
+  useEffect(() => {
+    if (!useLiveFiatPrice && customFiatPerZec != null) {
+      setFiatRate(customFiatPerZec);
+      return;
+    }
+    if (!useLiveFiatPrice) {
+      setFiatRate(null);
+      return;
+    }
+    getZecPriceInFiat(fiatCurrency).then((rate) => setFiatRate(rate));
+  }, [useLiveFiatPrice, customFiatPerZec, fiatCurrency]);
+
+  const applyPaymentRequest = (parsed: Zip321Payment, source: "paste" | "link") => {
+    setAddress(parsed.address);
+    if (parsed.amountZec) setAmount(parsed.amountZec);
+    if (parsed.memo) {
+      setMemo(parsed.memo);
+      setShowMemo(true);
+    }
+    const bits = [parsed.label, parsed.message].filter(Boolean);
+    setPaymentRequestNote(bits.length ? bits.join(" — ") : null);
+    setResolvedRecipient(null);
+    setZnsMessage(null);
+    toast.success(
+      source === "link"
+        ? "Opened shielded payment request (ZIP-321)"
+        : "Loaded shielded payment request (ZIP-321)",
+    );
+  };
+
+  useEffect(() => {
+    const fromLocation = `${window.location.hash} ${window.location.search} ${window.location.href}`;
+    try {
+      const parsed = tryParsePaymentInput(fromLocation);
+      if (parsed) applyPaymentRequest(parsed, "link");
+    } catch {
+      /* launch URL was not a payment request */
+    }
+  }, []);
+
+  const effectiveFiatRate = useLiveFiatPrice ? fiatRate : customFiatPerZec;
+
+  function fiatLine(amountZec: number): string | null {
+    if (effectiveFiatRate == null || effectiveFiatRate <= 0) return null;
+    if (!Number.isFinite(amountZec) || amountZec <= 0) return null;
+    return formatFiatAmount(amountZec * effectiveFiatRate, fiatCurrency);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -287,6 +351,17 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     walletApi.getWalletStatus().then((r) => {
       setWalletUnlocked(r.data?.unlocked ?? false);
       setWalletHasPassword(r.data?.has_password ?? false);
+    }).catch(() => {});
+    walletApi.getBalance().then((r) => {
+      const maxZat = r.data?.ironwood_max_note_zatoshis;
+      const maxNote = r.data?.ironwood_max_note_zec;
+      if (typeof maxZat === "number" && Number.isFinite(maxZat) && maxZat > 0) {
+        setIronwoodMaxNoteZat(Math.trunc(maxZat));
+        setIronwoodMaxNoteZec(maxZat / 100_000_000);
+      } else if (typeof maxNote === "number" && Number.isFinite(maxNote)) {
+        setIronwoodMaxNoteZec(maxNote);
+        setIronwoodMaxNoteZat(Math.round(maxNote * 100_000_000));
+      }
     }).catch(() => {});
     walletApi.getNetworkWalletStatus().then((r) => {
       const network = r.data?.network;
@@ -304,6 +379,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   }, [showReview]);
 
   const amountValue = parseAmount(amount);
+  const amountZat = zecStringToZatoshis(amount);
+  const feeZat = Math.round(feeZec * 100_000_000);
+  const balanceZat = Math.round(balance * 100_000_000);
+  const maxSingleSendZat =
+    ironwoodMaxNoteZat > 0
+      ? Math.max(0, Math.min(balanceZat - feeZat, ironwoodMaxNoteZat - feeZat))
+      : Math.max(0, balanceZat - feeZat);
+  const maxSingleSendZec = maxSingleSendZat / 100_000_000;
+  const noteLimitBlocksReview =
+    ironwoodMaxNoteZat > 0 && amountZat != null && amountZat > maxSingleSendZat;
   const normalizedAddress = normalizeUnifiedAddress(address);
   const cachedResolution =
     resolvedRecipient && resolvedRecipient.input === address.trim() ? resolvedRecipient : null;
@@ -318,6 +403,9 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
     }
     if (amountValue + feeZec > balance) {
       return `Insufficient balance: need ${(amountValue + feeZec).toFixed(8)} ${tokenSymbol} including fee (${balance.toFixed(8)} ${tokenSymbol} available). Sync if balance looks wrong.`;
+    }
+    if (ironwoodMaxNoteZat > 0 && amountZat != null && amountZat > maxSingleSendZat) {
+      return `This send spends one Ironwood note only. Largest note is ${zatoshisToZecString(ironwoodMaxNoteZat)} ${tokenSymbol}, so the most you can send is ${zatoshisToZecString(maxSingleSendZat)} ${tokenSymbol} after fee. Use Max to fill that amount.`;
     }
     return null;
   })();
@@ -380,8 +468,7 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   };
 
   const handleMax = () => {
-    const maxAmount = Math.max(0, balance - feeZec);
-    setAmount(maxAmount > 0 ? maxAmount.toFixed(MAX_ZEC_DECIMALS) : DEFAULT_AMOUNT);
+    setAmount(maxSingleSendZat > 0 ? zatoshisToZecString(maxSingleSendZat) : DEFAULT_AMOUNT);
   };
 
   const handleAmountChange = (raw: string) => {
@@ -481,35 +568,49 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
   };
 
   const handleProceedToReview = async () => {
-    const resolved = await ensureRecipientResolved();
-    if (!resolved) return;
-    const networkError = recipientNetworkError(resolved, activeNetwork);
-    if (networkError) {
-      toast.error(networkError);
-      return;
-    }
-    const ironwoodBlock = await loadIronwoodSendBlockReason();
-    if (ironwoodBlock) {
-      setIronwoodSendBlocked(ironwoodBlock);
-      toast.error(ironwoodBlock);
-      return;
-    }
+    setIsReviewing(true);
+    const checkToast = toast.loading("Checking recipient and sync status…");
     try {
-      const statusRes = await walletApi.getSyncStatus();
-      const { ready, reason } = isWalletReadyForSend(statusRes.data);
-      if (!ready) {
-        toast.error(reason ?? "Wallet not ready for send. Sync to tip first.");
+      const resolved = await ensureRecipientResolved();
+      if (!resolved) {
+        toast.dismiss(checkToast);
         return;
       }
-    } catch (e) {
-      toast.error(formatErrorForDisplay(e, "Could not verify wallet sync status."));
-      return;
+      const networkError = recipientNetworkError(resolved, activeNetwork);
+      if (networkError) {
+        toast.error(networkError, { id: checkToast });
+        return;
+      }
+      const ironwoodBlock = await loadIronwoodSendBlockReason();
+      if (ironwoodBlock) {
+        setIronwoodSendBlocked(ironwoodBlock);
+        toast.error(ironwoodBlock, { id: checkToast });
+        return;
+      }
+      try {
+        const statusRes = await walletApi.getSyncStatus();
+        const { ready, reason } = isWalletReadyForSend(statusRes.data);
+        if (!ready) {
+          toast.error(reason ?? "Wallet not ready for send. Sync to tip first.", {
+            id: checkToast,
+          });
+          return;
+        }
+      } catch (e) {
+        toast.error(formatErrorForDisplay(e, "Could not verify wallet sync status."), {
+          id: checkToast,
+        });
+        return;
+      }
+      toast.dismiss(checkToast);
+      setShowReview(true);
+    } finally {
+      setIsReviewing(false);
     }
-    setShowReview(true);
   };
 
   const sendPasswordRequired =
-    walletHasPassword && !walletUnlocked && password.trim().length === 0;
+    walletHasPassword && password.trim().length === 0;
 
   const resetKeystoneSendState = () => {
     setKeystonePrepared(false);
@@ -811,33 +912,63 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </p>
         </div>
 
+        {sendProgress && <SendProgressPanel progress={sendProgress} />}
+
+        <SendEgressCard compact />
+
         {ironwoodSendBlocked && (
           <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-900/20">
             <Shield size={18} className="text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
-            <p className="text-sm text-amber-900/90 dark:text-amber-200">{ironwoodSendBlocked}</p>
+            <div>
+              <p className="text-sm text-amber-900/90 dark:text-amber-200">{ironwoodSendBlocked}</p>
+              <p className="text-xs mt-1 text-amber-800/80 dark:text-amber-300/80">
+                {NYMVPN_IRONWOOD_STOPGAP_SHORT}
+              </p>
+            </div>
           </div>
         )}
 
         <div className="bg-gray-50 dark:bg-gray-800/50 rounded-2xl p-6 space-y-4 border border-gray-100 dark:border-gray-700/50">
           <div className="flex justify-between items-center">
             <span className="text-gray-500 dark:text-gray-400 text-sm">Amount</span>
-            <span className="font-bold text-lg text-gray-900 dark:text-gray-100">
-              {amount} {tokenSymbol}
-            </span>
+            <div className="text-right">
+              <span className="font-bold text-lg text-gray-900 dark:text-gray-100">
+                {amount} {tokenSymbol}
+              </span>
+              {fiatLine(amountValue) ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  ≈ {fiatLine(amountValue)}
+                </p>
+              ) : null}
+            </div>
           </div>
           <div className="flex justify-between items-center">
             <span className="text-gray-500 dark:text-gray-400 text-sm">Fee</span>
-            <span className="text-gray-900 dark:text-gray-100 font-medium text-sm">
-              {feeZec.toFixed(8)} {tokenSymbol} (priority ×4)
-            </span>
+            <div className="text-right">
+              <span className="text-gray-900 dark:text-gray-100 font-medium text-sm">
+                {feeZec.toFixed(8)} {tokenSymbol} (priority ×4)
+              </span>
+              {fiatLine(feeZec) ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                  ≈ {fiatLine(feeZec)}
+                </p>
+              ) : null}
+            </div>
           </div>
           <div className="h-px bg-gray-200 dark:bg-gray-700 my-2" />
           <div className="flex justify-between items-center text-base">
             <span className="font-bold text-gray-900 dark:text-gray-100">Total</span>
-            <span className="font-bold text-primary-700">
-              {((Number.isFinite(amountValue) ? amountValue : 0) + feeZec).toFixed(8)}{" "}
-              {tokenSymbol}
-            </span>
+            <div className="text-right">
+              <span className="font-bold text-primary-700">
+                {((Number.isFinite(amountValue) ? amountValue : 0) + feeZec).toFixed(8)}{" "}
+                {tokenSymbol}
+              </span>
+              {fiatLine((Number.isFinite(amountValue) ? amountValue : 0) + feeZec) ? (
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 font-medium">
+                  ≈ {fiatLine((Number.isFinite(amountValue) ? amountValue : 0) + feeZec)}
+                </p>
+              ) : null}
+            </div>
           </div>
         </div>
 
@@ -863,16 +994,12 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
               label="Wallet Password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              placeholder={
-                walletUnlocked
-                  ? "Optional — already unlocked"
-                  : "Enter your wallet password"
-              }
+              placeholder="Enter your wallet password to confirm send"
               className="bg-white/50 focus:bg-white transition-all"
             />
             {walletUnlocked && (
               <p className="text-xs text-gray-500 dark:text-gray-400 pl-1">
-                Wallet is unlocked. Leave blank to use your unlock session, or re-enter to confirm.
+                Re-enter your password to authorize this send (step-up confirmation).
               </p>
             )}
           </div>
@@ -931,8 +1058,6 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
         {/* FUTURE: group file co-sign export UI */}
 
-        {sendProgress && <SendProgressPanel progress={sendProgress} />}
-
         <div className="flex gap-3 pt-2">
           <Button
             variant="ghost"
@@ -949,7 +1074,8 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
             keystonePrepared ? (
               <Button
                 onClick={() => void handleKeystoneBroadcast()}
-                disabled={isBroadcasting || !keystoneSignedInput.trim()}
+                loading={isBroadcasting}
+                disabled={!keystoneSignedInput.trim()}
                 className="flex-1 rounded-xl shadow-lg shadow-primary/20 gap-2"
               >
                 <Shield size={18} />
@@ -962,7 +1088,8 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
             ) : (
               <Button
                 onClick={() => void handleKeystonePrepare()}
-                disabled={isSending || sendPasswordRequired || Boolean(ironwoodSendBlocked)}
+                loading={isSending}
+                disabled={sendPasswordRequired || Boolean(ironwoodSendBlocked)}
                 className="flex-1 rounded-xl shadow-lg shadow-primary/20 gap-2"
               >
                 <Shield size={18} />
@@ -976,12 +1103,13 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           ) : (
             <Button
               onClick={handleSend}
-              disabled={isSending || sendPasswordRequired || Boolean(ironwoodSendBlocked)}
+              loading={isSending}
+              disabled={sendPasswordRequired || Boolean(ironwoodSendBlocked)}
               className="flex-1 rounded-xl shadow-lg shadow-primary/20"
             >
               {isSending
                 ? sendProgress
-                  ? `Sending ${sendProgress.percent}%`
+                  ? `${sendProgress.label} · ${sendProgress.percent}%`
                   : "Sending…"
                 : "Confirm Send"}
             </Button>
@@ -1000,7 +1128,11 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           </label>
           <div className="text-xs text-gray-400 dark:text-gray-500 font-medium">
             Available:{" "}
-            <Tooltip content="Total Orchard shielded balance after sync. Use max after fee.">
+            <Tooltip content={
+              ironwoodMaxNoteZec > 0
+                ? `Sends spend one Ironwood note. Largest note ${ironwoodMaxNoteZec.toFixed(8)} ${tokenSymbol}; Max is ${maxSingleSendZec.toFixed(8)} after fee.`
+                : "Total shielded balance after sync. Use max after fee."
+            }>
               <span
                 className="text-gray-700 dark:text-gray-300 cursor-pointer hover:text-primary transition-colors uppercase"
                 onClick={handleMax}
@@ -1028,6 +1160,11 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
             {tokenSymbol}
           </span>
         </div>
+        {fiatLine(amountValue) ? (
+          <p className="text-center text-sm text-gray-500 dark:text-gray-400 -mt-1">
+            ≈ {fiatLine(amountValue)}
+          </p>
+        ) : null}
       </div>
 
       <div className="space-y-3">
@@ -1059,21 +1196,38 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           <Textarea
             value={address}
             onChange={(e) => {
-              setAddress(e.target.value);
+              const raw = e.target.value;
+              try {
+                const parsed = tryParsePaymentInput(raw);
+                if (parsed) {
+                  applyPaymentRequest(parsed, "paste");
+                  return;
+                }
+              } catch (err) {
+                toast.error(
+                  err instanceof Error ? err.message : "Invalid payment URI",
+                );
+                return;
+              }
+              setAddress(raw);
+              setPaymentRequestNote(null);
               setResolvedRecipient(null);
               setZnsMessage(null);
             }}
-            placeholder="u1… or Zcash name (e.g. alice)"
+            placeholder="u1…, Zcash name, or paste zcash:… ZIP-321 URI"
             rows={2}
             spellCheck={false}
             autoComplete="off"
             className="min-h-[3.5rem] font-mono"
           />
         </div>
+        {paymentRequestNote ? (
+          <p className="text-xs text-primary ml-1">{paymentRequestNote}</p>
+        ) : null}
         <p className="text-xs text-gray-500 dark:text-gray-400 ml-1">
           Zcash names supported — enter a name like{" "}
-          <span className="font-medium">alice</span>. Resolves when you move to amount, review, or
-          send.
+          <span className="font-medium">alice</span>. Paste a <span className="font-mono">zcash:</span>{" "}
+          URI from a QR (including ZGo). Do not paste zgo.cash page URLs.
         </p>
         {activeNetwork && (
           <p className="text-xs text-gray-500 dark:text-gray-400 ml-1">
@@ -1188,10 +1342,17 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
       <p className="text-sm text-gray-500 dark:text-gray-400 ml-1">Network fee (ZIP-317 × 4)</p>
 
+      <SendEgressCard compact />
+
       {ironwoodSendBlocked && (
         <div className="flex items-start gap-3 p-3 rounded-xl border border-amber-200/80 dark:border-amber-800/50 bg-amber-50/70 dark:bg-amber-900/20">
           <Shield size={18} className="text-amber-700 dark:text-amber-400 mt-0.5 shrink-0" />
-          <p className="text-sm text-amber-900/90 dark:text-amber-200">{ironwoodSendBlocked}</p>
+          <div>
+            <p className="text-sm text-amber-900/90 dark:text-amber-200">{ironwoodSendBlocked}</p>
+            <p className="text-xs mt-1 text-amber-800/80 dark:text-amber-300/80">
+              {NYMVPN_IRONWOOD_STOPGAP_SHORT}
+            </p>
+          </div>
         </div>
       )}
 
@@ -1214,7 +1375,14 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
 
       <div className="flex flex-col gap-2 pt-4">
         {reviewDisabledReason && (
-          <p className="text-sm text-amber-800 text-center px-2">{reviewDisabledReason}</p>
+          <div className="flex flex-col items-center gap-2 px-2">
+            <p className="text-sm text-amber-800 text-center">{reviewDisabledReason}</p>
+            {noteLimitBlocksReview && maxSingleSendZat > 0 ? (
+              <Button type="button" variant="secondary" size="sm" onClick={handleMax}>
+                Use max {zatoshisToZecString(maxSingleSendZat)} {tokenSymbol}
+              </Button>
+            ) : null}
+          </div>
         )}
         {!reviewDisabledReason && ironwoodSendBlocked && (
           <p className="text-sm text-amber-800 text-center px-2">
@@ -1247,11 +1415,16 @@ export function SendForm({ onSuccess, onCancel }: SendFormProps) {
           <span className="inline-flex flex-1">
             <Button
               size="lg"
-              disabled={!isValid}
+              loading={isReviewing}
+              disabled={!isValid || isReviewing}
               onClick={() => void handleProceedToReview()}
               className="w-full"
             >
-              {keystoneEnabled ? "Review & prepare" : "Review"}
+              {isReviewing
+                ? "Checking sync…"
+                : keystoneEnabled
+                  ? "Review & prepare"
+                  : "Review"}
             </Button>
           </span>
         </Tooltip>

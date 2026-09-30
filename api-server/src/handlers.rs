@@ -98,6 +98,10 @@ pub struct BalanceResponse {
     pub available_zec: f64,
     pub available_zatoshis: u64,
     pub unspent_note_count: usize,
+    pub orchard_zec: f64,
+    pub ironwood_zec: f64,
+    pub sapling_zec: f64,
+    pub ironwood_max_note_zec: f64,
 }
 
 fn zats_to_zec(zat: u64) -> f64 {
@@ -115,6 +119,10 @@ fn balance_response_from_snapshot(snapshot: nozy::WalletBalanceSnapshot) -> Bala
         available_zec: zats_to_zec(snapshot.available_zatoshis),
         available_zatoshis: snapshot.available_zatoshis,
         unspent_note_count: snapshot.unspent_note_count,
+        orchard_zec: zats_to_zec(snapshot.orchard_unspent_zatoshis),
+        ironwood_zec: zats_to_zec(snapshot.ironwood_unspent_zatoshis),
+        sapling_zec: zats_to_zec(snapshot.sapling_unspent_zatoshis),
+        ironwood_max_note_zec: zats_to_zec(snapshot.ironwood_max_note_zatoshis),
     }
 }
 
@@ -171,13 +179,17 @@ pub struct ProvingStatusResponse {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateWalletRequest {
-    pub password: Option<String>,
+    /// Required for HTTP create — empty-password wallets must not be created via companion API.
+    pub password: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct RestoreWalletRequest {
     pub mnemonic: String,
     pub password: String,
+    /// Must be true to overwrite an existing wallet.dat on disk.
+    #[serde(default)]
+    pub confirm_overwrite: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -235,10 +247,13 @@ pub(crate) async fn load_wallet_with_password(
     }
 
     let pwd = password.unwrap_or_default();
-    let wallet = storage
-        .load_wallet(&pwd)
-        .await
-        .map_err(|e| format!("Failed to load wallet: {e}. Please check your password."))?;
+    let wallet = storage.load_wallet(&pwd).await.map_err(|e| {
+        format!(
+            "Failed to load wallet: {}. File: {}. Please check your password.",
+            e.user_friendly_message(),
+            wallet_path.display()
+        )
+    })?;
     let _ = nozy::notes_vault::unlock_notes_vault(&pwd);
 
     Ok((wallet, storage))
@@ -263,6 +278,22 @@ pub async fn check_wallet_exists() -> ResponseJson<WalletInfo> {
 pub async fn create_wallet(
     Json(payload): Json<CreateWalletRequest>,
 ) -> Result<ResponseJson<String>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    let password = payload.password.trim();
+    if password.is_empty() {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            "A non-empty password is required to create a wallet via the companion API.",
+            "PASSWORD_REQUIRED",
+        ));
+    }
+    if password.len() > 256 {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            "Password is too long (max 256 characters).",
+            "PASSWORD_TOO_LONG",
+        ));
+    }
+
     nozy::create_new_profile(None).map_err(|e| {
         error_response_with_code(
             StatusCode::INTERNAL_SERVER_ERROR,
@@ -279,29 +310,22 @@ pub async fn create_wallet(
         )
     })?;
 
-    let password_for_save = payload.password.clone();
-
-    if let Some(ref pwd) = payload.password {
-        wallet.set_password(pwd).map_err(|e| {
-            error_response_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to set password: {e}"),
-                "PASSWORD_SET_FAILED",
-            )
-        })?;
-    }
+    wallet.set_password(password).map_err(|e| {
+        error_response_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to set password: {e}"),
+            "PASSWORD_SET_FAILED",
+        )
+    })?;
 
     let storage = nozy::WalletStorage::with_xdg_dir();
-    storage
-        .save_wallet(&wallet, password_for_save.as_deref().unwrap_or(""))
-        .await
-        .map_err(|e| {
-            error_response_with_code(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Failed to save wallet: {e}"),
-                "WALLET_SAVE_FAILED",
-            )
-        })?;
+    storage.save_wallet(&wallet, password).await.map_err(|e| {
+        error_response_with_code(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            format!("Failed to save wallet: {e}"),
+            "WALLET_SAVE_FAILED",
+        )
+    })?;
 
     // SECURITY: Never return full mnemonic in API responses
     // Only return masked version for security
@@ -321,12 +345,29 @@ pub async fn restore_wallet(
         ));
     }
 
-    if payload.password.len() > 256 {
+    let password = payload.password.trim();
+    if password.is_empty() {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            "A non-empty password is required to restore a wallet via the companion API.",
+            "PASSWORD_REQUIRED",
+        ));
+    }
+    if password.len() > 256 {
         return Err((
             StatusCode::BAD_REQUEST,
             ResponseJson(serde_json::json!({
                 "error": "Password is too long (max 256 characters)."
             })),
+        ));
+    }
+
+    let wallet_path = nozy::paths::get_wallet_data_dir().join("wallet.dat");
+    if wallet_path.exists() && !payload.confirm_overwrite {
+        return Err(error_response_with_code(
+            StatusCode::CONFLICT,
+            "A wallet already exists. Pass confirm_overwrite=true to replace it (irreversible).",
+            "WALLET_EXISTS",
         ));
     }
 
@@ -349,17 +390,14 @@ pub async fn restore_wallet(
     })?;
 
     let storage = nozy::WalletStorage::with_xdg_dir();
-    storage
-        .save_wallet(&wallet, &payload.password)
-        .await
-        .map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                ResponseJson(serde_json::json!({
-                    "error": format!("Failed to save wallet: {}", e)
-                })),
-            )
-        })?;
+    storage.save_wallet(&wallet, password).await.map_err(|e| {
+        (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            ResponseJson(serde_json::json!({
+                "error": format!("Failed to save wallet: {}", e)
+            })),
+        )
+    })?;
 
     Ok(ResponseJson(serde_json::json!({"success": true})))
 }
@@ -915,6 +953,9 @@ pub async fn chain_block(
 #[derive(Debug, Deserialize)]
 pub struct BroadcastRawRequest {
     pub raw_transaction_hex: String,
+    /// Optional override so the extension can submit to *its* RPC while still using
+    /// `ZebraClient` (Nym mixnet gate, Tor/I2P). Defaults to desktop `zebra_url`.
+    pub zebra_url: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -922,6 +963,7 @@ pub struct BroadcastRawResponse {
     pub success: bool,
     pub txid: Option<String>,
     pub message: String,
+    pub connection_mode: String,
 }
 
 pub async fn broadcast_raw_transaction(
@@ -948,12 +990,19 @@ pub async fn broadcast_raw_transaction(
     }
 
     let config = load_config();
-    let client = ZebraClient::from_config(&config);
+    let override_url = payload
+        .zebra_url
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let client = ZebraClient::from_config_with_url(&config, override_url);
+    let connection_mode = client.connection_mode().as_str().to_string();
     match client.broadcast_transaction(hex_str).await {
         Ok(txid) => Ok(ResponseJson(BroadcastRawResponse {
             success: true,
             txid: Some(txid),
             message: "Transaction broadcast successfully".to_string(),
+            connection_mode,
         })),
         Err(e) => Err((
             StatusCode::BAD_GATEWAY,
@@ -1678,12 +1727,14 @@ pub async fn web_privacy_status(
         vec![
             "Enable Tor or I2P to improve metadata privacy for remote RPC.".to_string(),
             "Or switch Zebra RPC to localhost (127.0.0.1/localhost).".to_string(),
+            nozy::ironwood::nymvpn_ironwood_stopgap_hint(),
         ]
     } else {
         vec![
             "Start Tor (default socks5://127.0.0.1:9050) or I2P (default http://127.0.0.1:4444)."
                 .to_string(),
             "Verify privacy route status in settings and retry.".to_string(),
+            nozy::ironwood::nymvpn_ironwood_stopgap_hint(),
             "If available, switch Zebra RPC to localhost (127.0.0.1/localhost).".to_string(),
             "Disable strict mode only if you explicitly accept metadata leak risk.".to_string(),
         ]

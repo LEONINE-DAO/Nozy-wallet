@@ -1,12 +1,13 @@
-use crate::error::TauriError;
 use crate::commands::ironwood::desktop_migration_readiness;
+use crate::error::TauriError;
 use nozy::{
-    fetch_pool_balances, gather_sync_status, ironwood_user_notices, is_ironwood_active, load_config,
-    load_orchard_migration_schedule, load_wallet_notes, max_serialized_witness_lag_blocks,
-    nu6_3_activation_height, plan_orchard_migration_at, previous_zip318_anchor_boundary,
-    safer_migration_status_snapshot, shielded_pool::ShieldedPool, MigrationNetworkPrivacyOpts,
-    MigrationReadinessState, NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
-    MAX_SEND_WITNESS_LAG_BLOCKS, ZebraClient,
+    assess_send_egress, estimate_orchard_send_fee_zatoshis, fetch_pool_balances, gather_sync_status,
+    ironwood_user_notices, is_ironwood_active, load_config, load_orchard_migration_schedule,
+    load_wallet_notes,
+    max_serialized_witness_lag_blocks, nu6_3_activation_height, plan_orchard_migration_at,
+    previous_zip318_anchor_boundary, safer_migration_status_snapshot, shielded_pool::ShieldedPool,
+    MigrationNetworkPrivacyOpts, MigrationReadinessState, ZebraClient, MAX_SEND_WITNESS_LAG_BLOCKS,
+    NU6_3_MAINNET_ACTIVATION_TARGET, NU6_3_TESTNET_ACTIVATION_TARGET,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -181,6 +182,12 @@ pub struct IronwoodDesktopStatusResponse {
     pub ironwood_chain_value_zec: Option<f64>,
     pub orchard_wallet_zat: u64,
     pub ironwood_wallet_zat: u64,
+    /// Unspent Ironwood notes. Desktop send spends one of these per transaction.
+    pub ironwood_note_count: usize,
+    /// Largest unspent Ironwood note (zatoshis).
+    pub ironwood_max_note_zat: u64,
+    /// Largest note minus ZIP-317 priority fee — max recipient amount for a single-note send.
+    pub ironwood_max_send_zat: u64,
     pub ironwood_send_enabled: bool,
     pub wallet_ready: bool,
     pub migration_recommended: bool,
@@ -198,6 +205,7 @@ pub struct IronwoodDesktopStatusResponse {
     pub migration_privacy_warnings: Vec<String>,
     pub orchard_funds_at_risk: bool,
     pub safer_migration: IronwoodSaferMigrationResponse,
+    pub send_egress: nozy::SendEgressSnapshot,
 }
 
 #[command]
@@ -242,11 +250,16 @@ pub async fn get_ironwood_status(
         .filter(|n| !n.spent && n.pool == ShieldedPool::Orchard)
         .map(|n| n.value)
         .sum();
-    let ironwood_wallet_zat = notes
+    let ironwood_notes: Vec<u64> = notes
         .iter()
         .filter(|n| !n.spent && n.pool == ShieldedPool::Ironwood)
         .map(|n| n.value)
-        .sum();
+        .collect();
+    let ironwood_wallet_zat: u64 = ironwood_notes.iter().copied().sum();
+    let ironwood_note_count = ironwood_notes.len();
+    let ironwood_max_note_zat = ironwood_notes.iter().copied().max().unwrap_or(0);
+    let send_fee_zat = estimate_orchard_send_fee_zatoshis(None, true);
+    let ironwood_max_send_zat = ironwood_max_note_zat.saturating_sub(send_fee_zat);
 
     let migration_schedule_tip = if ironwood_active {
         chain_tip.unwrap_or(0)
@@ -276,11 +289,7 @@ pub async fn get_ironwood_status(
             .push("Connected Zebra RPC does not expose the Ironwood value pool yet.".to_string());
     }
     if ironwood_active && orchard_wallet_zat > 0 {
-        blockers.push(
-            "Orchard notes remain — use Plan, Migrate, and Broadcast on the Ironwood tab \
-             (or CLI `nozy ironwood …`)."
-                .to_string(),
-        );
+        blockers.push("Orchard notes remain migrate if able.".to_string());
     }
     if plan.zip318.note_split_required {
         blockers.push(
@@ -341,12 +350,14 @@ pub async fn get_ironwood_status(
         && blockers.is_empty();
 
     let tip_for_readiness = chain_tip.unwrap_or(migration_schedule_tip);
-    let (readiness_state, readiness_blockers) =
-        match desktop_migration_readiness(ironwood_active, tip_for_readiness, migration_schedule_tip)
-        {
-            Ok((state, rb)) => (state, rb),
-            Err(_) => (MigrationReadinessState::Blocked, Vec::new()),
-        };
+    let (readiness_state, readiness_blockers) = match desktop_migration_readiness(
+        ironwood_active,
+        tip_for_readiness,
+        migration_schedule_tip,
+    ) {
+        Ok((state, rb)) => (state, rb),
+        Err(_) => (MigrationReadinessState::Blocked, Vec::new()),
+    };
     for b in readiness_blockers {
         if !blockers.iter().any(|existing| existing == &b) {
             blockers.push(b);
@@ -364,7 +375,7 @@ pub async fn get_ironwood_status(
     let notices = ironwood_user_notices(ironwood_active, orchard_wallet_zat);
 
     Ok(IronwoodDesktopStatusResponse {
-        network: config.network,
+        network: config.network.clone(),
         chain_tip,
         activation_height,
         activation_target_date,
@@ -374,6 +385,9 @@ pub async fn get_ironwood_status(
         ironwood_chain_value_zec,
         orchard_wallet_zat,
         ironwood_wallet_zat,
+        ironwood_note_count,
+        ironwood_max_note_zat,
+        ironwood_max_send_zat,
         ironwood_send_enabled,
         wallet_ready,
         migration_recommended: plan.orchard_notes_to_migrate > 0 && ironwood_active,
@@ -411,5 +425,6 @@ pub async fn get_ironwood_status(
             amount_timing_notes: safer.amount_timing_notes,
             baseline_hygiene_notes: safer.baseline_hygiene_notes,
         },
+        send_egress: assess_send_egress(&config),
     })
 }

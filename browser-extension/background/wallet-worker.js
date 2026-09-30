@@ -78,13 +78,25 @@ async function initShieldedTrackerState(endpoint, startHeight) {
   });
 }
 
+function wasmJsonValue(v) {
+  if (v instanceof Map) {
+    const o = {};
+    for (const [k, val] of v) o[String(k)] = wasmJsonValue(val);
+    return o;
+  }
+  if (Array.isArray(v)) return v.map(wasmJsonValue);
+  return v;
+}
+
 function applyShieldedScanBlock(trackerJson, mnemonic, address, height, blockJson) {
-  const out = wasm.orchard_scan_tracker_apply_block(
-    trackerJson,
-    mnemonic,
-    address,
-    height,
-    blockJson
+  const out = wasmJsonValue(
+    wasm.orchard_scan_tracker_apply_block(
+      trackerJson,
+      mnemonic,
+      address,
+      height,
+      blockJson
+    )
   );
   const nextTracker =
     out?.tracker_state ??

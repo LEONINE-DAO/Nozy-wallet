@@ -17,6 +17,10 @@ pub struct WalletBalanceSnapshot {
     pub unspent_note_count: usize,
     /// Quiet legacy Sapling unspent (Phase 2). Not included in confirmed/available.
     pub sapling_unspent_zatoshis: u64,
+    pub orchard_unspent_zatoshis: u64,
+    pub ironwood_unspent_zatoshis: u64,
+    /// Largest unspent Ironwood note. Sends can spend only one Ironwood note today.
+    pub ironwood_max_note_zatoshis: u64,
 }
 
 /// Load confirmed, pending, and available shielded balance from local wallet state.
@@ -26,6 +30,7 @@ pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
         wallet_unspent_balance_zatoshis,
     };
     use crate::paths::get_wallet_data_dir;
+    use crate::shielded_pool::ShieldedPool;
     use crate::transaction_history::SentTransactionStorage;
     use std::collections::HashSet;
 
@@ -40,6 +45,22 @@ pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
 
     let confirmed_zatoshis = wallet_unspent_balance_zatoshis(&notes);
     let unspent_note_count = notes.iter().filter(|note| !note.spent).count();
+    let orchard_unspent_zatoshis = notes
+        .iter()
+        .filter(|note| !note.spent && note.pool == ShieldedPool::Orchard)
+        .map(|note| note.value)
+        .sum();
+    let ironwood_unspent_zatoshis = notes
+        .iter()
+        .filter(|note| !note.spent && note.pool == ShieldedPool::Ironwood)
+        .map(|note| note.value)
+        .sum();
+    let ironwood_max_note_zatoshis = notes
+        .iter()
+        .filter(|note| !note.spent && note.pool == ShieldedPool::Ironwood)
+        .map(|note| note.value)
+        .max()
+        .unwrap_or(0);
     let sapling_unspent_zatoshis = crate::sapling_scan::load_sapling_notes()
         .map(|n| crate::sapling_scan::sapling_unspent_balance_zatoshis(&n))
         .unwrap_or(0);
@@ -76,6 +97,9 @@ pub fn wallet_balance_snapshot() -> NozyResult<WalletBalanceSnapshot> {
         available_zatoshis,
         unspent_note_count,
         sapling_unspent_zatoshis,
+        orchard_unspent_zatoshis,
+        ironwood_unspent_zatoshis,
+        ironwood_max_note_zatoshis,
     })
 }
 

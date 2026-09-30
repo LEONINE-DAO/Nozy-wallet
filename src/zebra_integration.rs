@@ -644,6 +644,37 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
         }
     }
 
+    /// JSON-RPC URL this client posts to (primary endpoint).
+    pub fn rpc_url(&self) -> &str {
+        &self.url
+    }
+
+    /// Generic JSON-RPC call (Crosslink TFL / staking methods, experimental node RPCs).
+    pub async fn call_rpc<T>(&self, method: &str, params: Value) -> NozyResult<T>
+    where
+        T: serde::de::DeserializeOwned,
+    {
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params,
+            "id": 1
+        });
+
+        let response: ZebraResponse<T> = self.make_request(request).await?;
+
+        if let Some(error) = response.error {
+            return Err(NozyError::Rpc(format!(
+                "{} (code: {})",
+                error.message, error.code
+            )));
+        }
+
+        response
+            .result
+            .ok_or_else(|| NozyError::Rpc(format!("No result from RPC method `{method}`")))
+    }
+
     async fn get_grpc_client(&self) -> NozyResult<Arc<ZebraGrpcClient>> {
         let grpc_client = ZebraGrpcClient::new(self.url.clone()).await?;
         Ok(Arc::new(grpc_client))
@@ -694,6 +725,14 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
     }
 
     pub async fn broadcast_transaction(&self, raw_tx: &str) -> NozyResult<String> {
+        if let Ok(path) = std::env::var("NOZY_DUMP_RAW_TX_PATH") {
+            let path = path.trim();
+            if !path.is_empty() {
+                if let Err(e) = std::fs::write(path, raw_tx) {
+                    tracing::warn!(path, error = %e, "NOZY_DUMP_RAW_TX_PATH write failed");
+                }
+            }
+        }
         if let Some(txid) = crate::nym_mixnet_broadcast::maybe_broadcast_via_nym_mixnet(
             &self.url,
             raw_tx,
@@ -720,9 +759,10 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
             )));
         }
 
-        response.result.ok_or_else(|| {
+        let txid = response.result.ok_or_else(|| {
             NozyError::InvalidOperation("No transaction hash in response".to_string())
-        })
+        })?;
+        Ok(txid)
     }
 
     pub async fn get_mempool_info(&self) -> NozyResult<HashMap<String, Value>> {
@@ -1216,6 +1256,10 @@ This blocks remote RPC only; localhost RPC remains allowed.",
         T: serde::de::DeserializeOwned,
     {
         let mut req = self.client.post(url).json(request);
+        if request.get("method").and_then(|m| m.as_str()) == Some("getblock") {
+            // Verbose getblock often exceeds the 10s local client timeout; retries then look hung.
+            req = req.timeout(std::time::Duration::from_secs(120));
+        }
         if let Some((user, pass)) = &self.rpc_auth {
             req = req.basic_auth(user, Some(pass));
         }

@@ -105,6 +105,7 @@ async fn save_wallet_to_active_profile(wallet: &mut HDWallet) -> NozyResult<()> 
 #[command(name = "nozy")]
 #[command(version = nozy::version_info::VERSION_DISPLAY)]
 #[command(about = "NozyWallet / Nozy Lite — privacy-first Orchard CLI (ops health, sync, send)")]
+#[command(before_help = nozy::cli_art::STARTUP_LOGO)]
 #[command(
     long_about = "NozyWallet is a privacy-first Orchard wallet. The CLI is productized as Nozy Lite for operator uptime and data checks next to Zebrad (health/--json/TUI), plus sync, send, and Ironwood. Fully shielded by default."
 )]
@@ -288,7 +289,8 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
 
     #[command(about = "Check confirmation status of a transaction")]
     CheckConfirmations {
-        #[arg(long, short = 't', help = "Transaction ID (TXID) to check")]
+        // No short flag: global `--testnet` already uses `-t`.
+        #[arg(long, help = "Transaction ID (TXID) to check")]
         txid: Option<String>,
     },
 
@@ -420,6 +422,22 @@ pub enum CrosslinkCommand {
         #[arg(long, help = "Include full bond / finalizer hex in human output")]
         full_keys: bool,
     },
+    #[command(
+        about = "Structured diagnostic dump (tip, TFL lag, recency, bonds, UFVK fingerprint)"
+    )]
+    Doctor {
+        #[arg(long, help = "Print JSON (forum / Shielded Labs paste)")]
+        json: bool,
+        #[arg(long, help = "Skip Hybrid PoS observer HTTP")]
+        no_observer: bool,
+    },
+    #[command(
+        about = "Unbond/withdraw plan (does not submit). Print sample pks and exact next commands"
+    )]
+    Lifecycle {
+        #[arg(long, help = "Print JSON plan")]
+        json: bool,
+    },
     #[command(about = "List active and withdrawable staking positions")]
     Positions {
         #[arg(long)]
@@ -500,6 +518,27 @@ pub enum CrosslinkCommand {
     },
     #[command(about = "Export node wallet UFVK for Season 1 ZEC payout submission")]
     Ufvk {
+        #[arg(long)]
+        json: bool,
+    },
+    #[command(
+        about = "Build a payout claim pack (feature-net UFVK + mainnet u1 + earned vs bonded)"
+    )]
+    Claim {
+        #[arg(
+            long,
+            help = "Mainnet Orchard unified address (u1…) where ZEC should be sent"
+        )]
+        payout_address: Option<String>,
+        #[arg(
+            long,
+            help = "Unlock the Nozy wallet and use its receive address as --payout-address"
+        )]
+        from_wallet: bool,
+        #[arg(long, help = "Second UFVK if you also staked from a mobile delegator")]
+        mobile_ufvk: Option<String>,
+        #[arg(long, help = "Announced payout cutoff height (feature-net)")]
+        cutoff: Option<u32>,
         #[arg(long)]
         json: bool,
     },
@@ -898,6 +937,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .init();
     }
+
+    maybe_print_cli_art(&cli);
 
     match cli.command {
         Commands::New => {
@@ -3283,7 +3324,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 } else {
                     NetworkType::Main
                 };
-                nozy::build_ironwood_vote_notes(&wallet, network).is_ok()
+                nozy::vote_export::build_ironwood_vote_notes(&wallet, network).is_ok()
             } else {
                 false
             };
@@ -4860,8 +4901,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
         Commands::Crosslink { command } => {
             use nozy::crosslink::{
                 block_finality, bond_info, build_crosslink_client, ctaz_to_zat, display_bond,
-                display_finality, display_positions, display_roster, display_status,
-                display_wallet, fetch_guardian_snapshot, finality_tip, normalize_finalizer_hex,
+                display_doctor, display_finality, display_payout_claim, display_positions,
+                display_roster, display_status, display_wallet, fetch_doctor_report,
+                fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_hex,
                 print_feature_net_banner, roster, staking_action, staking_day_at,
                 staking_positions, tx_finality, wallet_sync_status, wallet_ufvk, StakingAction,
             };
@@ -4924,6 +4966,47 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!("{}", json_any(&snap)?);
                     } else {
                         display_status(&snap, full_keys);
+                    }
+                }
+                CrosslinkCommand::Doctor { json, no_observer } => {
+                    let report = fetch_doctor_report(&client, !no_observer).await?;
+                    if json {
+                        println!("{}", json_any(&report)?);
+                    } else {
+                        display_doctor(&report);
+                    }
+                }
+                CrosslinkCommand::Lifecycle { json } => {
+                    let report = fetch_doctor_report(&client, false).await?;
+                    if json {
+                        println!("{}", json_any(&report.lifecycle)?);
+                    } else {
+                        print_feature_net_banner();
+                        println!("{}", report.lifecycle.note);
+                        println!(
+                            "Staking Day: {}",
+                            if report.lifecycle.staking_day_open {
+                                "OPEN"
+                            } else {
+                                "CLOSED"
+                            }
+                        );
+                        println!(
+                            "can_unbond={}  can_withdraw={}",
+                            report.lifecycle.can_unbond, report.lifecycle.can_withdraw
+                        );
+                        if let Some(ref pk) = report.lifecycle.sample_unbond_pk {
+                            println!("sample unbond pk (full): {pk}");
+                            println!("  nozy crosslink unbond --bond {pk} --yes");
+                        }
+                        if let Some(ref pk) = report.lifecycle.sample_withdraw_pk {
+                            println!("sample withdraw pk (full): {pk}");
+                            println!("  nozy crosslink withdraw --bond {pk} --yes");
+                        }
+                        println!();
+                        println!(
+                            "Doctor never submits. Prefer a small bond. Recorder: scripts/record-crosslink-lifecycle.py"
+                        );
                     }
                 }
                 CrosslinkCommand::Positions { json, full_keys } => {
@@ -5089,8 +5172,32 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         println!("{ufvk}");
                         println!();
                         println!(
-                            "Also provide a mainnet Ironwood address when Jason announces the submission window."
+                            "Prefer `nozy crosslink claim` for the full paste pack (UFVK + mainnet u1)."
                         );
+                    }
+                }
+                CrosslinkCommand::Claim {
+                    payout_address,
+                    from_wallet,
+                    mobile_ufvk,
+                    cutoff,
+                    json,
+                } => {
+                    let payout_address = if let Some(addr) = payout_address {
+                        Some(addr)
+                    } else if from_wallet {
+                        let (wallet, _storage) = load_wallet().await?;
+                        let network = network_type_from_config(&config.network);
+                        Some(wallet.generate_orchard_address(0, 0, network)?)
+                    } else {
+                        None
+                    };
+                    let pack =
+                        fetch_payout_claim(&client, payout_address, mobile_ufvk, cutoff).await?;
+                    if json {
+                        println!("{}", json_any(&pack)?);
+                    } else {
+                        display_payout_claim(&pack);
                     }
                 }
                 CrosslinkCommand::Wallet { json } => match wallet_sync_status(&client).await {
@@ -5152,6 +5259,19 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
     }
 
     Ok(())
+}
+
+fn maybe_print_cli_art(cli: &Cli) {
+    if !nozy::cli_art::should_print_art(cli.quiet, cli.json) {
+        return;
+    }
+    match &cli.command {
+        Commands::Send { .. } => nozy::cli_art::print_send_shield(),
+        Commands::Health { .. } | Commands::Tui { .. } => {}
+        Commands::Status { json, watch, .. } if *json || *watch => {}
+        Commands::Balance { json } if *json => {}
+        _ => nozy::cli_art::print_startup_logo(),
+    }
 }
 
 // Error handling wrapper for main function

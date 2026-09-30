@@ -26,6 +26,7 @@ Nozy targets **Monero-like default privacy** using Zcash Orchard / Ironwood — 
 
 ## Related
 
+- [Lesson: Privacy besides the ledger](../privacy-networks/beyond-the-ledger.md)
 - [Why Ironwood?](../features/ironwood.md)
 - [Security Questions](security.md)
 - [Absolute Privacy](../features/absolute-privacy.md)

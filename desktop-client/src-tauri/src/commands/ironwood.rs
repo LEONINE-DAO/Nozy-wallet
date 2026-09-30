@@ -9,7 +9,7 @@ use nozy::{
     load_config, load_orchard_migration_schedule, load_wallet_notes,
     max_serialized_witness_lag_blocks, plan_orchard_migration_at, plan_orchard_note_split_outputs,
     save_orchard_migration_plan_at, scan_notes_for_sending, MigrationNetworkPrivacyOpts,
-    MigrationReadinessState, MAX_SEND_WITNESS_LAG_BLOCKS, ZebraClient,
+    MigrationReadinessState, ZebraClient, MAX_SEND_WITNESS_LAG_BLOCKS,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -125,7 +125,8 @@ pub struct IronwoodSplitResponse {
 #[command]
 pub async fn ironwood_plan_save() -> Result<IronwoodPlanSaveResponse, TauriError> {
     let (_config, _chain_tip, ironwood_active, tip_for_plan) = chain_context().await?;
-    let plan = plan_orchard_migration_at(ironwood_active, tip_for_plan).map_err(TauriError::from)?;
+    let plan =
+        plan_orchard_migration_at(ironwood_active, tip_for_plan).map_err(TauriError::from)?;
     let (schedule, path) =
         save_orchard_migration_plan_at(ironwood_active, tip_for_plan).map_err(TauriError::from)?;
 
@@ -165,9 +166,7 @@ pub async fn ironwood_split(
         let spend_note = spendable
             .iter()
             .filter(|note| !note.orchard_note.spent)
-            .filter(|note| {
-                nozy::ironwood::note_requires_canonical_split(note.orchard_note.value)
-            })
+            .filter(|note| nozy::ironwood::note_requires_canonical_split(note.orchard_note.value))
             .max_by_key(|note| note.orchard_note.value)
             .ok_or_else(|| {
                 TauriError::from(nozy::NozyError::InvalidOperation(
@@ -244,6 +243,10 @@ pub async fn ironwood_migrate(
             MigrationReadinessState::NoOrchardNotes => {
                 "No Orchard notes require Ironwood migration.".to_string()
             }
+            MigrationReadinessState::NeedsPlan => {
+                "Save a ZIP 318 schedule first — click Plan migration, then Start migration."
+                    .to_string()
+            }
             MigrationReadinessState::SplitRequired => {
                 "ZIP 318 note splitting is required before migrate. Use Split on this tab, then retry."
                     .to_string()
@@ -315,10 +318,7 @@ pub async fn ironwood_broadcast(
             result.sequence, result.txid
         )
     } else if result.blockers.is_empty() {
-        format!(
-            "Broadcast turnstile #{} ({})",
-            result.sequence, result.txid
-        )
+        format!("Broadcast turnstile #{} ({})", result.sequence, result.txid)
     } else {
         format!(
             "Broadcast incomplete for #{}: {}",
@@ -345,7 +345,8 @@ pub fn desktop_migration_readiness(
     chain_tip: u32,
     tip_for_plan: u32,
 ) -> Result<(MigrationReadinessState, Vec<String>), TauriError> {
-    let plan = plan_orchard_migration_at(ironwood_active, tip_for_plan).map_err(TauriError::from)?;
+    let plan =
+        plan_orchard_migration_at(ironwood_active, tip_for_plan).map_err(TauriError::from)?;
     let schedule = load_orchard_migration_schedule().map_err(TauriError::from)?;
     let notes = load_wallet_notes().unwrap_or_default();
     let witness_lag = max_serialized_witness_lag_blocks(&notes, chain_tip);

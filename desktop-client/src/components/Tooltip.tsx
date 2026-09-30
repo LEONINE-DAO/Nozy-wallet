@@ -65,7 +65,7 @@ export function Tooltip({ content, children, placement = "auto" }: TooltipProps)
           ref={tooltipRef}
           id={id}
           role="tooltip"
-          className="fixed z-[300] max-w-xs px-3 py-2 text-sm font-semibold text-white bg-gray-950 dark:bg-gray-100 dark:text-gray-900 rounded-xl shadow-xl border border-white/10 dark:border-gray-900/10 pointer-events-none animate-fade-in"
+          className="fixed z-[300] max-w-xs px-3 py-2 text-sm font-semibold text-primary-100 bg-gray-950 dark:bg-gray-100 dark:text-gray-900 rounded-xl shadow-xl border border-white/10 dark:border-gray-900/10 pointer-events-none animate-fade-in"
           style={{
             left: position.left,
             top: position.top,

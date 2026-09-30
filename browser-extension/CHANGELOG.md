@@ -2,6 +2,51 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 0.1.26 — 2026-09-18
+
+### Changed
+- Header no longer shows the logo (actions only). Large Nozy logo on **Send** (same treatment as Receive/Home).
+
+## 0.1.25 — 2026-09-18
+
+### Changed
+- **Receive:** release-style layout with large Nozy logo, bigger QR, readable address block, and primary **Copy address** CTA (current platinum styling).
+
+## 0.1.24 — 2026-09-18
+
+### Fixed
+- **Logo size / Home brand:** header mark enlarged for readability; Nozy logo restored on the Home screen (it was hidden when `showBrand` was off for dashboard).
+
+## 0.1.23 — 2026-09-18
+
+### Fixed
+- **Settings → Reveal recovery phrase** stuck on “Checking…” — after unlock, reveal reuses the session password check instead of running a second Argon2 decrypt that froze the service worker.
+
+## 0.1.22 — 2026-09-18
+
+### Added
+- **Create backup flow:** after create, reveal or copy the 24-word phrase, then confirm by picking the correct word for random positions (Word #N).
+- **Settings → Recovery phrase:** re-view / copy the seed anytime after unlock (password step-up).
+
+## 0.1.21 — 2026-09-18
+
+### Added
+- **Public sync** (zec.rocks-style): when no local Zebrad is found, Welcome offers **Yes — use public sync** → `https://lwd.nozywallet.org:443`. Keys stay in the extension; not `api.nozywallet.org`.
+- **Public sync** mode chip on Connect your node; create/restore allowed after public LWD opt-in (birthday from `nozywallet.org/status.json` when RPC is offline).
+
+### Changed
+- Removed incorrect Zebrad JSON-RPC probes against `zec.rocks` (that host is lightwalletd gRPC).
+- Companion LWD prefs may keep an explicit public LWD URL after opt-in.
+
+## 0.1.12 — 2026-09-03
+
+### Added
+- **Network privacy (Nym)** panel: mixnet helper readiness, dVPN probe, and operator opt-in for **LWD over mixnet** (`lwd-mixnet-client` on `:9068` / metrics `:9070`) with Probe.
+- Companion tab preset **Mixnet proxy :9068** (not a store default; Chrome still does not embed the Nym SDK).
+
+### Notes
+- Honest scope: extension drives local companion + optional dialling-half URL. Do not claim “Nym integrated” in store copy.
+
 ## 0.1.10 — 2026-08-03
 
 ### Fixed

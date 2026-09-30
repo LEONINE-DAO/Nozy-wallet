@@ -95,10 +95,7 @@ pub struct SaplingShieldResponse {
 pub async fn get_sapling_status() -> Result<SaplingStatusResponse, TauriError> {
     let notes = load_sapling_notes().unwrap_or_default();
     let unspent: Vec<_> = notes.iter().filter(|n| !n.spent).collect();
-    let with_rseed = unspent
-        .iter()
-        .filter(|n| sapling_note_has_rseed(n))
-        .count();
+    let with_rseed = unspent.iter().filter(|n| sapling_note_has_rseed(n)).count();
     let ready = unspent
         .iter()
         .filter(|n| sapling_note_ready_to_shield(n))
@@ -201,8 +198,8 @@ pub async fn shield_sapling(
     }
 
     // Best-effort compact catch-up before proving.
-    let lwd_url = std::env::var("LIGHTWALLETD_GRPC")
-        .unwrap_or_else(|_| "http://127.0.0.1:9067".to_string());
+    let lwd_url =
+        std::env::var("LIGHTWALLETD_GRPC").unwrap_or_else(|_| "http://127.0.0.1:9067".to_string());
     let db = compact_db_path();
     if let Some(parent) = db.parent() {
         let _ = std::fs::create_dir_all(parent);
@@ -282,8 +279,6 @@ pub async fn shield_sapling(
         expiry_height: Some(built.expiry_height),
         candidate_notes,
         candidate_zatoshis,
-        message: format!(
-            "Moved legacy funds into shielded balance. Broadcast {txid}."
-        ),
+        message: format!("Moved legacy funds into shielded balance. Broadcast {txid}."),
     })
 }

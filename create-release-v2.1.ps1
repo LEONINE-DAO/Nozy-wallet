@@ -44,7 +44,7 @@ Major Features:
 - Security Hardening (93 unwrap() calls removed)
 - Deterministic Scanning Tests
 - Note Indexing System
-- Secret Network/Shade Protocol Support
+- Secret Network Support
 - Cross-Chain Swap Framework'
 
 git tag -a v2.1.0 -m $tagMessage

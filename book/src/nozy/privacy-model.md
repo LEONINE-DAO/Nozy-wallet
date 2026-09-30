@@ -49,7 +49,7 @@ For the statement “I have true privacy” to hold in practice—not just on pa
 2. **Verify connectivity** — `nozy test-zebra` before sync or send.
 3. **Sync to tip** before spending — stale witnesses block send and increase risk.
 4. **Prefer local lightwalletd** if you use compact sync; avoid remote LWD you do not trust.
-5. **Network layer** — Tor/VPN if hiding your IP from the P2P/RPC path matters ([Privacy Networks](../privacy-networks/overview.md)).
+5. **Network layer** — Tor/VPN if hiding your IP from the P2P/RPC path matters ([Privacy Networks](../privacy-networks/overview.md)). **Local Zebrad is enough** for IP↔tx (mixnet stays idle). Mixnet is for *remote* submit; dVPN is for *remote* compact sync — they are not the same mode. No local node: [zcash.nym.com](https://zcash.nym.com) (NymVPN Fast mode to sync, Mixnet + new exit to send).
 6. **Address hygiene** — New receive addresses when linkability matters.
 7. **Backup mnemonic offline** — Privacy is meaningless if you lose funds or leak the seed.
 
@@ -72,7 +72,7 @@ Privacy is *selective revelation* ([Cypherpunk Manifesto](https://www.activism.n
 
 ***
 
-For more detail, see [Absolute Privacy](../features/absolute-privacy.md), [Security best practices](../security/best-practices.md), and [Zebrad connectivity](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md).
+For more detail, see the lesson [Privacy besides the ledger](../privacy-networks/beyond-the-ledger.md), [Absolute Privacy](../features/absolute-privacy.md), [Security best practices](../security/best-practices.md), and [Zebrad connectivity](../../../docs/reference/ZEBRAD_NOZYWALLET_CONNECTIVITY.md).
 
 ***
 

@@ -26,6 +26,9 @@ interface SettingsState {
   /** Advanced: attest NymVPN/Tor when using remote Zebrad for safer migration Priority 1. Default off — prefer local node. */
   attestPrivateNetworkForMigration: boolean;
 
+  /** Optional NozyPay gateway URL for hosted invoices (merchant dashboard). */
+  nozypayUrl: string;
+
   onboardingFirstSyncDismissed: boolean;
   setOnboardingFirstSyncDismissed: (dismissed: boolean) => void;
 
@@ -46,6 +49,7 @@ interface SettingsState {
   setBiometricsEnabled: (enabled: boolean) => void;
   setScreenshotProtection: (enabled: boolean) => void;
   setAttestPrivateNetworkForMigration: (enabled: boolean) => void;
+  setNozypayUrl: (url: string) => void;
 }
 
 export const useSettingsStore = create<SettingsState>()(
@@ -62,6 +66,7 @@ export const useSettingsStore = create<SettingsState>()(
       biometricsEnabled: false,
       screenshotProtection: true,
       attestPrivateNetworkForMigration: false,
+      nozypayUrl: "",
       onboardingFirstSyncDismissed: false,
       setOnboardingFirstSyncDismissed: (dismissed) =>
         set({ onboardingFirstSyncDismissed: dismissed }),
@@ -87,6 +92,7 @@ export const useSettingsStore = create<SettingsState>()(
         set({ screenshotProtection: enabled }),
       setAttestPrivateNetworkForMigration: (enabled) =>
         set({ attestPrivateNetworkForMigration: enabled }),
+      setNozypayUrl: (url) => set({ nozypayUrl: url.trim() }),
     }),
     {
       name: "nozy-settings-storage",
@@ -98,6 +104,11 @@ export const useSettingsStore = create<SettingsState>()(
         if (!isFiatCurrency(state.fiatCurrency as FiatCurrency | undefined)) {
           state.fiatCurrency = DEFAULT_FIAT_CURRENCY;
         }
+        if (typeof state.zekurapayUrl === "string" && !state.nozypayUrl) {
+          state.nozypayUrl = state.zekurapayUrl;
+        }
+        delete state.zekurapayUrl;
+        delete state.setZekurapayUrl;
         return state;
       },
     }

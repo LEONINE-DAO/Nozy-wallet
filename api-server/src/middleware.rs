@@ -186,11 +186,21 @@ pub async fn rate_limit_middleware(request: Request, next: Next, limiter: RateLi
     }
 }
 
+/// Paths that stay reachable without an API key (health + LWD companion sync).
+pub fn is_public_unauthenticated_path(path: &str) -> bool {
+    path == "/health" || path.starts_with("/api/lwd/")
+}
+
 pub async fn api_key_auth(
     request: Request,
     next: Next,
     expected_api_key: Option<String>,
 ) -> Response {
+    let path = request.uri().path();
+    if is_public_unauthenticated_path(path) {
+        return next.run(request).await;
+    }
+
     let Some(ref api_key) = expected_api_key else {
         return next.run(request).await;
     };

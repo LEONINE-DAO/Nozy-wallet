@@ -15,7 +15,10 @@ pub(crate) fn map_grpc_status(op: &'static str, status: Status) -> ZeakingError 
     ))
 }
 
-fn map_grpc_transport(op: &'static str, display: impl std::fmt::Display) -> ZeakingError {
+pub(crate) fn map_grpc_transport(
+    op: &'static str,
+    display: impl std::fmt::Display,
+) -> ZeakingError {
     ZeakingError::Grpc(format!("{op}: {display}"))
 }
 
@@ -112,6 +115,17 @@ pub async fn sync_compact_to_tip_with_options(
     let tip = chain_tip_height(client).await?;
     let _pruned = prune_stale_compact_cache(store, tip)?;
     let start = requested_start_height_for_tip_sync(store, options.start_floor)?;
+    // Store already has `tip` (next height is tip+1). Do not call GetBlockRange with end < start.
+    if start > tip {
+        return Ok(SyncCompactToTipStats {
+            chain_tip: tip,
+            blocks_written: 0,
+            range_start_requested: start,
+            range_start_effective: start,
+            range_end: tip,
+            already_at_tip: true,
+        });
+    }
     let compact = SyncCompactOptions {
         resume_from_store: true,
         persist_progress_every: options.persist_progress_every,

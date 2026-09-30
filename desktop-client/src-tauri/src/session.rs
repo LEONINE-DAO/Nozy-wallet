@@ -48,14 +48,10 @@ pub fn resolve_password(override_password: Option<&str>) -> String {
         .map(str::trim)
         .filter(|p| !p.is_empty())
         .map(str::to_string);
-    from_request
-        .or_else(session_password)
-        .unwrap_or_default()
+    from_request.or_else(session_password).unwrap_or_default()
 }
 
-pub async fn load_session_wallet(
-    override_password: Option<&str>,
-) -> Result<HDWallet, TauriError> {
+pub async fn load_session_wallet(override_password: Option<&str>) -> Result<HDWallet, TauriError> {
     let password = resolve_password(override_password);
     let storage = WalletStorage::with_xdg_dir();
     let wallet = storage.load_wallet(&password).await.map_err(|e| {
@@ -126,7 +122,9 @@ pub async fn load_wallet_for_reveal(request_password: &str) -> Result<HDWallet, 
 }
 
 /// F-06: migrate / broadcast require step-up auth for password-protected wallets.
-pub async fn load_wallet_for_migrate(request_password: Option<&str>) -> Result<HDWallet, TauriError> {
+pub async fn load_wallet_for_migrate(
+    request_password: Option<&str>,
+) -> Result<HDWallet, TauriError> {
     let explicit = request_password.map(str::trim).filter(|p| !p.is_empty());
     let wallet = load_session_wallet(explicit).await?;
     if wallet.is_password_protected() {
@@ -134,6 +132,22 @@ pub async fn load_wallet_for_migrate(request_password: Option<&str>) -> Result<H
             return Err(TauriError {
                 message: "Enter your wallet password to migrate or broadcast Ironwood turnstiles."
                     .to_string(),
+                code: Some("AUTH_002".to_string()),
+            });
+        };
+        verify_wallet_password(&wallet, pw)?;
+    }
+    Ok(wallet)
+}
+
+/// Fund-moving sends require step-up auth for password-protected wallets (same bar as migrate).
+pub async fn load_wallet_for_send(request_password: Option<&str>) -> Result<HDWallet, TauriError> {
+    let explicit = request_password.map(str::trim).filter(|p| !p.is_empty());
+    let wallet = load_session_wallet(explicit).await?;
+    if wallet.is_password_protected() {
+        let Some(pw) = explicit else {
+            return Err(TauriError {
+                message: "Enter your wallet password to send funds.".to_string(),
                 code: Some("AUTH_002".to_string()),
             });
         };

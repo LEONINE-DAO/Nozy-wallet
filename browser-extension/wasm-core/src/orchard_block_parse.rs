@@ -24,7 +24,9 @@ pub fn orchard_cmx_bytes_from_block_json(block: &Value) -> Result<Vec<[u8; 32]>,
         if !has_orchard {
             continue;
         }
-        let orchard = tx.get("orchard").ok_or_else(|| "orchard missing".to_string())?;
+        let orchard = tx
+            .get("orchard")
+            .ok_or_else(|| "orchard missing".to_string())?;
         let actions = orchard
             .get("actions")
             .and_then(|a| a.as_array())

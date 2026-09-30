@@ -146,9 +146,7 @@ pub async fn link_zns_name(request: LinkZnsRequest) -> Result<LinkZnsResponse, T
         return Err(TauriError::from("Enter a Zcash name."));
     }
 
-    let resolved_address = request
-        .resolved_address
-        .replace([' ', '\n', '\t'], "");
+    let resolved_address = request.resolved_address.replace([' ', '\n', '\t'], "");
     if resolved_address.is_empty() {
         return Err(TauriError::from("Resolve the name before linking."));
     }

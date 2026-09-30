@@ -51,6 +51,9 @@ WALLET_BACKUP.md
 
 .env
 .env.local
+# Mobile preview/production API key (scripts/prepare-mobile-store-credentials.ps1)
+nozy-mobile/hosted-api.env
+**/hosted-api.env
 
 frontend/
 src-tauri/
@@ -68,7 +71,6 @@ push_url_update.ps1
 !AGENTS.md
 !CONTRIBUTING.md
 !PRODUCTION_CHECKLIST.md
-!GRANT_80K_PRODUCTION_CHECKLIST.md
 !api-server/*.md
 !CROSSLINK*.md
 !*AUDIT*.md
@@ -105,6 +107,12 @@ push_url_update.ps1
 # Generated Word papers — keep local until ready to publish
 docs/*.docx
 docs/~$*
+docs/ieee-submission/_tools/
+docs/ieee-submission/_d2_token.txt
+docs/ieee-submission/*.aux
+docs/ieee-submission/*.log
+docs/ieee-submission/*.out
+docs/ieee-submission/*.xdv
 # Local-only: lecture / research journal (never commit — source material for talks & papers)
 docs/journal/
 !ENHANCEMENT_ROADMAP.md
@@ -115,6 +123,10 @@ docs/journal/
 !landing/README.md
 docs/grant/
 docs/rfcs/WALLET_SYNC_UNIFIED_ARCHITECTURE.md
+
+# Local reference clones (not part of Nozy build)
+tools/zcash_voting/
+tools/zk-go-g-upstream/
 
 book/book/
 

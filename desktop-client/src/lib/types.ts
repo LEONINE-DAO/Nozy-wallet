@@ -54,6 +54,9 @@ export interface DesktopTestnetWalletResponse {
 export interface RestoreWalletRequest {
   mnemonic: string;
   password?: string;
+  name?: string;
+  /** Settings → add another wallet (do not overwrite the active profile). */
+  new_profile?: boolean;
 }
 
 export interface UnlockWalletRequest {
@@ -76,6 +79,11 @@ export interface BalanceResponse {
   pending_zec?: number;
   available_zec?: number;
   unspent_note_count?: number;
+  orchard_zec?: number;
+  ironwood_zec?: number;
+  sapling_zec?: number;
+  ironwood_max_note_zec?: number;
+  ironwood_max_note_zatoshis?: number;
 }
 
 export interface SyncStatusResponse {
@@ -138,6 +146,9 @@ export interface IronwoodDesktopStatusResponse {
   ironwood_chain_value_zec: number | null;
   orchard_wallet_zat: number;
   ironwood_wallet_zat: number;
+  ironwood_note_count?: number;
+  ironwood_max_note_zat?: number;
+  ironwood_max_send_zat?: number;
   ironwood_send_enabled: boolean;
   wallet_ready: boolean;
   migration_recommended: boolean;
@@ -155,6 +166,7 @@ export interface IronwoodDesktopStatusResponse {
   migration_privacy_warnings: string[];
   orchard_funds_at_risk: boolean;
   safer_migration: IronwoodSaferMigrationStatus;
+  send_egress?: SendEgressSnapshot;
 }
 
 export interface IronwoodPlanSaveResponse {
@@ -298,6 +310,31 @@ export interface ConfigResponse {
   theme: string;
 }
 
+export type SendEgressKind =
+  | "local"
+  | "trusted"
+  | "mixnet"
+  | "tor"
+  | "i2p"
+  | "direct_remote"
+  | "blocked";
+
+export interface SendEgressSnapshot {
+  kind: SendEgressKind;
+  label: string;
+  connection_mode: string;
+  zebra_url: string;
+  zebra_url_local: boolean;
+  mixnet_requested: boolean;
+  mixnet_helper_ok: boolean;
+  would_use_mixnet: boolean;
+  show_stopgap: boolean;
+  stopgap_url: string;
+  stopgap_hint: string;
+  summary: string;
+  detail: string;
+}
+
 export interface NymDvpnSyncStatus {
   requested: boolean;
   lwd_url: string;
@@ -346,6 +383,89 @@ export interface SignMessageRequest {
 export interface SignMessageResponse {
   signature: string;
   scheme?: string;
+}
+
+export interface VoteStatusResponse {
+  helper_version: string;
+  env: string;
+  data_dir: string;
+  sdk_enabled: boolean;
+  static_source: string;
+  snapshot_utc: string;
+  vote_start_utc: string;
+  vote_end_utc: string;
+  phase: string;
+  phase_message: string;
+  forum_url: string;
+  notes_exported: boolean;
+  notes_count: number | null;
+  hotkey_ready: boolean;
+  signing_request_present: boolean;
+  sig_present: boolean;
+}
+
+export interface VoteActiveOption {
+  /** May be omitted as 0 in Valar protobuf JSON; treat missing as 0. */
+  index?: number;
+  label: string;
+  description?: string | null;
+}
+
+export interface VoteActiveProposal {
+  id: number;
+  title: string;
+  description?: string | null;
+  options: VoteActiveOption[];
+  zip_number?: string | null;
+}
+
+export interface VoteActiveRound {
+  vote_round_id: string;
+  snapshot_height: number;
+  snapshot_blockhash?: string | null;
+  vote_end_time: number;
+  nullifier_imt_root: string;
+  nc_root: string;
+  status: number;
+  ea_pk: string;
+  title?: string | null;
+  description?: string | null;
+  proposals: VoteActiveProposal[];
+}
+
+export interface VoteExportNotesResponse {
+  notes_path: string;
+  note_count: number;
+  total_value_zat: number;
+  message: string;
+}
+
+export interface VotePrepareResult {
+  round_id: string;
+  message: string;
+  stdout: string;
+}
+
+export interface VoteDelegatePrepareResult {
+  message: string;
+  stdout: string;
+}
+
+export interface VoteSignResponse {
+  round_id: string;
+  sig_path: string;
+  message: string;
+}
+
+export interface VoteDelegateFinishResult {
+  tx_hash: string;
+  confirmed: boolean;
+  stdout: string;
+}
+
+export interface VoteCastResult {
+  proposal_count: number;
+  stdout: string;
 }
 
 export interface AddressBookEntry {
@@ -444,3 +564,127 @@ export interface KeystonePrepareResponse {
   ur_type?: string;
   message?: string;
 }
+
+/** Crosslink Season 1 Protocol Guardian (feature-net cTAZ). */
+export interface CrosslinkStakingDay {
+  height: number;
+  offset: number;
+  cycle: number;
+  window: number;
+  open: boolean;
+  blocks_remaining_in_window: number | null;
+  blocks_until_next: number | null;
+}
+
+export interface CrosslinkBondPosition {
+  pk: string;
+  create_height: number | null;
+  initial_val: number;
+  latest_val: number;
+  finalizer: string | null;
+}
+
+export interface CrosslinkStakingPositions {
+  active: Record<string, CrosslinkBondPosition[]>;
+  withdrawable: CrosslinkBondPosition[];
+}
+
+export interface CrosslinkFinalizedTip {
+  height: number | null;
+  hash: string | null;
+}
+
+export type CrosslinkNextAction =
+  | { wait_for_staking_day: { blocks: number } }
+  | { withdraw_ready: { count: number } }
+  | "unbond_to_exit"
+  | "stake_or_guardian"
+  | "retarget_if_needed";
+
+export interface CrosslinkWalletSyncStatus {
+  sync_height: number;
+  tip_height: number;
+  user_shielded_spendable_zats: number;
+  user_shielded_pending_zats: number;
+  user_unshielded_zats: number;
+  staked_zats: number;
+  withdrawable_zats: number;
+}
+
+export interface CrosslinkGuardianSnapshot {
+  rpc_url: string;
+  height: number;
+  staking_day: CrosslinkStakingDay;
+  tfl_activated: boolean | null;
+  finalized_tip: CrosslinkFinalizedTip | null;
+  positions: CrosslinkStakingPositions;
+  finalizer_count: number | null;
+  pos_height: number | null;
+  next_action: CrosslinkNextAction;
+  privacy_notes: string[];
+  wallet: CrosslinkWalletSyncStatus | null;
+}
+
+export interface CrosslinkRosterEntry {
+  finalizer: string;
+  stake_zat: number;
+  share: number;
+}
+
+export interface CrosslinkActionResponse {
+  action: string;
+  result: unknown;
+}
+
+export interface CrosslinkPayoutClaimPack {
+  feature_net_ufvk: string;
+  ufvk_fingerprint: string;
+  mainnet_orchard: string | null;
+  mobile_ufvk: string | null;
+  height: number;
+  cutoff_height: number | null;
+  earned_zat: number;
+  bonded_zat: number;
+  active_bonds: number;
+  complete: boolean;
+  notes: string[];
+  paste_body: string;
+}
+
+export interface CrosslinkDoctorReport {
+  ok: boolean;
+  rpc_url: string;
+  height: number;
+  tfl_activated: boolean | null;
+  tfl_lag: number | null;
+  recency_finalizers: number | null;
+  pos_height: number | null;
+  staking_day_open: boolean;
+  active_bonds: number;
+  withdrawable_bonds: number;
+  earned_zat: number;
+  bonded_zat: number;
+  ufvk_fingerprint: string | null;
+  wallet_synced: boolean | null;
+  next_action: CrosslinkGuardianSnapshot["next_action"];
+  checks: Array<{ id: string; level: string; detail: string }>;
+  observer: Array<{
+    finalizer: string;
+    grade: string | null;
+    score: number | null;
+    live: boolean | null;
+    standing: string;
+    needs_retarget: boolean;
+  }> | null;
+  lifecycle: {
+    staking_day_open: boolean;
+    can_unbond: boolean;
+    can_withdraw: boolean;
+    sample_unbond_pk: string | null;
+    sample_withdraw_pk: string | null;
+    note: string;
+  };
+  notes: string[];
+  paste_body: string;
+}
+

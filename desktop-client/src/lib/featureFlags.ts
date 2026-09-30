@@ -5,3 +5,17 @@ export const dappBrowserEnabled =
 /** Watch-only web wallet tab. Off by default. */
 export const webWatchOnlyEnabled =
   import.meta.env.VITE_ENABLE_WEB_WATCH_ONLY === "true";
+
+/**
+ * NU7 coinholder vote tab (Valar). On by default through the vote window;
+ * set `VITE_ENABLE_NU7_VOTE=false` to hide.
+ */
+export const nu7VoteEnabled =
+  import.meta.env.VITE_ENABLE_NU7_VOTE !== "false";
+
+/**
+ * Crosslink Season 1 Protocol Guardian tab (feature-net cTAZ).
+ * On by default; set `VITE_ENABLE_CROSSLINK=false` to hide.
+ */
+export const crosslinkEnabled =
+  import.meta.env.VITE_ENABLE_CROSSLINK !== "false";

@@ -103,6 +103,13 @@ pub fn peek_next_diversifier() -> NozyResult<u32> {
 }
 
 pub fn create_invoice(params: CreateInvoiceParams) -> NozyResult<MerchantInvoice> {
+    let addr = params.payment_address.trim();
+    if addr.starts_with('t') {
+        return Err(NozyError::InvalidInput(
+            "transparent ZEC addresses are not supported for invoices; use a shielded UA (u1…)"
+                .into(),
+        ));
+    }
     if !(params.amount_zec.is_finite() && params.amount_zec > 0.0) {
         return Err(NozyError::InvalidInput(
             "amount_zec must be a positive finite value".into(),
@@ -207,6 +214,53 @@ fn expire_open(store: &mut InvoiceStore) -> NozyResult<()> {
         store.save()?;
     }
     Ok(())
+}
+
+/// Extract Orchard raw receiver bytes from a unified address (for invoice matching).
+fn orchard_raw_from_ua(payment_address: &str) -> Option<[u8; 43]> {
+    use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding, Receiver};
+    let (_net, ua) = UnifiedAddress::decode(payment_address.trim()).ok()?;
+    for receiver in ua.items() {
+        if let Receiver::Orchard(raw) = receiver {
+            return Some(raw);
+        }
+    }
+    None
+}
+
+/// After sync persist: match unspent notes to open local invoices (address + amount).
+/// Prefer Ironwood notes; Orchard still matched for legacy residual.
+pub fn match_notes_after_sync(
+    notes: &[crate::notes::SerializableOrchardNote],
+) -> NozyResult<usize> {
+    let mut store = InvoiceStore::load()?;
+    expire_open(&mut store)?;
+    let mut matched = 0usize;
+    let open: Vec<_> = store
+        .invoices
+        .iter()
+        .filter(|i| i.status == InvoiceStatus::Open || i.status == InvoiceStatus::Detected)
+        .cloned()
+        .collect();
+
+    for inv in open {
+        let Some(raw) = orchard_raw_from_ua(&inv.payment_address) else {
+            continue;
+        };
+        let hit = notes.iter().find(|n| {
+            !n.spent
+                && n.value == inv.amount_zatoshis
+                && n.address_bytes.as_slice() == raw.as_slice()
+        });
+        let Some(n) = hit else {
+            continue;
+        };
+        // Confirmed once indexed in wallet note cache (post-sync).
+        if let Some(_upd) = match_incoming_payment(&inv.payment_address, n.value, &n.txid, true)? {
+            matched += 1;
+        }
+    }
+    Ok(matched)
 }
 
 /// Mark matching open invoice as detected/confirmed when a note arrives.

@@ -3,9 +3,10 @@
 
 use crate::error::TauriError;
 use nozy::crosslink::{
-    block_finality, bond_info, build_crosslink_client, ctaz_to_zat, fetch_guardian_snapshot,
-    finality_tip, normalize_finalizer_hex, roster, staking_action, staking_day_at,
-    staking_positions, tx_finality, wallet_ufvk, GuardianSnapshot, StakingAction, StakingPositions,
+    block_finality, bond_info, build_crosslink_client, ctaz_to_zat, fetch_doctor_report,
+    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_hex, roster,
+    staking_action, staking_day_at, staking_positions, tx_finality, wallet_ufvk, DoctorReport,
+    GuardianSnapshot, PayoutClaimPack, StakingAction, StakingPositions,
 };
 use nozy::load_config;
 use serde::{Deserialize, Serialize};
@@ -329,4 +330,47 @@ pub async fn crosslink_wallet_ufvk() -> Result<CrosslinkWalletUfvkResponse, Taur
     let client = client()?;
     let ufvk = wallet_ufvk(&client).await.map_err(TauriError::from)?;
     Ok(CrosslinkWalletUfvkResponse { ufvk })
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct CrosslinkPayoutClaimRequest {
+    #[serde(default)]
+    pub payout_address: Option<String>,
+    #[serde(default)]
+    pub mobile_ufvk: Option<String>,
+    #[serde(default)]
+    pub cutoff_height: Option<u32>,
+}
+
+#[command]
+pub async fn crosslink_payout_claim(
+    request: Option<CrosslinkPayoutClaimRequest>,
+) -> Result<PayoutClaimPack, TauriError> {
+    let req = request.unwrap_or_default();
+    let client = client()?;
+    fetch_payout_claim(
+        &client,
+        req.payout_address,
+        req.mobile_ufvk,
+        req.cutoff_height,
+    )
+    .await
+    .map_err(TauriError::from)
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct CrosslinkDoctorRequest {
+    #[serde(default)]
+    pub observer: Option<bool>,
+}
+
+#[command]
+pub async fn crosslink_doctor(
+    request: Option<CrosslinkDoctorRequest>,
+) -> Result<DoctorReport, TauriError> {
+    let req = request.unwrap_or_default();
+    let client = client()?;
+    fetch_doctor_report(&client, req.observer.unwrap_or(true))
+        .await
+        .map_err(TauriError::from)
 }

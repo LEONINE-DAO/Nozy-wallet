@@ -48,7 +48,9 @@ export function AccountListSettings({ onBack }: AccountListSettingsProps) {
         Wallets & Accounts
       </h2>
       <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-        Add wallets, change the active wallet profile, and manage accounts after you unlock.
+        Create additional wallets or switch between wallets you already made in Nozy. Empty account
+        slots are never listed. Switching asks you to unlock the other wallet — funds on this device
+        are not deleted.
       </p>
 
       <div className="space-y-6">

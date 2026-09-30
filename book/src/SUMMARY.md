@@ -81,6 +81,7 @@
 # Privacy Networks
 
 - [Overview](privacy-networks/overview.md)
+- [Lesson: Privacy besides the ledger](privacy-networks/beyond-the-ledger.md)
 - [Tor Integration](privacy-networks/tor.md)
 - [I2P Integration](privacy-networks/i2p.md)
 - [Setup Guide](privacy-networks/setup.md)
@@ -91,6 +92,7 @@
 - [Backup Your Wallet](examples/backup-wallet.md)
 - [Restore from Backup](examples/restore-from-backup.md)
 - [Set Up Your Own Node](examples/own-node.md)
+- [Lesson: Privacy besides the ledger](privacy-networks/beyond-the-ledger.md)
 - [Integrate with Frontend](examples/frontend-integration.md)
 
 # Troubleshooting

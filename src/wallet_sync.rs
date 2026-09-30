@@ -271,6 +271,19 @@ pub(crate) fn apply_cached_notes_resume(
     }
 
     if let Some(floor) = unwitnessed_unspent_floor(notes_before) {
+        // Near-tip catch-up must not rewind below last_scan: that turns a few hundred
+        // leftover blocks into a scan_notes call that does not persist until it finishes.
+        if let Some(last) = config.last_scan_height {
+            let resume = last.saturating_add(1);
+            if range.scan_start < resume {
+                range.scan_start = resume;
+            }
+            let batch = options.incremental_batch.max(1);
+            if options.end_height.is_none() {
+                range.scan_end = range.scan_start.saturating_add(batch).min(range.chain_tip);
+            }
+            return;
+        }
         if floor < range.scan_start {
             range.scan_start = floor;
         }
@@ -308,7 +321,7 @@ pub(crate) fn apply_start_height_obfuscation(
     config: &WalletConfig,
     options: &WalletSyncOptions,
 ) {
-    if options.start_height.is_some() {
+    if options.start_height.is_some() || config.last_scan_height.is_some() {
         return;
     }
     if range.scan_start > range.scan_end {
@@ -479,13 +492,22 @@ pub async fn sync_wallet_notes(
     apply_cached_notes_resume(&mut range, &config, &options, &notes_before);
     apply_start_height_obfuscation(&mut range, &config, &options);
 
+    let batch = options.incremental_batch.max(1);
+    if range.scan_start <= range.scan_end {
+        let capped = range.scan_start.saturating_add(batch).min(range.chain_tip);
+        if range.scan_end > capped {
+            range.scan_end = capped;
+        }
+    }
+
     let ctx = SyncRangeContext::from_range(&range);
     let (scan_start, scan_end, chain_tip_opt) = ctx.scan_fields();
     let total_before = notes_before.len();
 
     // Block scan caught up but Orchard witnesses may still lag — refresh witnesses to tip.
     if range.scan_start > range.scan_end {
-        return finish_caught_up_sync(&zebra_client, notes_before, &range, &config, 0).await;
+        return finish_caught_up_sync(wallet, &zebra_client, notes_before, &range, &config, 0)
+            .await;
     }
 
     let notes_path = crate::paths::get_wallet_data_dir().join("notes.json");
@@ -550,18 +572,22 @@ pub async fn sync_wallet_notes(
             chain_tip_opt,
         ));
     }
-    refresh_and_persist_witnesses(&zebra_client, &mut cached_notes, range.scan_end)
-        .await
-        .map_err(|e| {
-            WalletSyncError::with_range(
-                WalletSyncPhase::Scan,
-                e,
-                None,
-                scan_start,
-                scan_end,
-                chain_tip_opt,
-            )
-        })?;
+    if range.scan_end >= range.chain_tip {
+        bootstrap_missing_orchard_witness_hex(wallet, &zebra_client, &mut cached_notes).await;
+        let witness_target = witness_catchup_target_height(&cached_notes, range.chain_tip);
+        refresh_and_persist_witnesses(&zebra_client, &mut cached_notes, witness_target)
+            .await
+            .map_err(|e| {
+                WalletSyncError::with_range(
+                    WalletSyncPhase::Scan,
+                    e,
+                    None,
+                    scan_start,
+                    scan_end,
+                    chain_tip_opt,
+                )
+            })?;
+    }
 
     save_wallet_notes(&cached_notes).map_err(|e| {
         WalletSyncError::with_range(
@@ -647,20 +673,52 @@ fn witness_catchup_target_height(
     }
     let min_stored = notes
         .iter()
-        .filter(|n| {
-            !n.spent
-                && n.orchard_incremental_witness_hex
-                    .as_ref()
-                    .is_some_and(|h| !h.is_empty())
-        })
-        .map(|n| n.orchard_witness_tip_height.unwrap_or(0))
+        .filter(|n| !n.spent && n.witness_hex_for_pool().is_some_and(|h| !h.is_empty()))
+        .map(|n| n.witness_tip_height_for_pool().unwrap_or(0))
         .min()
         .unwrap_or(0);
     min_stored.saturating_add(batch).min(chain_tip)
 }
 
+const WITNESS_BOOTSTRAP_HEIGHTS_PER_ROUND: usize = 8;
+
+fn pool_witness_hex_missing(note: &crate::notes::SerializableOrchardNote) -> bool {
+    !note.spent && note.witness_hex_for_pool().is_none_or(|h| h.is_empty())
+}
+
+/// Rebuild pool witness hex for unspent notes that were scanned without tracking.
+async fn bootstrap_missing_orchard_witness_hex(
+    wallet: &HDWallet,
+    zebra_client: &ZebraClient,
+    notes: &mut Vec<crate::notes::SerializableOrchardNote>,
+) {
+    let mut heights: Vec<u32> = notes
+        .iter()
+        .filter(|n| pool_witness_hex_missing(n))
+        .map(|n| n.block_height)
+        .collect();
+    heights.sort_unstable();
+    heights.dedup();
+    heights.truncate(WITNESS_BOOTSTRAP_HEIGHTS_PER_ROUND);
+    if heights.is_empty() {
+        return;
+    }
+    let missing_before = notes.iter().filter(|n| pool_witness_hex_missing(n)).count();
+    let mut scanner = NoteScanner::new(wallet, zebra_client.clone());
+    for h in &heights {
+        if let Ok((scan_result, _)) = scanner.scan_notes(Some(*h), Some(*h)).await {
+            merge_scanned_notes(notes, &scan_result.notes);
+        }
+    }
+    let missing_after = notes.iter().filter(|n| pool_witness_hex_missing(n)).count();
+    if missing_after < missing_before {
+        let _ = save_wallet_notes(notes);
+    }
+}
+
 /// When RPC scan is caught up, advance Orchard witnesses on cached notes and report send readiness.
 async fn finish_caught_up_sync(
+    wallet: &HDWallet,
     zebra_client: &ZebraClient,
     notes_before: Vec<crate::notes::SerializableOrchardNote>,
     range: &ScanRange,
@@ -669,7 +727,16 @@ async fn finish_caught_up_sync(
 ) -> Result<WalletSyncResult, WalletSyncError> {
     let witness_lag_before = max_serialized_witness_lag_blocks(&notes_before, range.chain_tip);
     let mut notes_mut = notes_before;
-    if witness_lag_before > 0 {
+    let missing_before = notes_mut
+        .iter()
+        .filter(|n| pool_witness_hex_missing(n))
+        .count();
+    bootstrap_missing_orchard_witness_hex(wallet, zebra_client, &mut notes_mut).await;
+    let missing_after = notes_mut
+        .iter()
+        .filter(|n| pool_witness_hex_missing(n))
+        .count();
+    if witness_lag_before > 0 || missing_after < missing_before {
         let witness_target = witness_catchup_target_height(&notes_mut, range.chain_tip);
         refresh_and_persist_witnesses(zebra_client, &mut notes_mut, witness_target)
             .await
@@ -938,7 +1005,7 @@ mod tests {
     }
 
     #[test]
-    fn cached_notes_rescan_unwitnessed_unspent_even_with_checkpoint() {
+    fn cached_notes_near_tip_does_not_rewind_below_last_scan() {
         use crate::notes::SerializableOrchardNote;
 
         let config = test_config(Some(4_159_000), "testnet");
@@ -964,8 +1031,8 @@ mod tests {
             pool: crate::shielded_pool::ShieldedPool::Ironwood,
         }];
         apply_cached_notes_resume(&mut range, &config, &opts, &cached);
-        assert_eq!(range.scan_start, 4_143_641);
-        assert_eq!(range.scan_end, 4_144_641);
+        assert_eq!(range.scan_start, 4_159_001);
+        assert_eq!(range.scan_end, 4_159_100);
     }
 
     #[test]

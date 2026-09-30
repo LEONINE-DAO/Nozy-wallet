@@ -2,12 +2,12 @@ use crate::error::TauriError;
 use crate::session::load_session_wallet;
 use nozy::{
     build_keystone_send_pczt, estimate_transaction_fee_for_send, extract_signed_tx_from_pczt_bytes,
-    load_config, mark_wallet_notes_spent_from_spendables,
-    orchard_spending_key_from_wallet, prepared_send_from_build, scan_notes_for_sending,
-    select_single_spend_note,
-    sign_pczt_orchard_spends, transaction_history::{SentTransactionRecord, SentTransactionStorage},
-    KeystonePreparedSend, KeystoneWalletConfig, PilotSendOptions, NOZY_WALLET_PRIORITY_FEE,
-    PILOT_EXPIRY_DELTA_BLOCKS, ZebraClient, ZebraJsonRpcOrchardWitnessProvider,
+    load_config, mark_wallet_notes_spent_from_spendables, orchard_spending_key_from_wallet,
+    prepared_send_from_build, scan_notes_for_sending, select_single_spend_note,
+    sign_pczt_orchard_spends,
+    transaction_history::{SentTransactionRecord, SentTransactionStorage},
+    KeystonePreparedSend, KeystoneWalletConfig, PilotSendOptions, ZebraClient,
+    ZebraJsonRpcOrchardWitnessProvider, NOZY_WALLET_PRIORITY_FEE, PILOT_EXPIRY_DELTA_BLOCKS,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -75,13 +75,11 @@ pub async fn prepare_cosign_request(
         recipient.starts_with("u1")
     };
     if !prefix_ok || recipient.len() < 78 {
-        return Err(TauriError::from(
-            if expected_testnet {
-                "Invalid recipient address. Testnet co-sign sends require a valid shielded address (utest1...).".to_string()
-            } else {
-                "Invalid recipient address. Mainnet co-sign sends require a valid shielded address (u1...).".to_string()
-            },
-        ));
+        return Err(TauriError::from(if expected_testnet {
+            "Invalid recipient address. Testnet co-sign sends require a valid shielded address (utest1...).".to_string()
+        } else {
+            "Invalid recipient address. Mainnet co-sign sends require a valid shielded address (u1...).".to_string()
+        }));
     }
 
     let amount_zatoshis = nozy::input_validation::resolve_send_amount_zatoshis(
@@ -131,9 +129,8 @@ pub async fn prepare_cosign_request(
     .map_err(|e| TauriError::from(e.to_string()))?;
 
     let prepared = prepared_send_from_build(&recipient, amount_zatoshis, fee_zatoshis, &build);
-    let ur_frames =
-        nozy::encode_pczt_ur_frames(&build.pczt_bytes, nozy::DEFAULT_UR_FRAGMENT_SIZE)
-            .map_err(|e| TauriError::from(e.to_string()))?;
+    let ur_frames = nozy::encode_pczt_ur_frames(&build.pczt_bytes, nozy::DEFAULT_UR_FRAGMENT_SIZE)
+        .map_err(|e| TauriError::from(e.to_string()))?;
 
     Ok(PrepareCosignResponse {
         request: prepared,
@@ -148,8 +145,8 @@ pub async fn sign_cosign_request(
     let pczt_bytes = hex::decode(request.pczt_hex.trim())
         .map_err(|e| TauriError::from(format!("Invalid PCZT hex: {e}")))?;
     let wallet = load_session_wallet(request.password.as_deref()).await?;
-    let spending_key = orchard_spending_key_from_wallet(&wallet)
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    let spending_key =
+        orchard_spending_key_from_wallet(&wallet).map_err(|e| TauriError::from(e.to_string()))?;
     let signed = sign_pczt_orchard_spends(&pczt_bytes, &spending_key)
         .map_err(|e| TauriError::from(e.to_string()))?;
 
@@ -201,9 +198,11 @@ pub async fn complete_cosign_send(
     let chain_tip = zebra_client.get_best_block_height().await.unwrap_or(0);
     let expiry_height = chain_tip.saturating_add(PILOT_EXPIRY_DELTA_BLOCKS);
 
-    if let Ok(spent_note) = select_single_spend_note(&spendable_notes, amount_zatoshis, fee_zatoshis)
+    if let Ok(spent_note) =
+        select_single_spend_note(&spendable_notes, amount_zatoshis, fee_zatoshis)
     {
-        let _ = mark_wallet_notes_spent_from_spendables(std::slice::from_ref(spent_note), Some(&txid));
+        let _ =
+            mark_wallet_notes_spent_from_spendables(std::slice::from_ref(spent_note), Some(&txid));
         if let Ok(tx_storage) = SentTransactionStorage::new() {
             let spent_note_ids = vec![hex::encode(spent_note.orchard_note.nullifier.to_bytes())];
             let memo_bytes = request

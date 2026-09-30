@@ -1,10 +1,10 @@
 //! lightwalletd + `zeaking::lwd` — compact block sync for Zebrad stacks (Chrome/Edge extension can use companion HTTP API).
 
 use crate::error::TauriError;
-use zeaking::lwd::proto::Empty;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use tauri::command;
+use zeaking::lwd::proto::Empty;
 
 #[derive(Debug, Serialize)]
 pub struct LwdInfoResponse {
@@ -174,7 +174,9 @@ pub async fn lwd_sync_compact_to_tip(
         start_floor: request.start_floor,
         persist_progress_every: request
             .persist_progress_every
-            .unwrap_or_else(|| zeaking::lwd::SyncCompactToTipOptions::default().persist_progress_every)
+            .unwrap_or_else(|| {
+                zeaking::lwd::SyncCompactToTipOptions::default().persist_progress_every
+            })
             .max(1),
     };
     let stats = zeaking::lwd::sync_compact_to_tip_with_options(&mut client, &store, tip_opts)

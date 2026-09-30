@@ -87,3 +87,119 @@ export function hybridPosStandingLabel(standing: HybridPosStanding): string {
       return "No scoreboard data — finalizer not observed recently";
   }
 }
+
+/** Why a bonded finalizer should be moved. Missing observer data is not a reason. */
+export type RetargetRiskReason = "offline" | "uneven";
+
+export interface AtRiskBond {
+  pk: string;
+  latest_val: number;
+}
+
+export interface AtRiskDelegation {
+  finalizer: string;
+  bondPks: string[];
+  bondedZat: number;
+  reason: RetargetRiskReason;
+  suggestion: HybridPosFinalizer | null;
+}
+
+/** Offline or below the B− bar. Provisional / unobserved rows are not nagged. */
+export function finalizerNeedsRetarget(
+  row: HybridPosFinalizer | null | undefined
+): RetargetRiskReason | null {
+  if (!row) return null;
+  if (row.live === false) return "offline";
+  if (hybridPosStanding(row) === "uneven") return "uneven";
+  return null;
+}
+
+export function retargetRiskLabel(reason: RetargetRiskReason): string {
+  return reason === "offline" ? "offline" : "below B−";
+}
+
+/**
+ * Safer pick pool — same bar as Crosslink Network / staker.space:
+ * B− or better, live, not in the largest (stalling) third, not the current target.
+ */
+export function saferSuggestionPool(
+  rows: HybridPosFinalizer[],
+  excludePubkeys: string[] = []
+): HybridPosFinalizer[] {
+  const exclude = new Set(excludePubkeys.map(normalizeFinalizerHex));
+  return rows.filter((row) => {
+    const key = normalizeFinalizerHex(row.pubkey);
+    if (!isValidFinalizerHex(key) || exclude.has(key)) return false;
+    if (row.live === false) return false;
+    if (row.in_threshold_set) return false;
+    return hybridPosStanding(row) === "reliable";
+  });
+}
+
+/** Seeded pick so each at-risk finalizer gets a stable suggestion (not one global winner). */
+export function pickSaferFinalizer(
+  pool: HybridPosFinalizer[],
+  seedHex: string
+): HybridPosFinalizer | null {
+  if (pool.length === 0) return null;
+  const sorted = [...pool].sort((a, b) =>
+    normalizeFinalizerHex(a.pubkey).localeCompare(normalizeFinalizerHex(b.pubkey))
+  );
+  return sorted[seededIndex(seedHex, sorted.length)] ?? null;
+}
+
+export function atRiskDelegations(
+  active: Record<string, AtRiskBond[]>,
+  rows: HybridPosFinalizer[]
+): AtRiskDelegation[] {
+  const byKey = indexScoreboard(rows);
+  const out: AtRiskDelegation[] = [];
+  for (const [finalizer, bonds] of Object.entries(active)) {
+    if (!bonds.length) continue;
+    const reason = finalizerNeedsRetarget(byKey.get(normalizeFinalizerHex(finalizer)));
+    if (!reason) continue;
+    const pool = saferSuggestionPool(rows, [finalizer]);
+    out.push({
+      finalizer,
+      bondPks: bonds.map((b) => b.pk),
+      bondedZat: bonds.reduce((sum, b) => sum + b.latest_val, 0),
+      reason,
+      suggestion: pickSaferFinalizer(pool, finalizer)
+    });
+  }
+  out.sort((a, b) => {
+    if (a.reason !== b.reason) return a.reason === "offline" ? -1 : 1;
+    return b.bondedZat - a.bondedZat;
+  });
+  return out;
+}
+
+function seededIndex(seed: string, n: number): number {
+  const s = normalizeFinalizerHex(seed);
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = (Math.imul(h, 31) + s.charCodeAt(i)) >>> 0;
+  }
+  return n <= 0 ? 0 : h % n;
+}
+
+/** OP asked stakers to spread off the largest set — not only pick the biggest name. */
+export type FinalizerCrowdLabel = "largest_third" | "spread";
+
+export function finalizerCrowdLabel(
+  row: HybridPosFinalizer | null | undefined
+): FinalizerCrowdLabel | null {
+  if (!row) return null;
+  return row.in_threshold_set ? "largest_third" : "spread";
+}
+
+export function finalizerCrowdCopy(label: FinalizerCrowdLabel): string {
+  return label === "largest_third" ? "largest third" : "spread";
+}
+
+export function finalizerDisplayName(
+  row: HybridPosFinalizer | null | undefined
+): string | null {
+  const n = row?.name?.trim();
+  return n ? n : null;
+}

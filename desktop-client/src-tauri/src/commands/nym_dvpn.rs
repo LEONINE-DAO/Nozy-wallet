@@ -97,3 +97,9 @@ pub async fn run_nym_dvpn_sync_probe(
         timed_out: r.timed_out,
     })
 }
+
+#[command]
+pub fn get_send_egress() -> Result<nozy::SendEgressSnapshot, TauriError> {
+    let config = load_config();
+    Ok(nozy::assess_send_egress(&config))
+}

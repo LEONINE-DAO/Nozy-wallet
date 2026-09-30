@@ -21,6 +21,8 @@ import {
   resolveSendRecipient,
   type ZnsRegistration,
 } from "../lib/zns";
+import { tryParsePaymentInput } from "../lib/zip321";
+import { takePendingPaymentUri } from "../lib/pendingPaymentUri";
 import { colors, fontSize, spacing } from "../theme";
 import type { MainTabParamList, RootStackParamList } from "../types";
 

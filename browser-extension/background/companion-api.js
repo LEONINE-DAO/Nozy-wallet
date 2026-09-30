@@ -522,6 +522,35 @@ export async function companionCrosslinkWalletUfvk(baseUrl) {
 }
 
 /**
+ * @param {string} [baseUrl]
+ * @param {{ payout_address?: string, mobile_ufvk?: string, cutoff_height?: number }} [body]
+ */
+export async function companionCrosslinkPayoutClaim(baseUrl, body) {
+  const r = await companionFetch(baseUrl, "/api/crosslink/payout-claim", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      payout_address: body?.payout_address || undefined,
+      mobile_ufvk: body?.mobile_ufvk || undefined,
+      cutoff_height: body?.cutoff_height ?? undefined
+    })
+  });
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
+
+/**
+ * @param {string} [baseUrl]
+ * @param {{ observer?: boolean }} [opts]
+ */
+export async function companionCrosslinkDoctor(baseUrl, opts) {
+  const observer = opts?.observer === false ? "false" : "true";
+  const r = await companionFetch(baseUrl, `/api/crosslink/doctor?observer=${observer}`);
+  if (!r.ok) throw new Error(await readErrorBody(r));
+  return r.json();
+}
+
+/**
  * Broadcast raw tx hex through companion `ZebraClient` (Nym mixnet / Tor / local — same as desktop).
  * @param {string} [baseUrl]
  * @param {{ raw_transaction_hex: string, zebra_url?: string }} body
@@ -624,4 +653,58 @@ export async function companionNymDvpnProbe(baseUrl, body) {
   });
   if (!r.ok) throw new Error(await readErrorBody(r));
   return r.json();
+}
+
+/**
+ * Operator probe for Joaco lwd-mixnet-proxy dialling half on loopback.
+ * Health hits :9070 directly; GetLightdInfo goes through companion → :9068.
+ * @param {string} [baseUrl]
+ * @param {{ grpc_url?: string, metrics_url?: string }} [opts]
+ */
+export async function probeLwdMixnetProxy(baseUrl, opts) {
+  const grpc =
+    (opts?.grpc_url && String(opts.grpc_url).trim()) || "http://127.0.0.1:9068";
+  const metricsBase = (
+    (opts?.metrics_url && String(opts.metrics_url).trim()) ||
+    "http://127.0.0.1:9070"
+  ).replace(/\/$/, "");
+
+  let health = null;
+  let health_error = null;
+  try {
+    const r = await fetch(`${metricsBase}/health`, {
+      method: "GET",
+      signal: AbortSignal.timeout(4000)
+    });
+    const text = await r.text();
+    if (!r.ok) {
+      health_error = `HTTP ${r.status}: ${text.slice(0, 200)}`;
+    } else {
+      try {
+        health = JSON.parse(text);
+      } catch {
+        health = { raw: text };
+      }
+    }
+  } catch (e) {
+    health_error = e instanceof Error ? e.message : String(e);
+  }
+
+  let lightd = null;
+  let lightd_error = null;
+  try {
+    lightd = await companionLwdInfo(baseUrl, grpc);
+  } catch (e) {
+    lightd_error = e instanceof Error ? e.message : String(e);
+  }
+
+  return {
+    grpc_url: grpc,
+    metrics_url: metricsBase,
+    health,
+    health_error,
+    lightd,
+    lightd_error,
+    ok: !health_error && !lightd_error
+  };
 }

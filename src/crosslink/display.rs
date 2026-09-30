@@ -107,7 +107,9 @@ pub fn display_status(snap: &GuardianSnapshot, full_keys: bool) {
     }
 
     println!();
-    println!("Commands: nozy crosslink positions | wallet | roster | stake | unbond | withdraw");
+    println!(
+        "Commands: nozy crosslink doctor | claim | positions | wallet | roster | stake | unbond | withdraw"
+    );
 }
 
 /// Human-readable node wallet balances (`get_wallet_sync_status`).

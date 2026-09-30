@@ -40,6 +40,15 @@ export function finalizerFromUrl(): string | null {
   }
 }
 
+export function bondFromUrl(): string | null {
+  try {
+    const pk = new URLSearchParams(window.location.search).get("bond");
+    return pk && pk.trim() ? pk.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export function applyWalletPageClass(): void {
   if (isFullPage()) {
     document.documentElement.classList.add("nw-page");
@@ -51,6 +60,7 @@ export function applyWalletPageClass(): void {
 export async function openWalletPage(opts?: {
   view?: PopupView;
   finalizer?: string;
+  bond?: string;
 }): Promise<void> {
   if (typeof chrome === "undefined" || !chrome.runtime?.getURL || !chrome.tabs?.create) {
     return;
@@ -60,6 +70,7 @@ export async function openWalletPage(opts?: {
   url.searchParams.set("page", "1");
   if (opts?.view) url.searchParams.set("view", opts.view);
   if (opts?.finalizer) url.searchParams.set("finalizer", opts.finalizer);
+  if (opts?.bond) url.searchParams.set("bond", opts.bond);
   await chrome.tabs.create({ url: url.toString() });
   window.close();
 }

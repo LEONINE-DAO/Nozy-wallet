@@ -1,6 +1,6 @@
 import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import toast, { Toaster } from "react-hot-toast";
+import toast, { Toaster, ToastBar } from "react-hot-toast";
 import { formatErrorForDisplay } from "./utils/errors";
 import { walletApi } from "./lib/api";
 import { useWalletStore } from "./store/walletStore";
@@ -27,25 +27,55 @@ function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise
   });
 }
 
+function toastToneClass(type: string): string {
+  if (type === "success") return "nw-toast nw-toast--success";
+  if (type === "error") return "nw-toast nw-toast--error";
+  if (type === "loading") return "nw-toast nw-toast--loading";
+  return "nw-toast";
+}
+
 function AppToaster() {
   return (
     <Toaster
       position="top-right"
+      gutter={12}
+      containerStyle={{ top: 16, right: 16, bottom: undefined, left: undefined }}
       toastOptions={{
-        className:
-          "bg-gray-800/95 backdrop-blur-md border border-gray-700/50 shadow-xl rounded-2xl font-medium text-gray-100",
-        duration: 3000,
-        style: {
-          padding: "12px 16px",
-        },
+        duration: 4000,
         success: {
-          iconTheme: {
-            primary: "#c8ccd4",
-            secondary: "#0c0b09",
-          },
+          duration: 4500,
+          iconTheme: { primary: "#d4af37", secondary: "#14110c" },
+        },
+        error: {
+          duration: 6000,
+          iconTheme: { primary: "#f87171", secondary: "#1a1010" },
+        },
+        loading: {
+          iconTheme: { primary: "#c8ccd4", secondary: "#14110c" },
         },
       }}
-    />
+    >
+      {(t) => (
+        <ToastBar
+          toast={t}
+          style={{
+            background: "transparent",
+            boxShadow: "none",
+            padding: 0,
+            margin: 0,
+            maxWidth: "none",
+            width: "auto",
+          }}
+        >
+          {({ icon, message }) => (
+            <div className={toastToneClass(t.type)} role="status">
+              <div className="nw-toast__icon">{icon}</div>
+              <div className="nw-toast__message">{message}</div>
+            </div>
+          )}
+        </ToastBar>
+      )}
+    </Toaster>
   );
 }
 
@@ -88,7 +118,7 @@ function App() {
     return (
       <>
         <AppToaster />
-        <div className="h-screen w-full flex items-center justify-center bg-gray-950">
+        <div className="h-screen w-full flex items-center justify-center bg-[#020b07]">
           <div className="flex flex-col items-center gap-6 animate-fade-in">
             <div className="aspect-square w-48 rounded-2xl flex items-center justify-center">
               <img

@@ -8,6 +8,8 @@
 //! (avoids linking smolmix into `nozy`: sqlite `links` clash with zeaking).
 //!
 //! Set `NOZY_NYM_SMOLMIX_BIN` to the helper path (recommended). Optional `NOZY_NYM_IPR`.
+//! Optional `NOZY_NYM_MIXNET_RPC_URL`: prove/sync against local/LAN Zebrad (Case A1), but
+//! submit `sendrawtransaction` to this exit-reachable URL (D2c-live / method-filter).
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
@@ -22,6 +24,7 @@ use crate::zebra_integration::ZebraClient;
 const ENV_FLAG: &str = "NOZY_BROADCAST_VIA_NYM_MIXNET";
 const ENV_BIN: &str = "NOZY_NYM_SMOLMIX_BIN";
 const ENV_IPR: &str = "NOZY_NYM_IPR";
+const ENV_MIXNET_RPC: &str = "NOZY_NYM_MIXNET_RPC_URL";
 
 fn env_flag_truthy(name: &str) -> bool {
     match std::env::var(name) {
@@ -243,8 +246,18 @@ async fn broadcast_via_helper(zebra_url: &str, raw_tx_hex: &str) -> NozyResult<S
     Ok(txid)
 }
 
+fn mixnet_rpc_override() -> Option<String> {
+    std::env::var(ENV_MIXNET_RPC)
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+}
+
 /// If mixnet broadcast is requested for a remote URL, run the helper.
 /// Returns `Ok(None)` when the caller should use the normal clearnet/Tor path.
+///
+/// `NOZY_NYM_MIXNET_RPC_URL` overrides the submit URL so a local/LAN wallet can
+/// still D2c-live through an exit-reachable method-filter.
 pub async fn maybe_broadcast_via_nym_mixnet(
     zebra_url: &str,
     raw_tx_hex: &str,
@@ -253,16 +266,18 @@ pub async fn maybe_broadcast_via_nym_mixnet(
     if !enabled {
         return Ok(None);
     }
-    if ZebraClient::url_is_local(zebra_url) {
+    let submit_url = mixnet_rpc_override();
+    let submit = submit_url.as_deref().unwrap_or(zebra_url);
+    if ZebraClient::url_is_local(submit) {
         tracing::info!(
             target: "nozy::nym_mixnet",
-            "{ENV_FLAG}/config set but zebra URL is local/LAN — using direct path (Case A1)"
+            "{ENV_FLAG}/config set but submit URL is local/LAN — using direct path (Case A1)"
         );
         return Ok(None);
     }
 
     // Fail closed if helper missing or private URL (helper also refuses RFC1918).
-    let txid = broadcast_via_helper(zebra_url, raw_tx_hex).await?;
+    let txid = broadcast_via_helper(submit, raw_tx_hex).await?;
     Ok(Some(txid))
 }
 

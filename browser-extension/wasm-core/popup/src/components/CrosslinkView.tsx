@@ -1,18 +1,24 @@
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { extensionApi, getCompanionPrefs } from "../lib/extensionApi";
 import {
+  atRiskDelegations,
   fetchHybridPosFinalizer,
   fetchHybridPosScoreboard,
+  finalizerCrowdCopy,
+  finalizerCrowdLabel,
+  finalizerDisplayName,
   hybridPosStanding,
   hybridPosStandingLabel,
   indexScoreboard,
   isValidFinalizerHex,
   normalizeFinalizerHex,
+  retargetRiskLabel,
+  type AtRiskDelegation,
   type HybridPosFinalizer,
   type HybridPosStanding
 } from "../lib/hybridPos";
 import { useUiStore } from "../store/uiStore";
-import { finalizerFromUrl, isFullPage } from "../lib/walletPage";
+import { bondFromUrl, finalizerFromUrl, isFullPage } from "../lib/walletPage";
 import {
   Button,
   Callout,
@@ -144,6 +150,10 @@ export function HomeStakedPanel({
   }, [reload]);
 
   const hybridByKey = useMemo(() => indexScoreboard(hybridRows), [hybridRows]);
+  const atRisk = useMemo(() => {
+    if (!status) return [] as AtRiskDelegation[];
+    return atRiskDelegations(status.positions.active, hybridRows);
+  }, [status, hybridRows]);
 
   const stakedRows = useMemo(() => {
     if (!status) return [];
@@ -245,6 +255,31 @@ export function HomeStakedPanel({
         </Hint>
       </div>
 
+      {atRisk.length > 0 ? (
+        <Callout tone="warn">
+          {atRisk.reduce((n, r) => n + r.bondPks.length, 0)} bond
+          {atRisk.reduce((n, r) => n + r.bondPks.length, 0) === 1 ? "" : "s"} on offline or
+          below-B− finalizers. Retarget anytime.
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {atRisk.map((item) => (
+              <Button
+                key={item.finalizer}
+                size="sm"
+                disabled={busy}
+                onClick={() => {
+                  const pk = item.bondPks[0];
+                  if (pk) useUiStore.getState().setPendingBondPk(pk);
+                  openManage(item.suggestion?.pubkey ?? undefined);
+                }}
+              >
+                {shortHex(item.finalizer)} · {retargetRiskLabel(item.reason)}
+                {item.suggestion ? ` → ${shortHex(item.suggestion.pubkey)}` : ""}
+              </Button>
+            ))}
+          </div>
+        </Callout>
+      ) : null}
+
       <Card className="space-y-2.5">
         <SectionTitle>Stake to a finalizer</SectionTitle>
         <Hint>
@@ -315,6 +350,7 @@ export function HomeStakedPanel({
               const row = hybridByKey.get(normalizeFinalizerHex(e.finalizer));
               const rank = row?.rank ?? i + 1;
               const active = normalizeFinalizerHex(selected) === normalizeFinalizerHex(e.finalizer);
+              const crowd = finalizerCrowdLabel(row);
               return (
                 <button
                   key={e.finalizer}
@@ -331,11 +367,12 @@ export function HomeStakedPanel({
                   </span>
                   <div className="min-w-0 flex-1">
                     <p className="text-[12px] font-semibold leading-tight">
-                      #{rank} {shortHex(e.finalizer)}
+                      #{rank} {finalizerDisplayName(row) ?? shortHex(e.finalizer)}
                     </p>
                     <p className="nw-hint mt-0.5 truncate">
                       {zatToCtaz(e.stake_zat)} cTAZ · {(e.share * 100).toFixed(1)}%
                       {row?.live ? " · live" : ""}
+                      {crowd ? ` · ${finalizerCrowdCopy(crowd)}` : ""}
                     </p>
                   </div>
                   <FinalizerGradeBadge row={row} />
@@ -393,6 +430,8 @@ export function HomeStakedPanel({
 export function CrosslinkView() {
   const pendingFinalizer = useUiStore((s) => s.pendingFinalizer);
   const setPendingFinalizer = useUiStore((s) => s.setPendingFinalizer);
+  const pendingBondPk = useUiStore((s) => s.pendingBondPk);
+  const setPendingBondPk = useUiStore((s) => s.setPendingBondPk);
   const [status, setStatus] = useState<CrosslinkStatus | null>(null);
   const [roster, setRoster] = useState<RosterEntry[]>([]);
   const [log, setLog] = useState("");
@@ -401,7 +440,11 @@ export function CrosslinkView() {
   const [amount, setAmount] = useState("0.01");
   const [finalizer, setFinalizer] = useState("");
   const [bondKey, setBondKey] = useState("");
-  const [ufvk, setUfvk] = useState("");
+  const [payoutAddress, setPayoutAddress] = useState("");
+  const [mobileUfvk, setMobileUfvk] = useState("");
+  const [cutoffHeight, setCutoffHeight] = useState("");
+  const [payoutPack, setPayoutPack] = useState<string>("");
+  const [doctorPack, setDoctorPack] = useState<string>("");
   const [force, setForce] = useState(false);
   const [hybridRows, setHybridRows] = useState<HybridPosFinalizer[]>([]);
   const [hybridLookup, setHybridLookup] = useState<HybridPosFinalizer | null>(null);
@@ -411,12 +454,20 @@ export function CrosslinkView() {
     const fromUrl = finalizerFromUrl();
     if (fromUrl) {
       setFinalizer(fromUrl);
-      return;
+    } else if (pendingFinalizer) {
+      setFinalizer(pendingFinalizer);
+      setPendingFinalizer(null);
     }
-    if (!pendingFinalizer) return;
-    setFinalizer(pendingFinalizer);
-    setPendingFinalizer(null);
-  }, [pendingFinalizer, setPendingFinalizer]);
+    const bondUrl = bondFromUrl();
+    if (bondUrl) {
+      setBondKey(bondUrl);
+      setLog("Prepared retarget — confirm Retarget (allowed anytime).");
+    } else if (pendingBondPk) {
+      setBondKey(pendingBondPk);
+      setPendingBondPk(null);
+      setLog("Prepared retarget — confirm Retarget (allowed anytime).");
+    }
+  }, [pendingFinalizer, pendingBondPk, setPendingFinalizer, setPendingBondPk]);
 
   const stakedFinalizers = useMemo(() => {
     if (!status) return [] as { finalizer: string; bonds: number; totalLatest: number }[];
@@ -475,6 +526,24 @@ export function CrosslinkView() {
     if (!isValidFinalizerHex(key)) return null;
     return hybridLookup ?? hybridByKey.get(key) ?? null;
   }, [finalizer, hybridLookup, hybridByKey]);
+  const atRisk = useMemo(() => {
+    if (!status) return [] as AtRiskDelegation[];
+    return atRiskDelegations(status.positions.active, hybridRows);
+  }, [status, hybridRows]);
+
+  const prepareSaferRetarget = (item: AtRiskDelegation) => {
+    if (item.bondPks[0]) setBondKey(item.bondPks[0]);
+    if (item.suggestion) {
+      setFinalizer(item.suggestion.pubkey);
+      setLog(
+        `Prepared retarget → ${shortHex(item.suggestion.pubkey)} — confirm Retarget (allowed anytime).`
+      );
+    } else {
+      setLog(
+        "No safer observer pick — choose a live B−+ finalizer outside the largest third, then Retarget."
+      );
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -627,6 +696,26 @@ export function CrosslinkView() {
             value={status.tfl_activated == null ? "?" : status.tfl_activated ? "on" : "off"}
           />
           <Callout tone="accent">Next: {formatNextAction(status.next_action)}</Callout>
+          {atRisk.length > 0 && (
+            <Callout tone="warn">
+              {atRisk.reduce((n, r) => n + r.bondPks.length, 0)} bond
+              {atRisk.reduce((n, r) => n + r.bondPks.length, 0) === 1 ? "" : "s"} on offline or
+              below-B− finalizers. Retarget anytime.
+              <div className="mt-2 flex flex-col gap-1.5">
+                {atRisk.map((item) => (
+                  <Button
+                    key={item.finalizer}
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => prepareSaferRetarget(item)}
+                  >
+                    {shortHex(item.finalizer)} · {retargetRiskLabel(item.reason)}
+                    {item.suggestion ? ` → ${shortHex(item.suggestion.pubkey)}` : ""}
+                  </Button>
+                ))}
+              </div>
+            </Callout>
+          )}
         </Card>
       )}
 
@@ -757,29 +846,125 @@ export function CrosslinkView() {
       </Card>
 
       <Card className="space-y-2">
-        <SectionTitle>UFVK export</SectionTitle>
-        <Hint>Export UFVK for payout submission.</Hint>
-        {ufvk ? (
-          <LogBlock>{ufvk}</LogBlock>
-        ) : (
-          <EmptyState>UFVK not loaded yet.</EmptyState>
-        )}
-        <Button
-          size="sm"
+        <SectionTitle>Payout claim pack</SectionTitle>
+        <Hint>
+          Feature-net UFVK + mainnet u1… for the Shielded Labs scan. Earned cTAZ, not bonded
+          principal. Add a second UFVK if you also staked from mobile.
+        </Hint>
+        <Input
+          label="Mainnet Orchard payout (u1…)"
+          mono
+          value={payoutAddress}
+          onChange={(e) => setPayoutAddress(e.target.value.trim())}
+          placeholder="u1…"
           disabled={busy}
-          onClick={() =>
-            run(async () => {
-              const prefs = await getCompanionPrefs();
-              const res = await extensionApi.companionCrosslinkWalletUfvk({
-                baseUrl: prefs.baseUrl
-              });
-              setUfvk(res.ufvk);
-              setLog("UFVK loaded");
-            })
-          }
-        >
-          Load UFVK
-        </Button>
+        />
+        <Input
+          label="Cutoff height (optional)"
+          mono
+          value={cutoffHeight}
+          onChange={(e) => setCutoffHeight(e.target.value.trim())}
+          placeholder="e.g. 131000"
+          disabled={busy}
+        />
+        <Input
+          label="Second UFVK (mobile / delegator)"
+          mono
+          value={mobileUfvk}
+          onChange={(e) => setMobileUfvk(e.target.value)}
+          placeholder="Leave blank unless you used two wallets"
+          disabled={busy}
+        />
+        {payoutPack ? (
+          <LogBlock>{payoutPack}</LogBlock>
+        ) : (
+          <EmptyState>Pack not built yet.</EmptyState>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                const prefs = await getCompanionPrefs();
+                let address = payoutAddress.trim();
+                if (!address) {
+                  try {
+                    const addr = await extensionApi.companionAddressGenerate({
+                      baseUrl: prefs.baseUrl
+                    });
+                    const got = addr.address?.trim() ?? "";
+                    if (got.startsWith("u1") && !got.startsWith("utest")) {
+                      address = got;
+                      setPayoutAddress(got);
+                    }
+                  } catch {
+                    /* pack still works without u1 */
+                  }
+                }
+                const cutoffRaw = cutoffHeight.trim();
+                const cutoff_height = cutoffRaw ? Number(cutoffRaw) : undefined;
+                if (cutoffRaw && (!Number.isInteger(cutoff_height) || (cutoff_height ?? 0) <= 0)) {
+                  throw new Error("Cutoff height must be a positive whole number");
+                }
+                const res = await extensionApi.companionCrosslinkPayoutClaim({
+                  baseUrl: prefs.baseUrl,
+                  payout_address: address || undefined,
+                  mobile_ufvk: mobileUfvk.trim() || undefined,
+                  cutoff_height
+                });
+                setPayoutPack(res.paste_body);
+                setLog(res.complete ? "Payout pack ready" : "Pack built — add a mainnet u1… to finish");
+                try {
+                  await navigator.clipboard.writeText(res.paste_body);
+                  setLog((prev) => `${prev} · copied`);
+                } catch {
+                  /* clipboard optional in popup */
+                }
+              })
+            }
+          >
+            Build pack
+          </Button>
+        </div>
+      </Card>
+
+      <Card className="space-y-2">
+        <SectionTitle>Diagnostics</SectionTitle>
+        <Hint>
+          Tip, TFL lag, recency, bonds, UFVK fingerprint, observer grades. Paste for forum
+          operators — does not unbond or withdraw.
+        </Hint>
+        {doctorPack ? (
+          <LogBlock>{doctorPack}</LogBlock>
+        ) : (
+          <EmptyState>Dump not built yet.</EmptyState>
+        )}
+        <div className="flex flex-wrap gap-2">
+          <Button
+            size="sm"
+            disabled={busy}
+            onClick={() =>
+              run(async () => {
+                const prefs = await getCompanionPrefs();
+                const res = await extensionApi.companionCrosslinkDoctor({
+                  baseUrl: prefs.baseUrl,
+                  observer: true
+                });
+                setDoctorPack(res.paste_body);
+                setLog(res.ok ? "Diagnostics ready" : "Diagnostics ready — check fail items");
+                try {
+                  await navigator.clipboard.writeText(res.paste_body);
+                  setLog((prev) => `${prev} · copied`);
+                } catch {
+                  /* clipboard optional in popup */
+                }
+              })
+            }
+          >
+            Copy dump
+          </Button>
+        </div>
       </Card>
 
       {status && (
@@ -797,25 +982,35 @@ export function CrosslinkView() {
           )}
           <div className="max-h-32 space-y-0.5 overflow-y-auto">
           {Object.entries(status.positions.active).flatMap(([fin, bonds]) =>
-            bonds.map((b) => (
+            bonds.map((b) => {
+              const risk = atRisk.find(
+                (r) => normalizeFinalizerHex(r.finalizer) === normalizeFinalizerHex(fin)
+              );
+              return (
               <button
                 key={b.pk}
                 type="button"
                 className="nw-mono block w-full rounded-lg px-2 py-1.5 text-left text-[10px]"
                 style={{
-                  background: "var(--nw-surface-alt)",
+                  background: risk ? "var(--nw-warn-soft, var(--nw-surface-alt))" : "var(--nw-surface-alt)",
                   border: "1px solid var(--nw-border)",
                   color: "var(--nw-muted)"
                 }}
                 onClick={() => {
+                  if (risk) {
+                    prepareSaferRetarget(risk);
+                    return;
+                  }
                   setBondKey(b.pk);
                   setFinalizer(fin);
                   setLog("Bond + finalizer selected");
                 }}
               >
                 {shortHex(b.pk)} → {shortHex(fin)} · {zatToCtaz(b.latest_val)}
+                {risk ? ` · ${retargetRiskLabel(risk.reason)}` : ""}
               </button>
-            ))
+              );
+            })
           )}
           {status.positions.withdrawable.map((b) => (
             <button
@@ -875,12 +1070,13 @@ export function CrosslinkView() {
         <Card className="space-y-1">
           <SectionTitle>Roster ({roster.length})</SectionTitle>
           <Hint>
-            Tap to paste. Observer rank + node grade (same as Desktop). Highest stake first.
+            Tap to paste. Prefer spread over the largest third. Observer rank + node grade.
           </Hint>
           <div className="max-h-40 space-y-0.5 overflow-y-auto">
             {roster.map((e, i) => {
               const row = hybridByKey.get(normalizeFinalizerHex(e.finalizer));
               const rank = row?.rank ?? i + 1;
+              const crowd = finalizerCrowdLabel(row);
               return (
                 <button
                   key={e.finalizer}
@@ -893,8 +1089,9 @@ export function CrosslinkView() {
                   }}
                 >
                   <span className="min-w-0 truncate">
-                    #{rank} {shortHex(e.finalizer)} · {zatToCtaz(e.stake_zat)} (
-                    {(e.share * 100).toFixed(1)}%)
+                    #{rank} {finalizerDisplayName(row) ?? shortHex(e.finalizer)} ·{" "}
+                    {zatToCtaz(e.stake_zat)} ({(e.share * 100).toFixed(1)}%)
+                    {crowd ? ` · ${finalizerCrowdCopy(crowd)}` : ""}
                   </span>
                   <FinalizerGradeBadge row={row} />
                 </button>

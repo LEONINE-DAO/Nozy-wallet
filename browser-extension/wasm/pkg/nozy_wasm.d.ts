@@ -61,6 +61,11 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+    readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
+    readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly advance_orchard_witness_hex: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly create_wallet: (a: number, b: number) => [number, number, number];
@@ -79,11 +84,6 @@ export interface InitOutput {
     readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-    readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
-    readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly rustsecp256k1_v0_10_0_context_create: (a: number) => number;
     readonly rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;
     readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;

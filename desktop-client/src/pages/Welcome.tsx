@@ -252,7 +252,9 @@ export function WelcomePage() {
 
               {walletExistsOnDisk && (
                 <p className="text-sm text-gray-500 dark:text-gray-400 text-center">
-                  or set up a different wallet
+                  One wallet everywhere: restore the same 24-word phrase on the
+                  extension and phone. Create only if you have never made a Nozy
+                  wallet.
                 </p>
               )}
 
@@ -261,22 +263,22 @@ export function WelcomePage() {
                   size="md"
                   onClick={() => {
                     setError(null);
-                    setView("create");
+                    setView("restore");
                   }}
                   className="rounded-xl px-10 py-4 text-lg bg-white dark:bg-gray-800 hover:bg-primary shadow-lg hover:shadow-none transition-all duration-300 text-gray-900 dark:text-gray-100"
                 >
-                  Create New Wallet
+                  Restore Wallet
                 </Button>
                 <Button
                   size="md"
                   onClick={() => {
                     setError(null);
-                    setView("restore");
+                    setView("create");
                   }}
                   className="rounded-xl px-10 py-4 text-lg bg-white/60 dark:bg-gray-800/60 hover:bg-white dark:hover:bg-gray-800 shadow-sm hover:shadow-md transition-all duration-300 text-gray-900 dark:text-gray-100 border border-transparent hover:border-gray-200 dark:hover:border-gray-700"
                   variant="secondary"
                 >
-                  Restore Wallet
+                  Create New Wallet
                 </Button>
               </div>
             </div>
@@ -290,7 +292,8 @@ export function WelcomePage() {
                   Create New Wallet
                 </h2>
                 <p className="text-gray-500 dark:text-gray-400">
-                  Set a password to secure your wallet. You can create as many wallets as you need.
+                  Only if you have never created a Nozy wallet. A new seed will
+                  not match Desktop, the extension, or your phone.
                 </p>
               </div>
 

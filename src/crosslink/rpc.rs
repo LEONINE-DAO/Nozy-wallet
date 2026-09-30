@@ -1,5 +1,10 @@
 //! Crosslink TFL / staking JSON-RPC helpers.
 
+use super::doctor::{
+    fingerprint_ufvk, grades_for_bonds, DoctorInput, DoctorReport, ScoreboardRow,
+    HYBRID_POS_SCOREBOARD_URL,
+};
+use super::payout::{PayoutClaimInput, PayoutClaimPack};
 use super::types::{
     FinalizedTip, GuardianSnapshot, RawStakingPositions, RosterEntry, StakingAction,
     StakingPositions, WalletSyncStatus,
@@ -120,6 +125,65 @@ fn parse_wallet_ufvk(value: &Value) -> Option<String> {
             .and_then(parse_wallet_ufvk),
         _ => None,
     }
+}
+
+pub async fn fetch_doctor_report(
+    client: &ZebraClient,
+    include_observer: bool,
+) -> NozyResult<DoctorReport> {
+    let snap = fetch_guardian_snapshot(client).await?;
+    let ufvk_fingerprint = match wallet_ufvk(client).await {
+        Ok(u) => Some(fingerprint_ufvk(&u)),
+        Err(_) => None,
+    };
+    let observer = if include_observer {
+        fetch_observer_grades(&snap.positions).await
+    } else {
+        None
+    };
+    Ok(DoctorReport::build(DoctorInput {
+        snapshot: snap,
+        ufvk_fingerprint,
+        observer,
+    }))
+}
+
+async fn fetch_observer_grades(
+    positions: &StakingPositions,
+) -> Option<Vec<super::doctor::ObserverGrade>> {
+    if positions.active.is_empty() {
+        return Some(Vec::new());
+    }
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(8))
+        .build()
+        .ok()?;
+    let res = client.get(HYBRID_POS_SCOREBOARD_URL).send().await.ok()?;
+    if !res.status().is_success() {
+        return None;
+    }
+    let rows: Vec<ScoreboardRow> = res.json().await.ok()?;
+    Some(grades_for_bonds(positions, &rows))
+}
+
+pub async fn fetch_payout_claim(
+    client: &ZebraClient,
+    payout_address: Option<String>,
+    mobile_ufvk: Option<String>,
+    cutoff_height: Option<u32>,
+) -> NozyResult<PayoutClaimPack> {
+    let snap = fetch_guardian_snapshot(client).await?;
+    let ufvk = wallet_ufvk(client).await?;
+    PayoutClaimPack::build(PayoutClaimInput {
+        feature_net_ufvk: ufvk,
+        mainnet_orchard: payout_address,
+        mobile_ufvk,
+        height: snap.height,
+        cutoff_height,
+        earned_zat: snap.positions.total_rewards_zat(),
+        bonded_zat: snap.positions.bonded_zat(),
+        active_bonds: snap.positions.active_count(),
+    })
 }
 
 /// Headless wallet spendable balance + staked totals (monolith PR #51 / newer builds).

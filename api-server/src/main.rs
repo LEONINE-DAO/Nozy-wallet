@@ -1,6 +1,5 @@
-use axum::http::HeaderValue;
+use axum::http::{header, HeaderName, HeaderValue, Method};
 use axum::{
-    http::{header, Method},
     middleware::from_fn,
     response::{IntoResponse, Json as ResponseJson},
     routing::{delete, get, post},
@@ -173,6 +172,10 @@ async fn main() -> anyhow::Result<()> {
             get(crosslink_handlers::crosslink_status),
         )
         .route(
+            "/api/crosslink/doctor",
+            get(crosslink_handlers::crosslink_doctor),
+        )
+        .route(
             "/api/crosslink/positions",
             get(crosslink_handlers::crosslink_positions),
         )
@@ -207,6 +210,10 @@ async fn main() -> anyhow::Result<()> {
         .route(
             "/api/crosslink/wallet-ufvk",
             get(crosslink_handlers::crosslink_wallet_ufvk),
+        )
+        .route(
+            "/api/crosslink/payout-claim",
+            post(crosslink_handlers::crosslink_payout_claim),
         )
         .route(
             "/api/crosslink/wallet-status",
@@ -410,6 +417,7 @@ async fn main() -> anyhow::Result<()> {
                     header::USER_AGENT,
                     header::ORIGIN,
                     header::REFERER,
+                    HeaderName::from_static("x-api-key"),
                 ])
                 .allow_credentials(true)
         })

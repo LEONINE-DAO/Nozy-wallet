@@ -537,6 +537,16 @@ pub fn update_last_scan_height(height: u32) -> NozyResult<()> {
     save_config(&config)
 }
 
+/// Set scan checkpoint exactly (empty-cache historical backfill may regress from a false tip).
+pub fn set_last_scan_height(height: u32) -> NozyResult<()> {
+    let mut config = load_config();
+    if config.last_scan_height == Some(height) {
+        return Ok(());
+    }
+    config.last_scan_height = Some(height);
+    save_config(&config)
+}
+
 /// Compute the monotonic scan checkpoint (pure helper for tests and callers).
 pub fn monotonic_last_scan_height(previous: Option<u32>, scanned_end: u32) -> u32 {
     match previous {

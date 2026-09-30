@@ -94,7 +94,7 @@ impl SecretWallet {
         ))
     }
 
-    /// Send SNIP-20 tokens (e.g., Shade tokens)
+    /// Send SNIP-20 tokens (caller supplies the contract address)
     pub async fn send_token(
         &self,
         token_contract: &str,

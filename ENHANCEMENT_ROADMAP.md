@@ -19,6 +19,7 @@ Full problem / solution / impact narrative: [`docs/NOZYWALLET_PROPOSAL.md`](docs
 | **Operator API** | `api-server/` | In development | Localhost companion |
 | **Desktop** | `desktop-client/` | In development | Tauri |
 | **Mobile** | [`nozy-mobile/`](nozy-mobile/) | In development | Expo; see [VPS-DEPLOY](nozy-mobile/VPS-DEPLOY.md) |
+| **Nozy Agent** | `nozy-agent/` (planned) | Planning | Self-hosted Rust agent; see section below |
 
 **Privacy chains (later):** Namada, Penumbra — [`docs/rfcs/MULTICHAIN_PRIVACY_CHAINS_RFC.md`](docs/rfcs/MULTICHAIN_PRIVACY_CHAINS_RFC.md)
 
@@ -111,6 +112,29 @@ Business profile + Sell mode: Phase 0 decisions locked — [`docs/BUSINESS_ZEC_Z
 
 ---
 
+## Planned: Nozy Agent (self-hosted)
+
+Separate product under `nozy-agent/` (not inside `web-app/`). Local LLM (Ollama default / localhost vLLM optional), Nym-mandatory egress, companion-controlled wallet actions, merchant desk, bounty hunter, protocol debug, Zcash research, optional Pet / Legacy Guardian.
+
+Medium draft: [`docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md`](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md)
+
+### Bounded trading — NEAR Intents demoted (locked)
+
+| Decision | Status |
+|----------|--------|
+| Product stance | Prefer the **private model** (shielded ZEC, local agent, Nym egress). Private→transparent exits are a trust demotion, not “still private.” |
+| Trading wallet | Separate capped companion process; never main-wallet keys in the agent |
+| NEAR Intents / 1Click | **Paper + tiny human-approved canary only** — **not** a safe first venue for size or bounded automation |
+| Why | [Forum #57497](https://forum.zcashcommunity.com/t/my-experience-exiting-shielded-zec-from-zodl-to-near-intents-589k-usdt-still-held-50-days-despite-a-written-compliance-clearance/57497): ~$589k USDT held ~50 days after written compliance clearance was later reopened; “trustless” wallet UX vs compliance-gated hold power; recovery burned privacy via tickets/public posts |
+| Private→transparent harm | Exit edge reveals amount/timing; third parties can hold/freeze; marketing that blurs this boundary is unacceptable |
+| Required copy | Never call NEAR trustless / same privacy as shielded ZEC; pre-trade trust-boundary warning in UI |
+| Circuit breakers | Uncredited deposit, compliance hold, clearance-then-reopen, missing refund tx hash → freeze venue |
+| Promotion past canary | Separate issue + review: settle/refund SLA, reclaim path, no unresolved #57497-class holds, owner-signed mandate |
+
+Other venues: one adapter per security review; prefer clearer settlement/refund stories and privacy-preserving routes before raising any compliance-gated rail past canary.
+
+---
+
 ## Backlog (ordered)
 
 1. Web app W0–W2 (ZEC dashboard)
@@ -119,8 +143,10 @@ Business profile + Sell mode: Phase 0 decisions locked — [`docs/BUSINESS_ZEC_Z
 4. Business profile + mobile Sell mode (issue #85)
 5. Desktop production release
 6. Dynamic fee A2 in Zeaking (when Shielded Labs approves)
-7. Multichain sidecars (Penumbra smoke → Namada spike per RFC)
-8. Mobile App Store / Play (STORE-CHECKLIST)
+7. **Nozy Agent** RFC + scaffold (parallel; Nym + local LLM gates)
+8. Multichain sidecars (Penumbra smoke → Namada spike per RFC)
+9. Mobile App Store / Play (STORE-CHECKLIST)
+10. Bounded trading adapters (**NEAR paper/canary only** until promotion criteria)
 
 ---
 

@@ -20,6 +20,8 @@ type UiState = {
   setStatusMessage: (message: string | null) => void;
   pendingFinalizer: string | null;
   setPendingFinalizer: (hex: string | null) => void;
+  pendingBondPk: string | null;
+  setPendingBondPk: (pk: string | null) => void;
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -28,6 +30,8 @@ export const useUiStore = create<UiState>((set) => ({
   statusMessage: null,
   setStatusMessage: (message) => set({ statusMessage: message }),
   pendingFinalizer: null,
-  setPendingFinalizer: (hex) => set({ pendingFinalizer: hex })
+  setPendingFinalizer: (hex) => set({ pendingFinalizer: hex }),
+  pendingBondPk: null,
+  setPendingBondPk: (pk) => set({ pendingBondPk: pk })
 }));
 

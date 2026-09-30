@@ -17,7 +17,7 @@ export function SettingsBackButton({
       variant="secondary"
       size="sm"
       onClick={onClick}
-      className="mb-6 gap-2 font-semibold text-white border border-gray-500 bg-gray-800 hover:bg-gray-700 hover:border-gray-400 shadow-sm"
+      className="mb-6 gap-2 font-semibold text-primary-100 border border-gray-500 bg-gray-800 hover:bg-gray-700 hover:border-gray-400 shadow-sm"
     >
       <ArrowLeft size={18} />
       {label}

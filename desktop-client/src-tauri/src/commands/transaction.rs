@@ -1,16 +1,14 @@
 use crate::error::TauriError;
-use crate::session::load_session_wallet;
+use crate::session::{load_session_wallet, load_wallet_for_send};
 use nozy::{
-    estimate_transaction_fee_for_send, load_config, mark_wallet_notes_spent_by_nullifier_hex,
-    mark_wallet_notes_spent_from_spendables, scan_notes_for_sending, select_single_spend_note,
-    sync_wallet_notes, WalletSyncOptions,
-    transaction_history::{
-        SentTransactionRecord, SentTransactionStorage, TransactionStatus,
-    },
-    ZcashTransactionBuilder, ZebraClient, load_wallet_notes,
+    estimate_transaction_fee_for_send, load_config, load_wallet_notes,
+    mark_wallet_notes_spent_by_nullifier_hex, mark_wallet_notes_spent_from_spendables,
+    scan_notes_for_sending, select_single_spend_note, sync_wallet_notes,
+    transaction_history::{SentTransactionRecord, SentTransactionStorage, TransactionStatus},
+    WalletSyncOptions, ZcashTransactionBuilder, ZebraClient,
 };
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Emitter, command};
+use tauri::{command, AppHandle, Emitter};
 
 #[derive(Clone, Serialize)]
 struct SendProgressEvent {
@@ -173,7 +171,7 @@ pub async fn send_transaction(
 
     emit_send_progress(&app, "Unlocking wallet", 15, "Loading wallet keys…");
 
-    let wallet = load_session_wallet(request.password.as_deref())
+    let wallet = load_wallet_for_send(request.password.as_deref())
         .await
         .map_err(|e| TauriError {
             message: e.message,
@@ -203,7 +201,12 @@ pub async fn send_transaction(
         .map(|m| m.trim().as_bytes())
         .filter(|b| !b.is_empty());
 
-    emit_send_progress(&app, "Estimating fee", 42, "Calculating ZIP-317 priority fee…");
+    emit_send_progress(
+        &app,
+        "Estimating fee",
+        42,
+        "Calculating ZIP-317 priority fee…",
+    );
 
     let fee_zatoshis =
         estimate_transaction_fee_for_send(&zebra_client, memo_preview, pilot.priority).await;
@@ -250,7 +253,7 @@ pub async fn send_transaction(
                 70,
                 "Refreshing Ironwood witnesses and rebuilding the transaction…",
             );
-            let wallet_retry = load_session_wallet(request.password.as_deref())
+            let wallet_retry = load_wallet_for_send(request.password.as_deref())
                 .await
                 .map_err(|e| TauriError {
                     message: e.message,
@@ -304,12 +307,9 @@ pub async fn send_transaction(
                 }
                 vec![nullifier_hex.clone()]
             } else {
-                let spent_note = select_single_spend_note(
-                    &spendable_notes,
-                    amount_zatoshis,
-                    fee_zatoshis,
-                )
-                .map_err(|e| TauriError::from(e.to_string()))?;
+                let spent_note =
+                    select_single_spend_note(&spendable_notes, amount_zatoshis, fee_zatoshis)
+                        .map_err(|e| TauriError::from(e.to_string()))?;
 
                 if let Err(e) = mark_wallet_notes_spent_from_spendables(
                     std::slice::from_ref(spent_note),
@@ -337,12 +337,7 @@ pub async fn send_transaction(
                 .save_transaction(tx_record)
                 .map_err(|e| TauriError::from(e.to_string()))?;
 
-            emit_send_progress(
-                &app,
-                "Complete",
-                100,
-                "Transaction broadcast successfully.",
-            );
+            emit_send_progress(&app, "Complete", 100, "Transaction broadcast successfully.");
 
             Ok(SendTransactionResponse {
                 success: true,
@@ -353,11 +348,13 @@ pub async fn send_transaction(
                 ),
             })
         }
-        Err(e) => Ok(SendTransactionResponse {
-            success: false,
-            txid: None,
-            message: format!("Failed to send transaction: {}", e),
-        }),
+        Err(e) => {
+            Ok(SendTransactionResponse {
+                success: false,
+                txid: None,
+                message: format!("Failed to send transaction: {}", e),
+            })
+        }
     }
 }
 
@@ -370,8 +367,7 @@ pub async fn estimate_fee(
     let zebra_url = zebra_url.unwrap_or_else(|| config.zebra_url.clone());
     let zebra_client = ZebraClient::new(zebra_url);
     let use_priority = priority.unwrap_or(nozy::NOZY_WALLET_PRIORITY_FEE);
-    let fee_zatoshis =
-        estimate_transaction_fee_for_send(&zebra_client, None, use_priority).await;
+    let fee_zatoshis = estimate_transaction_fee_for_send(&zebra_client, None, use_priority).await;
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
 
     Ok(fee_zec)
@@ -392,10 +388,7 @@ pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriEr
     let zebra_client = ZebraClient::new(config.zebra_url);
     enrich_block_times_for_views(&mut views, &zebra_client).await;
 
-    Ok(views
-        .iter()
-        .map(transaction_view_to_history_json)
-        .collect())
+    Ok(views.iter().map(transaction_view_to_history_json).collect())
 }
 
 #[command]
@@ -449,7 +442,7 @@ pub async fn speed_up_transaction(
         .zebra_url
         .unwrap_or_else(|| config.zebra_url.clone());
 
-    let wallet = load_session_wallet(request.password.as_deref())
+    let wallet = load_wallet_for_send(request.password.as_deref())
         .await
         .map_err(|e| TauriError {
             message: e.message,

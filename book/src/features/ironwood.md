@@ -62,7 +62,19 @@ Migration is **not** the same as a normal private payment:
 - Turnstile crossings expose **amounts** on the public chain (by design, for accounting).
 - Broadcasting a migration over clearnet can link that amount to **network identity** (IP / session). Shielded Labs (Zooko Wilcox and Taylor Hornby) documented this in *Security issues in migrating user funds from Orchard to Ironwood*.
 
+**Network privacy for migration:** prefer a **local Zebrad**. If you must use a remote node, Nym offers a free month of NymVPN to shielded ZEC holders at [zcash.nym.com](https://zcash.nym.com): **Fast mode** for compact sync, **Mixnet mode + a new exit** for Ironwood send/broadcast. Do not sync and migrate-broadcast through the same hosted lightwalletd a minute later. In-app mixnet submit / dVPN sync in Nozy is the longer-term path; the consumer app is a stopgap, not “Nozy integrated Nym.”
+
 Nozy treats migration as a **privacy operation**: notify, warn, then Plan / Split / Migrate / Broadcast with safer network guidance—not a silent “upgrade balance” button. See also [Privacy model](../nozy/privacy-model.md).
+
+**Three paths users mix up** (full write-up for docs / whitepaper):
+
+| Path | Meaning |
+|------|---------|
+| Transparent → Ironwood | Fast shield in wallets that support `t` (Nozy does not send transparent). |
+| Receive Ironwood into Nozy | Sync to tip — no Plan/Migrate for that balance. |
+| Orchard already in Nozy | ZIP 318 turnstile — Plan → Split → Migrate → Broadcast; buckets and wait are intentional. |
+
+Source note: [`docs/reference/IRONWOOD_USER_EXPLAINER.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/docs/reference/IRONWOOD_USER_EXPLAINER.md).
 
 ***
 

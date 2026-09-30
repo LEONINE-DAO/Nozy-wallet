@@ -1,14 +1,43 @@
 //! Operator check: lightwalletd gRPC GetLightdInfo (chain tip + donation UA for Zec.rocks rewards).
+//!
+//! `verify_lwd probe <url>` skips the donation check and prints one machine-readable line
+//! (for mixnet heartbeat scripts on Windows where `--probe` is awkward).
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let url = std::env::args()
-        .nth(1)
-        .unwrap_or_else(|| "http://127.0.0.1:9067".to_string());
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let probe = args.first().is_some_and(|a| a == "probe");
+    let url = if probe {
+        args.get(1)
+            .cloned()
+            .unwrap_or_else(|| "http://127.0.0.1:9067".to_string())
+    } else {
+        args.first()
+            .cloned()
+            .unwrap_or_else(|| "http://127.0.0.1:9067".to_string())
+    };
 
+    let started = std::time::Instant::now();
     let mut client = zeaking::lwd::connect_lightwalletd(&url).await?;
     use zeaking::lwd::proto::Empty;
     let info = client.get_lightd_info(Empty {}).await?.into_inner();
+    let ms = started.elapsed().as_millis();
+
+    if probe {
+        let backend = info.zcashd_subversion.trim();
+        if backend.is_empty() {
+            println!(
+                "grpc_probe ok=1 url={url} chain={} height={} version={} ms={ms}",
+                info.chain_name, info.block_height, info.version
+            );
+        } else {
+            println!(
+                "grpc_probe ok=1 url={url} chain={} height={} version={} backend={backend} ms={ms}",
+                info.chain_name, info.block_height, info.version
+            );
+        }
+        return Ok(());
+    }
 
     println!("lightwalletd_url: {}", url);
     println!("version: {}", info.version);

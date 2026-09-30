@@ -26,6 +26,33 @@ export function isScanInProgress(scan: WalletScanProgressResult | null | undefin
   return scanPercentDisplay(scan) < 100;
 }
 
+/** Same floor as desktop `MAINNET_DEFAULT_SCAN_START` for the original wallet only. */
+export const MAINNET_RESTORE_SCAN_FLOOR = 3_050_000;
+
+/** Empty wallet that only covered a recent slice. */
+export function scanLooksLikeEmptyNearTipWindow(
+  scan: WalletScanProgressResult | null | undefined,
+  restoreFloor = MAINNET_RESTORE_SCAN_FLOOR
+): boolean {
+  if (!scan) return false;
+  if ((scan.discoveredNotes ?? 0) > 0) return false;
+  const start = scan.startHeight;
+  const end = scan.endHeight;
+  if (typeof start !== "number" || typeof end !== "number") return false;
+  return start > restoreFloor + 1000 && end - start < 80_000;
+}
+
+/** Scan is running before this wallet's own birthday — jump forward to that height. */
+export function shouldJumpToOwnBirthday(
+  scan: WalletScanProgressResult | null | undefined,
+  birthdayHeight: number | null | undefined
+): boolean {
+  if (typeof birthdayHeight !== "number" || birthdayHeight < 0) return false;
+  const start = scan?.startHeight;
+  if (typeof start !== "number") return false;
+  return start < birthdayHeight - 64;
+}
+
 /** Adaptive precision so sub-1% progress on a long scan is still visible instead of reading 0%. */
 export function scanPercentLabel(scan: WalletScanProgressResult | null | undefined): string {
   const pct = scanPercentDisplay(scan);

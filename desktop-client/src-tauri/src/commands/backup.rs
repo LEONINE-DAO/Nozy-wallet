@@ -20,12 +20,11 @@ pub struct BackupActionResponse {
 
 #[command]
 pub async fn export_backup(request: BackupPathRequest) -> Result<BackupActionResponse, TauriError> {
-    let path = resolve_allowlisted_user_path(&request.backup_path).map_err(|message| {
-        TauriError {
+    let path =
+        resolve_allowlisted_user_path(&request.backup_path).map_err(|message| TauriError {
             message,
             code: Some("PATH_DENIED".to_string()),
-        }
-    })?;
+        })?;
     if !nozy::active_wallet_exists() {
         return Err(TauriError {
             message: "No wallet found to backup.".to_string(),
@@ -58,12 +57,11 @@ pub async fn export_backup(request: BackupPathRequest) -> Result<BackupActionRes
 pub async fn restore_from_backup(
     request: BackupPathRequest,
 ) -> Result<BackupActionResponse, TauriError> {
-    let path = resolve_allowlisted_user_path(&request.backup_path).map_err(|message| {
-        TauriError {
+    let path =
+        resolve_allowlisted_user_path(&request.backup_path).map_err(|message| TauriError {
             message,
             code: Some("PATH_DENIED".to_string()),
-        }
-    })?;
+        })?;
 
     // F-11: require step-up auth before overwriting an existing wallet.dat.
     if nozy::active_wallet_exists() {

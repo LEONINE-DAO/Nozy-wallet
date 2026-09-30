@@ -56,13 +56,17 @@ pub async fn address_book_remove(name: String) -> Result<bool, TauriError> {
 }
 
 #[command]
-pub async fn address_book_get(name: String) -> Result<Option<AddressBookEntryResponse>, TauriError> {
+pub async fn address_book_get(
+    name: String,
+) -> Result<Option<AddressBookEntryResponse>, TauriError> {
     let book = AddressBook::new().map_err(|e| TauriError::from(e.to_string()))?;
     Ok(book.get_address(&name).map(entry_to_response))
 }
 
 #[command]
-pub async fn address_book_search(query: String) -> Result<Vec<AddressBookEntryResponse>, TauriError> {
+pub async fn address_book_search(
+    query: String,
+) -> Result<Vec<AddressBookEntryResponse>, TauriError> {
     let book = AddressBook::new().map_err(|e| TauriError::from(e.to_string()))?;
     Ok(book
         .search_addresses(&query)

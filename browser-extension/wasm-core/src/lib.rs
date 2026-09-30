@@ -1,5 +1,5 @@
-use wasm_bindgen::prelude::*;
 use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::*;
 
 mod orchard_block_parse;
 mod orchard_tree_codec;
@@ -84,9 +84,8 @@ fn parse_orchard_witness_for_spend(
             .map_err(|e| JsError::new(&e));
     }
 
-    let witness: OrchardWitnessAuthPath = serde_json::from_str(witness_json).map_err(|e| {
-        JsError::new(&format!("Invalid auth-path witness_json: {e}"))
-    })?;
+    let witness: OrchardWitnessAuthPath = serde_json::from_str(witness_json)
+        .map_err(|e| JsError::new(&format!("Invalid auth-path witness_json: {e}")))?;
 
     let anchor_bytes_vec = hex::decode(witness.anchor.trim_start_matches("0x"))
         .map_err(|e| JsError::new(&format!("Invalid witness anchor hex: {e}")))?;
@@ -108,9 +107,8 @@ fn parse_orchard_witness_for_spend(
         .iter()
         .enumerate()
         .map(|(i, h)| {
-            let bytes_vec = hex::decode(h.trim_start_matches("0x")).map_err(|e| {
-                JsError::new(&format!("Invalid auth_path[{i}] hex: {e}"))
-            })?;
+            let bytes_vec = hex::decode(h.trim_start_matches("0x"))
+                .map_err(|e| JsError::new(&format!("Invalid auth_path[{i}] hex: {e}")))?;
             if bytes_vec.len() != 32 {
                 return Err(JsError::new(&format!("auth_path[{i}] must be 32 bytes")));
             }
@@ -141,8 +139,8 @@ pub fn advance_orchard_witness_hex(witness_hex: &str, block_json: &str) -> Resul
             .map_err(|e| JsError::new(&format!("witness hex: {e}")))?,
     )
     .map_err(|e| JsError::new(&e))?;
-    let block: Value = serde_json::from_str(block_json)
-        .map_err(|e| JsError::new(&format!("block json: {e}")))?;
+    let block: Value =
+        serde_json::from_str(block_json).map_err(|e| JsError::new(&format!("block json: {e}")))?;
     let cmxs = orchard_cmx_bytes_from_block_json(&block).map_err(|e| JsError::new(&e))?;
     for cmx in cmxs {
         let node = merkle_hash_from_cmx_bytes(&cmx).map_err(|e| JsError::new(&e))?;
@@ -153,7 +151,10 @@ pub fn advance_orchard_witness_hex(witness_hex: &str, block_json: &str) -> Resul
 }
 
 #[wasm_bindgen]
-pub fn orchard_witness_matches_anchor_hex(witness_hex: &str, anchor_hex: &str) -> Result<bool, JsError> {
+pub fn orchard_witness_matches_anchor_hex(
+    witness_hex: &str,
+    anchor_hex: &str,
+) -> Result<bool, JsError> {
     let w = crate::orchard_tree_codec::orchard_incremental_witness_from_bytes(
         &hex::decode(witness_hex.trim_start_matches("0x"))
             .map_err(|e| JsError::new(&format!("witness hex: {e}")))?,
@@ -166,7 +167,9 @@ pub fn orchard_witness_matches_anchor_hex(witness_hex: &str, anchor_hex: &str) -
     }
     let mut a = [0u8; 32];
     a.copy_from_slice(&ab);
-    Ok(crate::orchard_witness_local::witness_root_matches_anchor(&w, &a))
+    Ok(crate::orchard_witness_local::witness_root_matches_anchor(
+        &w, &a,
+    ))
 }
 
 #[wasm_bindgen]
@@ -184,7 +187,8 @@ pub fn create_wallet(password: &str) -> Result<JsValue, JsError> {
     let wallet = HDWallet::from_mnemonic(&mnemonic.to_string())
         .map_err(|e| JsError::new(&format!("Wallet creation failed: {}", e)))?;
 
-    let address = wallet.generate_orchard_address(0, 0, NetworkType::Main)
+    let address = wallet
+        .generate_orchard_address(0, 0, NetworkType::Main)
         .map_err(|e| JsError::new(&format!("Address generation failed: {}", e)))?;
 
     let seed_bytes = mnemonic.to_seed(password).to_vec();
@@ -202,17 +206,19 @@ pub fn create_wallet(password: &str) -> Result<JsValue, JsError> {
 
 #[wasm_bindgen]
 pub fn restore_wallet(mnemonic_str: &str, password: &str) -> Result<JsValue, JsError> {
-    use nozy::hd_wallet::HDWallet;
     use bip39::Mnemonic;
+    use nozy::hd_wallet::HDWallet;
     use zcash_protocol::consensus::NetworkType;
 
-    let mnemonic: Mnemonic = mnemonic_str.parse()
+    let mnemonic: Mnemonic = mnemonic_str
+        .parse()
         .map_err(|e| JsError::new(&format!("Invalid mnemonic: {}", e)))?;
 
     let wallet = HDWallet::from_mnemonic(&mnemonic.to_string())
         .map_err(|e| JsError::new(&format!("Wallet restore failed: {}", e)))?;
 
-    let address = wallet.generate_orchard_address(0, 0, NetworkType::Main)
+    let address = wallet
+        .generate_orchard_address(0, 0, NetworkType::Main)
         .map_err(|e| JsError::new(&format!("Address generation failed: {}", e)))?;
 
     let seed_bytes = mnemonic.to_seed(password).to_vec();
@@ -241,7 +247,8 @@ pub fn unlock_wallet(encrypted_seed: &[u8], password: &str) -> Result<JsValue, J
     let wallet = HDWallet::from_mnemonic(&mnemonic.to_string())
         .map_err(|e| JsError::new(&format!("Wallet unlock failed: {}", e)))?;
 
-    let address = wallet.generate_orchard_address(0, 0, NetworkType::Main)
+    let address = wallet
+        .generate_orchard_address(0, 0, NetworkType::Main)
         .map_err(|e| JsError::new(&format!("Address generation failed: {}", e)))?;
 
     let result = WalletUnlockResult { address };
@@ -258,7 +265,8 @@ pub fn generate_address(mnemonic_str: &str, account: u32, index: u32) -> Result<
     let wallet = HDWallet::from_mnemonic(mnemonic_str)
         .map_err(|e| JsError::new(&format!("Wallet creation failed: {}", e)))?;
 
-    wallet.generate_orchard_address(account, index, NetworkType::Main)
+    wallet
+        .generate_orchard_address(account, index, NetworkType::Main)
         .map_err(|e| JsError::new(&format!("Address generation failed: {}", e)))
 }
 
@@ -269,7 +277,7 @@ pub fn get_zcash_chain_id() -> String {
 
 #[wasm_bindgen]
 pub fn get_nu5_activation_height() -> u32 {
-    use zcash_protocol::consensus::{MainNetwork, Parameters, NetworkUpgrade};
+    use zcash_protocol::consensus::{MainNetwork, NetworkUpgrade, Parameters};
     MainNetwork
         .activation_height(NetworkUpgrade::Nu5)
         .map(|h| u32::from(h))
@@ -279,7 +287,7 @@ pub fn get_nu5_activation_height() -> u32 {
 #[wasm_bindgen]
 pub fn sign_message(mnemonic_str: &str, message: &str) -> Result<String, JsError> {
     use nozy::hd_wallet::HDWallet;
-    use sha2::{Sha256, Digest};
+    use sha2::{Digest, Sha256};
 
     let wallet = HDWallet::from_mnemonic(mnemonic_str)
         .map_err(|e| JsError::new(&format!("Wallet creation failed: {}", e)))?;
@@ -313,19 +321,40 @@ pub fn scan_orchard_actions(
     let mut total_value = 0u64;
 
     for action in &actions {
-        if action.nullifier.len() != 32 || action.cmx.len() != 32 || action.ephemeral_key.len() != 32 {
+        if action.nullifier.len() != 32
+            || action.cmx.len() != 32
+            || action.ephemeral_key.len() != 32
+        {
             continue;
         }
 
         let compact = OrchardActionCompactData {
-            nullifier: action.nullifier.clone().try_into().map_err(|_| JsError::new("Invalid nullifier length"))?,
-            cmx: action.cmx.clone().try_into().map_err(|_| JsError::new("Invalid cmx length"))?,
-            ephemeral_key: action.ephemeral_key.clone().try_into().map_err(|_| JsError::new("Invalid ephemeral_key length"))?,
+            nullifier: action
+                .nullifier
+                .clone()
+                .try_into()
+                .map_err(|_| JsError::new("Invalid nullifier length"))?,
+            cmx: action
+                .cmx
+                .clone()
+                .try_into()
+                .map_err(|_| JsError::new("Invalid cmx length"))?,
+            ephemeral_key: action
+                .ephemeral_key
+                .clone()
+                .try_into()
+                .map_err(|_| JsError::new("Invalid ephemeral_key length"))?,
             encrypted_note: action.encrypted_note.clone(),
         };
 
         if let Some(note) = wallet
-            .decrypt_orchard_action_compact(&compact, address, block_height, txid)
+            .decrypt_orchard_action_compact(
+                &compact,
+                address,
+                block_height,
+                txid,
+                nozy::shielded_pool::ShieldedPool::Orchard,
+            )
             .map_err(|e| JsError::new(&format!("Decrypt action failed: {}", e)))?
         {
             total_value = total_value.saturating_add(note.value);
@@ -360,11 +389,10 @@ pub fn prove_orchard_transaction_dummy(
     };
     use rand::rngs::OsRng;
     use sha2::{Digest, Sha256};
-    use zcash_address::unified::{Address as UnifiedAddress, Receiver, Encoding, Container};
+    use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding, Receiver};
 
-    let (_network, ua) = UnifiedAddress::decode(recipient_address).map_err(|e| {
-        JsError::new(&format!("Invalid recipient address: {e}"))
-    })?;
+    let (_network, ua) = UnifiedAddress::decode(recipient_address)
+        .map_err(|e| JsError::new(&format!("Invalid recipient address: {e}")))?;
 
     let mut orchard_receiver_raw = None;
     for item in ua.items() {
@@ -374,9 +402,8 @@ pub fn prove_orchard_transaction_dummy(
         }
     }
 
-    let orchard_receiver_raw = orchard_receiver_raw.ok_or_else(|| {
-        JsError::new("Recipient address does not contain an Orchard receiver")
-    })?;
+    let orchard_receiver_raw = orchard_receiver_raw
+        .ok_or_else(|| JsError::new("Recipient address does not contain an Orchard receiver"))?;
 
     let orchard_address = orchard::Address::from_raw_address_bytes(&orchard_receiver_raw)
         .into_option()
@@ -419,9 +446,8 @@ pub fn prove_orchard_transaction_dummy(
     let bundle_result = builder
         .build::<i64>(&mut rng)
         .map_err(|e| JsError::new(&format!("Failed to build Orchard bundle: {e}")))?;
-    let (unauthorized_bundle, _bundle_meta) = bundle_result.ok_or_else(|| {
-        JsError::new("Orchard builder did not produce a bundle")
-    })?;
+    let (unauthorized_bundle, _bundle_meta) =
+        bundle_result.ok_or_else(|| JsError::new("Orchard builder did not produce a bundle"))?;
 
     let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
     let proved = unauthorized_bundle
@@ -430,7 +456,9 @@ pub fn prove_orchard_transaction_dummy(
 
     let prepared = proved.prepare(&mut rng, [0; 32]);
     let authorized = prepared.finalize().map_err(|e| {
-        JsError::new(&format!("Failed to finalize Orchard bundle signatures: {e}"))
+        JsError::new(&format!(
+            "Failed to finalize Orchard bundle signatures: {e}"
+        ))
     })?;
 
     let bundle_actions = authorized.actions().len();
@@ -450,9 +478,8 @@ pub fn prove_orchard_transaction_dummy(
         proof_generated: true,
     };
 
-    serde_wasm_bindgen::to_value(&result).map_err(|e| {
-        JsError::new(&format!("Serialization failed: {e}"))
-    })
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }
 
 #[wasm_bindgen]
@@ -482,9 +509,8 @@ pub fn prove_orchard_transaction_spend_from_note(
 
     let (anchor, merkle_path) = parse_orchard_witness_for_spend(witness_json)?;
 
-    let spend_note: OrchardDecryptionResult = serde_json::from_str(spend_note_json).map_err(|e| {
-        JsError::new(&format!("Invalid spend_note_json: {e}"))
-    })?;
+    let spend_note: OrchardDecryptionResult = serde_json::from_str(spend_note_json)
+        .map_err(|e| JsError::new(&format!("Invalid spend_note_json: {e}")))?;
 
     if amount_zatoshis > spend_note.value {
         return Err(JsError::new(
@@ -492,9 +518,8 @@ pub fn prove_orchard_transaction_spend_from_note(
         ));
     }
 
-    let (_network, ua) = UnifiedAddress::decode(recipient_address).map_err(|e| {
-        JsError::new(&format!("Invalid recipient address: {e}"))
-    })?;
+    let (_network, ua) = UnifiedAddress::decode(recipient_address)
+        .map_err(|e| JsError::new(&format!("Invalid recipient address: {e}")))?;
 
     let mut orchard_receiver_raw: Option<[u8; 43]> = None;
     for item in ua.items() {
@@ -504,9 +529,8 @@ pub fn prove_orchard_transaction_spend_from_note(
         }
     }
 
-    let orchard_receiver_raw = orchard_receiver_raw.ok_or_else(|| {
-        JsError::new("Recipient address does not contain an Orchard receiver")
-    })?;
+    let orchard_receiver_raw = orchard_receiver_raw
+        .ok_or_else(|| JsError::new("Recipient address does not contain an Orchard receiver"))?;
 
     let recipient_orchard_address = orchard::Address::from_raw_address_bytes(&orchard_receiver_raw)
         .into_option()
@@ -540,12 +564,10 @@ pub fn prove_orchard_transaction_spend_from_note(
         .map_err(|e| JsError::new(&format!("Invalid mnemonic: {e}")))?;
     let seed_bytes = mnemonic.to_seed("").to_vec();
 
-    let account_id = AccountId::try_from(0).map_err(|e| {
-        JsError::new(&format!("Invalid ZIP32 account id: {e}"))
-    })?;
-    let spending_key = SpendingKey::from_zip32_seed(&seed_bytes, 133, account_id).map_err(|e| {
-        JsError::new(&format!("Failed to derive Orchard spending key: {e:?}"))
-    })?;
+    let account_id = AccountId::try_from(0)
+        .map_err(|e| JsError::new(&format!("Invalid ZIP32 account id: {e}")))?;
+    let spending_key = SpendingKey::from_zip32_seed(&seed_bytes, 133, account_id)
+        .map_err(|e| JsError::new(&format!("Failed to derive Orchard spending key: {e:?}")))?;
     let fvk = FullViewingKey::from(&spending_key);
 
     // 512-byte memo.
@@ -599,9 +621,8 @@ pub fn prove_orchard_transaction_spend_from_note(
     let bundle_result = builder
         .build::<i64>(&mut rng)
         .map_err(|e| JsError::new(&format!("Failed to build Orchard bundle: {e}")))?;
-    let (unauthorized_bundle, _bundle_meta) = bundle_result.ok_or_else(|| {
-        JsError::new("Orchard builder did not produce a bundle")
-    })?;
+    let (unauthorized_bundle, _bundle_meta) =
+        bundle_result.ok_or_else(|| JsError::new("Orchard builder did not produce a bundle"))?;
 
     let pk = ProvingKey::build(OrchardCircuitVersion::FixedPostNu6_2);
     let proved = unauthorized_bundle
@@ -609,7 +630,9 @@ pub fn prove_orchard_transaction_spend_from_note(
         .map_err(|e| JsError::new(&format!("Failed to create Orchard proof: {e}")))?;
     let prepared = proved.prepare(&mut rng, [0; 32]);
     let authorized = prepared.finalize().map_err(|e| {
-        JsError::new(&format!("Failed to finalize Orchard bundle signatures: {e}"))
+        JsError::new(&format!(
+            "Failed to finalize Orchard bundle signatures: {e}"
+        ))
     })?;
 
     let bundle_actions = authorized.actions().len();
@@ -629,9 +652,8 @@ pub fn prove_orchard_transaction_spend_from_note(
         proof_generated: true,
     };
 
-    serde_wasm_bindgen::to_value(&result).map_err(|e| {
-        JsError::new(&format!("Serialization failed: {e}"))
-    })
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -642,7 +664,6 @@ pub struct BuiltOrchardTxResult {
     pub bundle_actions: usize,
     pub proof_generated: bool,
 }
-
 
 #[wasm_bindgen]
 pub fn build_orchard_v5_tx_from_note(
@@ -655,7 +676,6 @@ pub fn build_orchard_v5_tx_from_note(
     witness_json: &str,
 ) -> Result<JsValue, JsError> {
     use bip39::Mnemonic;
-    use std::io::Cursor;
     use nozy::hd_wallet::OrchardDecryptionResult;
     use orchard::{
         keys::SpendAuthorizingKey,
@@ -664,15 +684,16 @@ pub fn build_orchard_v5_tx_from_note(
         Address as OrchardAddress,
     };
     use rand::rngs::OsRng;
-    use zcash_transparent::builder::TransparentSigningSet;
+    use std::io::Cursor;
     use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding, Receiver};
     use zcash_primitives::transaction::builder::{BuildConfig, Builder as TxBuilder};
-    use zcash_primitives::transaction::fees::{FeeRule, transparent::InputSize};
+    use zcash_primitives::transaction::fees::{transparent::InputSize, FeeRule};
     use zcash_protocol::{
-        consensus::{MainNetwork, BlockHeight},
+        consensus::{BlockHeight, MainNetwork},
         memo::MemoBytes,
         value::Zatoshis,
     };
+    use zcash_transparent::builder::TransparentSigningSet;
 
     // Dummy Sapling provers. Since this builder config omits Sapling entirely,
     // these are never used at runtime, but are required by the generic builder API.
@@ -756,19 +777,23 @@ pub fn build_orchard_v5_tx_from_note(
         }
     }
 
-    let witnesses: Vec<serde_json::Value> = match serde_json::from_str::<serde_json::Value>(witness_json)
-        .map_err(|e| JsError::new(&format!("Invalid witness_json: {e}")))? {
-        serde_json::Value::Array(a) => a,
-        other => vec![other],
-    };
+    let witnesses: Vec<serde_json::Value> =
+        match serde_json::from_str::<serde_json::Value>(witness_json)
+            .map_err(|e| JsError::new(&format!("Invalid witness_json: {e}")))?
+        {
+            serde_json::Value::Array(a) => a,
+            other => vec![other],
+        };
 
-    let spend_notes: Vec<OrchardDecryptionResult> = match serde_json::from_str::<serde_json::Value>(spend_note_json)
-        .map_err(|e| JsError::new(&format!("Invalid spend_note_json: {e}")))? {
-        serde_json::Value::Array(_) => serde_json::from_str(spend_note_json)
-            .map_err(|e| JsError::new(&format!("Invalid spend_note_json array: {e}")))?,
-        _ => vec![serde_json::from_str(spend_note_json)
-            .map_err(|e| JsError::new(&format!("Invalid spend_note_json object: {e}")))?],
-    };
+    let spend_notes: Vec<OrchardDecryptionResult> =
+        match serde_json::from_str::<serde_json::Value>(spend_note_json)
+            .map_err(|e| JsError::new(&format!("Invalid spend_note_json: {e}")))?
+        {
+            serde_json::Value::Array(_) => serde_json::from_str(spend_note_json)
+                .map_err(|e| JsError::new(&format!("Invalid spend_note_json array: {e}")))?,
+            _ => vec![serde_json::from_str(spend_note_json)
+                .map_err(|e| JsError::new(&format!("Invalid spend_note_json object: {e}")))?],
+        };
 
     if spend_notes.is_empty() {
         return Err(JsError::new("No spend notes provided"));
@@ -789,11 +814,9 @@ pub fn build_orchard_v5_tx_from_note(
     };
     let spends = spend_notes.len() as u32;
     let total_input_preview: u64 = spend_notes.iter().map(|n| n.value).sum();
-    let mut fee_zatoshis = fee_zatoshis.max(nozy::estimate_orchard_send_fee_zatoshis(
-        memo_opt, true,
-    ));
-    let mut has_change =
-        total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
+    let mut fee_zatoshis =
+        fee_zatoshis.max(nozy::estimate_orchard_send_fee_zatoshis(memo_opt, true));
+    let mut has_change = total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
     let mut outputs = if has_change { 2u32 } else { 1 };
     let mut shape = if spends <= 1 {
         nozy::OrchardSendFeeShape::single_spend_send(has_change, memo_opt)
@@ -825,9 +848,8 @@ pub fn build_orchard_v5_tx_from_note(
         })? as u32;
     let target_height_bh: BlockHeight = BlockHeight::from(target_height_u32);
 
-    let (_network, ua) = UnifiedAddress::decode(recipient_address).map_err(|e| {
-        JsError::new(&format!("Invalid recipient address: {e}"))
-    })?;
+    let (_network, ua) = UnifiedAddress::decode(recipient_address)
+        .map_err(|e| JsError::new(&format!("Invalid recipient address: {e}")))?;
 
     let mut orchard_receiver_raw: Option<[u8; 43]> = None;
     for item in ua.items() {
@@ -837,9 +859,8 @@ pub fn build_orchard_v5_tx_from_note(
         }
     }
 
-    let orchard_receiver_raw = orchard_receiver_raw.ok_or_else(|| {
-        JsError::new("Recipient address does not contain an Orchard receiver")
-    })?;
+    let orchard_receiver_raw = orchard_receiver_raw
+        .ok_or_else(|| JsError::new("Recipient address does not contain an Orchard receiver"))?;
 
     let recipient_orchard_address = OrchardAddress::from_raw_address_bytes(&orchard_receiver_raw)
         .into_option()
@@ -866,9 +887,8 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Invalid mnemonic: {e}")))?;
 
     let seed_bytes = mnemonic.to_seed("").to_vec();
-    let account_id = zip32::AccountId::try_from(0).map_err(|e| {
-        JsError::new(&format!("Invalid ZIP32 account id: {e}"))
-    })?;
+    let account_id = zip32::AccountId::try_from(0)
+        .map_err(|e| JsError::new(&format!("Invalid ZIP32 account id: {e}")))?;
 
     let spending_key = orchard::keys::SpendingKey::from_zip32_seed(&seed_bytes, 133, account_id)
         .map_err(|e| JsError::new(&format!("Failed to derive Orchard spending key: {e:?}")))?;
@@ -887,8 +907,7 @@ pub fn build_orchard_v5_tx_from_note(
     let transparent_signing_set = TransparentSigningSet::new();
     let sapling_extsks: &[sapling::zip32::ExtendedSpendingKey] = &[];
 
-    let fee = Zatoshis::from_u64(fee_zatoshis)
-        .map_err(|_| JsError::new("Invalid fee amount"))?;
+    let fee = Zatoshis::from_u64(fee_zatoshis).map_err(|_| JsError::new("Invalid fee amount"))?;
     let fee_rule = FixedFeeRule { fee };
 
     // Add Orchard spends + outputs.
@@ -899,24 +918,33 @@ pub fn build_orchard_v5_tx_from_note(
             .map_err(|e| JsError::new(&format!("witness json at {idx}: {e}")))?;
         let (w_anchor, merkle_path) = parse_orchard_witness_for_spend(&witness_str)?;
         if w_anchor.to_bytes() != anchor_bytes {
-            return Err(JsError::new("All spend witnesses must share the same Orchard anchor"));
+            return Err(JsError::new(
+                "All spend witnesses must share the same Orchard anchor",
+            ));
         }
 
         let spend_orchard_receiver_raw: [u8; 43] = spend_note
             .orchard_address_raw
             .as_slice()
             .try_into()
-            .map_err(|_| JsError::new(&format!("Invalid spend note receiver bytes at index {idx}")))?;
-        let spend_note_recipient = OrchardAddress::from_raw_address_bytes(&spend_orchard_receiver_raw)
-            .into_option()
-            .ok_or_else(|| JsError::new(&format!("Invalid spend note recipient at index {idx}")))?;
+            .map_err(|_| {
+                JsError::new(&format!("Invalid spend note receiver bytes at index {idx}"))
+            })?;
+        let spend_note_recipient =
+            OrchardAddress::from_raw_address_bytes(&spend_orchard_receiver_raw)
+                .into_option()
+                .ok_or_else(|| {
+                    JsError::new(&format!("Invalid spend note recipient at index {idx}"))
+                })?;
 
         let rho = Rho::from_bytes(&spend_note.rho)
             .into_option()
             .ok_or_else(|| JsError::new(&format!("Invalid spend note rho bytes at index {idx}")))?;
         let rseed = RandomSeed::from_bytes(spend_note.rseed, &rho)
             .into_option()
-            .ok_or_else(|| JsError::new(&format!("Invalid spend note rseed bytes at index {idx}")))?;
+            .ok_or_else(|| {
+                JsError::new(&format!("Invalid spend note rseed bytes at index {idx}"))
+            })?;
         let note_value = NoteValue::from_raw(spend_note.value);
         let note = Note::from_parts(
             spend_note_recipient,
@@ -925,16 +953,18 @@ pub fn build_orchard_v5_tx_from_note(
             rseed,
             NoteVersion::V2,
         )
-            .into_option()
-            .ok_or_else(|| JsError::new(&format!("Invalid spend note reconstruction at index {idx}")))?;
+        .into_option()
+        .ok_or_else(|| {
+            JsError::new(&format!("Invalid spend note reconstruction at index {idx}"))
+        })?;
 
         builder
-            .add_orchard_spend::<core::convert::Infallible>(
-                fvk.clone(),
-                note,
-                merkle_path,
-            )
-            .map_err(|e| JsError::new(&format!("Failed to add Orchard spend at index {idx}: {e:?}")))?;
+            .add_orchard_spend::<core::convert::Infallible>(fvk.clone(), note, merkle_path)
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to add Orchard spend at index {idx}: {e:?}"
+                ))
+            })?;
 
         total_input_value = total_input_value.saturating_add(spend_note.value);
     }
@@ -948,9 +978,8 @@ pub fn build_orchard_v5_tx_from_note(
             total_input_value, total_required
         )));
     }
-    let memo_bytes = MemoBytes::from_bytes(memo.as_bytes()).map_err(|e| {
-        JsError::new(&format!("Invalid memo: {e}"))
-    })?;
+    let memo_bytes = MemoBytes::from_bytes(memo.as_bytes())
+        .map_err(|e| JsError::new(&format!("Invalid memo: {e}")))?;
 
     builder
         .add_orchard_output::<core::convert::Infallible>(
@@ -963,8 +992,8 @@ pub fn build_orchard_v5_tx_from_note(
 
     let change_amount = total_input_value.saturating_sub(total_required);
     if change_amount > 0 {
-        let change_zats = Zatoshis::from_u64(change_amount)
-            .map_err(|_| JsError::new("Invalid change amount"))?;
+        let change_zats =
+            Zatoshis::from_u64(change_amount).map_err(|_| JsError::new("Invalid change amount"))?;
         builder
             .add_orchard_output::<core::convert::Infallible>(
                 None,
@@ -972,9 +1001,7 @@ pub fn build_orchard_v5_tx_from_note(
                 change_zats,
                 MemoBytes::empty(),
             )
-            .map_err(|e| {
-                JsError::new(&format!("Failed to add change Orchard output: {e:?}"))
-            })?;
+            .map_err(|e| JsError::new(&format!("Failed to add change Orchard output: {e:?}")))?;
     }
 
     let rng = OsRng;
@@ -998,7 +1025,8 @@ pub fn build_orchard_v5_tx_from_note(
 
     // Serialize to raw tx bytes for broadcasting later.
     let mut cursor = Cursor::new(Vec::<u8>::new());
-    tx.write(&mut cursor).map_err(|e| JsError::new(&format!("Tx serialization failed: {e}")))?;
+    tx.write(&mut cursor)
+        .map_err(|e| JsError::new(&format!("Tx serialization failed: {e}")))?;
     let raw_tx_bytes = cursor.into_inner();
     let raw_tx_hex = hex::encode(raw_tx_bytes);
 
@@ -1009,7 +1037,8 @@ pub fn build_orchard_v5_tx_from_note(
         proof_generated: true,
     };
 
-    serde_wasm_bindgen::to_value(&result).map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
+    serde_wasm_bindgen::to_value(&result)
+        .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }
 
 /// ZIP-317 fee in zatoshis. NozyWallet always applies the priority multiplier (×4);
@@ -1045,8 +1074,8 @@ pub fn decrypt_from_storage(encrypted: &[u8], password: &str) -> Result<Vec<u8>,
 }
 
 fn encrypt_data(data: &[u8], password: &str) -> Result<Vec<u8>, JsError> {
-    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use argon2::Argon2;
     use rand::RngCore;
 
@@ -1065,7 +1094,8 @@ fn encrypt_data(data: &[u8], password: &str) -> Result<Vec<u8>, JsError> {
     rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    let ciphertext = cipher.encrypt(nonce, data)
+    let ciphertext = cipher
+        .encrypt(nonce, data)
         .map_err(|e| JsError::new(&format!("Encryption failed: {}", e)))?;
 
     // Format: [16 bytes salt][12 bytes nonce][ciphertext]
@@ -1078,8 +1108,8 @@ fn encrypt_data(data: &[u8], password: &str) -> Result<Vec<u8>, JsError> {
 }
 
 fn decrypt_data(encrypted: &[u8], password: &str) -> Result<Vec<u8>, JsError> {
-    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use aes_gcm::aead::Aead;
+    use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
     use argon2::Argon2;
 
     if encrypted.len() < 28 {
@@ -1100,7 +1130,8 @@ fn decrypt_data(encrypted: &[u8], password: &str) -> Result<Vec<u8>, JsError> {
 
     let nonce = Nonce::from_slice(nonce_bytes);
 
-    cipher.decrypt(nonce, ciphertext)
+    cipher
+        .decrypt(nonce, ciphertext)
         .map_err(|_| JsError::new("Decryption failed: wrong password or corrupted data"))
 }
 
@@ -1122,21 +1153,25 @@ mod multi_input_parsing_tests {
         spend_note_json: &str,
         witness_json: &str,
     ) -> Result<(Vec<OrchardDecryptionResult>, Vec<OrchardWitnessInputTest>), String> {
-        let witnesses: Vec<OrchardWitnessInputTest> = match serde_json::from_str::<serde_json::Value>(witness_json)
-            .map_err(|e| format!("Invalid witness_json: {e}"))? {
-            serde_json::Value::Array(_) => serde_json::from_str(witness_json)
-                .map_err(|e| format!("Invalid witness_json array: {e}"))?,
-            _ => vec![serde_json::from_str(witness_json)
-                .map_err(|e| format!("Invalid witness_json object: {e}"))?],
-        };
+        let witnesses: Vec<OrchardWitnessInputTest> =
+            match serde_json::from_str::<serde_json::Value>(witness_json)
+                .map_err(|e| format!("Invalid witness_json: {e}"))?
+            {
+                serde_json::Value::Array(_) => serde_json::from_str(witness_json)
+                    .map_err(|e| format!("Invalid witness_json array: {e}"))?,
+                _ => vec![serde_json::from_str(witness_json)
+                    .map_err(|e| format!("Invalid witness_json object: {e}"))?],
+            };
 
-        let notes: Vec<OrchardDecryptionResult> = match serde_json::from_str::<serde_json::Value>(spend_note_json)
-            .map_err(|e| format!("Invalid spend_note_json: {e}"))? {
-            serde_json::Value::Array(_) => serde_json::from_str(spend_note_json)
-                .map_err(|e| format!("Invalid spend_note_json array: {e}"))?,
-            _ => vec![serde_json::from_str(spend_note_json)
-                .map_err(|e| format!("Invalid spend_note_json object: {e}"))?],
-        };
+        let notes: Vec<OrchardDecryptionResult> =
+            match serde_json::from_str::<serde_json::Value>(spend_note_json)
+                .map_err(|e| format!("Invalid spend_note_json: {e}"))?
+            {
+                serde_json::Value::Array(_) => serde_json::from_str(spend_note_json)
+                    .map_err(|e| format!("Invalid spend_note_json array: {e}"))?,
+                _ => vec![serde_json::from_str(spend_note_json)
+                    .map_err(|e| format!("Invalid spend_note_json object: {e}"))?],
+            };
 
         if notes.len() != witnesses.len() {
             return Err("Spend notes and witnesses length mismatch".to_string());

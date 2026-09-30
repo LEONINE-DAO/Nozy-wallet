@@ -1,5 +1,8 @@
 # Extension store submission checklist
 
+**Chrome Web Store (live):** https://chromewebstore.google.com/detail/nozywallet/pnlmnkallkmelflckjkmohemibfahoce  
+**Listed version:** **0.1.7** (2026-08-02) — bump store package when repo `manifest.json` advances.
+
 **Version:** align with `browser-extension/manifest.json` (currently **0.1.8**).  
 **GitHub Release zip (done for 0.1.8):**  
 https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.8
@@ -16,11 +19,11 @@ https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.8
 
 ## Chrome Web Store
 
-- [ ] Developer account + payment
-- [ ] Upload chromium zip from Release
-- [ ] Single purpose description; remote code policy OK (WASM bundled)
-- [ ] Host permissions justified (companion localhost + HTTPS for sync/ZNS)
-- [ ] Submit for review
+- [x] Developer account + payment
+- [x] Upload chromium zip from Release
+- [x] Single purpose description; remote code policy OK (WASM bundled)
+- [x] Host permissions justified (companion localhost + HTTPS for sync/ZNS)
+- [x] Submit for review — **live** (listing above)
 
 ## Edge Add-ons
 
@@ -34,4 +37,4 @@ https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.8
 
 ## Honesty for reviewers
 
-Nozy extension is Orchard-first with optional **local companion API**. It is not a full Zebrad node. Nym is opt-in via desktop/API surfaces when enabled — do not claim default mixnet routing in the store listing.
+Nozy extension is Orchard-first with optional **local companion API**. It is not a full Zebrad node. Nym is opt-in via Settings (companion privacy APIs + optional `:9068` LWD mixnet proxy) — do not claim default mixnet routing in the store listing.

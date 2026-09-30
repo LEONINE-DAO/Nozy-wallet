@@ -6,6 +6,8 @@ import { SendPage } from "../pages/Send";
 import { SettingsPage } from "../pages/Settings";
 import { HistoryPage } from "../pages/History";
 import { IronwoodPage } from "../pages/Ironwood";
+import { VotePage } from "../pages/Vote";
+import { CrosslinkPage } from "../pages/Crosslink";
 import { BrowserPage } from "../pages/Browser";
 import { ContactsPage } from "../pages/Contacts";
 import { WebWalletWatchOnlyPage } from "../pages/WebWalletWatchOnly";
@@ -20,13 +22,14 @@ import { formatErrorForDisplay } from "../utils/errors";
 import { Refresh, CloseCircle, Download } from "@solar-icons/react";
 import { useWalletAutoSync } from "../hooks/useWalletAutoSync";
 import { balanceFromResponse } from "../lib/syncHelpers";
-import { runWalletSyncWithFeedback } from "../lib/walletSyncUi";
-import { dappBrowserEnabled, webWatchOnlyEnabled } from "../lib/featureFlags";
+import { dappBrowserEnabled, webWatchOnlyEnabled, nu7VoteEnabled, crosslinkEnabled } from "../lib/featureFlags";
+import { SyncControlButton } from "../components/SyncControlButton";
+
 export function AuthenticatedLayout() {
   const [activeTab, setActiveTab] = useState<TabId>("home");
   const { showNavigationLabels, onboardingFirstSyncDismissed, setOnboardingFirstSyncDismissed } = useSettingsStore();
   const { hasNymSubscription } = useSubscriptionStore();
-  const { setAddress, isSyncing, setIsSyncing, setBalanceFromAvailable, syncProgressPercent } =
+  const { setAddress, isSyncing, setBalanceFromAvailable } =
     useWalletStore();
   const [syncBannerToken, setSyncBannerToken] = useState(0);
   const [provingDownloaded, setProvingDownloaded] = useState<boolean | null>(null);
@@ -93,14 +96,6 @@ export function AuthenticatedLayout() {
     }
   };
 
-  const runSyncToTip = async () => {
-    await runWalletSyncWithFeedback({
-      setIsSyncing,
-      onBalance: setBalanceFromAvailable,
-      onComplete: () => setSyncBannerToken((t) => t + 1),
-    });
-  };
-
   useWalletAutoSync({
     onSyncComplete: () => {
       setSyncBannerToken((t) => t + 1);
@@ -110,13 +105,8 @@ export function AuthenticatedLayout() {
     },
   });
 
-  const handleFirstSync = async () => {
-    await runSyncToTip();
-    setOnboardingFirstSyncDismissed(true);
-  };
-
   return (
-    <div className="flex flex-col h-screen bg-gray-950 text-gray-100 font-sans overflow-hidden">
+    <div className="flex flex-col h-screen bg-[#020b07] text-primary-100 font-sans overflow-hidden">
       <Header
         activeTab={activeTab}
         onTabChange={setActiveTab}
@@ -124,37 +114,17 @@ export function AuthenticatedLayout() {
       />
 
       <SyncStatusBanner
-        onSync={runSyncToTip}
         isSyncing={isSyncing}
         refreshToken={syncBannerToken}
       />
 
       {!onboardingFirstSyncDismissed && (
-        <div className="shrink-0 px-4 py-3 bg-primary/10 border-b border-primary/20 flex items-center justify-between gap-4 flex-wrap">
-          <p className="text-sm text-gray-800 dark:text-gray-200 font-medium">
+        <div className="shrink-0 px-4 py-3 bg-emerald-500/10 border-b border-emerald-400/25 flex items-center justify-between gap-4 flex-wrap">
+          <p className="text-sm text-emerald-100 font-medium">
             Sync your wallet to see your balance and transaction history.
           </p>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              onClick={handleFirstSync}
-              disabled={isSyncing}
-              className="gap-2"
-            >
-              {isSyncing ? (
-                <>
-                  <Refresh size={16} className="animate-spin shrink-0" />
-                  <span>
-                    {syncProgressPercent != null ? `${syncProgressPercent}% synced` : "Syncing…"}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Refresh size={16} />
-                  Sync now
-                </>
-              )}
-            </Button>
+            <SyncControlButton />
             <button
               type="button"
               onClick={() => setOnboardingFirstSyncDismissed(true)}
@@ -178,7 +148,7 @@ export function AuthenticatedLayout() {
               size="sm"
               onClick={handleDownloadProving}
               disabled={provingDownloading}
-              className="gap-2 bg-amber-600 hover:bg-amber-700 text-white border-amber-700"
+              className="gap-2 bg-amber-600 hover:bg-amber-700 text-primary-100 border-amber-700"
             >
               {provingDownloading ? (
                 <>
@@ -205,7 +175,7 @@ export function AuthenticatedLayout() {
         </div>
       )}
 
-      <main className="flex-1 min-h-0 overflow-hidden bg-gray-950 relative flex flex-col">
+      <main className="flex-1 min-h-0 overflow-hidden bg-[#020b07] relative flex flex-col">
         {activeTab === "browser" && dappBrowserEnabled ? (
           hasNymSubscription ? (
             <BrowserPage />
@@ -214,12 +184,41 @@ export function AuthenticatedLayout() {
           )
         ) : (
           <>
-            <div className="absolute top-0 left-0 w-full h-64 bg-linear-to-b from-primary-50/70 to-transparent pointer-events-none" />
+            <div
+              aria-hidden
+              className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_at_20%_0%,_rgba(0,255,140,0.16),_transparent_50%),radial-gradient(ellipse_at_100%_80%,_rgba(0,180,90,0.12),_transparent_45%),linear-gradient(180deg,_rgba(0,40,24,0.55)_0%,_transparent_42%)]"
+            />
             <div className="relative z-10 flex-1 min-h-0 overflow-y-auto">
               <div className="container mx-auto px-8 pt-8 pb-24 max-w-6xl">
                 {activeTab === "home" && <HomePage onNavigate={setActiveTab} />}
                 {activeTab === "history" && <HistoryPage />}
                 {activeTab === "ironwood" && <IronwoodPage />}
+                {activeTab === "vote" &&
+                  (nu7VoteEnabled ? (
+                    <VotePage onNavigate={setActiveTab} />
+                  ) : (
+                    <div className="max-w-2xl mx-auto py-8">
+                      <h2 className="text-2xl font-bold text-gray-100 mb-2">
+                        Vote tab disabled
+                      </h2>
+                      <p className="text-sm text-gray-400">
+                        Set `VITE_ENABLE_NU7_VOTE` unset or not `false` to enable.
+                      </p>
+                    </div>
+                  ))}
+                {activeTab === "crosslink" &&
+                  (crosslinkEnabled ? (
+                    <CrosslinkPage />
+                  ) : (
+                    <div className="max-w-2xl mx-auto py-8">
+                      <h2 className="text-2xl font-bold text-gray-100 mb-2">
+                        Crosslink tab disabled
+                      </h2>
+                      <p className="text-sm text-gray-400">
+                        Set `VITE_ENABLE_CROSSLINK` unset or not `false` to enable.
+                      </p>
+                    </div>
+                  ))}
                 {activeTab === "send" && <SendPage />}
                 {activeTab === "settings" && <SettingsPage />}
                 {activeTab === "contacts" && <ContactsPage />}

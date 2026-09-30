@@ -4,6 +4,7 @@ import {
   DEFAULT_RPC,
   DEFAULT_TESTNET_RPC,
   NODE_SETUP_MODES,
+  PUBLIC_LWD_URL,
   connectFailureHint,
   setupHelp,
   type NodeSetupMode
@@ -17,6 +18,7 @@ export type NodeConnectState = {
   checking: boolean;
   message: string | null;
   source: string | null;
+  mode?: "zebrad" | "public_lwd" | "none";
 };
 
 type NodeConnectCardProps = {
@@ -44,7 +46,9 @@ export function NodeConnectCard({
   const [checking, setChecking] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
+  const [connectMode, setConnectMode] = useState<"zebrad" | "public_lwd" | "none">("none");
   const [showHelp, setShowHelp] = useState(variant === "welcome");
+  const [showPublicOffer, setShowPublicOffer] = useState(false);
 
   const publish = useCallback(
     (partial: Partial<NodeConnectState>) => {
@@ -55,10 +59,11 @@ export function NodeConnectCard({
         checking,
         message,
         source,
+        mode: connectMode,
         ...partial
       });
     },
-    [onStateChange, connected, endpoint, blockCount, checking, message, source]
+    [onStateChange, connected, endpoint, blockCount, checking, message, source, connectMode]
   );
 
   const applySuccess = useCallback(
@@ -66,14 +71,17 @@ export function NodeConnectCard({
       rpcEndpoint: string,
       blocks: number | null,
       msg: string,
-      src: string
+      src: string,
+      nextMode: "zebrad" | "public_lwd" = src === "public_lwd" ? "public_lwd" : "zebrad"
     ) => {
       setConnected(true);
       setEndpoint(rpcEndpoint);
       setBlockCount(blocks);
       setMessage(msg);
       setSource(src);
+      setConnectMode(nextMode);
       setCustomUrl(rpcEndpoint);
+      setShowPublicOffer(false);
       onConnected?.(rpcEndpoint, blocks);
       publish({
         connected: true,
@@ -81,6 +89,7 @@ export function NodeConnectCard({
         blockCount: blocks,
         message: msg,
         source: src,
+        mode: nextMode,
         checking: false
       });
     },
@@ -88,11 +97,19 @@ export function NodeConnectCard({
   );
 
   const applyFailure = useCallback(
-    (msg: string) => {
+    (msg: string, offerPublic = true) => {
       setConnected(false);
       setMessage(msg);
       setSource(null);
-      publish({ connected: false, message: msg, checking: false, source: null });
+      setConnectMode("none");
+      if (offerPublic) setShowPublicOffer(true);
+      publish({
+        connected: false,
+        message: msg,
+        checking: false,
+        source: null,
+        mode: "none"
+      });
     },
     [publish]
   );
@@ -103,18 +120,20 @@ export function NodeConnectCard({
     try {
       const status = await extensionApi.rpcGetStatus();
       if (status.connected) {
+        const isPublic = status.mode === "public_lwd";
         applySuccess(
           status.endpoint,
           status.blockCount ?? null,
           status.blockCount != null
             ? `Connected — ${status.blockCount.toLocaleString()} blocks`
             : `Connected to ${status.endpoint}`,
-          "saved"
+          isPublic ? "public_lwd" : "saved",
+          isPublic ? "public_lwd" : "zebrad"
         );
         return;
       }
       applyFailure(
-        "No node connected yet. Start Zebrad, then click Find my node."
+        "No node connected yet. Start Zebrad, or use Public sync (like zec.rocks)."
       );
     } catch (e) {
       applyFailure((e as Error).message);
@@ -131,13 +150,15 @@ export function NodeConnectCard({
         const status = await extensionApi.rpcGetStatus();
         if (cancelled) return;
         if (status.connected) {
+          const isPublic = status.mode === "public_lwd";
           applySuccess(
             status.endpoint,
             status.blockCount ?? null,
             status.blockCount != null
               ? `Connected — ${status.blockCount.toLocaleString()} blocks`
               : `Connected to ${status.endpoint}`,
-            "saved"
+            isPublic ? "public_lwd" : "saved",
+            isPublic ? "public_lwd" : "zebrad"
           );
           return;
         }
@@ -147,10 +168,16 @@ export function NodeConnectCard({
           res.rpcEndpoint,
           res.blockCount,
           formatSuccessMessage(res.rpcEndpoint, res.blockCount, res.source),
-          res.source
+          res.source,
+          "zebrad"
         );
       } catch (e) {
-        if (!cancelled) applyFailure((e as Error).message);
+        if (!cancelled) {
+          applyFailure(
+            (e as Error).message ||
+              "No local Zebrad found. You can use Public sync instead."
+          );
+        }
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -168,11 +195,35 @@ export function NodeConnectCard({
     }
   }, [initialEndpoint]);
 
+  const connectPublic = async () => {
+    setChecking(true);
+    setMessage(null);
+    publish({ checking: true, message: null });
+    try {
+      const res = await extensionApi.connectPublicLwd();
+      applySuccess(
+        res.endpoint,
+        res.blockCount,
+        res.message,
+        "public_lwd",
+        "public_lwd"
+      );
+    } catch (e) {
+      applyFailure((e as Error).message, true);
+    } finally {
+      setChecking(false);
+    }
+  };
+
   const connect = async () => {
     setChecking(true);
     setMessage(null);
     publish({ checking: true, message: null });
     try {
+      if (mode === "public") {
+        await connectPublic();
+        return;
+      }
       let res;
       if (mode === "local") {
         res = await extensionApi.rpcConnect({ url: DEFAULT_RPC });
@@ -188,7 +239,8 @@ export function NodeConnectCard({
         res.rpcEndpoint,
         res.blockCount,
         formatSuccessMessage(res.rpcEndpoint, res.blockCount, res.source),
-        res.source
+        res.source,
+        "zebrad"
       );
     } catch (e) {
       applyFailure((e as Error).message);
@@ -202,22 +254,34 @@ export function NodeConnectCard({
       ? checking
         ? "Connecting…"
         : "Connect"
-      : checking
-        ? "Finding node…"
-        : "Find my node";
+      : mode === "public"
+        ? checking
+          ? "Connecting…"
+          : "Use public sync"
+        : checking
+          ? "Finding node…"
+          : "Find my node";
 
   return (
     <Card className="space-y-3">
       <div className="flex items-center justify-between gap-2">
         <SectionTitle>Connect your node</SectionTitle>
         <Pill tone={checking ? "neutral" : connected ? "success" : "danger"}>
-          {checking ? "Checking…" : connected ? "Connected" : "Not connected"}
+          {checking
+            ? "Checking…"
+            : connected
+              ? connectMode === "public_lwd"
+                ? "Public sync"
+                : "Connected"
+              : "Not connected"}
         </Pill>
       </div>
 
       <Hint>
-        Nozy needs a running <strong>Zebrad</strong> node before create wallet, scan, or send.
-        One-time setup — we remember the URL.
+        Prefer a local <strong>Zebrad</strong> when you have one. No node yet? Use{" "}
+        <strong>Public sync</strong> — Nozy’s lightwalletd at{" "}
+        <span className="nw-mono">lwd.nozywallet.org</span> (same idea as zec.rocks). Keys stay
+        in this extension.
       </Hint>
 
       <div className="flex flex-wrap gap-1.5">
@@ -229,6 +293,7 @@ export function NodeConnectCard({
             onClick={() => {
               setMode(m.id);
               if (m.id === "local") setCustomUrl(DEFAULT_RPC);
+              if (m.id === "public") setCustomUrl(PUBLIC_LWD_URL);
               if (m.id === "remote" && !customUrl.trim()) {
                 setCustomUrl("https://");
               }
@@ -278,17 +343,45 @@ export function NodeConnectCard({
       )}
 
       {connected && endpoint && (
-        <div className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs" style={{ background: "var(--nw-surface-alt)" }}>
+        <div
+          className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs"
+          style={{ background: "var(--nw-surface-alt)" }}
+        >
           <span className="nw-mono flex-1 truncate">{endpoint}</span>
           <CopyButton value={endpoint} label="Copy URL" />
         </div>
       )}
 
-      {message && (
-        <Callout tone={connected ? "success" : "warn"}>{message}</Callout>
+      {message && <Callout tone={connected ? "success" : "warn"}>{message}</Callout>}
+
+      {!connected && showPublicOffer && !checking && (
+        <Callout tone="info">
+          <p className="text-xs leading-relaxed">
+            We didn’t detect a local Zebrad. Connect to Nozy’s public lightwalletd (
+            <span className="nw-mono">lwd.nozywallet.org</span>) like other wallets use zec.rocks?
+            Your seed stays on this device.
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={disabled || checking}
+              onClick={() => void connectPublic()}
+            >
+              Yes — use public sync
+            </Button>
+            <Button
+              size="sm"
+              disabled={disabled || checking}
+              onClick={() => setShowPublicOffer(false)}
+            >
+              No — I’ll connect my own node
+            </Button>
+          </div>
+        </Callout>
       )}
 
-      {!connected && message && !checking && (
+      {!connected && message && !checking && !showPublicOffer && (
         <Hint>{connectFailureHint(mode)}</Hint>
       )}
 
@@ -314,7 +407,8 @@ export function NodeConnectCard({
                     res.rpcEndpoint,
                     res.blockCount,
                     `Testnet connected — ${res.blockCount.toLocaleString()} blocks`,
-                    res.source
+                    res.source,
+                    "zebrad"
                   )
                 )
                 .catch((e) => applyFailure((e as Error).message))
@@ -323,11 +417,7 @@ export function NodeConnectCard({
             Try testnet
           </Button>
         )}
-        <Button
-          size="sm"
-          disabled={disabled || checking}
-          onClick={() => void refreshStatus()}
-        >
+        <Button size="sm" disabled={disabled || checking} onClick={() => void refreshStatus()}>
           Recheck
         </Button>
         <Button
@@ -357,6 +447,8 @@ function formatSuccessMessage(
       ? " (from Nozy Desktop config)"
       : source === "autodetect"
         ? " (auto-detected)"
-        : "";
+        : source === "public_lwd"
+          ? " (public LWD)"
+          : "";
   return `${blocks}Connected at ${endpoint}${via}`;
 }

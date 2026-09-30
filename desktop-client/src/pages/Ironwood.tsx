@@ -6,7 +6,7 @@ export function IronwoodPage() {
     <div className="flex flex-col gap-8 animate-fade-in w-full pb-4">
       <PageHeader
         title="Ironwood"
-        description="NU6.3 readiness and Orchard → Ironwood migration (Plan → Migrate → Broadcast). Prefer local Zebrad; testnet: Ironwood testnet profile + WSL node."
+        description="Migrate residual Orchard, or sync if you already received Ironwood. Prefer local Zebrad."
       />
       <IronwoodReadinessCard />
     </div>

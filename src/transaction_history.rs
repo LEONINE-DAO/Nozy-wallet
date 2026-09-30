@@ -741,27 +741,6 @@ impl SentTransactionStorage {
         }
     }
 
-    fn sent_transaction_source_paths(&self) -> Vec<std::path::PathBuf> {
-        let mut paths = vec![
-            self.get_transactions_path(),
-            crate::paths::get_wallet_base_dir().join("sent_transactions.json"),
-            std::path::PathBuf::from("wallet_data").join("sent_transactions.json"),
-        ];
-        let profiles_root = crate::paths::get_wallet_base_dir().join("profiles");
-        if let Ok(entries) = fs::read_dir(&profiles_root) {
-            for entry in entries.flatten() {
-                if entry.path().is_dir() {
-                    paths.push(entry.path().join("sent_transactions.json"));
-                }
-            }
-        }
-        let mut seen = std::collections::HashSet::new();
-        paths
-            .into_iter()
-            .filter(|path| seen.insert(path.clone()))
-            .collect()
-    }
-
     fn load_transactions(&self) -> NozyResult<()> {
         let _ = crate::wallet_profiles::migrate_orphaned_sent_transactions();
 
@@ -773,17 +752,15 @@ impl SentTransactionStorage {
             }
         }
 
-        let mut merged: HashMap<String, SentTransactionRecord> = HashMap::new();
-        for path in self.sent_transaction_source_paths() {
-            merged.extend(Self::read_sent_transactions_file(&path));
-        }
+        // Per active profile only — never merge other wallets' send ledgers.
+        let profile_path = self.get_transactions_path();
+        let merged = Self::read_sent_transactions_file(&profile_path);
 
         if !merged.is_empty() {
             *self
                 .transactions
                 .lock()
                 .map_err(|e| NozyError::Storage(format!("Mutex poisoned: {}", e)))? = merged;
-            self.save_transactions()?;
         }
 
         Ok(())

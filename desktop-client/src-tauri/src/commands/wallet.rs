@@ -5,9 +5,9 @@ use crate::session::{
 };
 use nozy::{
     active_profile_id, active_wallet_exists, configure_profile_network, create_new_profile,
-    default_zebra_url_for_network, list_wallet_profiles, load_config,
-    profile_connection_settings, profile_has_wallet, set_active_wallet_profile, HDWallet,
-    WalletProfile, WalletStorage,
+    default_zebra_url_for_network, delete_wallet_profile, list_wallet_profiles, load_config,
+    profile_connection_settings, profile_has_wallet, prune_profiles_without_wallet,
+    set_active_wallet_profile, HDWallet, WalletProfile, WalletStorage,
 };
 use serde::{Deserialize, Serialize};
 use tauri::command;
@@ -43,7 +43,14 @@ pub struct CreateWalletRequest {
 #[derive(Debug, Deserialize)]
 pub struct RestoreWalletRequest {
     pub mnemonic: String,
+    #[serde(default)]
     pub password: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    /// Settings → add another wallet: always create a new profile.
+    /// Welcome restore: reuse an existing profile when one already has wallet.dat.
+    #[serde(default)]
+    pub new_profile: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,8 +125,9 @@ async fn unlock_wallet_from_storage(
     let trimmed = supplied_password.trim();
     if trimmed.is_empty() {
         return Err(TauriError {
-            message: "This wallet requires a password. Enter the same password you use with the CLI."
-                .to_string(),
+            message:
+                "This wallet requires a password. Enter the same password you use with the CLI."
+                    .to_string(),
             code: Some("AUTH_002".to_string()),
         });
     }
@@ -146,9 +154,9 @@ fn wallet_profile_info(profile: WalletProfile, active_id: Option<&str>) -> Walle
     let connection = profile_connection_settings(&profile.id).unwrap_or_else(|_| {
         nozy::ProfileConnectionSettings {
             network: nozy::default_network_for_profile_name(&profile.name).to_string(),
-            zebra_url: nozy::default_zebra_url_for_network(
-                nozy::default_network_for_profile_name(&profile.name),
-            )
+            zebra_url: nozy::default_zebra_url_for_network(nozy::default_network_for_profile_name(
+                &profile.name,
+            ))
             .to_string(),
             last_scan_height: profile.last_scan_height,
         }
@@ -178,15 +186,15 @@ fn network_wallet_status() -> Result<NetworkWalletStatus, TauriError> {
         .cloned();
     let suggested_testnet_profile_id = profiles
         .iter()
-        .find(|profile| {
-            profile.has_wallet && profile.name.to_ascii_lowercase().contains("testnet")
-        })
+        .find(|profile| profile.has_wallet && profile.name.to_ascii_lowercase().contains("testnet"))
         .map(|profile| profile.id.clone());
 
     Ok(NetworkWalletStatus {
         testnet_ready: config.network.eq_ignore_ascii_case("testnet")
             && config.zebra_url.contains(":18232")
-            && active_profile.as_ref().is_some_and(|profile| profile.has_wallet),
+            && active_profile
+                .as_ref()
+                .is_some_and(|profile| profile.has_wallet),
         network: config.network,
         zebra_url: config.zebra_url,
         active_profile,
@@ -231,13 +239,8 @@ fn configure_network(
         .map(|url| url.trim().to_string())
         .unwrap_or_else(|| default_zebra_url_for_network(normalized_network).to_string());
 
-    configure_profile_network(
-        &target_profile_id,
-        normalized_network,
-        &resolved_url,
-        true,
-    )
-    .map_err(|e| TauriError::from(e.to_string()))
+    configure_profile_network(&target_profile_id, normalized_network, &resolved_url, true)
+        .map_err(|e| TauriError::from(e.to_string()))
 }
 
 #[command]
@@ -256,30 +259,95 @@ pub async fn wallet_exists() -> Result<WalletInfo, TauriError> {
     })
 }
 
+/// Keep the active profile's own RPC/network across create/restore.
+/// Do not invent URLs from trusted lists or other profiles.
+fn snapshot_node_settings() -> (String, String) {
+    let config = load_config();
+    let mut network = if config.network.trim().is_empty() {
+        "mainnet".to_string()
+    } else {
+        config.network.trim().to_string()
+    };
+    let mut zebra_url = config.zebra_url.trim().to_string();
+
+    if let Some(id) = active_profile_id() {
+        if profile_has_wallet(&id) {
+            if let Ok(settings) = profile_connection_settings(&id) {
+                if !settings.network.trim().is_empty() {
+                    network = settings.network.trim().to_string();
+                }
+                if !settings.zebra_url.trim().is_empty() {
+                    zebra_url = settings.zebra_url.trim().to_string();
+                }
+            }
+        }
+    }
+
+    (network, zebra_url)
+}
+
+fn restore_node_settings(network: &str, zebra_url: &str) -> Result<(), TauriError> {
+    if zebra_url.is_empty() {
+        return Ok(());
+    }
+    let Some(id) = active_profile_id() else {
+        return Ok(());
+    };
+    configure_profile_network(&id, network, zebra_url, true)
+        .map_err(|e| TauriError::from(e.to_string()))
+}
+
+/// Roll back a profile shell that never got a saved seed.
+fn discard_profile_if_empty(id: &str, prior_active: Option<&str>) {
+    if profile_has_wallet(id) {
+        return;
+    }
+    let _ = delete_wallet_profile(id);
+    if let Some(prior) = prior_active {
+        if prior != id {
+            let _ = set_active_wallet_profile(prior);
+        }
+    }
+}
+
 #[command]
 pub async fn create_wallet(request: CreateWalletRequest) -> Result<String, TauriError> {
+    let _ = prune_profiles_without_wallet();
+    let (network, zebra_url) = snapshot_node_settings();
+    let prior_active = active_profile_id();
     clear_session();
 
-    create_new_profile(request.name.as_deref())
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    let profile =
+        create_new_profile(request.name.as_deref()).map_err(|e| TauriError::from(e.to_string()))?;
+    if let Err(e) = restore_node_settings(&network, &zebra_url) {
+        discard_profile_if_empty(&profile.id, prior_active.as_deref());
+        return Err(e);
+    }
 
-    let mut wallet = HDWallet::new().map_err(|e| TauriError::from(e.to_string()))?;
+    let mut wallet = match HDWallet::new() {
+        Ok(w) => w,
+        Err(e) => {
+            discard_profile_if_empty(&profile.id, prior_active.as_deref());
+            return Err(TauriError::from(e.to_string()));
+        }
+    };
 
     let password = request.password.as_deref().unwrap_or("");
 
     if !password.is_empty() {
-        wallet
-            .set_password(password)
-            .map_err(|e| TauriError::from(e.to_string()))?;
+        if let Err(e) = wallet.set_password(password) {
+            discard_profile_if_empty(&profile.id, prior_active.as_deref());
+            return Err(TauriError::from(e.to_string()));
+        }
     }
 
     let mnemonic = wallet.get_mnemonic();
 
     let storage = WalletStorage::with_xdg_dir();
-    storage
-        .save_wallet(&wallet, password)
-        .await
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    if let Err(e) = storage.save_wallet(&wallet, password).await {
+        discard_profile_if_empty(&profile.id, prior_active.as_deref());
+        return Err(TauriError::from(e.to_string()));
+    }
 
     set_unlock_password(password.to_string());
 
@@ -296,17 +364,56 @@ pub async fn restore_wallet(request: RestoreWalletRequest) -> Result<(), TauriEr
         });
     }
 
-    clear_session();
-    create_new_profile(None).map_err(|e| TauriError::from(e.to_string()))?;
+    // Validate seed BEFORE touching profiles — never orphan the funded wallet on a bad phrase.
+    let wallet = match HDWallet::from_mnemonic(&request.mnemonic) {
+        Ok(w) => w,
+        Err(e) => {
+            return Err(TauriError::from(e.to_string()));
+        }
+    };
 
-    let wallet =
-        HDWallet::from_mnemonic(&request.mnemonic).map_err(|e| TauriError::from(e.to_string()))?;
+    let _ = prune_profiles_without_wallet();
+    let (network, zebra_url) = snapshot_node_settings();
+    let prior_active = active_profile_id();
+    clear_session();
+
+    // Settings "add wallet" always creates a new profile. Welcome restore reuses an
+    // existing wallet.dat profile so we never leave empty shells or overwrite by accident
+    // when the user only meant to recover the same wallet.
+    let mut created_new: Option<String> = None;
+    if request.new_profile {
+        let profile = create_new_profile(request.name.as_deref())
+            .map_err(|e| TauriError::from(e.to_string()))?;
+        created_new = Some(profile.id);
+    } else if let Some(id) = prior_active.clone().filter(|id| profile_has_wallet(id)) {
+        set_active_wallet_profile(&id).map_err(|e| TauriError::from(e.to_string()))?;
+    } else if let Some(id) = list_wallet_profiles()
+        .unwrap_or_default()
+        .into_iter()
+        .find(|p| profile_has_wallet(&p.id))
+        .map(|p| p.id)
+    {
+        set_active_wallet_profile(&id).map_err(|e| TauriError::from(e.to_string()))?;
+    } else {
+        let profile = create_new_profile(request.name.as_deref())
+            .map_err(|e| TauriError::from(e.to_string()))?;
+        created_new = Some(profile.id);
+    }
+
+    if let Err(e) = restore_node_settings(&network, &zebra_url) {
+        if let Some(id) = created_new.as_deref() {
+            discard_profile_if_empty(id, prior_active.as_deref());
+        }
+        return Err(e);
+    }
 
     let storage = WalletStorage::with_xdg_dir();
-    storage
-        .save_wallet(&wallet, &request.password)
-        .await
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    if let Err(e) = storage.save_wallet(&wallet, &request.password).await {
+        if let Some(id) = created_new.as_deref() {
+            discard_profile_if_empty(id, prior_active.as_deref());
+        }
+        return Err(TauriError::from(e.to_string()));
+    }
 
     set_unlock_password(request.password.clone());
 
@@ -315,7 +422,12 @@ pub async fn restore_wallet(request: RestoreWalletRequest) -> Result<(), TauriEr
 
 #[command]
 pub async fn unlock_wallet(request: UnlockWalletRequest) -> Result<WalletStatus, TauriError> {
-    let (wallet, session_password) = unlock_wallet_from_storage(&request.password).await?;
+    let (wallet, session_password) = match unlock_wallet_from_storage(&request.password).await {
+        Ok(v) => v,
+        Err(e) => {
+            return Err(e);
+        }
+    };
 
     set_unlock_password(session_password.clone());
 
@@ -399,8 +511,7 @@ pub fn list_wallet_profiles_cmd() -> Result<Vec<WalletProfileInfo>, TauriError> 
 #[command]
 pub async fn switch_wallet_profile(request: SwitchWalletProfileRequest) -> Result<(), TauriError> {
     clear_session();
-    set_active_wallet_profile(&request.profile_id)
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    set_active_wallet_profile(&request.profile_id).map_err(|e| TauriError::from(e.to_string()))?;
     Ok(())
 }
 
@@ -425,32 +536,55 @@ pub fn configure_network_wallet(
 pub async fn create_or_restore_testnet_wallet(
     request: DesktopTestnetWalletRequest,
 ) -> Result<DesktopTestnetWalletResponse, TauriError> {
+    let _ = prune_profiles_without_wallet();
     clear_session();
-    let profile = create_new_profile(Some(
-        request.name.as_deref().unwrap_or("Ironwood Testnet"),
-    ))
-    .map_err(|e| TauriError::from(e.to_string()))?;
+    let prior_active = active_profile_id();
+    let profile = create_new_profile(Some(request.name.as_deref().unwrap_or("Ironwood Testnet")))
+        .map_err(|e| TauriError::from(e.to_string()))?;
 
-    configure_network(
+    if let Err(e) = configure_network(
         "testnet",
         Some(&profile.id),
-        request.rpc_url.as_deref().or(Some("http://127.0.0.1:18232")),
-    )?;
+        request
+            .rpc_url
+            .as_deref()
+            .or(Some("http://127.0.0.1:18232")),
+    ) {
+        discard_profile_if_empty(&profile.id, prior_active.as_deref());
+        return Err(e);
+    }
 
     let wallet = if let Some(mnemonic) = request.mnemonic.as_deref() {
         let words: Vec<&str> = mnemonic.split_whitespace().collect();
         if !matches!(words.len(), 12 | 15 | 18 | 21 | 24) {
+            discard_profile_if_empty(&profile.id, prior_active.as_deref());
             return Err(TauriError {
                 message: "Invalid mnemonic format. Must be 12, 15, 18, 21, or 24 words."
                     .to_string(),
                 code: Some("INVALID_MNEMONIC".to_string()),
             });
         }
-        HDWallet::from_mnemonic(mnemonic).map_err(|e| TauriError::from(e.to_string()))?
+        match HDWallet::from_mnemonic(mnemonic) {
+            Ok(w) => w,
+            Err(e) => {
+                discard_profile_if_empty(&profile.id, prior_active.as_deref());
+                return Err(TauriError::from(e.to_string()));
+            }
+        }
     } else {
-        HDWallet::new().map_err(|e| TauriError::from(e.to_string()))?
+        match HDWallet::new() {
+            Ok(w) => w,
+            Err(e) => {
+                discard_profile_if_empty(&profile.id, prior_active.as_deref());
+                return Err(TauriError::from(e.to_string()));
+            }
+        }
     };
-    let generated_mnemonic = if request.mnemonic.as_deref().is_some_and(|m| !m.trim().is_empty()) {
+    let generated_mnemonic = if request
+        .mnemonic
+        .as_deref()
+        .is_some_and(|m| !m.trim().is_empty())
+    {
         None
     } else {
         Some(wallet.get_mnemonic())
@@ -458,10 +592,10 @@ pub async fn create_or_restore_testnet_wallet(
 
     let password = request.password.as_deref().unwrap_or("");
     let storage = WalletStorage::with_xdg_dir();
-    storage
-        .save_wallet(&wallet, password)
-        .await
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    if let Err(e) = storage.save_wallet(&wallet, password).await {
+        discard_profile_if_empty(&profile.id, prior_active.as_deref());
+        return Err(TauriError::from(e.to_string()));
+    }
     set_unlock_password(password.to_string());
 
     let address = wallet

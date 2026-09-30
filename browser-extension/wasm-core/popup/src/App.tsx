@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   extensionApi,
   getCompanionPrefs,
@@ -15,6 +15,8 @@ import { FullWalletShell } from "./components/FullWalletShell";
 import { NetworkPrivacyPanel, SendEgressBadge } from "./components/NetworkPrivacyPanel";
 import { BrowserView, NymVpnPromoCard } from "./components/BrowserView";
 import { NodeConnectCard } from "./components/NodeConnectCard";
+import { SeedBackupPanel } from "./components/SeedBackupPanel";
+import { SeedRevealCard } from "./components/SeedRevealCard";
 import { VoteView } from "./components/VoteView";
 import { CrosslinkView, HomeStakedPanel } from "./components/CrosslinkView";
 import {
@@ -42,7 +44,8 @@ import {
   isScanInProgress,
   scanPercentDisplay,
   scanPercentLabel,
-  scanRateLabel
+  scanRateLabel,
+  shouldJumpToOwnBirthday
 } from "./lib/scanFormat";
 import { useUiStore } from "./store/uiStore";
 import {
@@ -52,40 +55,55 @@ import {
   resolveSendRecipient,
   type ZnsRegistration
 } from "./lib/zns";
+import { amountZecToZats, tryParsePaymentInput } from "./lib/zip321";
 import zecMark from "./assets/zec.svg";
 import { fiatForZec, formatFiat, useZecFiatPrice } from "./lib/zecPrice";
 import { DEFAULT_RPC } from "./lib/nodeConnect";
 import { isFullPage, openWalletPage, viewFromUrl } from "./lib/walletPage";
-
-/** Local lightwalletd only — public hosts (e.g. zec.rocks) are not offered here; they cannot scan blocks. */
-const DEFAULT_LWD_URL = "http://127.0.0.1:9067";
+import {
+  DEFAULT_LOCAL_LWD_URL as DEFAULT_LWD_URL,
+  MIXNET_LWD_GRPC_URL
+} from "./lib/lwdMixnet";
 
 function WelcomeView({
   onCreated,
-  onRestored
+  onRestored,
+  initialMode = "restore"
 }: {
   onCreated: () => void;
   onRestored: (address: string) => void;
+  initialMode?: "restore" | "create";
 }) {
   const [password, setPassword] = useState("");
   const [mnemonic, setMnemonic] = useState("");
   const [restoreBirthday, setRestoreBirthday] = useState("");
-  const [mode, setMode] = useState<"restore" | "create">("restore");
+  const [mode, setMode] = useState<"restore" | "create">(initialMode);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [nodeConnected, setNodeConnected] = useState(false);
+  /** After create: show backup + verify before entering the wallet. */
+  const [pendingBackupMnemonic, setPendingBackupMnemonic] = useState<string | null>(null);
+
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
 
   const submit = async () => {
     if (!nodeConnected) {
-      setError("Connect your Zebrad node first — use Find my node above.");
+      setError(
+        "Connect a node first — Find my node, or Yes on Public sync (lwd.nozywallet.org)."
+      );
       return;
     }
     setBusy(true);
     setError(null);
     try {
       if (mode === "create") {
-        await extensionApi.walletCreate(password);
-        onCreated();
+        const created = await extensionApi.walletCreate(password);
+        if (!created.mnemonic?.trim()) {
+          throw new Error("Wallet created but recovery phrase was missing from the response.");
+        }
+        setPendingBackupMnemonic(created.mnemonic.trim());
         return;
       }
       let restoreOpts: { birthdayHeight: number } | undefined;
@@ -110,6 +128,27 @@ function WelcomeView({
 
   const canSubmit =
     nodeConnected && !busy && !!password && (mode !== "restore" || !!mnemonic.trim());
+
+  if (pendingBackupMnemonic) {
+    return (
+      <Screen>
+        <div className="pt-1 text-center">
+          <img className="nw-hero-logo nw-hero-logo--welcome" src="./logo.jpg" alt="Nozy Wallet" />
+          <h1 className="nw-title mt-3">Backup your wallet</h1>
+          <Hint className="mt-1.5">
+            Wallet created. Save the phrase, then confirm a few word numbers.
+          </Hint>
+        </div>
+        <SeedBackupPanel
+          mnemonic={pendingBackupMnemonic}
+          onConfirmed={() => {
+            setPendingBackupMnemonic(null);
+            onCreated();
+          }}
+        />
+      </Screen>
+    );
+  }
 
   return (
     <Screen>
@@ -147,7 +186,7 @@ function WelcomeView({
           />
           <Input
             label="Birthday height (optional)"
-            hint="Leave blank to scan from block 3,050,000 (same floor as Desktop). Only set this if your notes are older."
+            hint="Leave blank to use the current chain tip as this wallet's birthday. Enter 3050000 only for the original Desktop wallet created at that height."
             mono
             placeholder="3050000"
             value={restoreBirthday}
@@ -159,7 +198,8 @@ function WelcomeView({
 
       {mode === "create" && (
         <Callout>
-          Create makes a new recovery phrase. Restore instead if you already have one.
+          Create makes a new recovery phrase. You’ll reveal, copy, and verify it before continuing.
+          Restore instead if you already have one.
         </Callout>
       )}
 
@@ -191,7 +231,15 @@ function WelcomeView({
   );
 }
 
-function UnlockView({ onUnlocked }: { onUnlocked: () => void }) {
+function UnlockView({
+  onUnlocked,
+  onCreate,
+  onRestore
+}: {
+  onUnlocked: () => void;
+  onCreate: () => void | Promise<void>;
+  onRestore: () => void | Promise<void>;
+}) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -201,6 +249,25 @@ function UnlockView({ onUnlocked }: { onUnlocked: () => void }) {
     try {
       await extensionApi.walletUnlock(password);
       onUnlocked();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const startFresh = async (kind: "create" | "restore") => {
+    const ok = window.confirm(
+      kind === "create"
+        ? "Create a new wallet on this browser? This removes the current extension vault (Desktop wallet is unchanged). You will need the recovery phrase to get those funds back here."
+        : "Restore a recovery phrase on this browser? This removes the current extension vault (Desktop wallet is unchanged)."
+    );
+    if (!ok) return;
+    setBusy(true);
+    setError(null);
+    try {
+      if (kind === "create") await onCreate();
+      else await onRestore();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -230,6 +297,27 @@ function UnlockView({ onUnlocked }: { onUnlocked: () => void }) {
       <Button variant="primary" fullWidth onClick={unlock} disabled={!password || busy}>
         {busy ? "Unlocking…" : "Unlock"}
       </Button>
+      <div className="flex gap-2">
+        <Button
+          variant="secondary"
+          fullWidth
+          disabled={busy}
+          onClick={() => void startFresh("create")}
+        >
+          Create
+        </Button>
+        <Button
+          variant="secondary"
+          fullWidth
+          disabled={busy}
+          onClick={() => void startFresh("restore")}
+        >
+          Restore
+        </Button>
+      </div>
+      <Hint className="text-center">
+        Create or Restore replaces this browser vault only — not your Desktop wallet.dat.
+      </Hint>
     </Screen>
   );
 }
@@ -321,6 +409,13 @@ function DashboardView({
   return (
     <Screen className={pageMode ? "max-w-5xl px-6 pt-5" : undefined}>
       {!pageMode && (
+        <img
+          className="nw-hero-logo nw-hero-logo--home"
+          src="./logo.jpg"
+          alt="Nozy Wallet"
+        />
+      )}
+      {!pageMode && (
       <SegmentedControl
         options={[
           { value: "available", label: "Available" },
@@ -334,12 +429,13 @@ function DashboardView({
       {!pageMode && homeTab === "staked" ? (
         <HomeStakedPanel
           onManage={(hex) => {
+            const bond = useUiStore.getState().pendingBondPk ?? undefined;
             if (isFullPage()) {
               if (hex) useUiStore.getState().setPendingFinalizer(hex);
               setView("crosslink");
               return;
             }
-            void openWalletPage({ view: "crosslink", finalizer: hex });
+            void openWalletPage({ view: "crosslink", finalizer: hex, bond });
           }}
         />
       ) : (
@@ -611,15 +707,36 @@ function SendView() {
 
   return (
     <Screen>
+      <img
+        className="nw-hero-logo nw-hero-logo--send"
+        src="./logo.jpg"
+        alt="Nozy Wallet"
+      />
       <PageHeader title="Send" description="Shielded Orchard/Ironwood transfer from your synced notes." />
       <SendEgressBadge compact />
 
       <Input
         label="Recipient"
-        placeholder="u1… or Zcash name (e.g. zoie)"
+        placeholder="u1…, Zcash name, or zcash:… ZIP-321 URI"
         value={recipient}
         onChange={(e) => {
-          setRecipient(e.target.value);
+          const raw = e.target.value;
+          try {
+            const parsed = tryParsePaymentInput(raw);
+            if (parsed) {
+              setRecipient(parsed.address);
+              const zats = amountZecToZats(parsed.amountZec);
+              if (zats) setAmount(zats);
+              if (parsed.memo) setMemo(parsed.memo);
+              setResolvedName(parsed.label || parsed.message || null);
+              setStatus("Loaded shielded payment request (ZIP-321)");
+              return;
+            }
+          } catch (err) {
+            setStatus((err as Error).message);
+            return;
+          }
+          setRecipient(raw);
           setResolvedName(null);
         }}
       />
@@ -808,10 +925,16 @@ function WalletSyncPanel({
       <SectionTitle>Sync wallet</SectionTitle>
       <Hint>
         Scans Orchard + Ironwood via your RPC node. Sapling legacy notes sync in the
-        background when nozywallet-api is running (Settings → Local API). A restored
-        Desktop wallet starts around block 3,050,000, not the chain tip — that takes a
-        while. Do not stop at 1 block.
+        background when nozywallet-api is running (Settings → Local API). Each wallet
+        scans from its own birthday. 3,050,000 is only for the original wallet created at
+        that height — not every restored phrase.
       </Hint>
+      {shouldJumpToOwnBirthday(scan, status.orchardBirthdayHeight) && (
+        <Callout tone="warn">
+          This wallet&apos;s birthday is {status.orchardBirthdayHeight?.toLocaleString()}. The
+          current scan started earlier than that. It will jump to this wallet&apos;s birthday.
+        </Callout>
+      )}
       {isScanInProgress(scan) && (
         <div className="space-y-2">
           <CyberpunkSyncPanel
@@ -829,7 +952,7 @@ function WalletSyncPanel({
         </div>
       )}
       <div className="flex flex-wrap gap-2">
-        {scan?.status !== "scanning" && !busy ? (
+        {!isScanInProgress(scan) && !busy ? (
           <>
             <Button
               variant="primary"
@@ -890,28 +1013,29 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
   const address = status?.address || "";
   return (
     <Screen>
-      <PageHeader title="Receive" description="Unified address for shielded ZEC on mainnet." />
+      <img
+        className="nw-hero-logo nw-hero-logo--receive"
+        src="./logo.jpg"
+        alt="Nozy Wallet"
+      />
 
-      <Card className="flex flex-col items-center gap-3">
+      <Card className="nw-receive flex flex-col items-center gap-3.5">
         {address ? (
-          <div className="rounded-2xl bg-white p-3">
-            <QRCode value={address} size={148} bgColor="#ffffff" fgColor="#0b0b0e" />
+          <div className="nw-receive__qr">
+            <QRCode value={address} size={200} bgColor="#ffffff" fgColor="#0b0b0e" />
           </div>
         ) : (
           <EmptyState>No address yet — unlock and sync your wallet.</EmptyState>
         )}
-        <p
-          className="nw-mono break-all text-center text-[10px]"
-          style={{ color: "var(--nw-muted)" }}
-        >
-          {address || "—"}
-        </p>
-        <CopyButton value={address} label="Copy address" fullWidth />
+
+        <div className="nw-receive__address nw-mono">{address || "—"}</div>
+
+        <CopyButton value={address} label="Copy address" fullWidth variant="primary" />
       </Card>
 
       <Callout>
-        After someone pays you, run a sync from <strong>Settings</strong> so the new note shows up in
-        your balance. This address must match Nozy Desktop Wallet 1 (same recovery phrase).
+        After someone pays you, run a sync from <strong>Settings</strong> so the new note shows up
+        in your balance. This address must match Nozy Desktop Wallet 1 (same recovery phrase).
       </Callout>
     </Screen>
   );
@@ -1361,7 +1485,7 @@ function CompanionView({ nested = false }: { nested?: boolean }) {
         />
         <Input
           label="lightwalletd gRPC (optional, local only)"
-          hint="For compact sync via the desktop API — not used for in-extension block scan (use Zebrad RPC in Settings)."
+          hint="For compact sync via the desktop API — not used for in-extension block scan (use Zebrad RPC in Settings). Operator opt-in: :9068 = lwd-mixnet-client."
           mono
           value={lwdUrl}
           onChange={(e) => setLwdUrl(e.target.value)}
@@ -1370,6 +1494,9 @@ function CompanionView({ nested = false }: { nested?: boolean }) {
         <div className="flex flex-wrap gap-2">
           <Button size="sm" onClick={() => setLwdUrl(DEFAULT_LWD_URL)}>
             Reset to local
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setLwdUrl(MIXNET_LWD_GRPC_URL)}>
+            Mixnet proxy :9068
           </Button>
           <Button
             variant="primary"
@@ -1584,6 +1711,8 @@ function SettingsView({
 
       <NetworkPrivacyPanel />
 
+      <SeedRevealCard />
+
       <WalletSyncPanel
         status={status}
         scan={scan}
@@ -1746,8 +1875,11 @@ export function App() {
   const [txs, setTxs] = useState<TxStateEntry[]>([]);
   const [bootDebug, setBootDebug] = useState<string | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  /** Preferred Create/Restore tab after wiping the extension vault from Unlock. */
+  const [welcomeMode, setWelcomeMode] = useState<"restore" | "create">("restore");
   /** Orchard block scan progress; polled app-wide so it keeps updating when you leave Receive. */
   const [scanProgress, setScanProgress] = useState<WalletScanProgressResult | null>(null);
+  const restoreRewindKicked = useRef(false);
   const endpoint = useMemo(() => status?.rpcEndpoint || DEFAULT_RPC, [status]);
 
   const refresh = async () => {
@@ -1778,6 +1910,12 @@ export function App() {
     }
   };
 
+  const resetVaultToWelcome = async (mode: "restore" | "create") => {
+    setWelcomeMode(mode);
+    await extensionApi.walletReset();
+    await refresh();
+  };
+
   useEffect(() => {
     refresh().catch((err) => {
       console.error(err);
@@ -1791,6 +1929,7 @@ export function App() {
   useEffect(() => {
     if (!status?.unlocked) {
       setScanProgress(null);
+      restoreRewindKicked.current = false;
       return;
     }
     let cancelled = false;
@@ -1798,6 +1937,70 @@ export function App() {
       try {
         const p = await extensionApi.walletScanProgress();
         if (!cancelled) setScanProgress(p);
+        // #region agent log
+        fetch("http://127.0.0.1:7349/ingest/7a8467c6-6dc5-4344-bf5b-adc963c1466a", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f3b2b0" },
+          body: JSON.stringify({
+            sessionId: "f3b2b0",
+            hypothesisId: "E",
+            location: "App.tsx:scanPoll",
+            message: "extension scan progress poll",
+            data: {
+              status: p.status,
+              start: p.startHeight,
+              current: p.currentHeight,
+              end: p.endHeight,
+              done: p.scannedBlocks,
+              total: p.totalBlocks,
+              percent: p.percent,
+              waiting: Boolean(p.sessionWaitingSince),
+              notes: p.discoveredNotes,
+              lastRpcError: p.lastRpcError ?? null,
+              birthday: status?.orchardBirthdayHeight ?? null,
+              restoredFromPhrase: status?.restoredFromPhrase ?? null
+            },
+            timestamp: Date.now()
+          })
+        }).catch(() => {});
+        // #endregion
+        if (
+          !cancelled &&
+          !restoreRewindKicked.current &&
+          shouldJumpToOwnBirthday(p, status?.orchardBirthdayHeight)
+        ) {
+          restoreRewindKicked.current = true;
+          const ownBirthday = status?.orchardBirthdayHeight as number;
+          // #region agent log
+          fetch("http://127.0.0.1:7349/ingest/7a8467c6-6dc5-4344-bf5b-adc963c1466a", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f3b2b0" },
+            body: JSON.stringify({
+              sessionId: "f3b2b0",
+              hypothesisId: "G",
+              location: "App.tsx:restoreRewindKick",
+              message: "popup kicking this wallet birthday",
+              data: {
+                start: p.startHeight,
+                end: p.endHeight,
+                notes: p.discoveredNotes,
+                birthday: ownBirthday,
+                restoredFromPhrase: status?.restoredFromPhrase ?? null,
+                forceFloor: false
+              },
+              timestamp: Date.now()
+            })
+          }).catch(() => {});
+          // #endregion
+          void extensionApi
+            .walletStartScan({
+              startHeight: ownBirthday,
+              endHeight: typeof p.endHeight === "number" ? p.endHeight : undefined
+            })
+            .catch(() => {
+              restoreRewindKicked.current = false;
+            });
+        }
       } catch {
         if (!cancelled) setScanProgress({ status: "idle" });
       }
@@ -1808,7 +2011,7 @@ export function App() {
       cancelled = true;
       clearInterval(id);
     };
-  }, [status?.unlocked]);
+  }, [status?.unlocked, status?.orchardBirthdayHeight, status?.restoredFromPhrase]);
 
   // Poll faster while scanning so each integer % step is visible.
   useEffect(() => {
@@ -1886,6 +2089,7 @@ export function App() {
 
       {view === "welcome" && (
         <WelcomeView
+          initialMode={welcomeMode}
           onCreated={() => {
             refresh().catch(console.error);
           }}
@@ -1895,7 +2099,11 @@ export function App() {
         />
       )}
       {view === "unlock" && (
-        <UnlockView onUnlocked={() => refresh().catch(console.error)} />
+        <UnlockView
+          onUnlocked={() => refresh().catch(console.error)}
+          onCreate={() => resetVaultToWelcome("create")}
+          onRestore={() => resetVaultToWelcome("restore")}
+        />
       )}
       {view === "dashboard" && (
           <DashboardView
@@ -1962,7 +2170,7 @@ export function App() {
         <AppHeader
           scan={scanProgress}
           unlocked={Boolean(status?.unlocked)}
-          showBrand={view !== "dashboard"}
+          showBrand={false}
           onOpenSync={() => {
             setMoreOpen(false);
             setView("settings");

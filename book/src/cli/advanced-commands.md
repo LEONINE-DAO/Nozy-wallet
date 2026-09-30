@@ -58,13 +58,13 @@ Display NU 6.1 / protocol information.
 nozy nu61
 ```
 
-## `nozy shade` (feature `secret-network`)
+## `nozy secret` (feature `secret-network`)
 
-Secret Network / Shade Protocol — build with:
+Secret Network (native SCRT; optional SNIP-20 by contract address). Build with:
 
 ```bash
 cargo build --release --features secret-network --bin nozy
-nozy shade balance
+nozy secret balance
 ```
 
 See [Secret Network](../advanced/secret-network.md).
