@@ -69,9 +69,14 @@ jobs:
           rm -f dist/nozy-extension/background/*.test.mjs
           cp -r browser-extension/content dist/nozy-extension/content
           cp -r browser-extension/wasm dist/nozy-extension/wasm
+          cp -r browser-extension/icons dist/nozy-extension/icons
           cp -r browser-extension/wasm-core/popup/dist dist/nozy-extension/wasm-core/popup/dist
           test -f dist/nozy-extension/wasm/pkg/nozy_wasm_bg.wasm
           test -f dist/nozy-extension/wasm-core/popup/dist/index.html
+          test -f dist/nozy-extension/icons/icon-16.png
+          test -f dist/nozy-extension/icons/icon-32.png
+          test -f dist/nozy-extension/icons/icon-48.png
+          test -f dist/nozy-extension/icons/icon-128.png
 
       - name: Validate docs
         run: |
