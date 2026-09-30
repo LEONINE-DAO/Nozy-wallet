@@ -162,20 +162,34 @@ export function NodeConnectCard({
           );
           return;
         }
-        const res = await extensionApi.rpcConnect({ tryCompanion: true });
-        if (cancelled) return;
-        applySuccess(
-          res.rpcEndpoint,
-          res.blockCount,
-          formatSuccessMessage(res.rpcEndpoint, res.blockCount, res.source),
-          res.source,
-          "zebrad"
-        );
+        let found = false;
+        for (const url of [DEFAULT_RPC, DEFAULT_TESTNET_RPC]) {
+          try {
+            const res = await extensionApi.rpcConnect({ url, tryCompanion: false });
+            if (cancelled) return;
+            applySuccess(
+              res.rpcEndpoint,
+              res.blockCount,
+              formatSuccessMessage(res.rpcEndpoint, res.blockCount, res.source),
+              res.source,
+              "zebrad"
+            );
+            found = true;
+            break;
+          } catch {
+            /* Zebrad and Zakura both use these local JSON-RPC ports. */
+          }
+        }
+        if (!cancelled && !found) {
+          applyFailure(
+            "No Zebrad or Zakura node was found on this computer."
+          );
+        }
       } catch (e) {
         if (!cancelled) {
           applyFailure(
             (e as Error).message ||
-              "No local Zebrad found. You can use Public sync instead."
+              "No Zebrad or Zakura node was found on this computer."
           );
         }
       } finally {
@@ -278,10 +292,9 @@ export function NodeConnectCard({
       </div>
 
       <Hint>
-        Prefer a local <strong>Zebrad</strong> when you have one. No node yet? Use{" "}
-        <strong>Public sync</strong> — Nozy’s lightwalletd at{" "}
-        <span className="nw-mono">lwd.nozywallet.org</span> (same idea as zec.rocks). Keys stay
-        in this extension.
+        NozyWallet looks for a <strong>Zebrad</strong> or <strong>Zakura</strong> node on this
+        computer first. If neither is running, you can connect to the Nozy sync server at{" "}
+        <span className="nw-mono">{PUBLIC_LWD_URL}</span>. Your keys stay in this extension.
       </Hint>
 
       <div className="flex flex-wrap gap-1.5">
@@ -357,9 +370,9 @@ export function NodeConnectCard({
       {!connected && showPublicOffer && !checking && (
         <Callout tone="info">
           <p className="text-xs leading-relaxed">
-            We didn’t detect a local Zebrad. Connect to Nozy’s public lightwalletd (
-            <span className="nw-mono">lwd.nozywallet.org</span>) like other wallets use zec.rocks?
-            Your seed stays on this device.
+            No Zebrad or Zakura node was found on this computer. Connect to the Nozy sync
+            server (<span className="nw-mono">{PUBLIC_LWD_URL}</span>)? Your keys stay in this
+            extension.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
@@ -368,7 +381,7 @@ export function NodeConnectCard({
               disabled={disabled || checking}
               onClick={() => void connectPublic()}
             >
-              Yes — use public sync
+              Yes — connect
             </Button>
             <Button
               size="sm"

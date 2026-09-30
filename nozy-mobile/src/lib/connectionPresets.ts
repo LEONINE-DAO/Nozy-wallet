@@ -39,8 +39,11 @@ export function defaultHostedApiUrl(): string {
  * Optional lightwalletd URL for on-device compact sync.
  * Public Nozy node — keys stay on the phone; this is not the companion API.
  */
+/** Nozy public compact-sync server. Keys stay on the device. Same value in the extension. */
+export const NOZY_PUBLIC_LWD_URL = "https://lwd.nozywallet.org:443";
+
 export function defaultHostedLwdUrl(): string {
-  return expoExtra("hostedLwdUrl") ?? "https://lwd.nozywallet.org:443";
+  return expoExtra("hostedLwdUrl") ?? NOZY_PUBLIC_LWD_URL;
 }
 
 /** Retired Nozy-operated companion hostname — never a product default. */

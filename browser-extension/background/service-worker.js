@@ -1115,7 +1115,7 @@ async function autodetectZebradRpcEndpoint() {
   });
   if (!found) {
     throw new Error(
-      "Could not find Zebrad. Start your node first, then click Find my node — or choose Public sync (lwd.nozywallet.org, like zec.rocks).\n\n" +
+      "Could not find a local Zebrad or Zakura node. Start one, then click Find my node — or choose Yes to connect to the Nozy sync server (https://lwd.nozywallet.org:443).\n\n" +
         "• Zebrad on this PC: use port 8232\n" +
         "• Zebrad in WSL: we auto-detect the WSL IP (not 127.0.0.1 from Chrome)\n" +
         "• Public sync: Yes on the offer, or pick Public sync in the chips\n" +

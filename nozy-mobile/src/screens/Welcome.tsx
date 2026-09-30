@@ -1,9 +1,15 @@
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
+import {
+  ONDEVICE_LWD_URL_KEY,
+  ONDEVICE_ZEBRA_URL_KEY,
+} from "../components/settings/OnDeviceWalletSettings";
+import { defaultHostedLwdUrl } from "../lib/connectionPresets";
 import { AppLogo } from "../components/AppLogo";
 import { Card } from "../components/Card";
 import { ConnectionSetupFields } from "../components/ConnectionSetupFields";
@@ -22,6 +28,9 @@ import type { RootStackParamList } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Welcome">;
 type ViewState = "initial" | "create" | "restore" | "securityTips";
+type SyncChoice = "ask" | "vps" | "own" | "local";
+
+const SYNC_CHOICE_KEY = "nozy.sync.vpsChoice";
 
 /**
  * Same login flow as desktop-client/src/pages/Welcome.tsx:
@@ -48,6 +57,7 @@ export function WelcomeScreen({ navigation }: Props) {
   const [keyDraft, setKeyDraft] = useState(apiKey);
   const [connStatus, setConnStatus] = useState("");
   const [connError, setConnError] = useState("");
+  const [syncChoice, setSyncChoice] = useState<SyncChoice>("ask");
   const [connSaving, setConnSaving] = useState(false);
 
   const [createPassword, setCreatePassword] = useState("");
@@ -121,6 +131,38 @@ export function WelcomeScreen({ navigation }: Props) {
       cancelled = true;
     };
   }, [apiUrl, apiKey, isOnDeviceNativeAvailable]);
+
+  useEffect(() => {
+    if (!isOnDeviceNativeAvailable) return;
+    let cancelled = false;
+    void (async () => {
+      const [choice, zebra] = await Promise.all([
+        AsyncStorage.getItem(SYNC_CHOICE_KEY),
+        AsyncStorage.getItem(ONDEVICE_ZEBRA_URL_KEY),
+      ]);
+      if (cancelled) return;
+      if (zebra?.trim()) {
+        setSyncChoice("local");
+        return;
+      }
+      if (choice === "vps" || choice === "own") setSyncChoice(choice);
+      else setSyncChoice("ask");
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnDeviceNativeAvailable]);
+
+  async function acceptPublicSync() {
+    await AsyncStorage.setItem(ONDEVICE_LWD_URL_KEY, defaultHostedLwdUrl());
+    await AsyncStorage.setItem(SYNC_CHOICE_KEY, "vps");
+    setSyncChoice("vps");
+  }
+
+  async function declinePublicSync() {
+    await AsyncStorage.setItem(SYNC_CHOICE_KEY, "own");
+    setSyncChoice("own");
+  }
 
   async function handleSaveConnection() {
     setConnSaving(true);
@@ -367,9 +409,31 @@ export function WelcomeScreen({ navigation }: Props) {
             {!walletExistsOnDisk && !checking ? (
               <Text style={styles.lead}>
                 {isOnDeviceNativeAvailable
-                  ? "Keys stay on this phone. Sync uses lightwalletd at lwd.nozywallet.org, or your own node if you set it in Settings."
+                  ? "Keys stay on this phone. If this phone is not using a Zebrad or Zakura node, sync can use the Nozy server."
                   : "Experience private finance. Keys stay on this phone."}
               </Text>
+            ) : null}
+
+            {isOnDeviceNativeAvailable && syncChoice === "ask" ? (
+              <Card variant="elevated" padding="lg">
+                <Text style={styles.sectionTitle}>No local node found</Text>
+                <Text style={styles.subtitle}>
+                  This phone is not set to a Zebrad or Zakura node. Connect to
+                  the Nozy sync server ({defaultHostedLwdUrl()})? Your keys
+                  stay on this phone.
+                </Text>
+                <Button
+                  label="Yes — connect"
+                  onPress={() => void acceptPublicSync()}
+                  size="lg"
+                />
+                <Button
+                  label="No — I'll use my own node"
+                  variant="secondary"
+                  onPress={() => void declinePublicSync()}
+                  size="lg"
+                />
+              </Card>
             ) : null}
 
             {!checking && !apiReachable && !isOnDeviceNativeAvailable ? (
