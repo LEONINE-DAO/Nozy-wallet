@@ -7,7 +7,7 @@ export const REPO_RELEASES_LATEST =
   "https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest";
 
 /** Current desktop release tag (food name: Hot Lemon Pepper Sprinkles). */
-export const DESKTOP_TAG = "desktop-v1.0.0-beta.6";
+export const DESKTOP_TAG = "desktop-v1.0.0-beta.7";
 export const DESKTOP_RELEASE =
   `https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/${DESKTOP_TAG}`;
 
@@ -43,7 +43,7 @@ export const DOWNLOAD_URLS = {
   hashes: releaseAsset("HASHES.txt"),
 } as const;
 
-/** Desktop installer / binaries (Hot Lemon Pepper Sprinkles — desktop-v1.0.0-beta.6). */
+/** Desktop installer / binaries (Hot Lemon Pepper Sprinkles — desktop-v1.0.0-beta.7). */
 export const DESKTOP_DOWNLOAD_URLS = {
   windows: desktopAsset("nozy-desktop-windows-x86_64-installer.exe"),
   linux: desktopAsset("nozy-desktop-linux-x86_64.tar.gz"),

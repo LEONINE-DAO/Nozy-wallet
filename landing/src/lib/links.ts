@@ -9,7 +9,7 @@ export const EXTENSION_CHROME_STORE =
 
 /** Optional GitHub zip for load-unpacked / contributor builds. */
 export const EXTENSION_RELEASE =
-  `${REPO}/releases/tag/extension-v0.1.10`;
+  `${REPO}/releases/tag/extension-v0.1.26`;
 
 export const IRONWOOD_ZODL = "https://ironwood.zodl.com/";
 export const IRONWOOD_CIPHERSCAN = "https://cipherscan.app/ironwood";

@@ -2,7 +2,7 @@
 
 **Orchard-first Zcash wallet** — **CLI**, **desktop**, and **localhost companion API** production downloads today; browser extension and mobile in active development. This repository is a **wallet and companion services**, not a consensus node.
 
-**Latest release:** [v2.4.2 — Teriyaki Hot (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.2) · See [CHANGELOG.md](CHANGELOG.md) for notes. Prior: [v2.4.1.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1.1) · [v2.4.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.1) · [v2.4.0 Ironwood](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0).
+**Latest release:** [v2.4.7 — Mango Habanero (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.7) · Desktop [Hot Lemon Pepper Sprinkles beta.7](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.7) · Extension Sweet Chili 0.1.26. Prior: [v2.4.6](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.6) · [v2.4.5 — Teriyaki Hot](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.5).
 
 ## What NozyWallet is
 
@@ -23,7 +23,7 @@ NozyWallet helps you create and restore a **shielded Orchard now Ironwood wallet
 
 **Recommended stack:** `zebrad` or Zakura (RPC `:8232`) + **Nozy Sync Engine** or lightwalletd (gRPC `:9067`) + Nozy. Sync engine: [`nozy-sync-engine/README.md`](nozy-sync-engine/README.md). Limits: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Windows helpers: [`scripts/README.md`](scripts/README.md).
 
-**Production-ready today:** the **`nozy` CLI** — productized as **[Nozy Lite](docs/reference/NOZY_LITE.md)** for **uptime & data checks** next to Zebrad (plus sync/send/Ironwood); the **desktop app** ([Hot Lemon Pepper Sprinkles](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.6)); and the **localhost companion API** (`nozywallet-api-*`, default `127.0.0.1:3000`). Extension and mobile remain in active development. Hosted/public companion is **not** claimed. No formal “GA” marketing label for desktop/API.
+**Production-ready today:** the **`nozy` CLI** — productized as **[Nozy Lite](docs/reference/NOZY_LITE.md)** for **uptime & data checks** next to Zebrad (plus sync/send/Ironwood); the **desktop app** ([Hot Lemon Pepper Sprinkles](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.7)); and the **localhost companion API** (`nozywallet-api-*`, default `127.0.0.1:3000`). Extension and mobile remain in active development. Hosted/public companion is **not** claimed. No formal “GA” marketing label for desktop/API.
 
 **Nozy Lite (operators):** `nozy health`, `nozy status --watch` / `nozy tui`, and `--json` for monitoring — see [`docs/reference/NOZY_LITE.md`](docs/reference/NOZY_LITE.md) and [`docs/reference/NOZY_LITE_BENCHES.md`](docs/reference/NOZY_LITE_BENCHES.md).
 

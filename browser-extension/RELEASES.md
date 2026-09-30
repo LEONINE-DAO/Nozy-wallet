@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 0.1.26 — 2026-09-29 — Sweet Chili
+
+Full-wallet popup, public compact sync (`lwd.nozywallet.org`) when no local node is found, Orchard scan resume after a service-worker restart, and recovery-phrase backup with a word check. Keys stay in the extension. Same food name as 0.1.10.
+
 ## 0.1.10 — 2026-08-03 — Sweet Chili
 
 Mandatory ZIP-317 ×4 on extension WASM/prove path (closes legacy 10k default). Rebuild WASM required.
