@@ -142,10 +142,10 @@ export const api = {
 
   walletStatus: () => request<WalletStatusResponse>("/api/wallet/status"),
 
-  createWallet: (password?: string) =>
+  createWallet: (password: string) =>
     request<CreateWalletResponse>("/api/wallet/create", {
       method: "POST",
-      body: JSON.stringify({ password: password || null }),
+      body: JSON.stringify({ password }),
     }),
 
   restoreWallet: (

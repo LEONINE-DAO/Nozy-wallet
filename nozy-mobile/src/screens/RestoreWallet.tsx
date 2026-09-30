@@ -26,6 +26,14 @@ export function RestoreWalletScreen({ navigation }: Props) {
 
   async function handleRestore() {
     setError("");
+    if (!mnemonic.trim()) {
+      setError("Mnemonic is required");
+      return;
+    }
+    if (!password.trim()) {
+      setError("A password is required to restore a wallet via the companion API.");
+      return;
+    }
     setLoading(true);
     try {
       await api.restoreWallet(mnemonic.trim(), password, {

@@ -362,6 +362,15 @@ pub async fn restore_wallet(
         ));
     }
 
+    let password = payload.password.trim();
+    if password.is_empty() {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            "A non-empty password is required to restore a wallet via the companion API.",
+            "PASSWORD_REQUIRED",
+        ));
+    }
+
     let wallet_path = nozy::paths::get_wallet_data_dir().join("wallet.dat");
     if wallet_path.exists() && !payload.confirm_overwrite {
         return Err(error_response_with_code(

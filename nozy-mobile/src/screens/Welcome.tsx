@@ -193,6 +193,10 @@ export function WelcomeScreen({ navigation }: Props) {
   }
 
   async function handleCreateWallet() {
+    if (!createPassword.trim()) {
+      setError("A password is required to create a wallet via the companion API.");
+      return;
+    }
     if (createPassword !== confirmPassword) {
       setError("Passwords do not match");
       return;
@@ -233,6 +237,10 @@ export function WelcomeScreen({ navigation }: Props) {
   async function handleRestoreWallet() {
     if (!mnemonic.trim()) {
       setError("Mnemonic is required");
+      return;
+    }
+    if (!restorePassword.trim()) {
+      setError("A password is required to restore a wallet via the companion API.");
       return;
     }
     setIsLoading(true);
@@ -441,7 +449,7 @@ export function WelcomeScreen({ navigation }: Props) {
                   setError(null);
                   setView("restore");
                 }}
-                disabled={!isOnDeviceNativeAvailable && !apiReachable}
+                disabled={!apiReachable}
                 size="lg"
               />
               <Button

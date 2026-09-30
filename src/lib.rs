@@ -155,6 +155,8 @@ pub mod zip321;
 pub mod zk_cosmwasm_claim;
 #[cfg(feature = "native")]
 pub mod zns;
+#[cfg(feature = "native")]
+pub mod zsa;
 
 // ============================================================
 // WASM-safe re-exports
@@ -338,11 +340,11 @@ pub use transaction_history::{
 pub use tx_lifecycle::{expire_stale_pending_transactions, speed_up_transaction};
 #[cfg(feature = "native")]
 pub use vote_export::{
-    export_ironwood_vote_notes, export_ironwood_vote_notes_at_snapshot, NU7_SNAPSHOT_HEIGHT_MAINNET,
+    build_ironwood_vote_notes, build_ironwood_vote_notes_at_snapshot, export_ironwood_vote_notes,
+    export_ironwood_vote_notes_at_snapshot, NU7_SNAPSHOT_HEIGHT_MAINNET,
 };
 #[cfg(feature = "native")]
-pub use vote_sign::sign_delegation_request;
-pub use vote_sign::sign_delegation_request_json;
+pub use vote_sign::{sign_delegation_request, sign_delegation_request_json};
 #[cfg(feature = "native")]
 pub use wallet_profiles::{
     active_profile_id, active_wallet_exists, apply_profile_connection_to_config,

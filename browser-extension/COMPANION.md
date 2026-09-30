@@ -48,6 +48,10 @@ Settings → **Network privacy (Nym)** talks to the same companion privacy APIs 
 - Operator opt-in: point companion LWD at **`http://127.0.0.1:9068`** when `lwd-mixnet-client` is running (Joaco dialling half). Probe checks `:9070/health` and `GetLightdInfo` via companion.
 - Chrome does **not** embed the Nym SDK. Do not market “Nym integrated.”
 
+## Companion API key
+
+`nozywallet-api` now **generates** `{wallet_data_dir}/companion_api_key` on first start unless `NOZY_API_KEY` is set. Paste that value into the extension **API** tab and the mobile Welcome screen (`X-API-Key`). `/health` and `/api/lwd/*` stay public. Set `NOZY_ALLOW_UNAUTHENTICATED=1` only for emergency/dev. On Windows, `SHOW-API-KEY.bat` copies the key to the clipboard.
+
 ## Localhost HTTP (recommended)
 
 1. Run **Zebrad** (JSON-RPC reachable from the browser host — WSL IP if node is in WSL). The extension **will not create or restore a wallet** until Zebrad RPC responds (`getblockcount`). Use Welcome → **Auto-detect Zebrad**, or Settings after unlock.

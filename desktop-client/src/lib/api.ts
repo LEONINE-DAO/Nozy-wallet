@@ -14,6 +14,7 @@ import {
   BalanceResponse,
   SendTransactionRequest,
   ConfigResponse,
+  SendEgressSnapshot,
   NymDvpnSyncStatus,
   NymDvpnSyncProbeResult,
   SendEgressSnapshot,

@@ -161,7 +161,7 @@ pub fn vote_export_notes(
         parse_network_label(&network)?
     };
     nozy::with_wallet_data_dir(Path::new(&wallet_data_dir), || {
-        let file = nozy::vote_export::build_ironwood_vote_notes(&wallet, net).map_err(map_err)?;
+        let file = nozy::build_ironwood_vote_notes(&wallet, net).map_err(map_err)?;
         let total_value_zat: u64 = file.notes.iter().map(|n| n.value).sum();
         let notes_json = serde_json::to_string_pretty(&file)
             .map_err(|e| map_err(format!("serialize notes json: {e}")))?;
