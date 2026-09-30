@@ -1,9 +1,9 @@
 # Extension store submission checklist
 
 **Chrome Web Store (live):** https://chromewebstore.google.com/detail/nozywallet/pnlmnkallkmelflckjkmohemibfahoce  
-**Listed version:** **0.1.7** (2026-08-02) — bump store package when repo `manifest.json` advances.
+**Listed version:** **0.1.7** on the store today. Next upload is **Sweet Chili 0.1.26** from `nozy-extension-chromium-0.1.26.zip` once the release asset is attached.
 
-**Version:** align with `browser-extension/manifest.json` (currently **0.1.8**).  
+**Version:** align with `browser-extension/manifest.json` (currently **0.1.26**).  
 **GitHub Release zip (done for 0.1.8):**  
 https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.8
 
