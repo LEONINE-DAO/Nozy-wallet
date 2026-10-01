@@ -1,7 +1,7 @@
 {
   "name": "nozy-extension-popup",
   "private": true,
-  "version": "0.1.26",
+  "version": "2.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",

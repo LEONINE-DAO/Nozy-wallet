@@ -2,6 +2,16 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 2.0.0 — 2026-09-30
+
+### Fixed
+- Service worker loads the wallet WASM with a static import. Chrome rejects `import()` in a service worker, which had stopped the popup from talking to the background.
+
+### Changed
+- Popup and dashboard show whether sync is **NozyWallet** or a **local node**.
+- Crosslink in the extension is marked coming soon on testnet.
+- Removed the Nym hybrid explainer from Network privacy.
+
 ## 0.1.26 — 2026-09-18
 
 ### Changed
