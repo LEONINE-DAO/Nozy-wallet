@@ -261,6 +261,31 @@ self.onmessage = async (event) => {
   try {
     await ensureReady();
 
+    if (method === "apply_scan_block") {
+      const trackerState = String(params?.trackerState ?? "");
+      const mnemonic = String(params?.mnemonic ?? "");
+      const address = String(params?.address ?? "");
+      const height = Number(params?.height ?? 0);
+      const blockJson = String(params?.blockJson ?? "");
+      if (!trackerState) throw new Error("Missing trackerState");
+      if (!mnemonic) throw new Error("Missing mnemonic");
+      if (!address) throw new Error("Missing address");
+      if (!Number.isFinite(height)) throw new Error("Invalid height");
+      if (!blockJson) throw new Error("Missing blockJson");
+      const { out, nextTracker } = applyShieldedScanBlock(
+        trackerState,
+        mnemonic,
+        address,
+        Math.floor(height),
+        blockJson
+      );
+      self.postMessage({
+        id,
+        result: { out, nextTracker: nextTracker || null }
+      });
+      return;
+    }
+
     if (method === "scan_notes") {
       const startHeight = Number(params?.startHeight ?? 0);
       const endHeight = Number(params?.endHeight ?? startHeight);

@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { viewFromUrl } from "../lib/walletPage";
 
 export type PopupView =
   | "welcome"
@@ -25,7 +26,7 @@ type UiState = {
 };
 
 export const useUiStore = create<UiState>((set) => ({
-  view: "welcome",
+  view: viewFromUrl() ?? "welcome",
   setView: (view) => set({ view }),
   statusMessage: null,
   setStatusMessage: (message) => set({ statusMessage: message }),

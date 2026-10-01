@@ -18,7 +18,6 @@ import { NodeConnectCard } from "./components/NodeConnectCard";
 import { SeedBackupPanel } from "./components/SeedBackupPanel";
 import { SeedRevealCard } from "./components/SeedRevealCard";
 import { VoteView } from "./components/VoteView";
-import { CrosslinkView, HomeStakedPanel } from "./components/CrosslinkView";
 import {
   Button,
   Callout,
@@ -91,7 +90,7 @@ function WelcomeView({
   const submit = async () => {
     if (!nodeConnected) {
       setError(
-        "Connect a node first — Find my node, or Yes on Public sync (lwd.nozywallet.org)."
+        "Connect a node first — Find node (local), or choose NozyWallet."
       );
       return;
     }
@@ -326,6 +325,16 @@ function zatsToZec(zats: number): string {
   return (zats / 1e8).toFixed(8);
 }
 
+/** ZEC entry, up to 8 decimal places — same unit as the balance. */
+function sanitizeZecAmountInput(raw: string): string {
+  const cleaned = raw.replace(/-/g, "").replace(/[^0-9.]/g, "");
+  const dotIndex = cleaned.indexOf(".");
+  if (dotIndex === -1) return cleaned;
+  const intPart = cleaned.slice(0, dotIndex);
+  const fracPart = cleaned.slice(dotIndex + 1).replace(/\./g, "").slice(0, 8);
+  return `${intPart}.${fracPart}`;
+}
+
 function shortAddress(addr: string): string {
   const a = addr.trim();
   if (!a) return "No address yet";
@@ -350,7 +359,6 @@ function DashboardView({
 }) {
   const setView = useUiStore((s) => s.setView);
   const { currency: fiatCode, rate: zecFiat } = useZecFiatPrice();
-  const [homeTab, setHomeTab] = useState<"available" | "staked">("available");
 
   const syncPill = useMemo<{ label: string; tone: "neutral" | "accent" | "success" | "danger" } | null>(() => {
     const p = scan;
@@ -415,31 +423,6 @@ function DashboardView({
           alt="Nozy Wallet"
         />
       )}
-      {!pageMode && (
-      <SegmentedControl
-        options={[
-          { value: "available", label: "Available" },
-          { value: "staked", label: "Staked" }
-        ]}
-        value={homeTab}
-        onChange={setHomeTab}
-      />
-      )}
-
-      {!pageMode && homeTab === "staked" ? (
-        <HomeStakedPanel
-          onManage={(hex) => {
-            const bond = useUiStore.getState().pendingBondPk ?? undefined;
-            if (isFullPage()) {
-              if (hex) useUiStore.getState().setPendingFinalizer(hex);
-              setView("crosslink");
-              return;
-            }
-            void openWalletPage({ view: "crosslink", finalizer: hex, bond });
-          }}
-        />
-      ) : (
-        <>
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <img className="nw-zec-ticker__icon" src={zecMark} alt="" />
@@ -574,8 +557,21 @@ function DashboardView({
           ))}
         </div>
       </Card>
-        </>
-      )}
+    </Screen>
+  );
+}
+
+function CrosslinkComingSoon() {
+  return (
+    <Screen className="max-w-5xl px-6 pt-5">
+      <PageHeader title="Crosslink" description="Staking" />
+      <Card className="space-y-2">
+        <SectionTitle>Coming soon on testnet</SectionTitle>
+        <Hint>
+          Crosslink staking is not in the extension yet. It will show up here when testnet staking
+          is ready.
+        </Hint>
+      </Card>
     </Screen>
   );
 }
@@ -653,8 +649,9 @@ function SendView() {
     setPreflight(null);
     setRawTxHex(null);
     try {
-      const requestedAmount = Number(amount) || 0;
-      if (requestedAmount <= 0) throw new Error("Enter an amount in zats");
+      const zats = amountZecToZats(amount.trim());
+      const requestedAmount = zats ? Number(zats) : 0;
+      if (requestedAmount <= 0) throw new Error("Enter an amount in ZEC");
       const to = await resolveRecipientToAddress();
       const result = await extensionApi.walletProveTransaction({
         to,
@@ -695,7 +692,7 @@ function SendView() {
 
   const amountZec = (() => {
     const n = Number(amount);
-    return Number.isFinite(n) && n > 0 ? n / 1e8 : null;
+    return Number.isFinite(n) && n > 0 ? n : null;
   })();
   const amountFiat = amountZec != null ? fiatForZec(amountZec, zecFiat, fiatCode) : null;
 
@@ -725,8 +722,7 @@ function SendView() {
             const parsed = tryParsePaymentInput(raw);
             if (parsed) {
               setRecipient(parsed.address);
-              const zats = amountZecToZats(parsed.amountZec);
-              if (zats) setAmount(zats);
+              if (parsed.amountZec) setAmount(sanitizeZecAmountInput(parsed.amountZec));
               if (parsed.memo) setMemo(parsed.memo);
               setResolvedName(parsed.label || parsed.message || null);
               setStatus("Loaded shielded payment request (ZIP-321)");
@@ -747,18 +743,14 @@ function SendView() {
       )}
 
       <Input
-        label="Amount (zats)"
-        placeholder="e.g. 100000"
-        inputMode="numeric"
+        label="Amount (ZEC)"
+        placeholder="0.00"
+        inputMode="decimal"
         mono
         value={amount}
-        onChange={(e) => setAmount(e.target.value)}
+        onChange={(e) => setAmount(sanitizeZecAmountInput(e.target.value))}
       />
-      {amountZec != null && (
-        <Hint>
-          ≈ {amountZec.toFixed(8)} ZEC{amountFiat ? ` · ${amountFiat}` : ""}
-        </Hint>
-      )}
+      {amountFiat && <Hint>≈ {amountFiat}</Hint>}
 
       <div>
         <span className="nw-label">Network fee</span>
@@ -799,7 +791,7 @@ function SendView() {
             <Eyebrow>Confirm details</Eyebrow>
             <StatRow
               label="Amount"
-              value={`${preflight.requestedAmount} zats · ${(preflight.requestedAmount / 1e8).toFixed(8)} ZEC`}
+              value={`${zatsToZec(preflight.requestedAmount)} ZEC`}
             />
             <StatRow
               label="Fee"
@@ -1937,33 +1929,6 @@ export function App() {
       try {
         const p = await extensionApi.walletScanProgress();
         if (!cancelled) setScanProgress(p);
-        // #region agent log
-        fetch("http://127.0.0.1:7349/ingest/7a8467c6-6dc5-4344-bf5b-adc963c1466a", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f3b2b0" },
-          body: JSON.stringify({
-            sessionId: "f3b2b0",
-            hypothesisId: "E",
-            location: "App.tsx:scanPoll",
-            message: "extension scan progress poll",
-            data: {
-              status: p.status,
-              start: p.startHeight,
-              current: p.currentHeight,
-              end: p.endHeight,
-              done: p.scannedBlocks,
-              total: p.totalBlocks,
-              percent: p.percent,
-              waiting: Boolean(p.sessionWaitingSince),
-              notes: p.discoveredNotes,
-              lastRpcError: p.lastRpcError ?? null,
-              birthday: status?.orchardBirthdayHeight ?? null,
-              restoredFromPhrase: status?.restoredFromPhrase ?? null
-            },
-            timestamp: Date.now()
-          })
-        }).catch(() => {});
-        // #endregion
         if (
           !cancelled &&
           !restoreRewindKicked.current &&
@@ -1971,27 +1936,6 @@ export function App() {
         ) {
           restoreRewindKicked.current = true;
           const ownBirthday = status?.orchardBirthdayHeight as number;
-          // #region agent log
-          fetch("http://127.0.0.1:7349/ingest/7a8467c6-6dc5-4344-bf5b-adc963c1466a", {
-            method: "POST",
-            headers: { "Content-Type": "application/json", "X-Debug-Session-Id": "f3b2b0" },
-            body: JSON.stringify({
-              sessionId: "f3b2b0",
-              hypothesisId: "G",
-              location: "App.tsx:restoreRewindKick",
-              message: "popup kicking this wallet birthday",
-              data: {
-                start: p.startHeight,
-                end: p.endHeight,
-                notes: p.discoveredNotes,
-                birthday: ownBirthday,
-                restoredFromPhrase: status?.restoredFromPhrase ?? null,
-                forceFloor: false
-              },
-              timestamp: Date.now()
-            })
-          }).catch(() => {});
-          // #endregion
           void extensionApi
             .walletStartScan({
               startHeight: ownBirthday,
@@ -2125,7 +2069,7 @@ export function App() {
       {view === "receive" && <ReceiveView status={status} />}
       {view === "companion" && <CompanionView />}
       {view === "vote" && <VoteView />}
-      {view === "crosslink" && <CrosslinkView />}
+      {view === "crosslink" && <CrosslinkComingSoon />}
       {view === "browser" && <BrowserView />}
       {view === "settings" && (
         <SettingsView
@@ -2197,8 +2141,8 @@ export function App() {
         <MoreSheet
           onSelect={(next) => {
             setMoreOpen(false);
-            if ((next === "crosslink" || next === "browser") && !isFullPage()) {
-              void openWalletPage({ view: next });
+            if (!isFullPage() && (next === "crosslink" || next === "browser")) {
+              void openWalletPage({ view: next === "crosslink" ? "dashboard" : next });
               return;
             }
             setView(next);

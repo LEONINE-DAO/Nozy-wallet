@@ -183,7 +183,11 @@ export type MobileSyncState = {
   pairingPayload: string | null;
 };
 
-function sendMessage<T>(request: ApiRequest): Promise<T> {
+function workerAsleep(err: string): boolean {
+  return /Receiving end does not exist/i.test(err);
+}
+
+function sendMessage<T>(request: ApiRequest, attempt = 0): Promise<T> {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage(
       {
@@ -193,7 +197,15 @@ function sendMessage<T>(request: ApiRequest): Promise<T> {
       },
       (response: ApiResponse<T>) => {
         if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
+          const errText = String(chrome.runtime.lastError.message);
+          if (workerAsleep(errText) && attempt < 3) {
+            const waitMs = [40, 150, 400][attempt];
+            window.setTimeout(() => {
+              sendMessage<T>(request, attempt + 1).then(resolve, reject);
+            }, waitMs);
+            return;
+          }
+          reject(new Error(errText));
           return;
         }
         if (!response) {

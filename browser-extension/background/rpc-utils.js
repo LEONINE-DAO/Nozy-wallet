@@ -176,7 +176,7 @@ export function rpcNetworkErrorMessage(endpoint, err) {
 /**
  * Probe candidate RPC endpoints and return the first reachable URL.
  * @param {string} currentEndpoint
- * @param {{ extraCandidates?: string[], companionBase?: string }} [opts]
+ * @param {{ extraCandidates?: string[], companionBase?: string, skipEndpoints?: string[] }} [opts]
  * @returns {Promise<string|null>}
  */
 export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
@@ -185,30 +185,45 @@ export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
   const extra = Array.isArray(opts.extraCandidates)
     ? opts.extraCandidates.filter((u) => typeof u === "string")
     : [];
+  const skip = new Set(
+    (Array.isArray(opts.skipEndpoints) ? opts.skipEndpoints : [])
+      .map((u) => {
+        try {
+          return normalizeRpcEndpoint(u);
+        } catch {
+          return "";
+        }
+      })
+      .filter(Boolean)
+  );
   try {
-    candidates.push(normalizeRpcEndpoint(currentEndpoint));
+    const current = normalizeRpcEndpoint(currentEndpoint);
+    if (!skip.has(current)) candidates.push(current);
   } catch {
     // ignore invalid current endpoint
   }
   candidates.push(...extra);
 
-  // Common local Zebrad RPC ports/configs.
+  // Local Zebrad / Crosslink JSON-RPC. On this Windows Crosslink GUI setup the
+  // node listens on 18232 (8232 is often taken). Prefer the live Crosslink port.
   candidates.push(
     "http://127.0.0.1:18232",
     "http://127.0.0.1:8232"
-    // Public lightwalletd (lwd.nozywallet.org / zec.rocks) is gRPC — not Zebrad JSON-RPC.
-    // Users opt in via "Public sync" in the extension UI.
   );
+  // Public lightwalletd (lwd.nozywallet.org) is gRPC. Extension compact scan uses
+  // HTTPS /compact (or /api/lwd/compact) — not this JSON-RPC probe list.
 
   // Deduplicate while preserving order.
   const unique = [...new Set(candidates)];
+  let chosen = null;
   for (const endpoint of unique) {
     if (await probeZebradRpcEndpoint(endpoint, 3500)) {
-      return endpoint;
+      chosen = endpoint;
+      break;
     }
   }
   void opts.companionBase;
-  return null;
+  return chosen;
 }
 
 /**

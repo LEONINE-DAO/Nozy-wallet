@@ -2,14 +2,13 @@ import { useCallback, useEffect, useState } from "react";
 import { extensionApi } from "../lib/extensionApi";
 import {
   DEFAULT_RPC,
-  DEFAULT_TESTNET_RPC,
   NODE_SETUP_MODES,
   PUBLIC_LWD_URL,
   connectFailureHint,
   setupHelp,
   type NodeSetupMode
 } from "../lib/nodeConnect";
-import { Button, Callout, Card, CopyButton, Hint, Input, Pill, SectionTitle } from "./ui";
+import { Button, Callout, Card, CopyButton, Hint, Pill, SectionTitle } from "./ui";
 
 export type NodeConnectState = {
   connected: boolean;
@@ -38,7 +37,7 @@ export function NodeConnectCard({
   onConnected,
   onStateChange
 }: NodeConnectCardProps) {
-  const [mode, setMode] = useState<NodeSetupMode>("auto");
+  const [mode, setMode] = useState<NodeSetupMode>("local");
   const [customUrl, setCustomUrl] = useState(initialEndpoint);
   const [connected, setConnected] = useState(false);
   const [endpoint, setEndpoint] = useState("");
@@ -133,7 +132,7 @@ export function NodeConnectCard({
         return;
       }
       applyFailure(
-        "No node connected yet. Start Zebrad, or use Public sync (like zec.rocks)."
+        "No node connected yet. Start a local node, or choose NozyWallet."
       );
     } catch (e) {
       applyFailure((e as Error).message);
@@ -146,8 +145,19 @@ export function NodeConnectCard({
     let cancelled = false;
     void (async () => {
       setChecking(true);
+      const withTimeout = <T,>(p: Promise<T>, ms: number, label: string) => {
+        // The raced call can reject later. Mark that rejection handled so Chrome
+        // does not surface it after the timeout already won.
+        p.catch(() => {});
+        return Promise.race([
+          p,
+          new Promise<T>((_, reject) =>
+            setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+          )
+        ]);
+      };
       try {
-        const status = await extensionApi.rpcGetStatus();
+        const status = await withTimeout(extensionApi.rpcGetStatus(), 8000, "rpcGetStatus");
         if (cancelled) return;
         if (status.connected) {
           const isPublic = status.mode === "public_lwd";
@@ -163,9 +173,13 @@ export function NodeConnectCard({
           return;
         }
         let found = false;
-        for (const url of [DEFAULT_RPC, DEFAULT_TESTNET_RPC]) {
+        for (const url of [DEFAULT_RPC]) {
           try {
-            const res = await extensionApi.rpcConnect({ url, tryCompanion: false });
+            const res = await withTimeout(
+              extensionApi.rpcConnect({ url, tryCompanion: false }),
+              6000,
+              "rpcConnect"
+            );
             if (cancelled) return;
             applySuccess(
               res.rpcEndpoint,
@@ -238,17 +252,8 @@ export function NodeConnectCard({
         await connectPublic();
         return;
       }
-      let res;
-      if (mode === "local") {
-        res = await extensionApi.rpcConnect({ url: DEFAULT_RPC });
-      } else if (mode === "remote") {
-        const url = customUrl.trim();
-        if (!url) throw new Error("Paste your node URL first.");
-        res = await extensionApi.rpcConnect({ url, tryCompanion: false });
-      } else {
-        // auto + wsl: full discovery (WSL IP, localhost, companion config)
-        res = await extensionApi.rpcConnect({ tryCompanion: true });
-      }
+      // Local node: discover Zebrad / Zakura / Crosslink on this machine.
+      const res = await extensionApi.rpcConnect({ tryCompanion: true });
       applySuccess(
         res.rpcEndpoint,
         res.blockCount,
@@ -264,37 +269,32 @@ export function NodeConnectCard({
   };
 
   const primaryLabel =
-    mode === "remote"
+    mode === "public"
       ? checking
         ? "Connecting…"
-        : "Connect"
-      : mode === "public"
-        ? checking
-          ? "Connecting…"
-          : "Use public sync"
-        : checking
-          ? "Finding node…"
-          : "Find my node";
+        : "Connect NozyWallet"
+      : checking
+        ? "Finding node…"
+        : "Find node";
 
   return (
     <Card className="space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <SectionTitle>Connect your node</SectionTitle>
+        <SectionTitle>Connect</SectionTitle>
         <Pill tone={checking ? "neutral" : connected ? "success" : "danger"}>
           {checking
             ? "Checking…"
             : connected
               ? connectMode === "public_lwd"
-                ? "Public sync"
-                : "Connected"
+                ? "NozyWallet"
+                : "Local node"
               : "Not connected"}
         </Pill>
       </div>
 
       <Hint>
-        NozyWallet looks for a <strong>Zebrad</strong> or <strong>Zakura</strong> node on this
-        computer first. If neither is running, you can connect to the Nozy sync server at{" "}
-        <span className="nw-mono">{PUBLIC_LWD_URL}</span>. Your keys stay in this extension.
+        Use a <strong>local node</strong> on this computer, or <strong>NozyWallet</strong> sync
+        (keys stay in this extension).
       </Hint>
 
       <div className="flex flex-wrap gap-1.5">
@@ -302,14 +302,11 @@ export function NodeConnectCard({
           <button
             key={m.id}
             type="button"
-            disabled={disabled || checking}
+            disabled={disabled}
             onClick={() => {
               setMode(m.id);
               if (m.id === "local") setCustomUrl(DEFAULT_RPC);
               if (m.id === "public") setCustomUrl(PUBLIC_LWD_URL);
-              if (m.id === "remote" && !customUrl.trim()) {
-                setCustomUrl("https://");
-              }
             }}
             className="rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors"
             style={
@@ -337,24 +334,6 @@ export function NodeConnectCard({
         </Callout>
       )}
 
-      {(mode === "remote" || mode === "wsl") && (
-        <Input
-          label={mode === "remote" ? "Node URL" : "Or paste WSL / custom URL"}
-          hint={
-            mode === "remote"
-              ? "Full JSON-RPC URL — https://your-server.com:443 or http://172.x.x.x:8232"
-              : "Optional if auto-detect fails"
-          }
-          mono
-          value={customUrl}
-          onChange={(e) => setCustomUrl(e.target.value)}
-          placeholder={
-            mode === "remote" ? "https://your-node.example.com:443" : "http://172.20.199.206:8232"
-          }
-          disabled={disabled || checking}
-        />
-      )}
-
       {connected && endpoint && (
         <div
           className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-xs"
@@ -370,25 +349,27 @@ export function NodeConnectCard({
       {!connected && showPublicOffer && !checking && (
         <Callout tone="info">
           <p className="text-xs leading-relaxed">
-            No Zebrad or Zakura node was found on this computer. Connect to the Nozy sync
-            server (<span className="nw-mono">{PUBLIC_LWD_URL}</span>)? Your keys stay in this
-            extension.
+            No local node was found. Connect with <strong>NozyWallet</strong> sync instead? Your
+            keys stay in this extension.
           </p>
           <div className="mt-2 flex flex-wrap gap-2">
             <Button
               variant="primary"
               size="sm"
               disabled={disabled || checking}
-              onClick={() => void connectPublic()}
+              onClick={() => {
+                setMode("public");
+                void connectPublic();
+              }}
             >
-              Yes — connect
+              Yes — NozyWallet
             </Button>
             <Button
               size="sm"
               disabled={disabled || checking}
               onClick={() => setShowPublicOffer(false)}
             >
-              No — I’ll connect my own node
+              No — I’ll use a local node
             </Button>
           </div>
         </Callout>
@@ -408,28 +389,6 @@ export function NodeConnectCard({
         >
           {primaryLabel}
         </Button>
-        {mode === "local" && (
-          <Button
-            size="sm"
-            disabled={disabled || checking}
-            onClick={() =>
-              void extensionApi
-                .rpcConnect({ url: DEFAULT_TESTNET_RPC })
-                .then((res) =>
-                  applySuccess(
-                    res.rpcEndpoint,
-                    res.blockCount,
-                    `Testnet connected — ${res.blockCount.toLocaleString()} blocks`,
-                    res.source,
-                    "zebrad"
-                  )
-                )
-                .catch((e) => applyFailure((e as Error).message))
-            }
-          >
-            Try testnet
-          </Button>
-        )}
         <Button size="sm" disabled={disabled || checking} onClick={() => void refreshStatus()}>
           Recheck
         </Button>

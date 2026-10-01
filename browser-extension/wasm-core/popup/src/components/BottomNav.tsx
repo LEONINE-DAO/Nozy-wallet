@@ -25,8 +25,8 @@ const MORE_ITEMS: Array<{
   },
   {
     view: "crosslink",
-    title: "Crosslink guardian",
-    description: "Opens the full-page staking GUI (pick a finalizer, stake)",
+    title: "Crosslink",
+    description: "Coming soon on testnet — opens the dashboard",
     icon: "shield"
   },
   {

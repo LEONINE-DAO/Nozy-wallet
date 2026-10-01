@@ -1,5 +1,6 @@
-import { useMemo } from "react";
-import type { WalletScanProgressResult } from "../lib/extensionApi";
+import { useEffect, useMemo, useState } from "react";
+import { extensionApi, type WalletScanProgressResult } from "../lib/extensionApi";
+import { isPublicLwdUrl } from "../lib/nodeConnect";
 import {
   isScanInProgress,
   scanPercentDisplay,
@@ -48,6 +49,47 @@ function syncChip(scan: WalletScanProgressResult | null): {
   return null;
 }
 
+/** Same words as the dashboard Connect pill: Local node or NozyWallet. */
+export function NodeSourceChip({ onOpen }: { onOpen?: () => void }) {
+  const [label, setLabel] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const status = await extensionApi.rpcGetStatus();
+        if (cancelled) return;
+        const next = !status.connected
+          ? "Not connected"
+          : status.mode === "public_lwd" || isPublicLwdUrl(status.endpoint || "")
+            ? "NozyWallet"
+            : "Local node";
+        setLabel(next);
+      } catch {
+        if (!cancelled) setLabel(null);
+      }
+    };
+    void load();
+    const id = setInterval(() => void load(), 8000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  if (!label) return null;
+  return (
+    <button
+      type="button"
+      className={`nw-syncchip nw-syncchip--${label === "Not connected" ? "neutral" : "success"}`}
+      title="Sync source — same as the dashboard"
+      onClick={onOpen}
+    >
+      {label}
+    </button>
+  );
+}
+
 /**
  * Persistent brand bar. Sync state is reduced to a tappable chip plus a hairline progress
  * line so a multi-day scan never dominates the top of the popup.
@@ -81,6 +123,7 @@ export function AppHeader({
 
       {unlocked && (
         <div className="flex items-center gap-1.5">
+          <NodeSourceChip onOpen={onOpenSync} />
           {chip && (
             <button
               type="button"
