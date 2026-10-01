@@ -264,11 +264,6 @@ export function NetworkPrivacyPanel() {
   return (
     <Card className="space-y-2">
       <SectionTitle>Network privacy (Nym)</SectionTitle>
-      <Hint>
-        Same hybrid as desktop/CLI: mixnet helper for remote sendraw, dVPN for remote compact sync,
-        local Zebrad stays direct. Chrome does not embed the Nym SDK — the extension drives the
-        local companion.
-      </Hint>
 
       <SendEgressBadge />
 

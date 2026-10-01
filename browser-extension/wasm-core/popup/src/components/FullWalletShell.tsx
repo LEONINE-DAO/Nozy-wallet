@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import zecMark from "../assets/zec.svg";
 import { useZecFiatPrice } from "../lib/zecPrice";
 import type { PopupView } from "../store/uiStore";
+import { NodeSourceChip } from "./AppHeader";
 import { CurrencyPicker } from "./CurrencyPicker";
 import { CopyButton, Icon, type IconName } from "./ui";
 
@@ -92,7 +93,7 @@ export function FullWalletShell({
             Zcash
             <span className="nw-keplr__muted">ZEC</span>
           </button>
-          <p className="nw-keplr__hint">Opens Crosslink staking</p>
+          <p className="nw-keplr__hint">Coming soon on testnet</p>
 
           <p className="nw-keplr__group">Chains</p>
           <div className="nw-keplr__soon">
@@ -114,7 +115,7 @@ export function FullWalletShell({
         </nav>
 
         <div className="nw-keplr__foot">
-          <p className="nw-keplr__hint">Feature-net Crosslink · mainnet ZEC</p>
+          <p className="nw-keplr__hint">Crosslink coming soon on testnet · mainnet ZEC</p>
         </div>
       </aside>
 
@@ -170,6 +171,7 @@ export function FullWalletShell({
               </p>
             </div>
             {address ? <CopyButton value={address} label="Copy" /> : null}
+            <NodeSourceChip onOpen={() => onNavigate("settings")} />
             <CurrencyPicker currency={currency} suggested={suggested} onChange={setCurrency} />
             <button type="button" className="nw-iconbtn" title="Lock wallet" onClick={onLock}>
               <Icon name="lock" size={14} />

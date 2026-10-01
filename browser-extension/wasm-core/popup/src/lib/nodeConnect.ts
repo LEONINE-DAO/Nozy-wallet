@@ -11,12 +11,10 @@ export const PUBLIC_NODE_STATUS_URL = "https://nozywallet.org/status.json";
 
 export type NodeSetupMode = "auto" | "local" | "wsl" | "remote" | "public";
 
+/** Load-page chips: local discovery vs NozyWallet compact sync. */
 export const NODE_SETUP_MODES: Array<{ id: NodeSetupMode; label: string }> = [
-  { id: "auto", label: "Find automatically" },
-  { id: "local", label: "This PC" },
-  { id: "wsl", label: "WSL / Linux VM" },
-  { id: "public", label: "Public sync" },
-  { id: "remote", label: "Remote VPS" }
+  { id: "local", label: "Local node" },
+  { id: "public", label: "NozyWallet" }
 ];
 
 export function isPublicLwdUrl(url: string): boolean {
@@ -38,49 +36,27 @@ export function rpcPresetId(url: string): string {
 
 export function setupHelp(mode: NodeSetupMode): string[] {
   switch (mode) {
-    case "local":
-      return [
-        "Start Zebrad on this computer (JSON-RPC port 8232).",
-        "Click Connect — we use http://127.0.0.1:8232."
-      ];
-    case "wsl":
-      return [
-        "Start Zebrad inside WSL (Ubuntu): zebrad start or your usual script.",
-        "Click Find my node — Chrome on Windows cannot use 127.0.0.1 for WSL.",
-        "We auto-detect the WSL IP (http://172.x.x.x:8232)."
-      ];
     case "public":
       return [
-        "Connect to Nozy’s public lightwalletd (lwd.nozywallet.org) — same idea as zec.rocks.",
-        "Your seed stays in this extension. The public node only serves compact blocks.",
-        "In-extension Orchard scan/send still prefer a local Zebrad when you have one."
+        "NozyWallet sync uses lwd.nozywallet.org for compact blocks.",
+        "Your seed stays in this extension — keys never leave this device.",
+        "Click Connect when you are ready."
       ];
-    case "remote":
-      return [
-        "Your server must expose Zebrad JSON-RPC (HTTPS recommended).",
-        "Paste the full URL below — e.g. https://your-node.example.com:443",
-        "Click Connect. Ask your host for the RPC URL if unsure."
-      ];
+    case "local":
     default:
       return [
-        "Start Zebrad (this PC, WSL, or VPS), or use Public sync if you have no node yet.",
-        "Click Find my node — we try local ports, WSL IP, and Nozy Desktop config.",
-        "If that fails, pick Public sync (zec.rocks-style) or Remote and follow the steps."
+        "Start Zebrad or Zakura on this computer (or Crosslink).",
+        "Click Find node — we look for a local JSON-RPC endpoint.",
+        "If nothing is found, pick NozyWallet instead."
       ];
   }
 }
 
 export function connectFailureHint(mode: NodeSetupMode): string {
   if (mode === "public") {
-    return "Public sync uses lwd.nozywallet.org. Check https://nozywallet.org/status.json if this keeps failing.";
+    return "NozyWallet sync could not reach lwd.nozywallet.org. Check https://nozywallet.org/status.json and try again.";
   }
-  if (mode === "wsl" || mode === "auto") {
-    return "Still stuck? Pick Public sync (no local node), or in PowerShell run: wsl -d Ubuntu -- hostname -I — use http://<first-IP>:8232 under Remote VPS.";
-  }
-  if (mode === "remote") {
-    return "Check the URL includes http:// or https:// and the port matches your node (8232 local, 443 on many VPS setups).";
-  }
-  return "Is Zebrad running? Local JSON-RPC needs enable_cookie_auth=false in zebrad.toml for browser access. Or choose Public sync.";
+  return "Is a local node running? Or pick NozyWallet to sync without one.";
 }
 
 export type PublicNodeStatus = {
@@ -138,8 +114,8 @@ export async function probePublicNodeStatus(
       zebraOk,
       message:
         blockCount != null
-          ? `Public sync ready — ${blockCount.toLocaleString()} blocks (lwd.nozywallet.org)`
-          : "Public sync ready (lwd.nozywallet.org)"
+          ? `NozyWallet ready — ${blockCount.toLocaleString()} blocks (lwd.nozywallet.org)`
+          : "NozyWallet ready (lwd.nozywallet.org)"
     };
   } catch (e) {
     return {
