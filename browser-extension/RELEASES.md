@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 2.0.0 — 2026-09-30
+
+Service worker starts again (static WASM import). Popup shows NozyWallet versus a local node. Crosslink is coming soon on testnet.
+
 ## 0.1.26 — 2026-09-29 — Sweet Chili
 
 Full-wallet popup, public compact sync (`lwd.nozywallet.org`) when no local node is found, Orchard scan resume after a service-worker restart, and recovery-phrase backup with a word check. Keys stay in the extension. Same food name as 0.1.10.

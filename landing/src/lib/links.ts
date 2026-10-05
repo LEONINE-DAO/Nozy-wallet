@@ -5,7 +5,7 @@ export const REPO_RELEASES = `${REPO}/releases/latest`;
 
 /** Chrome Web Store listing (NozyWallet). */
 export const EXTENSION_CHROME_STORE =
-  "https://chromewebstore.google.com/detail/nozywallet/pnlmnkallkmelflckjkmohemibfahoce";
+  "https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj";
 
 /** Optional GitHub zip for load-unpacked / contributor builds. */
 export const EXTENSION_RELEASE =
