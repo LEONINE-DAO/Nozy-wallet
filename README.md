@@ -18,7 +18,7 @@ Transparent `t1` addresses are rejected in user-facing send and receive. The pro
 | Desktop | `desktop-client/` | Production download (beta tag; no formal GA label) |
 | Localhost API | `api-server/` | Production for same-machine use |
 | Compact sync | `zeaking/`, `nozy-sync-engine/` | Used by the wallet |
-| Extension | `browser-extension/` | In development |
+| Extension | `browser-extension/` | Production download |
 | Mobile | `nozy-mobile/`, `zeaking-ffi/` | In development |
 | Landing site | `landing/` | Marketing only |
 
