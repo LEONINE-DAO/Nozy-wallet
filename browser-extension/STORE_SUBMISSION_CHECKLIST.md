@@ -1,11 +1,11 @@
 # Extension store submission checklist
 
-**Chrome Web Store (live):** https://chromewebstore.google.com/detail/nozywallet/pnlmnkallkmelflckjkmohemibfahoce  
-**Listed version:** **0.1.7** on the store today. Next upload is **2.0.0** from `nozy-extension-chromium-2.0.0.zip` on [extension-v2.0.0](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.0).
+**Chrome Web Store (live):** https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj  
+**Listed version:** **2.0.0 (Sweet Chili)** — published **2026-10-05**. This is a **new listing** (not an in-place update of older installs under the previous store ID).  
+**GitHub Release:** [extension-v2.0.0](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.0)
 
 **Version:** align with `browser-extension/manifest.json` (currently **2.0.0**).  
-**GitHub Release zip (done for 0.1.8):**  
-https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v0.1.8
+**Prior listing (superseded):** `pnlmnkallkmelflckjkmohemibfahoce` — do not use for new installs.
 
 ## Pre-submit
 

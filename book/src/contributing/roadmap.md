@@ -9,7 +9,9 @@ NozyWallet is an **Orchard + Ironwood, shielded-only** Zcash wallet with multipl
 ## Production today
 
 - **`nozy` CLI** on mainnet (Orchard + Ironwood NU6.3 migrate / send, ZIP-317 fees)
-- **Zeaking** compact sync via lightwalletd
+- **Desktop** production downloads (beta tag; no formal GA label)
+- **Browser extension** on the [Chrome Web Store](https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj) — **2.0.0 Sweet Chili** (public sync via `lwd.nozywallet.org` when no local node)
+- **Zeaking / Nozy Sync Engine** compact sync via lightwalletd
 - **Launchpad** at [GitHub Pages](https://leonine-dao.github.io/Nozy-wallet/)
 
 ---
@@ -18,11 +20,11 @@ NozyWallet is an **Orchard + Ironwood, shielded-only** Zcash wallet with multipl
 
 | Area | Path | Goal |
 |------|------|------|
-| **Ironwood** | CLI / desktop / API | NU6.3 pool scan, safer migration, post-activation sends |
+| **Ironwood** | CLI / desktop / API / extension | Safer migration, post-activation sends, compact scan |
 | **Web app** | `web-app/` | Browser dashboard via `nozywallet-api` |
-| **Extension** | `browser-extension/` | MV3 privacy wallet + companion sync |
+| **Extension follow-ons** | `browser-extension/` | Edge / Firefox store listings; iterate on CWS 2.0.0 |
 | **Mobile** | `nozy-mobile/` | Expo companion + optional VPS API |
-| **Desktop** | `desktop-client/` | Tauri GUI and Ironwood migrate UX |
+| **Desktop** | `desktop-client/` | Ironwood migrate UX; formal GA label later |
 | **API server** | `api-server/` | HTTP companion for extension, web, mobile |
 
 Web app starter doc: [web-app/README.md](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/web-app/README.md)
