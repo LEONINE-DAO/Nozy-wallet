@@ -63,8 +63,8 @@ const surfaces: Surface[] = [
     icon: ShieldCheck,
     title: "Browser extension",
     tagline: "Shielded ZEC in Chrome, Brave, and Edge — for sites and dApps.",
-    status: "preview",
-    statusLabel: "Public beta",
+    status: "live",
+    statusLabel: "Production ready",
     bullets: [
       "MV3 + WASM local keys",
       "Optional companion API sync",
