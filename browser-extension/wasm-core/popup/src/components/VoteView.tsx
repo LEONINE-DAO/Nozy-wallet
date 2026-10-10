@@ -62,7 +62,7 @@ export function VoteView() {
   return (
     <Screen>
       <PageHeader
-        title="NU7 vote"
+        title="CoinHolder vote"
         description="Shielded Vote · Ironwood weight at snapshot. Seed stays in this extension."
       />
 

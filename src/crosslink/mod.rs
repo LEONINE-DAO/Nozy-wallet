@@ -137,20 +137,20 @@ mod tests {
     fn staking_day_open_closed() {
         let open = staking_day_at(0);
         assert!(open.open);
-        assert_eq!(open.blocks_remaining_in_window, Some(70));
+        assert_eq!(open.blocks_remaining_in_window, Some(3_456));
 
-        let last_open = staking_day_at(69);
+        let last_open = staking_day_at(3_455);
         assert!(last_open.open);
         assert_eq!(last_open.blocks_remaining_in_window, Some(1));
 
-        // height 70: offset == window → closed (offset < 70 is false)
-        let closed = staking_day_at(70);
+        // height 3456: offset == window → closed (offset < 3456 is false)
+        let closed = staking_day_at(3_456);
         assert!(!closed.open);
-        assert_eq!(closed.blocks_until_next, Some(80));
+        assert_eq!(closed.blocks_until_next, Some(6_912));
 
-        let mid = staking_day_at(35);
+        let mid = staking_day_at(1_728);
         assert!(mid.open);
-        assert_eq!(mid.blocks_remaining_in_window, Some(35));
+        assert_eq!(mid.blocks_remaining_in_window, Some(1_728));
     }
 
     #[test]

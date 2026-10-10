@@ -11,6 +11,7 @@ use tracing::{info, warn};
 
 mod companion_auth;
 mod crosslink_handlers;
+mod gift_card_handlers;
 mod handlers;
 mod invoice_handlers;
 mod ironwood_handlers;
@@ -246,6 +247,23 @@ async fn main() -> anyhow::Result<()> {
             "/api/business/invoices/{id}/cancel",
             post(invoice_handlers::cancel_invoice),
         )
+        .route(
+            "/api/gift-cards",
+            post(gift_card_handlers::create_gift_card),
+        )
+        .route("/api/gift-cards", get(gift_card_handlers::list_gift_cards))
+        .route(
+            "/api/gift-cards/redeem",
+            post(gift_card_handlers::redeem_gift_card),
+        )
+        .route(
+            "/api/gift-cards/{id}",
+            get(gift_card_handlers::get_gift_card),
+        )
+        .route(
+            "/api/gift-cards/{id}/cancel",
+            post(gift_card_handlers::cancel_gift_card),
+        )
         .route("/api/pilot/metrics", get(handlers::get_pilot_metrics))
         .route("/api/address/generate", post(handlers::generate_address))
         .route("/api/balance", get(handlers::get_balance))
@@ -324,6 +342,15 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/web/node-status", get(handlers::web_node_status))
         .route("/api/lwd/info", get(lwd_handlers::lwd_info))
         .route("/api/lwd/chain-tip", get(lwd_handlers::lwd_chain_tip))
+        .route("/api/lwd/compact/tip", get(lwd_handlers::lwd_compact_tip))
+        .route(
+            "/api/lwd/compact/treestate",
+            get(lwd_handlers::lwd_compact_treestate),
+        )
+        .route(
+            "/api/lwd/compact/blocks",
+            get(lwd_handlers::lwd_compact_blocks),
+        )
         .route(
             "/api/lwd/sync/compact",
             post(lwd_handlers::lwd_sync_compact),

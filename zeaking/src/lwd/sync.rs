@@ -257,6 +257,54 @@ pub async fn sync_compact_range_with_options(
     })
 }
 
+/// Stream compact blocks from lightwalletd and return extension/WASM scan JSON (no SQLite).
+///
+/// Each element is a slim block object (`height` + `tx` orchard/ironwood actions) suitable for
+/// `orchard_scan_tracker_apply_block`. Keys never leave the client — this only ships public
+/// compact ciphertext.
+pub async fn fetch_compact_scan_blocks(
+    client: &mut LwdClient,
+    start: u64,
+    end: u64,
+) -> ZeakingResult<Vec<serde_json::Value>> {
+    if end < start {
+        return Err(ZeakingError::InvalidOperation(format!(
+            "fetch_compact_scan_blocks: end {end} < start {start}"
+        )));
+    }
+    let range = BlockRange {
+        start: Some(BlockId {
+            height: start,
+            hash: vec![],
+        }),
+        end: Some(BlockId {
+            height: end,
+            hash: vec![],
+        }),
+    };
+    let mut stream = client
+        .get_block_range(range)
+        .await
+        .map_err(|e| map_grpc_transport("GetBlockRange", e))?
+        .into_inner();
+
+    let mut out = Vec::new();
+    while let Some(cb) = stream
+        .message()
+        .await
+        .map_err(|s| map_grpc_status("GetBlockRange stream", s))?
+    {
+        let mut buf = Vec::new();
+        cb.encode(&mut buf)
+            .map_err(|e| ZeakingError::Serialization(e.to_string()))?;
+        let slice = super::compact_orchard::orchard_slice_from_compact_block(&buf)?;
+        out.push(super::compact_orchard::orchard_slice_to_scan_block_json(
+            &slice,
+        ));
+    }
+    Ok(out)
+}
+
 /// Returns the persisted “last compact height written” hint from [`LwdCompactStore`] metadata if set.
 pub fn compact_sync_progress_height(store: &LwdCompactStore) -> ZeakingResult<Option<u64>> {
     let Some(s) = store.get_meta("last_compact_progress")? else {

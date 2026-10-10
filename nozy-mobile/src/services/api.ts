@@ -34,6 +34,8 @@ import type {
   CrosslinkGuardianSnapshot,
   CrosslinkPayoutClaimPack,
   CrosslinkRosterEntry,
+  GiftCard,
+  GiftCardCreated,
 } from "../types";
 
 function defaultApiUrl(): string {
@@ -619,4 +621,38 @@ export const api = {
     request<CrosslinkDoctorReport>(
       `/api/crosslink/doctor?observer=${observer ? "true" : "false"}`,
     ),
+
+  createGiftCard: (body: {
+    amount_zec: number;
+    label?: string;
+    password?: string;
+  }) =>
+    request<GiftCardCreated>("/api/gift-cards", {
+      method: "POST",
+      timeoutMs: 10 * 60 * 1000,
+      body: JSON.stringify({
+        amount_zec: body.amount_zec,
+        label: body.label ?? null,
+        password: body.password ?? null,
+      }),
+    }),
+
+  listGiftCards: (limit = 20) =>
+    request<{ gift_cards: GiftCard[] }>(`/api/gift-cards?limit=${limit}`),
+
+  cancelGiftCard: (id: string) =>
+    request<GiftCard>(`/api/gift-cards/${encodeURIComponent(id)}/cancel`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  redeemGiftCard: (body: { claim_code: string; password?: string }) =>
+    request<GiftCard>("/api/gift-cards/redeem", {
+      method: "POST",
+      timeoutMs: 10 * 60 * 1000,
+      body: JSON.stringify({
+        claim_code: body.claim_code,
+        password: body.password ?? null,
+      }),
+    }),
 };

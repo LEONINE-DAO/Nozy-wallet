@@ -20,7 +20,8 @@ pub use client::{
 };
 pub use compact_orchard::{
     orchard_cmx_bytes_from_compact_block, orchard_slice_from_compact_block,
-    OrchardCompactActionBytes, OrchardCompactBlockSlice, OrchardCompactTxSlice,
+    orchard_slice_to_scan_block_json, OrchardCompactActionBytes, OrchardCompactBlockSlice,
+    OrchardCompactTxSlice,
 };
 pub use compact_sapling::{
     sapling_slice_from_compact_block, SaplingCompactBlockSlice, SaplingCompactOutputBytes,
@@ -29,8 +30,8 @@ pub use compact_sapling::{
 pub use store::LwdCompactStore;
 pub use submit::{get_latest_tree_state, get_tree_state, send_transaction, LwdTreeState};
 pub use sync::{
-    chain_tip_height, compact_sync_progress_height, prune_stale_compact_cache,
-    requested_start_height_for_tip_sync, sync_compact_range, sync_compact_range_with_options,
-    sync_compact_to_tip, sync_compact_to_tip_with_options, SyncCompactOptions, SyncCompactStats,
-    SyncCompactToTipOptions, SyncCompactToTipStats,
+    chain_tip_height, compact_sync_progress_height, fetch_compact_scan_blocks,
+    prune_stale_compact_cache, requested_start_height_for_tip_sync, sync_compact_range,
+    sync_compact_range_with_options, sync_compact_to_tip, sync_compact_to_tip_with_options,
+    SyncCompactOptions, SyncCompactStats, SyncCompactToTipOptions, SyncCompactToTipStats,
 };

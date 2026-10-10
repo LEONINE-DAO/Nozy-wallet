@@ -22,6 +22,12 @@ describe("isScanInProgress", () => {
     ).toBe(true);
   });
 
+  it("is false while watching the chain tip", () => {
+    expect(isScanInProgress({ status: "watching", scannedBlocks: 100, totalBlocks: 100 })).toBe(
+      false
+    );
+  });
+
   it("is false at 100% even if status is still scanning", () => {
     expect(
       isScanInProgress({

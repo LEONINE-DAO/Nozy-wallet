@@ -18,8 +18,8 @@ const DownloadSection = () => {
             Get NozyWallet
           </h2>
           <p className="text-[#a39a88] text-lg leading-relaxed">
-            CLI Lite, desktop, and the localhost companion API are production for everyday use.
-            Extension is in public beta. Mobile is coming next. Ironwood (NU6.3) is live — migrate
+            CLI Lite, desktop, the localhost companion API, and the browser extension are production
+            ready for everyday use. Mobile is coming next. Ironwood (NU6.3) is live — migrate
             residual Orchard with ZIP 318 on CLI or desktop.
           </p>
         </div>
@@ -150,8 +150,8 @@ const DownloadSection = () => {
           <div className="nw-panel p-6">
             <div className="flex flex-wrap items-center gap-3 mb-3">
               <h3 className="font-display text-xl font-bold text-[#f5f0e6]">Extension</h3>
-              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-[#c8ccd4]/30 text-[#c8ccd4] bg-[#c8ccd4]/10">
-                Beta · Sweet Chili 0.1.26
+              <span className="text-[10px] font-semibold uppercase tracking-[0.14em] px-2 py-1 border border-emerald-500/30 text-emerald-300 bg-emerald-500/10">
+                Production ready
               </span>
             </div>
             <p className="text-sm text-[#a39a88] mb-5 leading-relaxed">

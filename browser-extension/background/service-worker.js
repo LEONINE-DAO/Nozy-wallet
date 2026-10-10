@@ -95,6 +95,7 @@ const PUBLIC_LWD_URL = "https://lwd.nozywallet.org:443";
 const PUBLIC_NODE_STATUS_URL = "https://nozywallet.org/status.json";
 const MOBILE_SYNC_KEY = "nozy_mobile_sync_v1";
 const TX_STATE_KEY = "nozy_tx_state_v1";
+const CONNECTED_ORIGINS_KEY = "nozy_connected_origins_v1";
 const SESSION_POLICY_KEY = "nozy_session_policy_v1";
 const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
 
@@ -472,7 +473,6 @@ async function _inlineProveTransaction(params) {
   const rpcEndpoint = String(params?.rpcEndpoint ?? "");
   const requestedAmount = Number(params?.amount ?? 0);
   const memo = String(params?.memo ?? "");
-  const requestedFee = mandatoryOrchardFeeZats(wasm, memo);
 
   if (!rpcEndpoint) throw new Error("Missing rpcEndpoint.");
   if (!mnemonic) throw new Error("Wallet locked.");
@@ -480,6 +480,7 @@ async function _inlineProveTransaction(params) {
   if (!recipientAddress) throw new Error("Missing recipient address.");
 
   const endpoint = normalizeRpcEndpoint(rpcEndpoint);
+  const requestedFee = mandatoryOrchardFeeZats(wasm, memo);
   const requiredValue = requestedAmount + requestedFee;
   if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
     throw new Error(`Invalid amount/fee (amount=${requestedAmount}, fee=${requestedFee}).`);
@@ -742,11 +743,11 @@ function storageRemove(keys) {
 /** Drop scan/tx caches that belong to a previous seed. */
 async function wipeDerivedWalletData() {
   const scan = await loadScanState();
-  if (scan?.status === "scanning") {
+  if (scan?.status === "scanning" || scan?.status === "watching") {
     await stopBackgroundScan();
   }
   clearScanResumeForBackground();
-  await storageRemove([SCAN_STATE_KEY, TX_STATE_KEY]);
+  await storageRemove([SCAN_STATE_KEY, TX_STATE_KEY, CONNECTED_ORIGINS_KEY]);
 }
 
 /** Remove the Chrome vault so Welcome can restore the Desktop seed. */
@@ -1631,7 +1632,7 @@ async function walletRevealMnemonic(password) {
 
 async function walletLock() {
   const scan = await loadScanState();
-  if (scan?.status === "scanning") {
+  if (scan?.status === "scanning" || scan?.status === "watching") {
     await stopBackgroundScan();
   }
   session.unlocked = false;
@@ -1663,6 +1664,52 @@ async function getAccounts() {
   if (!session.unlocked || !session.address) return [];
   touchSession();
   return [session.address];
+}
+
+/** Real page origin from the content-script sender. Falls back to the message field. */
+function pageOrigin(sender, fallback) {
+  const raw = sender?.tab?.url || sender?.url || fallback || "";
+  try {
+    return new URL(String(raw)).origin;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function loadConnectedOrigins() {
+  const raw = await storageGet(CONNECTED_ORIGINS_KEY);
+  const list = Array.isArray(raw?.origins) ? raw.origins : [];
+  return list.filter((origin) => typeof origin === "string" && origin);
+}
+
+async function saveConnectedOrigins(origins) {
+  await storageSet({ [CONNECTED_ORIGINS_KEY]: { origins } });
+}
+
+async function isOriginConnected(origin) {
+  if (!origin) return false;
+  const list = await loadConnectedOrigins();
+  return list.includes(origin);
+}
+
+async function rememberConnectedOrigin(origin) {
+  if (!origin) return;
+  const list = await loadConnectedOrigins();
+  if (list.includes(origin)) return;
+  list.push(origin);
+  await saveConnectedOrigins(list);
+}
+
+async function forgetConnectedOrigin(origin) {
+  const list = await loadConnectedOrigins();
+  await saveConnectedOrigins(list.filter((item) => item !== origin));
+}
+
+function findPendingConnect(origin) {
+  for (const approval of pendingApprovals.values()) {
+    if (approval.kind === "connect" && approval.payload?.origin === origin) return approval;
+  }
+  return null;
 }
 
 async function requestApproval(kind, payload) {
@@ -2305,9 +2352,73 @@ function saveScanState(s) {
 }
 
 let scanRunning = false;
+let tipWatchKickInFlight = false;
+let tipWatchLastKickAt = 0;
 
 function scheduleScanAlarm(delayMinutes) {
   chrome.alarms.create(SCAN_ALARM, { delayInMinutes: delayMinutes });
+}
+
+async function readScanChainTip() {
+  let latestTip = null;
+  if (await isPublicLwdOptedIn()) {
+    try {
+      latestTip = await compactChainTip();
+    } catch (_) {
+      /* local RPC below */
+    }
+  }
+  if (latestTip == null) {
+    latestTip = Number(
+      await rpcCallWithRetry("getblockcount", [], { retries: 1, baseDelayMs: 150 })
+    );
+  }
+  if (!Number.isFinite(latestTip)) return null;
+  return Math.max(0, Math.floor(latestTip));
+}
+
+/** Caught up: keep the cursor and notes, and poll the tip instead of marking the scan finished. */
+async function saveTipWatchState(existing, chainTip) {
+  const now = nowMs();
+  const state = {
+    ...(existing && typeof existing === "object" ? existing : {}),
+    status: "watching",
+    scanMode: SCAN_MODE_AUTO,
+    followTip: true,
+    endHeight: chainTip,
+    currentHeight: chainTip + 1,
+    finishedAt: null,
+    scanError: null,
+    updatedAt: now,
+    rpcEndpoint: scanRpcEndpoint(existing || {})
+  };
+  if (typeof state.heightProgress !== "number" || !Number.isFinite(state.heightProgress)) {
+    state.heightProgress = chainTip;
+  }
+  await saveScanState(state);
+  scheduleScanAlarm(0.5);
+  return state;
+}
+
+/**
+ * A finished sync used to sit at "done" until Settings → Sync to tip.
+ * While the wallet is unlocked, resume from the cursor and then watch the tip.
+ */
+async function maybeEnsureTipWatch() {
+  if (!session.unlocked || !session.mnemonic || !session.address) return;
+  if (tipWatchKickInFlight || emptyRestoreRewindKickInFlight) return;
+  if (nowMs() - tipWatchLastKickAt < 20_000) return;
+  const existing = await loadScanState();
+  if (!existing || existing.status !== "done") return;
+  tipWatchKickInFlight = true;
+  tipWatchLastKickAt = nowMs();
+  try {
+    await startAutoBackgroundScan();
+  } catch (_) {
+    /* next progress poll or scan completion retries */
+  } finally {
+    tipWatchKickInFlight = false;
+  }
 }
 
 async function scanTick() {
@@ -2316,16 +2427,54 @@ async function scanTick() {
     return;
   }
   const state = await loadScanState();
-  if (!state || state.status !== "scanning") return;
+  if (!state || (state.status !== "scanning" && state.status !== "watching")) return;
 
   scanRunning = true;
   const tickStarted = Date.now();
   try {
     await ensureSessionInitialized();
-    if (session.unlocked) touchSession();
     const resume = await readScanResumeForBackground();
     const mnemonicForScan = session.mnemonic || null;
     const addressForScan = session.address || resume?.address || null;
+    if (state.status === "watching") {
+      // Tip follow must not refresh lastActivityAt, or the wallet would never auto-lock.
+      if (!mnemonicForScan || !addressForScan) {
+        return;
+      }
+      let latestTip = null;
+      try {
+        latestTip = await readScanChainTip();
+      } catch (_) {
+        latestTip = null;
+      }
+      const progress =
+        typeof state.heightProgress === "number" && Number.isFinite(state.heightProgress)
+          ? Math.floor(state.heightProgress)
+          : Math.max(-1, Number(state.endHeight ?? 0));
+      if (!Number.isFinite(latestTip) || latestTip <= progress) {
+        if (Number.isFinite(latestTip)) {
+          state.endHeight = Math.max(Number(state.endHeight ?? 0), latestTip);
+          state.currentHeight = latestTip + 1;
+          state.updatedAt = nowMs();
+          await saveScanState(state);
+        }
+        return;
+      }
+      state.status = "scanning";
+      state.scanMode = SCAN_MODE_AUTO;
+      state.followTip = true;
+      state.endHeight = latestTip;
+      state.currentHeight = progress + 1;
+      state.finishedAt = null;
+      state.scanError = null;
+      state.updatedAt = nowMs();
+      await saveScanState(state);
+    }
+    if (session.unlocked && state.status === "scanning") {
+      const remaining = Number(state.endHeight ?? 0) - Number(state.currentHeight ?? 0);
+      // A long catch-up should stay unlocked. A single new block must not reset auto-lock.
+      if (remaining > 2) touchSession();
+    }
     if (!mnemonicForScan || !addressForScan) {
       // Session was not hydrated (browser was restarted and no session key).
       // Keep status = "scanning" so the alarm keeps firing; each tick tries
@@ -2522,12 +2671,23 @@ async function scanTick() {
                 const v = Number(n?.value ?? 0);
                 if (!Number.isFinite(v) || v <= 0) continue;
                 const txid = String(n?.txid ?? block?.hash ?? `h${h}`);
+                const pool = notePoolTag(n);
+                const already = (state.discoveredNotes ?? []).some((row) => {
+                  const prev = row?.note ?? row;
+                  return (
+                    Number(row?.height) === h &&
+                    String(row?.txid ?? prev?.txid ?? "") === txid &&
+                    notePoolTag(prev) === pool &&
+                    Number(row?.value ?? prev?.value ?? 0) === v
+                  );
+                });
+                if (already) continue;
                 state.discoveredNotes.push({
                   note: n,
                   height: h,
                   txid,
                   value: v,
-                  pool: notePoolTag(n)
+                  pool
                 });
               }
               recomputePoolBalances(state);
@@ -2586,36 +2746,56 @@ async function scanTick() {
     state.updatedAt = nowMs();
 
     if (state.currentHeight > state.endHeight) {
-      if (state.scanMode === SCAN_MODE_AUTO) {
-        // Stay active at chain tip so newly arrived notes are discovered automatically.
+      const followTip = state.scanMode === SCAN_MODE_AUTO || state.followTip === true;
+      if (followTip) {
+        try {
+          const latestTip = await readScanChainTip();
+          if (Number.isFinite(latestTip) && latestTip > state.endHeight) {
+            state.endHeight = latestTip;
+          }
+        } catch (_) {
+          /* keep the tip already on the scan */
+        }
+      }
+      if (state.currentHeight > state.endHeight && (state.scanMode === SCAN_MODE_AUTO || state.followTip === true)) {
+        // Idle at the tip. The next alarm looks for new blocks without a Settings sync.
+        state.status = "watching";
+        state.followTip = true;
+        state.scanMode = SCAN_MODE_AUTO;
         state.currentHeight = state.endHeight + 1;
-      } else {
+        state.finishedAt = null;
+      } else if (state.currentHeight > state.endHeight) {
         state.status = "done";
         state.finishedAt = nowMs();
         clearScanResumeForBackground();
       }
     }
     await refreshSaplingBalanceInScanState(state, {
-      force: state.status === "done"
+      force: state.status === "done" || state.status === "watching"
     });
     await saveScanState(state);
   } finally {
     scanRunning = false;
   }
 
-  if (state.status === "scanning") {
+  if (state.status === "watching") {
+    if (session.unlocked && session.mnemonic) {
+      scheduleScanAlarm(0.5);
+    }
+  } else if (state.status === "scanning") {
     const hasMoreBlocks = (state.currentHeight ?? 0) <= (state.endHeight ?? -1);
     if (hasMoreBlocks) {
-    
       scheduleScanAlarm(0.5);
-      
       setTimeout(() => {
         void scanTick();
       }, 20);
     } else {
-    
       scheduleScanAlarm(0.5);
     }
+  } else if (state.status === "done" && session.unlocked && session.mnemonic) {
+    setTimeout(() => {
+      void maybeEnsureTipWatch();
+    }, 50);
   }
 }
 
@@ -2716,21 +2896,33 @@ async function startAutoBackgroundScan() {
 
   if (
     existing &&
-    existing.status === "scanning" &&
+    (existing.status === "scanning" || existing.status === "watching") &&
     !resolved.rewound &&
     !emptyHighStart &&
     !scanStartsBeforeBirthday
   ) {
     existing.scanMode = SCAN_MODE_AUTO;
+    existing.followTip = true;
     existing.endHeight = Math.max(existing.endHeight ?? 0, chainTip);
-    if (typeof existing.heightProgress === "number" && Number.isFinite(existing.heightProgress)) {
-      const resumeAt = Math.floor(existing.heightProgress) + 1;
-      if (resumeAt > (existing.currentHeight ?? 0)) {
-        existing.currentHeight = resumeAt;
-      }
+    const progress =
+      typeof existing.heightProgress === "number" && Number.isFinite(existing.heightProgress)
+        ? Math.floor(existing.heightProgress)
+        : Number(existing.currentHeight ?? 0) - 1;
+    if (chainTip > progress) {
+      existing.status = "scanning";
+      existing.currentHeight = Math.max(Number(existing.currentHeight ?? 0), progress + 1);
+      existing.finishedAt = null;
+    } else {
+      existing.status = "watching";
+      existing.currentHeight = chainTip + 1;
+      existing.finishedAt = null;
     }
     existing.updatedAt = now;
     await saveScanState(existing);
+    if (existing.status === "watching") {
+      scheduleScanAlarm(0.5);
+      return existing;
+    }
     if (scanRunning) {
       scheduleScanAlarm(0.2);
       return existing;
@@ -2752,10 +2944,11 @@ async function startAutoBackgroundScan() {
     resumedFrom = startHeight;
     rewoundForSafety = true;
   } else if (priorDone && typeof existing.heightProgress === "number" && existing.heightProgress >= 0) {
-    resumedFrom = Math.min(chainTip, Math.max(0, Math.floor(existing.heightProgress) + 1));
-    startHeight = resumedFrom;
+    const nextHeight = Math.max(0, Math.floor(existing.heightProgress) + 1);
+    resumedFrom = nextHeight;
+    startHeight = nextHeight;
   } else if (priorDone && typeof existing.currentHeight === "number" && existing.currentHeight >= 0) {
-    resumedFrom = Math.min(chainTip, Math.max(0, Math.floor(existing.currentHeight)));
+    resumedFrom = Math.max(0, Math.floor(existing.currentHeight));
     startHeight = resumedFrom;
   } else {
     startHeight = Math.min(chainTip, resolved.birthday);
@@ -2773,6 +2966,10 @@ async function startAutoBackgroundScan() {
     rewoundForSafety = true;
   }
 
+  if (!rewoundForSafety && priorDone && existing && startHeight > chainTip) {
+    return saveTipWatchState(existing, chainTip);
+  }
+
   const scannedFromBirthdayFloor =
     Boolean(existing?.scannedFromBirthdayFloor) || startHeight <= resolved.birthday + 64;
   const scannedFromWalletBirthday =
@@ -2781,6 +2978,7 @@ async function startAutoBackgroundScan() {
   const state = {
     status: "scanning",
     scanMode: SCAN_MODE_AUTO,
+    followTip: true,
     startHeight,
     endHeight: chainTip,
     currentHeight: startHeight,
@@ -2817,7 +3015,7 @@ async function resumeBackgroundScanAfterUnlock() {
 function stopBackgroundScan() {
   chrome.alarms.clear(SCAN_ALARM);
   return loadScanState().then((s) => {
-    if (s && s.status === "scanning") {
+    if (s && (s.status === "scanning" || s.status === "watching")) {
       s.status = "stopped";
       s.finishedAt = nowMs();
       return saveScanState(s).then(() => {
@@ -2839,7 +3037,7 @@ chrome.runtime.onInstalled.addListener((details) => {
   clearScanResumeForBackground();
   loadScanState()
     .then((s) => {
-      if (!s || s.status !== "scanning") return;
+      if (!s || (s.status !== "scanning" && s.status !== "watching")) return;
       s.status = "stopped";
       s.finishedAt = nowMs();
       s.scanError = null;
@@ -3252,6 +3450,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
             providerRequestResolvers.delete(params.id);
             (async () => {
               try {
+                if (approval.kind === "connect") {
+                  if (!session.unlocked || !session.address) {
+                    throw new Error("Unlock wallet first.");
+                  }
+                  const origin = String(approval.payload?.origin ?? "");
+                  await rememberConnectedOrigin(origin);
+                  resolver.sendResponse(ok([session.address]));
+                  return;
+                }
+
                 if (approval.kind === "sign") {
                   const message = String(approval.payload?.message ?? "");
                   if (!message) throw new Error("Missing message for signing");
@@ -3354,6 +3562,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
           sendResponse(ok({ approved: false, id: params.id }));
           return;
+        case "wallet_list_connected_sites":
+          sendResponse(ok(await loadConnectedOrigins()));
+          return;
+        case "wallet_disconnect_site": {
+          const origin = String(params?.origin ?? "");
+          if (!origin) throw new Error("Missing origin.");
+          await forgetConnectedOrigin(origin);
+          sendResponse(ok({ origin, disconnected: true }));
+          return;
+        }
         case "rpc_set_endpoint": {
           const next = params.url || session.rpcEndpoint;
           try {
@@ -3495,6 +3713,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!session.unlocked || !session.mnemonic || !session.address) {
             throw new Error("Unlock wallet first.");
           }
+          if (params.useBirthdayRange === true) {
+            const s = await startAutoBackgroundScan();
+            if (!s) throw new Error("Unlock wallet first.");
+            sendResponse(
+              ok({
+                started: true,
+                startHeight: s.startHeight,
+                endHeight: s.endHeight,
+                status: s.status,
+                rpcEndpoint: s.rpcEndpoint || session.rpcEndpoint || null
+              })
+            );
+            return;
+          }
           await persistScanResumeForBackground(session.mnemonic, session.address);
           let rpcUrl = null;
           let blockCount;
@@ -3521,49 +3753,17 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           }
 
           let startH;
-          if (params.useBirthdayRange === true) {
-            const ws = await loadWalletState();
-            const existingScan = await loadScanState();
-            const blockTip = Number(endH);
-            const resolved = await resolveScanBirthday(ws, blockTip, existingScan);
-            let birthdayStart = resolved.birthday;
-            startH = birthdayStart;
-            const priorScanStart =
-              typeof existingScan?.startHeight === "number"
-                ? Math.floor(existingScan.startHeight)
-                : birthdayStart;
-            const birthdayWasLowered = resolved.rewound || birthdayStart < priorScanStart;
-            const priorNotes = Array.isArray(existingScan?.discoveredNotes)
-              ? existingScan.discoveredNotes.length
-              : 0;
-            if (
-              !birthdayWasLowered &&
-              priorNotes > 0 &&
-              existingScan &&
-              (existingScan.status === "done" ||
-                existingScan.status === "stopped" ||
-                existingScan.status === "failed") &&
-              typeof existingScan.heightProgress === "number" &&
-              existingScan.heightProgress >= birthdayStart - 1
-            ) {
-              startH = Math.min(endH, Math.floor(existingScan.heightProgress) + 1);
+          const rawStart = params?.startHeight;
+          if (rawStart !== undefined && rawStart !== null && rawStart !== "") {
+            const n = Number(rawStart);
+            if (!Number.isFinite(n)) {
+              throw new Error("Invalid startHeight");
             }
-            if (startH > endH) {
-              startH = endH;
-            }
+            startH = Math.max(0, Math.floor(n));
           } else {
-            const rawStart = params?.startHeight;
-            if (rawStart !== undefined && rawStart !== null && rawStart !== "") {
-              const n = Number(rawStart);
-              if (!Number.isFinite(n)) {
-                throw new Error("Invalid startHeight");
-              }
-              startH = Math.max(0, Math.floor(n));
-            } else {
-              const scanWindow = Number(params?.window ?? 20_000);
-              const w = Math.max(1, scanWindow);
-              startH = Math.max(0, blockCount - w);
-            }
+            const scanWindow = Number(params?.window ?? 20_000);
+            const w = Math.max(1, scanWindow);
+            startH = Math.max(0, blockCount - w);
           }
 
           if (startH > endH) {
@@ -3600,7 +3800,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           // Lower birthday requires rescanning older blocks; clear stale "done" scan metadata.
           if (Number.isFinite(prevBh) && orchardBirthdayHeight < prevBh) {
             const scan = await loadScanState();
-            if (scan && (scan.status === "done" || scan.status === "stopped" || scan.status === "failed")) {
+            if (scan && (scan.status === "done" || scan.status === "stopped" || scan.status === "failed" || scan.status === "watching")) {
               await chrome.storage.local.remove(SCAN_STATE_KEY);
             }
           }
@@ -3608,7 +3808,10 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         }
         case "wallet_scan_progress": {
-          void maybeKickEmptyRestoreRewind();
+          void (async () => {
+            await maybeKickEmptyRestoreRewind();
+            await maybeEnsureTipWatch();
+          })();
           const scanState = await loadScanState();
           if (!scanState) {
             sendResponse(ok({ status: "idle" }));
@@ -3725,22 +3928,69 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(ok(false));
           return;
         case "eth_accounts":
-        case "zcash_accounts":
-          sendResponse(ok(await getAccounts()));
+        case "zcash_accounts": {
+          if (isExtensionPageSender(sender)) {
+            sendResponse(ok(await getAccounts()));
+            return;
+          }
+          const accountsOrigin = pageOrigin(sender, msg.origin);
+          if (accountsOrigin && (await isOriginConnected(accountsOrigin))) {
+            sendResponse(ok(await getAccounts()));
+            return;
+          }
+          sendResponse(ok([]));
           return;
+        }
         case "eth_requestAccounts":
         case "zcash_requestAccounts": {
-          const accounts = await getAccounts();
-          if (accounts.length === 0) throw new Error("Unlock wallet in popup first.");
-          sendResponse(ok(accounts));
+          if (!session.unlocked || !session.address) {
+            try {
+              if (chrome.action?.openPopup) await chrome.action.openPopup();
+            } catch (_) {
+              /* user can open the popup themselves */
+            }
+            throw new Error("Unlock NozyWallet, then connect again.");
+          }
+          if (isExtensionPageSender(sender)) {
+            sendResponse(ok(await getAccounts()));
+            return;
+          }
+          const origin = pageOrigin(sender, msg.origin);
+          if (!origin) throw new Error("Could not determine which site is asking to connect.");
+          if (await isOriginConnected(origin)) {
+            sendResponse(ok([session.address]));
+            return;
+          }
+          const existingConnect = findPendingConnect(origin);
+          if (existingConnect) {
+            const prev = providerRequestResolvers.get(existingConnect.id);
+            providerRequestResolvers.set(existingConnect.id, {
+              sendResponse: (response) => {
+                try {
+                  prev?.sendResponse(response);
+                } catch (_) {
+                  /* the first request may already have settled */
+                }
+                sendResponse(response);
+              }
+            });
+            return;
+          }
+          const approval = await requestApproval("connect", {
+            method,
+            origin,
+            address: session.address
+          });
+          providerRequestResolvers.set(approval.id, { sendResponse });
           return;
         }
         case "personal_sign":
         case "zcash_signMessage": {
           if (!session.unlocked) throw new Error("Unlock wallet first.");
+          const origin = pageOrigin(sender, msg.origin);
           const approval = await requestApproval("sign", {
             method,
-            origin: msg.origin || "",
+            origin,
             message: params?.message || params?.[0] || ""
           });
           providerRequestResolvers.set(approval.id, { sendResponse });
@@ -3749,7 +3999,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "eth_sendTransaction":
         case "zcash_sendTransaction": {
           if (!session.unlocked) throw new Error("Unlock wallet first.");
-          const origin = String(msg.origin || "");
+          const origin = pageOrigin(sender, msg.origin);
           const txPayload = params?.tx || params?.[0] || params;
           let preflight = null;
           let preflightError = null;

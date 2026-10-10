@@ -861,8 +861,11 @@ function WalletSyncPanel({
           : "";
       return `${done.toLocaleString()} / ${total.toLocaleString()} blocks · ${pct}% · ${scan.discoveredNotes ?? 0} notes${rate ? ` · ${rate}` : ""}${range}`;
     }
-    if (scan.status === "done") {
+    if (scan.status === "done" || scan.status === "watching") {
       const zec = ((scan.totalBalanceZats ?? 0) / 1e8).toFixed(8);
+      if (scan.status === "watching") {
+        return `Up to date — ${zec} ZEC · watching for new payments`;
+      }
       return `Done — ${zec} ZEC · ${scan.discoveredNotes ?? 0} notes`;
     }
     if (scan.status === "failed" && scan.scanError) return scan.scanError;
@@ -901,7 +904,7 @@ function WalletSyncPanel({
         await new Promise((r) => setTimeout(r, 400));
         const p = await refreshScanProgress();
         if (p?.status === "scanning" && (p.scannedBlocks ?? 0) > 0) break;
-        if (p?.status === "done" || p?.status === "failed") break;
+        if (p?.status === "done" || p?.status === "failed" || p?.status === "watching") break;
       }
     } catch (e) {
       setActionMsg((e as Error).message);
@@ -1026,8 +1029,8 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
       </Card>
 
       <Callout>
-        After someone pays you, run a sync from <strong>Settings</strong> so the new note shows up
-        in your balance. This address must match Nozy Desktop Wallet 1 (same recovery phrase).
+        New payments show up in your balance automatically while this wallet is unlocked. This
+        address must match Nozy Desktop Wallet 1 (same recovery phrase).
       </Callout>
     </Screen>
   );
@@ -1705,6 +1708,8 @@ function SettingsView({
 
       <SeedRevealCard />
 
+      <ConnectedSitesCard />
+
       <WalletSyncPanel
         status={status}
         scan={scan}
@@ -1787,45 +1792,117 @@ function PendingApprovals({
       className="space-y-2 px-4 py-3"
       style={{ borderBottom: "1px solid var(--nw-border)", background: "var(--nw-platinum-soft)" }}
     >
-      <Eyebrow>Pending dApp requests</Eyebrow>
-      {approvals.map((a) => (
-        <Card key={a.id} className="space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold">{a.kind.toUpperCase()} request</span>
-            {a.kind === "transaction" &&
-              (() => {
-                const p = (a.payload as Record<string, unknown>)?.preflight as
-                  | { input_mode?: string; inputs_used?: number }
-                  | undefined;
-                if (!p) return <Pill tone="neutral">Preflight pending</Pill>;
-                const mode = String(p.input_mode || "single");
-                const used = Number(p.inputs_used ?? 0);
-                return (
-                  <Pill tone={mode === "multi" ? "accent" : "success"}>
-                    {mode} ×{used}
-                  </Pill>
-                );
-              })()}
-          </div>
-          {a.kind === "transaction" &&
-            Boolean((a.payload as Record<string, unknown>)?.preflightError) && (
-              <Callout tone="warn">
-                Preflight warning:{" "}
-                {String((a.payload as Record<string, unknown>)?.preflightError)}
-              </Callout>
+      <Eyebrow>Pending site requests</Eyebrow>
+      {approvals.map((a) => {
+        const payload = a.payload as Record<string, unknown>;
+        const origin = String(payload.origin || "Unknown site");
+        const address = String(payload.address || "");
+        const message = String(payload.message || "");
+        const title =
+          a.kind === "connect" ? "Connect" : a.kind === "sign" ? "Sign message" : "Transaction";
+        return (
+          <Card key={a.id} className="space-y-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[13px] font-semibold">{title}</span>
+              {a.kind === "transaction" &&
+                (() => {
+                  const p = payload.preflight as
+                    | { input_mode?: string; inputs_used?: number }
+                    | undefined;
+                  if (!p) return <Pill tone="neutral">Preflight pending</Pill>;
+                  const mode = String(p.input_mode || "single");
+                  const used = Number(p.inputs_used ?? 0);
+                  return (
+                    <Pill tone={mode === "multi" ? "accent" : "success"}>
+                      {mode} ×{used}
+                    </Pill>
+                  );
+                })()}
+            </div>
+            {a.kind === "connect" && (
+              <>
+                <Hint>
+                  <strong>{origin}</strong> wants to see your shielded address. Only that address
+                  is shared — not your balance or notes.
+                </Hint>
+                {address ? <div className="nw-mono break-all text-[12px]">{address}</div> : null}
+              </>
             )}
-          <LogBlock>{JSON.stringify(a.payload, null, 2)}</LogBlock>
-          <div className="flex gap-2">
-            <Button variant="primary" size="sm" className="flex-1" onClick={() => onApprove(a.id)}>
-              Approve
-            </Button>
-            <Button size="sm" className="flex-1" onClick={() => onReject(a.id)}>
-              Reject
+            {a.kind === "sign" && (
+              <>
+                <Hint>
+                  <strong>{origin}</strong> wants a signature for the message below. Signing does
+                  not spend funds.
+                </Hint>
+                <LogBlock>{message || "(empty message)"}</LogBlock>
+              </>
+            )}
+            {a.kind === "transaction" && (
+              <>
+                {Boolean(payload.preflightError) && (
+                  <Callout tone="warn">
+                    Preflight warning: {String(payload.preflightError)}
+                  </Callout>
+                )}
+                <LogBlock>{JSON.stringify(payload, null, 2)}</LogBlock>
+              </>
+            )}
+            <div className="flex gap-2">
+              <Button variant="primary" size="sm" className="flex-1" onClick={() => onApprove(a.id)}>
+                Approve
+              </Button>
+              <Button size="sm" className="flex-1" onClick={() => onReject(a.id)}>
+                Reject
+              </Button>
+            </div>
+          </Card>
+        );
+      })}
+    </div>
+  );
+}
+
+function ConnectedSitesCard() {
+  const [sites, setSites] = useState<string[]>([]);
+  const [msg, setMsg] = useState<string | null>(null);
+
+  const reload = async () => {
+    const list = await extensionApi.walletListConnectedSites();
+    setSites(Array.isArray(list) ? list : []);
+  };
+
+  useEffect(() => {
+    void reload().catch(() => undefined);
+  }, []);
+
+  return (
+    <Card className="space-y-2.5">
+      <SectionTitle>Connected sites</SectionTitle>
+      <Hint>
+        Approved sites can read this wallet&apos;s shielded address. They cannot see balances,
+        notes, or keys.
+      </Hint>
+      {sites.length === 0 ? (
+        <Hint>No sites connected.</Hint>
+      ) : (
+        sites.map((origin) => (
+          <div key={origin} className="flex items-center gap-2">
+            <span className="min-w-0 flex-1 truncate text-[12px]">{origin}</span>
+            <Button
+              size="sm"
+              onClick={async () => {
+                await extensionApi.walletDisconnectSite(origin);
+                setMsg(`Disconnected ${origin}`);
+                await reload();
+              }}
+            >
+              Disconnect
             </Button>
           </div>
-        </Card>
-      ))}
-    </div>
+        ))
+      )}
+      {msg ? <Hint>{msg}</Hint> : null}
+    </Card>
   );
 }
 

@@ -348,13 +348,11 @@ pub async fn send_transaction(
                 ),
             })
         }
-        Err(e) => {
-            Ok(SendTransactionResponse {
-                success: false,
-                txid: None,
-                message: format!("Failed to send transaction: {}", e),
-            })
-        }
+        Err(e) => Ok(SendTransactionResponse {
+            success: false,
+            txid: None,
+            message: format!("Failed to send transaction: {}", e),
+        }),
     }
 }
 

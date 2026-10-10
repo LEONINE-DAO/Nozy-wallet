@@ -755,4 +755,52 @@ export const walletApi = {
     });
     return { data: result };
   },
+
+  createGiftCard: async (data: {
+    amount_zec: number;
+    label?: string;
+    password?: string;
+  }): Promise<{ data: GiftCardCreated }> => {
+    const result = await invoke<GiftCardCreated>("create_gift_card", { request: data });
+    return { data: result };
+  },
+
+  listGiftCards: async (limit = 20): Promise<{ data: { gift_cards: GiftCard[] } }> => {
+    const result = await invoke<{ gift_cards: GiftCard[] }>("list_gift_cards", { limit });
+    return { data: result };
+  },
+
+  cancelGiftCard: async (giftId: string): Promise<{ data: GiftCard }> => {
+    const result = await invoke<GiftCard>("cancel_gift_card", {
+      request: { gift_id: giftId },
+    });
+    return { data: result };
+  },
+
+  redeemGiftCard: async (data: {
+    claim_code: string;
+    password?: string;
+  }): Promise<{ data: GiftCard }> => {
+    const result = await invoke<GiftCard>("redeem_gift_card", { request: data });
+    return { data: result };
+  },
 };
+
+export type GiftCardStatus = "unfunded" | "funded" | "redeeming" | "redeemed" | "cancelled";
+
+export type GiftCard = {
+  gift_id: string;
+  status: GiftCardStatus;
+  payment_address: string;
+  amount_zatoshis: number;
+  amount_zec: number;
+  label?: string;
+  created_at: string;
+  zcash_uri: string;
+  funding_txid?: string;
+  redeem_txid?: string;
+  recipient?: string;
+  payout_zatoshis?: number;
+};
+
+export type GiftCardCreated = GiftCard & { claim_code: string };

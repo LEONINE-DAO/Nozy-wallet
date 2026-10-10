@@ -25,6 +25,11 @@ export function MoreScreen() {
       <ScrollView contentContainerStyle={styles.container}>
         <PageHeader title="More" description="History and tools." />
         <SettingsItem
+          title="Gift cards"
+          description="Buy with shielded ZEC and redeem a claim code"
+          onPress={() => navigation.navigate("GiftCards")}
+        />
+        <SettingsItem
           title="Transaction history"
           onPress={() => navigation.navigate("TransactionHistory")}
         />
@@ -42,7 +47,7 @@ export function MoreScreen() {
           onPress={() => navigation.navigate("Crosslink")}
         />
         <SettingsItem
-          title="NU7 Vote"
+          title="Coinholder vote"
           onPress={() => navigation.navigate("Vote")}
         />
         {onDevice ? null : (

@@ -679,6 +679,88 @@ pub fn lwd_get_latest_tree_state(
     })
 }
 
+fn block_on_wallet_dir<T>(wallet_data_dir: &Path, fut: impl std::future::Future<Output = T>) -> T {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("gift-card runtime");
+    nozy::with_wallet_data_dir(wallet_data_dir, || rt.block_on(fut))
+}
+
+fn gift_label(label: String) -> Option<String> {
+    let trimmed = label.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// Pay `amount_zec` in shielded ZEC from this phone's wallet. Returns the claim code once.
+#[uniffi::export]
+pub fn gift_card_buy(
+    mnemonic: String,
+    wallet_data_dir: String,
+    zebra_url: String,
+    amount_zec: f64,
+    label: String,
+) -> Result<String, NozyFfiError> {
+    let zebra = zebra_url.trim().to_string();
+    if zebra.is_empty() {
+        return Err(NozyFfiError::Message(
+            "Set a Zebrad JSON-RPC URL in Settings → On-device wallet. The gift card is paid from this phone through that node.".into(),
+        ));
+    }
+    let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let created = block_on_wallet_dir(Path::new(&wallet_data_dir), async move {
+        nozy::gift_cards::buy_gift_card(&wallet, amount_zec, gift_label(label), &zebra).await
+    })
+    .map_err(map_err)?;
+    serde_json::to_string(&created).map_err(map_err)
+}
+
+/// Sweep a claim code into this phone's shielded address.
+#[uniffi::export]
+pub fn gift_card_redeem(
+    mnemonic: String,
+    wallet_data_dir: String,
+    zebra_url: String,
+    claim_code: String,
+) -> Result<String, NozyFfiError> {
+    let zebra = zebra_url.trim().to_string();
+    if zebra.is_empty() {
+        return Err(NozyFfiError::Message(
+            "Set a Zebrad JSON-RPC URL in Settings → On-device wallet. Redeem scans and spends through that node.".into(),
+        ));
+    }
+    let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let card = block_on_wallet_dir(Path::new(&wallet_data_dir), async move {
+        nozy::gift_cards::redeem_gift_card(&wallet, &claim_code, &zebra).await
+    })
+    .map_err(map_err)?;
+    serde_json::to_string(&card).map_err(map_err)
+}
+
+/// Gift cards bought on this phone. Claim codes are not included.
+#[uniffi::export]
+pub fn gift_card_list(wallet_data_dir: String, limit: u32) -> Result<String, NozyFfiError> {
+    let cards = nozy::with_wallet_data_dir(Path::new(&wallet_data_dir), || {
+        nozy::gift_cards::list_gift_cards(limit as usize)
+    })
+    .map_err(map_err)?;
+    serde_json::to_string(&cards).map_err(map_err)
+}
+
+/// Cancel an unpaid gift card record. A paid card stays spendable only with its claim code.
+#[uniffi::export]
+pub fn gift_card_cancel(wallet_data_dir: String, gift_id: String) -> Result<String, NozyFfiError> {
+    let card = nozy::with_wallet_data_dir(Path::new(&wallet_data_dir), || {
+        nozy::gift_cards::cancel_gift_card(&gift_id)
+    })
+    .map_err(map_err)?;
+    serde_json::to_string(&card).map_err(map_err)
+}
+
 /// Broadcast raw transaction hex via lightwalletd `SendTransaction`.
 #[uniffi::export]
 pub fn lwd_send_transaction(

@@ -16,7 +16,7 @@ function shortAddr(addr: string): string {
 const WALLET_LINKS: Array<{ view: PopupView; label: string; icon: IconName }> = [
   { view: "send", label: "Send", icon: "send" },
   { view: "receive", label: "Receive", icon: "receive" },
-  { view: "vote", label: "NU7 vote", icon: "vote" },
+  { view: "vote", label: "CoinHolder vote", icon: "vote" },
   { view: "companion", label: "Local API", icon: "grid" },
   { view: "settings", label: "Settings", icon: "settings" }
 ];
@@ -24,7 +24,7 @@ const WALLET_LINKS: Array<{ view: PopupView; label: string; icon: IconName }> = 
 const PAGE_TITLES: Partial<Record<PopupView, string>> = {
   send: "Send",
   receive: "Receive",
-  vote: "NU7 vote",
+  vote: "CoinHolder vote",
   companion: "Local API",
   settings: "Settings",
   browser: "Browser"

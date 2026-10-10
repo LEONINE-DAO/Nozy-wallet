@@ -66,7 +66,7 @@ Settings → **Network privacy (Nym)** talks to the same companion privacy APIs 
    - `GET /api/sapling/status` — quiet legacy balance (companion wallet data dir)
    - `POST /api/sapling/scan` — scan compact cache for legacy notes
    - `POST /api/sapling/shield` — move legacy notes into Orchard/Ironwood (not in wasm-core)
-   - `GET /api/vote/status`, `GET /api/vote/active` — NU7 vote status / ballot
+   - `GET /api/vote/status`, `GET /api/vote/active` — Coinholder vote status / ballot
    - `POST /api/vote/export-notes`, `prepare`, `delegate`, `sign-delegation`, `delegate-finish`, `cast` — companion wallet + `nozy-vote` sidecar
    - `GET /api/crosslink/status`, `positions`, `roster` — Crosslink Protocol Guardian (feature-net)
    - `POST /api/crosslink/stake`, `retarget`, `unbond`, `withdraw` — node-wallet staking via companion

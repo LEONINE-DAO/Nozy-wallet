@@ -42,7 +42,7 @@ export type TxStateEntry = {
 
 export type PendingApproval = {
   id: string;
-  kind: "sign" | "transaction";
+  kind: "connect" | "sign" | "transaction";
   payload: Record<string, unknown>;
   createdAt: number;
 };
@@ -270,6 +270,12 @@ export const extensionApi = {
     sendMessage<{ approved: boolean; id: string }>({
       method: "wallet_reject_request",
       params: { id }
+    }),
+  walletListConnectedSites: () => sendMessage<string[]>({ method: "wallet_list_connected_sites" }),
+  walletDisconnectSite: (origin: string) =>
+    sendMessage<{ origin: string; disconnected: boolean }>({
+      method: "wallet_disconnect_site",
+      params: { origin }
     }),
   walletSetSessionPolicy: (autoLockMs: number) =>
     sendMessage<{ autoLockMs: number }>({
