@@ -4,6 +4,8 @@ Thank you for your interest in contributing to NozyWallet! This document provide
 
 **AI-assisted development:** machine-readable policies for coding agents live in [`AGENTS.md`](AGENTS.md); read that file first so generated work matches repo expectations.
 
+Areas that need contributors right now: [`docs/development/where-to-help.md`](docs/development/where-to-help.md).
+
 ## 📋 Table of Contents
 
 - [Code of Conduct](#code-of-conduct)

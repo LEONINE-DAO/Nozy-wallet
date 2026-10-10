@@ -104,6 +104,13 @@ push_url_update.ps1
 !docs/assets/README.md
 !docs/issues/*.md
 !docs/issues/bugs/*.md
+!docs/getting-started/*.md
+!docs/guides/*.md
+!docs/operators/*.md
+!docs/product/*.md
+!docs/architecture/*.md
+!docs/development/*.md
+!docs/evidence/*.md
 # Generated Word papers — keep local until ready to publish
 docs/*.docx
 docs/~$*

@@ -1,5 +1,24 @@
 # Docs
 
+Start with the [project README](../README.md) for what NozyWallet is, downloads, and a five-line quick start. This folder holds the rest, by category.
+
+## By category
+
+| Category | Start here |
+|----------|------------|
+| Getting started | [Installation](getting-started/installation.md) |
+| Using the wallet | [CLI usage](guides/cli-usage.md) · [Configuration](guides/configuration.md) |
+| Node operators | [Node FAQ](operators/node-faq.md) · [Nozy Lite](reference/NOZY_LITE.md) |
+| Product | [Features, NU6.2, surfaces](product/features.md) · [Roadmap](../ENHANCEMENT_ROADMAP.md) |
+| Architecture | [Overview](architecture/overview.md) · [Shielded-send limits](../ZEBRAD_SHIELDED_SEND_LIMIT.md) |
+| Development | [Testing](development/testing.md) · [Library API](development/library-api.md) · [Performance](development/performance.md) · [Dependencies](development/dependencies.md) · [Where to help](development/where-to-help.md) |
+| Evidence and test results | [Evidence index](evidence/README.md) |
+| Security | [SECURITY.md](../SECURITY.md) · [security-audit/](reference/security-audit/) |
+| User book (mdBook) | [book/README.md](../book/README.md) |
+| Bugs | [issues/](issues/README.md) |
+
+The tables below are the longer catalog (papers, grants, RFCs, case breakdowns).
+
 | Path | Purpose |
 |------|---------|
 | [`MEMORY_CASE_STUDY.md`](MEMORY_CASE_STUDY.md) | Compact sync peak RAM (`chunk_max_blocks`), phase metrics, secrets/zeroize — **no invented RSS numbers** |
