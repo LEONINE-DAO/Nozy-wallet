@@ -38,6 +38,8 @@ pub mod config;
 #[cfg(feature = "native")]
 pub mod crosslink;
 #[cfg(feature = "native")]
+pub mod gift_cards;
+#[cfg(feature = "native")]
 pub mod grpc_client;
 #[cfg(feature = "native")]
 pub mod ironwood;

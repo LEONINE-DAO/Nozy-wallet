@@ -168,4 +168,53 @@ pub fn lwd_sync_compact_to_tip(
     })
 }
 
+#[derive(Clone, uniffi::Record)]
+pub struct LwdTreeStateFfi {
+    pub network: String,
+    pub height: u64,
+    pub hash: String,
+    pub time: u32,
+    pub sapling_tree: String,
+    pub orchard_tree: String,
+}
+
+/// Tip treestate from lightwalletd (no Zebrad JSON-RPC).
+#[uniffi::export]
+pub fn lwd_get_latest_tree_state(
+    lightwalletd_url: String,
+) -> Result<LwdTreeStateFfi, ZeakingFfiError> {
+    runtime().block_on(async move {
+        let mut client = zeaking::lwd::connect_lightwalletd(&lightwalletd_url)
+            .await
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        let ts = zeaking::lwd::get_latest_tree_state(&mut client)
+            .await
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        Ok(LwdTreeStateFfi {
+            network: ts.network,
+            height: ts.height,
+            hash: ts.hash,
+            time: ts.time,
+            sapling_tree: ts.sapling_tree,
+            orchard_tree: ts.orchard_tree,
+        })
+    })
+}
+
+/// Broadcast raw tx bytes via lightwalletd `SendTransaction`.
+#[uniffi::export]
+pub fn lwd_send_transaction(
+    lightwalletd_url: String,
+    raw_tx: Vec<u8>,
+) -> Result<(), ZeakingFfiError> {
+    runtime().block_on(async move {
+        let mut client = zeaking::lwd::connect_lightwalletd(&lightwalletd_url)
+            .await
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))?;
+        zeaking::lwd::send_transaction(&mut client, raw_tx)
+            .await
+            .map_err(|e| ZeakingFfiError::Message(e.to_string()))
+    })
+}
+
 uniffi::setup_scaffolding!();

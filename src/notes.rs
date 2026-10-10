@@ -767,6 +767,14 @@ fn merge_note_scan_fields(
     }
 }
 
+/// Notes found for a spending key that is not this wallet's seed.
+#[derive(Debug, Default)]
+pub struct ExternalKeyScan {
+    pub spendable: Vec<SpendableNote>,
+    pub found_notes: usize,
+    pub spent_notes: usize,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NoteScanResult {
     pub notes: Vec<SerializableOrchardNote>,
@@ -1141,6 +1149,176 @@ impl<'a> NoteScanner<'a> {
         }
 
         Ok((result, spendable_notes))
+    }
+
+    /// Scan `start_height..=end_height` for notes controlled by `spending_key`.
+    ///
+    /// Does not write the wallet note cache or move the user's scan checkpoint.
+    /// Used to redeem a gift card whose key is not part of this wallet's seed.
+    pub async fn scan_for_spending_key(
+        &self,
+        spending_key: &SpendingKey,
+        start_height: u32,
+        end_height: u32,
+    ) -> NozyResult<ExternalKeyScan> {
+        if start_height > end_height {
+            return Ok(ExternalKeyScan::default());
+        }
+
+        let orchard_fvk = FullViewingKey::from(spending_key);
+        let orchard_ivk_external = orchard_fvk.to_ivk(orchard::keys::Scope::External);
+        let orchard_ivk_internal = orchard_fvk.to_ivk(orchard::keys::Scope::Internal);
+        let pb = ProgressBar::hidden();
+        let mut note_index = NoteIndex::new();
+        let mut all_notes = Vec::new();
+        let mut spendable_notes = Vec::new();
+
+        let mut witness_tracker: Option<OrchardWitnessTracker> =
+            if matches!(self.zebra_client.protocol(), Protocol::JsonRpc) {
+                let initial_tree: OrchardCommitmentTree = if start_height <= 1 {
+                    OrchardCommitmentTree::empty()
+                } else {
+                    let cp = start_height.saturating_sub(1);
+                    let parsed = self.zebra_client.get_orchard_treestate_parsed(cp).await?;
+                    if let Some(fs) = parsed.final_state {
+                        orchard_commitment_tree_from_final_state(&fs)?
+                    } else {
+                        OrchardCommitmentTree::empty()
+                    }
+                };
+                Some(OrchardWitnessTracker::new(initial_tree))
+            } else {
+                None
+            };
+        let mut ironwood_witness_tracker: Option<IronwoodWitnessTracker> =
+            if matches!(self.zebra_client.protocol(), Protocol::JsonRpc) {
+                let initial_tree: Option<IronwoodCommitmentTree> = if start_height <= 1 {
+                    Some(IronwoodCommitmentTree::empty())
+                } else {
+                    let cp = start_height.saturating_sub(1);
+                    match self.zebra_client.get_ironwood_treestate_parsed(cp).await {
+                        Ok(parsed) => {
+                            if let Some(fs) = parsed.final_state {
+                                Some(ironwood_commitment_tree_from_final_state(&fs)?)
+                            } else {
+                                Some(IronwoodCommitmentTree::empty())
+                            }
+                        }
+                        Err(e) => {
+                            tracing::debug!(
+                                error = %e,
+                                checkpoint_height = cp,
+                                "Ironwood treestate unavailable during gift-card scan"
+                            );
+                            None
+                        }
+                    }
+                };
+                initial_tree.map(IronwoodWitnessTracker::new)
+            } else {
+                None
+            };
+
+        let mut current_height = start_height;
+        while current_height <= end_height {
+            let height = current_height;
+            let block_data =
+                self.zebra_client
+                    .get_block(height)
+                    .await
+                    .map_err(|e| NozyError::ScanAtBlock {
+                        height,
+                        detail: format!("Failed to fetch block: {e}"),
+                    })?;
+            let block_value =
+                serde_json::to_value(&block_data).map_err(|e| NozyError::ScanAtBlock {
+                    height,
+                    detail: format!("Failed to serialize block data: {e}"),
+                })?;
+            let transactions = Self::parse_block_data(&block_value, height).map_err(|e| {
+                NozyError::ScanAtBlock {
+                    height,
+                    detail: e.to_string(),
+                }
+            })?;
+            self.process_block_orchard_actions(
+                &transactions,
+                height,
+                &orchard_fvk,
+                &orchard_ivk_external,
+                &orchard_ivk_internal,
+                spending_key,
+                witness_tracker.as_mut(),
+                &mut note_index,
+                &mut all_notes,
+                &mut spendable_notes,
+                &pb,
+            )
+            .map_err(|e| NozyError::ScanAtBlock {
+                height,
+                detail: e.to_string(),
+            })?;
+            self.process_block_ironwood_actions(
+                &transactions,
+                height,
+                &orchard_fvk,
+                &orchard_ivk_external,
+                &orchard_ivk_internal,
+                spending_key,
+                ironwood_witness_tracker.as_mut(),
+                &mut note_index,
+                &mut all_notes,
+                &mut spendable_notes,
+                &pb,
+            )
+            .map_err(|e| NozyError::ScanAtBlock {
+                height,
+                detail: e.to_string(),
+            })?;
+            current_height += 1;
+        }
+
+        if let Some(ref tr) = witness_tracker {
+            note_index.apply_orchard_witnesses_from_tracker(tr, end_height)?;
+            for sn in &mut spendable_notes {
+                if sn.pool != ShieldedPool::Orchard {
+                    continue;
+                }
+                let nf = sn.orchard_note.nullifier.to_bytes();
+                if let Some(w) = tr.serialized_witness_for_nullifier(&nf)? {
+                    sn.orchard_incremental_witness_hex = Some(hex::encode(w));
+                    sn.orchard_witness_tip_height = Some(end_height);
+                }
+            }
+        }
+        if let Some(ref tr) = ironwood_witness_tracker {
+            note_index.apply_ironwood_witnesses_from_tracker(tr, end_height)?;
+            for sn in &mut spendable_notes {
+                if sn.pool != ShieldedPool::Ironwood {
+                    continue;
+                }
+                let nf = sn.orchard_note.nullifier.to_bytes();
+                if let Some(w) = tr.serialized_witness_for_nullifier(&nf)? {
+                    sn.ironwood_incremental_witness_hex = Some(hex::encode(w));
+                    sn.ironwood_witness_tip_height = Some(end_height);
+                }
+            }
+        }
+
+        spendable_notes.retain(|sn| {
+            let nf = sn.orchard_note.nullifier.to_bytes();
+            note_index
+                .get_note_by_nullifier(&nf)
+                .map(|n| !n.spent)
+                .unwrap_or(!sn.orchard_note.spent)
+        });
+
+        let notes = note_index.get_all_notes();
+        Ok(ExternalKeyScan {
+            spendable: spendable_notes,
+            found_notes: notes.len(),
+            spent_notes: notes.iter().filter(|n| n.spent).count(),
+        })
     }
 
     fn process_block_orchard_actions(

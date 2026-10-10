@@ -10,7 +10,7 @@ export function VotePage({ onNavigate }: VotePageProps) {
   return (
     <div className="flex flex-col gap-8 animate-fade-in w-full pb-4">
       <PageHeader
-        title="NU7 Vote"
+        title="Coinholder vote"
         description="Shielded Vote · Ironwood weight at snapshot. Seed stays here; hotkey is separate."
       />
       <VoteWizardCard onNavigateIronwood={() => onNavigate?.("ironwood")} />

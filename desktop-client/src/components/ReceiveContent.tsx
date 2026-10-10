@@ -3,6 +3,7 @@ import QRCode from "react-qr-code";
 import { useWalletStore } from "../store/walletStore";
 import { Copy, CheckCircle } from "@solar-icons/react";
 import { Button } from "./Button";
+import { GiftCardPanel } from "./GiftCardPanel";
 import { MerchantBusinessPanel } from "./MerchantBusinessPanel";
 import toast from "react-hot-toast";
 
@@ -75,6 +76,10 @@ export function ReceiveContent() {
 
       <div className="text-left rounded-2xl border border-gray-200 dark:border-gray-700 p-4 bg-white/60 dark:bg-gray-900/40">
         <MerchantBusinessPanel compact />
+      </div>
+
+      <div className="text-left rounded-2xl border border-gray-200 dark:border-gray-700 p-4 bg-white/60 dark:bg-gray-900/40">
+        <GiftCardPanel />
       </div>
     </div>
   );

@@ -42,7 +42,7 @@ const ERROR_MAP: Array<{ pattern: RegExp | string; message: string; code?: strin
   { pattern: /proving|proof.*fail/i, message: "Proving failed. You may need to download proving parameters.", code: "PROVE_001" },
   // Backend / IPC
   { pattern: /command.*not found|unknown command|not found.*command/i, message: "This feature is not available in the current app build. Restart the desktop app after updating.", code: "BACKEND_001" },
-  // NU7 vote
+  // Coinholder vote
   {
     pattern: /witness root.*nc_root|store_witnesses|does not match stored round nc_root/i,
     message:
@@ -65,7 +65,7 @@ const ERROR_MAP: Array<{ pattern: RegExp | string; message: string; code?: strin
   {
     pattern: /staking day is closed|CROSSLINK_STAKING_DAY_CLOSED/i,
     message:
-      "Staking Day is closed. New stakes are allowed every 150 blocks for 70 blocks. Enable Force to try anyway, or use Retarget anytime.",
+      "Staking Day is closed. New stakes are allowed every 10,368 blocks for 3,456 blocks. Enable Force to try anyway, or use Retarget anytime.",
     code: "CROSSLINK_STAKING_DAY",
   },
   {

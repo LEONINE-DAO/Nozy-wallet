@@ -220,3 +220,112 @@ pub async fn lwd_sync_compact_to_tip(
         "sapling_scan": sapling_scan,
     })))
 }
+
+/// Max inclusive block span for one compact HTTP pull (extension batches).
+const COMPACT_HTTP_MAX_SPAN: u64 = 500;
+
+#[derive(Debug, Deserialize)]
+pub struct LwdCompactBlocksQuery {
+    pub start: u64,
+    pub end: u64,
+    pub lightwalletd_url: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LwdTreeStateQuery {
+    pub height: Option<u64>,
+    pub lightwalletd_url: Option<String>,
+}
+
+fn lwd_uri_opt(lightwalletd_url: &Option<String>) -> String {
+    lightwalletd_url
+        .clone()
+        .or_else(|| std::env::var("LIGHTWALLETD_GRPC").ok())
+        .unwrap_or_else(|| "http://127.0.0.1:9067".to_string())
+}
+
+/// GET `/api/lwd/compact/tip` — chain tip from lightwalletd (no wallet DB).
+pub async fn lwd_compact_tip(
+    Query(q): Query<LwdUrlQuery>,
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    let url = lwd_uri(&q);
+    let mut client = zeaking::lwd::connect_lightwalletd(&url)
+        .await
+        .map_err(zeaking_err_response)?;
+    let tip = zeaking::lwd::chain_tip_height(&mut client)
+        .await
+        .map_err(zeaking_err_response)?;
+    Ok(ResponseJson(serde_json::json!({ "height": tip })))
+}
+
+/// GET `/api/lwd/compact/treestate?height=` — LWD treestate for tracker init (no wallet DB).
+pub async fn lwd_compact_treestate(
+    Query(q): Query<LwdTreeStateQuery>,
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    let url = lwd_uri_opt(&q.lightwalletd_url);
+    let mut client = zeaking::lwd::connect_lightwalletd(&url)
+        .await
+        .map_err(zeaking_err_response)?;
+    let ts = if let Some(h) = q.height {
+        zeaking::lwd::get_tree_state(&mut client, h, None)
+            .await
+            .map_err(zeaking_err_response)?
+    } else {
+        zeaking::lwd::get_latest_tree_state(&mut client)
+            .await
+            .map_err(zeaking_err_response)?
+    };
+    Ok(ResponseJson(serde_json::json!({
+        "network": ts.network,
+        "height": ts.height,
+        "hash": ts.hash,
+        "time": ts.time,
+        "sapling_tree": ts.sapling_tree,
+        "orchard_tree": ts.orchard_tree,
+        // WASM tracker expects getblock-style finalState hex when present.
+        "orchard": { "commitments": { "finalState": ts.orchard_tree } },
+        "ironwood": { "commitments": { "finalState": ts.orchard_tree } },
+    })))
+}
+
+/// GET `/api/lwd/compact/blocks?start=&end=` — stream decode to scan JSON (no SQLite, no keys).
+pub async fn lwd_compact_blocks(
+    Query(q): Query<LwdCompactBlocksQuery>,
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    if q.end < q.start {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            "end must be >= start",
+            "LWD_INVALID",
+        ));
+    }
+    if q.end - q.start > COMPACT_HTTP_MAX_SPAN {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "range too large (max {} blocks inclusive span)",
+                COMPACT_HTTP_MAX_SPAN
+            ),
+            "LWD_INVALID",
+        ));
+    }
+    let url = lwd_uri_opt(&q.lightwalletd_url);
+    // Force local LWD on the VPS — never let clients redirect this proxy at a third party.
+    let url = if url.contains("127.0.0.1") || url.contains("localhost") {
+        url
+    } else {
+        std::env::var("LIGHTWALLETD_GRPC").unwrap_or_else(|_| "http://127.0.0.1:9067".to_string())
+    };
+    let mut client = zeaking::lwd::connect_lightwalletd(&url)
+        .await
+        .map_err(zeaking_err_response)?;
+    let blocks = zeaking::lwd::fetch_compact_scan_blocks(&mut client, q.start, q.end)
+        .await
+        .map_err(zeaking_err_response)?;
+    Ok(ResponseJson(serde_json::json!({
+        "start": q.start,
+        "end": q.end,
+        "count": blocks.len(),
+        "blocks": blocks,
+    })))
+}

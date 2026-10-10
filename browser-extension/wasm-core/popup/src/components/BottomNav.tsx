@@ -19,7 +19,7 @@ const MORE_ITEMS: Array<{
 }> = [
   {
     view: "vote",
-    title: "NU7 coinholder vote",
+    title: "CoinHolder vote",
     description: "Export notes, delegate or cast a ballot",
     icon: "vote"
   },

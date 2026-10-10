@@ -202,7 +202,16 @@ pub fn select_single_spend_note<'a>(
 ) -> NozyResult<&'a SpendableNote> {
     let needed = amount_zatoshis.saturating_add(fee_zatoshis);
     let mut best: Option<&SpendableNote> = None;
+    let mut skipped_gift = false;
+    let gift_selection = crate::gift_cards::spend_selection();
     for note in spendable_notes.iter().filter(|n| !n.orchard_note.spent) {
+        let nullifier_hex = hex::encode(note.orchard_note.nullifier.to_bytes());
+        if !gift_selection.allows(&nullifier_hex) {
+            if note.orchard_note.value >= needed {
+                skipped_gift = true;
+            }
+            continue;
+        }
         if note.orchard_note.value >= needed {
             best = match best {
                 None => Some(note),
@@ -212,9 +221,16 @@ pub fn select_single_spend_note<'a>(
         }
     }
     best.ok_or_else(|| {
-        NozyError::InvalidOperation(format!(
-            "No single Orchard note covers {needed} zats (multi-note spends are not supported yet)"
-        ))
+        if skipped_gift {
+            NozyError::InvalidOperation(
+                "That amount is locked in a gift card. Redeem or cancel the card before spending it."
+                    .into(),
+            )
+        } else {
+            NozyError::InvalidOperation(format!(
+                "No single Orchard note covers {needed} zats (multi-note spends are not supported yet)"
+            ))
+        }
     })
 }
 

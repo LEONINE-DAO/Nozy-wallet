@@ -185,6 +185,21 @@ type NozyFfiNative = {
     requestJson: string,
   ) => Promise<VoteDelegationSigNative>;
   lockWallet?: () => void;
+  giftCardBuy?: (
+    mnemonic: string,
+    walletDataDir: string,
+    zebraUrl: string,
+    amountZec: number,
+    label: string,
+  ) => Promise<string>;
+  giftCardRedeem?: (
+    mnemonic: string,
+    walletDataDir: string,
+    zebraUrl: string,
+    claimCode: string,
+  ) => Promise<string>;
+  giftCardList?: (walletDataDir: string, limit: number) => Promise<string>;
+  giftCardCancel?: (walletDataDir: string, giftId: string) => Promise<string>;
 };
 
 function loadExpoModule(): NozyFfiNative | null {
@@ -444,6 +459,75 @@ export async function orchardUnifiedAddress(
     );
   }
   return n.orchardUnifiedAddress(mnemonic, account);
+}
+
+export function giftCardNativeReady(): boolean {
+  const n = native();
+  return typeof n?.giftCardBuy === "function";
+}
+
+export async function giftCardBuy(params: {
+  mnemonic: string;
+  walletDataDir: string;
+  zebraUrl: string;
+  amountZec: number;
+  label?: string;
+}): Promise<string> {
+  const n = requireNative();
+  if (!n.giftCardBuy) {
+    throw new Error(
+      "This app build cannot sign a gift card yet. Reopen Nozy after the emulator finishes installing the update.",
+    );
+  }
+  return n.giftCardBuy(
+    params.mnemonic,
+    params.walletDataDir,
+    params.zebraUrl,
+    params.amountZec,
+    params.label ?? "",
+  );
+}
+
+export async function giftCardRedeem(params: {
+  mnemonic: string;
+  walletDataDir: string;
+  zebraUrl: string;
+  claimCode: string;
+}): Promise<string> {
+  const n = requireNative();
+  if (!n.giftCardRedeem) {
+    throw new Error(
+      "This app build cannot redeem a gift card yet. Reopen Nozy after the emulator finishes installing the update.",
+    );
+  }
+  return n.giftCardRedeem(
+    params.mnemonic,
+    params.walletDataDir,
+    params.zebraUrl,
+    params.claimCode,
+  );
+}
+
+export async function giftCardList(
+  walletDataDir: string,
+  limit = 20,
+): Promise<string> {
+  const n = requireNative();
+  if (!n.giftCardList) return "[]";
+  return n.giftCardList(walletDataDir, limit);
+}
+
+export async function giftCardCancel(
+  walletDataDir: string,
+  giftId: string,
+): Promise<string> {
+  const n = requireNative();
+  if (!n.giftCardCancel) {
+    throw new Error(
+      "This app build cannot update gift cards yet. Reopen Nozy after the emulator finishes installing the update.",
+    );
+  }
+  return n.giftCardCancel(walletDataDir, giftId);
 }
 
 export async function lwdSyncCompactToTip(params: {

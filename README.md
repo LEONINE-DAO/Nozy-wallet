@@ -8,7 +8,7 @@ You run [Zebra](https://github.com/ZcashFoundation/zebra) or [Zakura](https://za
 
 ## What it does
 
-Create or restore a shielded wallet (Orchard, now Ironwood), scan for notes, and send ZEC on the CLI, desktop app, and localhost companion API. The browser extension and mobile app are in active development.
+Create or restore a shielded wallet (Orchard, now Ironwood), scan for notes, and send ZEC on the CLI, desktop app, Chrome extension, and localhost companion API. Mobile remains in active development.
 
 Transparent `t1` addresses are rejected in user-facing send and receive. The product is shielded-first (Orchard / unified `u1`).
 
@@ -18,7 +18,7 @@ Transparent `t1` addresses are rejected in user-facing send and receive. The pro
 | Desktop | `desktop-client/` | Production download (beta tag; no formal GA label) |
 | Localhost API | `api-server/` | Production for same-machine use |
 | Compact sync | `zeaking/`, `nozy-sync-engine/` | Used by the wallet |
-| Extension | `browser-extension/` | Production download |
+| Extension | `browser-extension/` | **[Chrome Web Store](https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj)** — 2.0.0 Sweet Chili |
 | Mobile | `nozy-mobile/`, `zeaking-ffi/` | In development |
 | Landing site | `landing/` | Marketing only |
 

@@ -671,6 +671,7 @@ pub async fn sync_wallet_notes(
         .saturating_add(1);
 
     cached_notes = reload_wallet_notes()?;
+    match_merchant_invoices(&cached_notes);
 
     let balance_zatoshis = wallet_unspent_balance_zatoshis(&cached_notes);
     let unspent_notes = cached_notes.iter().filter(|n| !n.spent).count();
@@ -731,6 +732,19 @@ fn witness_catchup_target_height(
 }
 
 const WITNESS_BOOTSTRAP_HEIGHTS_PER_ROUND: usize = 8;
+
+fn match_merchant_invoices(notes: &[crate::notes::SerializableOrchardNote]) {
+    match crate::merchant_invoices::match_notes_after_sync(notes) {
+        Ok(n) if n > 0 => tracing::info!(matched = n, "matched open merchant invoices"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "merchant invoice match failed"),
+    }
+    match crate::gift_cards::match_notes_after_sync(notes) {
+        Ok(n) if n > 0 => tracing::info!(matched = n, "matched funded gift cards"),
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "gift card match failed"),
+    }
+}
 
 fn pool_witness_hex_missing(note: &crate::notes::SerializableOrchardNote) -> bool {
     !note.spent && note.witness_hex_for_pool().is_none_or(|h| h.is_empty())
@@ -813,6 +827,7 @@ async fn finish_caught_up_sync(
     }
 
     let notes_after_repair = reload_wallet_notes()?;
+    match_merchant_invoices(&notes_after_repair);
     // When notes exist but config never recorded a scan height (common after
     // profile/network switches), persist a checkpoint so UI progress is not stuck at 0%.
     let last_scan_height = if let Some(h) = config.last_scan_height {

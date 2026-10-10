@@ -421,6 +421,29 @@ export type CrosslinkDoctorReport = {
   };
 };
 
+export type GiftCardStatus =
+  | "unfunded"
+  | "funded"
+  | "redeeming"
+  | "redeemed"
+  | "cancelled";
+
+export type GiftCard = {
+  gift_id: string;
+  status: GiftCardStatus;
+  payment_address: string;
+  amount_zatoshis: number;
+  amount_zec: number;
+  label?: string | null;
+  created_at: string;
+  zcash_uri: string;
+  funding_txid?: string | null;
+  redeem_txid?: string | null;
+  payout_zatoshis?: number | null;
+};
+
+export type GiftCardCreated = GiftCard & { claim_code: string };
+
 import type { NavigatorScreenParams } from "@react-navigation/native";
 
 export type MainTabParamList = {
@@ -450,4 +473,5 @@ export type RootStackParamList = {
   Ironwood: undefined;
   Vote: undefined;
   Crosslink: undefined;
+  GiftCards: undefined;
 };

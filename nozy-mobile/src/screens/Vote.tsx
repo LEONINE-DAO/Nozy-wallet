@@ -96,7 +96,7 @@ export function VoteScreen({}: Props) {
     <SafeAreaView style={styles.safe} edges={["bottom"]}>
       <ScrollView contentContainerStyle={styles.container}>
         <PageHeader
-          title="NU7 Vote"
+          title="Coinholder vote"
           description="On-device export + sign only. Prepare, prove, and cast on Desktop Vote or nozy-vote CLI."
         />
 

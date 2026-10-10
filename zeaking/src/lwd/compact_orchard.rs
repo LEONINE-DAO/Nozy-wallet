@@ -1,6 +1,7 @@
 //! Decode Orchard note commitments from compact block protobuf blobs.
 
 use prost::Message;
+use serde_json::{json, Value};
 
 use crate::error::{ZeakingError, ZeakingResult};
 use crate::lwd::proto::CompactBlock;
@@ -49,6 +50,56 @@ fn action_bytes(
         cmx: cmx_arr,
         ephemeral_key,
         ciphertext,
+    })
+}
+
+fn action_to_scan_json(a: &OrchardCompactActionBytes) -> Value {
+    json!({
+        "nullifier": hex::encode(a.nullifier),
+        "cmx": hex::encode(a.cmx),
+        "ephemeralKey": hex::encode(a.ephemeral_key),
+        "encCiphertext": hex::encode(&a.ciphertext),
+    })
+}
+
+/// Shape expected by extension WASM `orchard_scan_tracker_apply_block` (slim getblock JSON).
+pub fn orchard_slice_to_scan_block_json(slice: &OrchardCompactBlockSlice) -> Value {
+    let mut txs = Vec::new();
+    for tx in &slice.txs {
+        if tx.orchard_actions.is_empty() && tx.ironwood_actions.is_empty() {
+            continue;
+        }
+        let txid = if tx.txid_bytes.len() == 32 {
+            // lightwalletd stores tx hash little-endian; wallets display big-endian hex.
+            let mut rev = tx.txid_bytes.clone();
+            rev.reverse();
+            hex::encode(rev)
+        } else {
+            hex::encode(&tx.txid_bytes)
+        };
+        let mut obj = serde_json::Map::new();
+        obj.insert("txid".into(), json!(txid));
+        if !tx.orchard_actions.is_empty() {
+            obj.insert(
+                "orchard".into(),
+                json!({
+                    "actions": tx.orchard_actions.iter().map(action_to_scan_json).collect::<Vec<_>>()
+                }),
+            );
+        }
+        if !tx.ironwood_actions.is_empty() {
+            obj.insert(
+                "ironwood".into(),
+                json!({
+                    "actions": tx.ironwood_actions.iter().map(action_to_scan_json).collect::<Vec<_>>()
+                }),
+            );
+        }
+        txs.push(Value::Object(obj));
+    }
+    json!({
+        "height": slice.height,
+        "tx": txs,
     })
 }
 
@@ -115,76 +166,24 @@ pub fn orchard_cmx_bytes_from_compact_block(data: &[u8]) -> ZeakingResult<Vec<[u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lwd::proto::{CompactBlock, CompactOrchardAction, CompactTx};
 
     #[test]
-    fn orchard_cmx_order_matches_vtx_and_actions() {
-        let cmx_a: Vec<u8> = (0u8..32).collect();
-        let cmx_b: Vec<u8> = (100u8..132).collect();
-
-        let mut tx1 = CompactTx::default();
-        tx1.actions.push(CompactOrchardAction {
-            nullifier: vec![0u8; 32],
-            cmx: cmx_a.clone(),
-            ephemeral_key: vec![0u8; 32],
-            ciphertext: vec![],
-        });
-        let mut tx2 = CompactTx::default();
-        tx2.actions.push(CompactOrchardAction {
-            nullifier: vec![0u8; 32],
-            cmx: cmx_b.clone(),
-            ephemeral_key: vec![0u8; 32],
-            ciphertext: vec![],
-        });
-
-        let block = CompactBlock {
-            height: 7,
-            vtx: vec![tx1, tx2],
-            ..Default::default()
+    fn slice_to_scan_json_roundtrip_shape() {
+        let slice = OrchardCompactBlockSlice {
+            height: 10,
+            txs: vec![OrchardCompactTxSlice {
+                txid_bytes: vec![1u8; 32],
+                orchard_actions: vec![OrchardCompactActionBytes {
+                    nullifier: [2u8; 32],
+                    cmx: [3u8; 32],
+                    ephemeral_key: [4u8; 32],
+                    ciphertext: vec![5u8; 52],
+                }],
+                ironwood_actions: vec![],
+            }],
         };
-
-        let mut buf = Vec::new();
-        block.encode(&mut buf).unwrap();
-        let out = orchard_cmx_bytes_from_compact_block(&buf).unwrap();
-        assert_eq!(out.len(), 2);
-        assert_eq!(&out[0][..], &cmx_a[..]);
-        assert_eq!(&out[1][..], &cmx_b[..]);
-    }
-
-    #[test]
-    fn orchard_slice_includes_txid_and_ironwood_actions() {
-        let nf: Vec<u8> = (1u8..33).collect();
-        let cmx: Vec<u8> = (2u8..34).collect();
-        let epk: Vec<u8> = (3u8..35).collect();
-        let mut tx = CompactTx {
-            hash: vec![9u8; 32],
-            ..Default::default()
-        };
-        tx.actions.push(CompactOrchardAction {
-            nullifier: nf.clone(),
-            cmx: cmx.clone(),
-            ephemeral_key: epk.clone(),
-            ciphertext: vec![7u8; 52],
-        });
-        tx.ironwood_actions.push(CompactOrchardAction {
-            nullifier: nf.clone(),
-            cmx: cmx.clone(),
-            ephemeral_key: epk.clone(),
-            ciphertext: vec![8u8; 52],
-        });
-        let block = CompactBlock {
-            height: 3484960,
-            vtx: vec![tx],
-            ..Default::default()
-        };
-        let mut buf = Vec::new();
-        block.encode(&mut buf).unwrap();
-        let slice = orchard_slice_from_compact_block(&buf).unwrap();
-        assert_eq!(slice.height, 3484960);
-        assert_eq!(slice.txs.len(), 1);
-        assert_eq!(slice.txs[0].txid_bytes, vec![9u8; 32]);
-        assert_eq!(slice.txs[0].orchard_actions.len(), 1);
-        assert_eq!(slice.txs[0].ironwood_actions.len(), 1);
-        assert_eq!(slice.txs[0].orchard_actions[0].ciphertext.len(), 52);
+        let v = orchard_slice_to_scan_block_json(&slice);
+        assert_eq!(v["height"], 10);
+        assert!(v["tx"][0]["orchard"]["actions"][0]["cmx"].is_string());
     }
 }

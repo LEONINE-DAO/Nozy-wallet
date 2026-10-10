@@ -12,12 +12,12 @@ Full problem / solution / impact narrative: [`docs/NOZYWALLET_PROPOSAL.md`](docs
 
 | Surface | Path | Status | Notes |
 |---------|------|--------|--------|
-| **CLI + core** | `src/`, `nozy` | **Mainnet** | Orchard shielded ZEC; Zebrad + lightwalletd |
+| **CLI + core** | `src/`, `nozy` | **Mainnet** | Orchard + Ironwood; Zebrad / Zakura + LWD / Nozy Sync Engine |
 | **Launchpad** | `landing/` | **Active** | GitHub Pages product hub |
 | **Web app** | [`web-app/`](web-app/) | **Starting** | Full dashboard; extension + `nozywallet-api` |
-| **Browser extension** | `browser-extension/` | Contributor preview | MV3 + WASM |
-| **Operator API** | `api-server/` | In development | Localhost companion |
-| **Desktop** | `desktop-client/` | In development | Tauri |
+| **Browser extension** | `browser-extension/` | **Chrome Web Store live** | [NozyWallet 2.0.0 (Sweet Chili)](https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj) — keys on device; public sync via `lwd.nozywallet.org` when no local node |
+| **Operator API** | `api-server/` | Production (localhost) | Companion for extension / desktop / web |
+| **Desktop** | `desktop-client/` | Production download (beta tag) | Tauri; no formal GA label |
 | **Mobile** | [`nozy-mobile/`](nozy-mobile/) | In development | Expo; see [VPS-DEPLOY](nozy-mobile/VPS-DEPLOY.md) |
 | **Nozy Agent** | `nozy-agent/` (planned) | Planning | Self-hosted Rust agent; see section below |
 
@@ -64,9 +64,12 @@ Releases and features already on mainline or tagged CLI releases. See [`CHANGELO
 
 | Milestone | Status | Impact |
 |-----------|--------|--------|
+| **Chrome Web Store — extension 2.0.0** | **Live (2026-10-05)** | [Listing](https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj); public compact sync; create/restore/backup; Ironwood-aware send; [extension-v2.0.0](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.0) |
+| **Public LWD sync** | Shipped | `https://lwd.nozywallet.org:443` when no local node; keys stay in extension |
+| **CLI v2.4.7+ / Desktop beta.7** | Released | See [Releases](https://github.com/LEONINE-DAO/Nozy-wallet/releases) |
 | **Send reuses note cache (no 50k rescan)** | Branch / unreleased | Fast send after sync; see [CHANGELOG Unreleased](CHANGELOG.md) |
 | **History merges received deposits** | Branch / unreleased | `Received` + `Sent` in `/api/transaction/history` |
-| **Launchpad + product roadmap** | Merging | Product hub, web-app/mobile plans |
+| **Launchpad + product roadmap** | Active | Product hub, web-app/mobile plans |
 
 ---
 
@@ -114,9 +117,11 @@ Business profile + Sell mode: Phase 0 decisions locked — [`docs/BUSINESS_ZEC_Z
 
 ## Planned: Nozy Agent (self-hosted)
 
-Separate product under `nozy-agent/` (not inside `web-app/`). Local LLM (Ollama default / localhost vLLM optional), Nym-mandatory egress, companion-controlled wallet actions, merchant desk, bounty hunter, protocol debug, Zcash research, optional Pet / Legacy Guardian.
+Separate product under `nozy-agent/` (not inside `web-app/`). It sits on top of the stack Nozy already ships: **CLI + Desktop + Chrome extension + localhost companion**, with optional public compact sync. Local LLM (Ollama default / localhost vLLM optional), Nym-mandatory egress, companion-controlled wallet actions, merchant desk, bounty hunter, protocol debug, Zcash research, optional Pet / Legacy Guardian.
 
-Medium draft: [`docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md`](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md)
+- Medium draft (Markdown): [`docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md`](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md)
+- Medium draft (PDF): [`docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.pdf`](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.pdf)
+- Chrome extension (live): [NozyWallet on Chrome Web Store](https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj)
 
 ### Bounded trading — NEAR Intents demoted (locked)
 
@@ -139,9 +144,9 @@ Other venues: one adapter per security review; prefer clearer settlement/refund 
 
 1. Web app W0–W2 (ZEC dashboard)
 2. Dynamic fee A′1–A′2 (extension parity + pilot metrics)
-3. Extension production path + Chrome listing prep
+3. Edge Add-ons / Firefox AMO listing (Chrome store already live)
 4. Business profile + mobile Sell mode (issue #85)
-5. Desktop production release
+5. Desktop formal GA label (downloads already published under beta tags)
 6. Dynamic fee A2 in Zeaking (when Shielded Labs approves)
 7. **Nozy Agent** RFC + scaffold (parallel; Nym + local LLM gates)
 8. Multichain sidecars (Penumbra smoke → Namada spike per RFC)

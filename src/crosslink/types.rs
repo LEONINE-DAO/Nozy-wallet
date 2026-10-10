@@ -4,9 +4,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Season 1 feature-net: new Staking Day every 150 PoW blocks, open for 70.
-pub const SEASON1_STAKING_CYCLE_BLOCKS: u32 = 150;
-pub const SEASON1_STAKING_WINDOW_BLOCKS: u32 = 70;
+/// Feature-net calendar from Crosslink monolith v14 (`STAKING_PERIOD` / `STAKING_DAY_WINDOW`).
+/// A new Staking Day starts every 10,368 PoW blocks and stays open for 3,456 (~1 day of a ~3 day cycle).
+pub const SEASON1_STAKING_CYCLE_BLOCKS: u32 = 10_368;
+pub const SEASON1_STAKING_WINDOW_BLOCKS: u32 = 3_456;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StakingDayWindow {
