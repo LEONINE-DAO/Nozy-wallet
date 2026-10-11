@@ -26,7 +26,9 @@
     "expo-constants": "~17.0.8",
     "expo-font": "~13.0.4",
     "expo-status-bar": "~2.0.1",
+    "braces": "file:vendor/braces",
     "node-forge": "file:vendor/node-forge",
+    "sprintf-js": "file:vendor/sprintf-js",
     "nozy-wallet": "file:./modules/nozy-wallet",
     "qrcode": "^1.5.4",
     "react": "18.3.1",
@@ -60,6 +62,8 @@
     "image-size": ">=2.0.3",
     "baseline-browser-mapping": ">=2.11.0",
     "decode-uri-component": ">=0.5.0",
-    "node-forge": "$node-forge"
+    "braces": "$braces",
+    "node-forge": "$node-forge",
+    "sprintf-js": "$sprintf-js"
   }
 }
