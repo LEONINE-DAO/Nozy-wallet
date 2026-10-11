@@ -830,10 +830,9 @@ mod tests {
         let _ = sk;
 
         let mut broken: Vec<char> = code.chars().collect();
-        let flip = broken
-            .iter()
-            .rposition(|c| c.is_ascii_alphanumeric())
-            .unwrap();
+        // The last Crockford symbol carries unused low bits, so changing only
+        // those bits still decodes. Corrupt the first payload symbol instead.
+        let flip = "NZGC-".chars().count();
         broken[flip] = if broken[flip] == 'A' { 'B' } else { 'A' };
         let err = decode_claim_code(&broken.into_iter().collect::<String>()).unwrap_err();
         assert!(err.to_string().contains("not recognized"));

@@ -13,6 +13,10 @@
     "react-dom": "^18.3.1",
     "react-qr-code": "^2.0.15"
   },
+  "overrides": {
+    "source-map-js": "1.2.2",
+    "postcss-selector-parser": "7.1.6"
+  },
   "devDependencies": {
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
