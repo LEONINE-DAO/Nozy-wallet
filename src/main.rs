@@ -484,7 +484,7 @@ pub enum CrosslinkCommand {
     Stake {
         #[arg(long, help = "Amount in cTAZ (e.g. 0.01)")]
         amount: f64,
-        #[arg(long, help = "Finalizer identity — 64 hex chars")]
+        #[arg(long, help = "Finalizer zfinv1 address")]
         finalizer: String,
         #[arg(long, help = "Skip confirmation prompt")]
         yes: bool,
@@ -2828,7 +2828,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         .filter(|n| nozy::sapling_note_ready_to_shield(n))
                         .count();
                     let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
-                    let fee = nozy::sapling_shield_fee_zatoshis();
+                    let fee = nozy::current_sapling_shield_fee_zatoshis().await;
                     println!("Sapling legacy status");
                     println!("   Unspent notes: {}", unspent.len());
                     println!("   With rseed (reconstructible): {with_rseed}");
@@ -2858,7 +2858,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     use nozy::sapling_keys::derive_sapling_account_keys;
 
                     let mut notes = nozy::load_sapling_notes().unwrap_or_default();
-                    let fee = nozy::sapling_shield_fee_zatoshis();
+                    let fee = nozy::current_sapling_shield_fee_zatoshis().await;
                     let candidates: Vec<_> = notes
                         .iter()
                         .filter(|n| !n.spent && nozy::sapling_note_has_rseed(n))
@@ -4431,6 +4431,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     let migration_fee = nozy::fee_policy::estimate_orchard_send_fee_zatoshis(
                         None,
                         nozy::fee_policy::NOZY_WALLET_PRIORITY_FEE,
+                        nozy::FeeBlock::from_network_name(&config.network, chain_tip),
                     );
                     let readiness = nozy::ironwood::migration::assess_orchard_migration_readiness_with_spendability(
                         ironwood_active,
@@ -4940,8 +4941,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                                     "No Orchard note requires canonical splitting.".to_string(),
                                 )
                             })?;
-                        let (outputs, fee) =
-                            plan_orchard_note_split_outputs(spend_note.orchard_note.value)?;
+                        let (outputs, fee) = plan_orchard_note_split_outputs(
+                            spend_note.orchard_note.value,
+                            nozy::FeeBlock::from_network_name(&config.network, chain_tip),
+                        )?;
                         println!("🧪 Dry run — ZIP 318 note split plan");
                         println!(
                             "   Source note: {} zat ({})",
@@ -4992,9 +4995,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 block_finality, bond_info, build_crosslink_client, ctaz_to_zat, display_bond,
                 display_doctor, display_finality, display_payout_claim, display_positions,
                 display_roster, display_status, display_wallet, fetch_doctor_report,
-                fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_hex,
-                print_feature_net_banner, roster, staking_action, staking_day_at,
-                staking_positions, tx_finality, wallet_sync_status, wallet_ufvk, StakingAction,
+                fetch_guardian_snapshot, fetch_payout_claim, finality_tip,
+                normalize_finalizer_address, print_feature_net_banner, roster, staking_action,
+                staking_day_at, staking_positions, tx_finality, wallet_sync_status, wallet_ufvk,
+                StakingAction,
             };
             use std::io::{self, Write};
 
@@ -5155,7 +5159,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     json,
                 } => {
                     let amount_zats = ctaz_to_zat(amount)?;
-                    let target = normalize_finalizer_hex(&finalizer)?;
+                    let target = normalize_finalizer_address(&finalizer)?;
                     let action = StakingAction::CreateNewDelegationBond {
                         amount_zats,
                         target_finalizer: target.clone(),
@@ -5184,7 +5188,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     yes,
                     json,
                 } => {
-                    let target = normalize_finalizer_hex(&finalizer)?;
+                    let target = normalize_finalizer_address(&finalizer)?;
                     let action = StakingAction::RetargetDelegationBond {
                         bond_key: bond.clone(),
                         target_finalizer: target.clone(),

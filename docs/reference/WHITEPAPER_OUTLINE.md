@@ -8,8 +8,9 @@
 
 1. Prefer editing the narrative + LaTeX math in [`NozyWallet_Whitepaper.md`](NozyWallet_Whitepaper.md) (v2.4.1 Ironwood / Nym / ZIP 318 expansion).
 2. Keep Word generator in sync: `scripts/generate-nozy-whitepaper.py` → **`docs/NozyWallet_Whitepaper.docx`**. Run `python scripts/generate-nozy-whitepaper.py`. Use `--export-md` only if you intentionally want to overwrite the Markdown from Word (loses LaTeX).
-3. For the longer technical report (~20 pages): `python scripts/generate-nozy-paper.py`.
-4. Attach evidence: [`MAINNET_SEND_READINESS_EVIDENCE.md`](MAINNET_SEND_READINESS_EVIDENCE.md), TXIDs, Ironwood/Nym case breakdowns, forum post draft in [`../community/shielded-lab-pilot-send-readiness-update-2026-06.md`](../community/shielded-lab-pilot-send-readiness-update-2026-06.md).
+3. §2 figures live in [`whitepaper-figures/`](whitepaper-figures/README.md) (SVG source + PNG for Word). After editing SVG, re-rasterize PNG then regenerate the `.docx`.
+4. For the longer technical report (~20 pages): `python scripts/generate-nozy-paper.py`.
+5. Attach evidence: [`MAINNET_SEND_READINESS_EVIDENCE.md`](MAINNET_SEND_READINESS_EVIDENCE.md), [`DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md) (one-note Ironwood × ZIP-317), TXIDs, Ironwood/Nym case breakdowns, forum post draft in [`../community/shielded-lab-pilot-send-readiness-update-2026-06.md`](../community/shielded-lab-pilot-send-readiness-update-2026-06.md).
 
 ---
 
@@ -32,6 +33,7 @@
 | Source | Pull from |
 |--------|-----------|
 | Product thesis | [`NOZYWALLET_PROPOSAL.md`](../NOZYWALLET_PROPOSAL.md) §Executive summary |
+| Historic pairing | Dynamic-fee pilot **and** Nym hybrid in one wallet — [`NozyWallet_Whitepaper.md`](NozyWallet_Whitepaper.md) “Historic contribution”; [`IEEE_NYM_ZCASH_IP_PRIVACY_PAPER.md`](IEEE_NYM_ZCASH_IP_PRIVACY_PAPER.md); [`DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md) |
 | Pilot alignment | [`PILOT_EXPIRY_PROVING_LATENCY.md`](PILOT_EXPIRY_PROVING_LATENCY.md) executive summary |
 | Mainnet proof | [`MAINNET_SEND_READINESS_EVIDENCE.md`](MAINNET_SEND_READINESS_EVIDENCE.md) test matrix |
 | Node connectivity | [`ZEBRAD_NOZYWALLET_CONNECTIVITY.md`](ZEBRAD_NOZYWALLET_CONNECTIVITY.md) — verify RPC before recording evidence |

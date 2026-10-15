@@ -1,5 +1,6 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 import {
+  feeBlockFromRpc,
   mandatoryOrchardFeeZats,
   rpcFallbackWithRequester,
   selectNotesForSpend
@@ -349,7 +350,6 @@ self.onmessage = async (event) => {
       const rpcEndpoint = String(params?.rpcEndpoint ?? "");
       const requestedAmount = Number(params?.amount ?? 0);
       const memo = String(params?.memo ?? "nozy-poc");
-      const requestedFee = mandatoryOrchardFeeZats(wasm, memo);
 
       if (!rpcEndpoint) throw new Error("Missing rpcEndpoint for proving scan.");
       if (!mnemonic) throw new Error("Missing wallet mnemonic for proving.");
@@ -367,6 +367,10 @@ self.onmessage = async (event) => {
       // 1) Scan a recent window for decryptable Orchard notes.
       // 2) Fetch witness data with RPC method fallbacks across node variants.
       // 3) Build Orchard v5 transaction in WASM.
+      const feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+        rpcRequest(endpoint, method, rpcParams)
+      );
+      const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
       const endHeight = Number(await rpcRequest(endpoint, "getblockcount", []));
       const scanWindow = Number(params?.scanWindow ?? 200);
       const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
@@ -441,7 +445,11 @@ self.onmessage = async (event) => {
           sharedAnchor,
           targetHeight
         );
-        selectedWitnesses.push(witness);
+        selectedWitnesses.push({
+          ...witness,
+          fee_block_height: feeBlock.minedBlockHeight,
+          fee_mainnet: feeBlock.mainnet
+        });
       }
 
       const provingResult = wasm.build_orchard_v5_tx_from_note(

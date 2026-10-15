@@ -6,7 +6,7 @@
 
 use crate::error::{NozyError, NozyResult};
 use crate::fee_policy::{
-    pilot_expiry_height, GRACE_ACTIONS, MARGINAL_FEE_ZATOSHIS, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS,
+    pilot_expiry_height, FeeBlock, GRACE_ACTIONS, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS,
     PRIORITY_MULTIPLIER,
 };
 use crate::ironwood::{IronwoodAwareMainNetwork, NU6_3_MAINNET_ACTIVATION_HEIGHT};
@@ -34,14 +34,25 @@ use zcash_protocol::value::Zatoshis;
 use zcash_transparent::builder::TransparentSigningSet;
 use zeaking::lwd::{sapling_slice_from_compact_block, LwdCompactStore};
 
-/// ZIP-317-ish fee for 1 Sapling spend + 1 shielded output (padded to 2 actions).
-pub fn sapling_shield_fee_zatoshis() -> u64 {
-    // logical = 1 sapling spend + 2 orchard/ironwood actions (bundle padding)
+/// ZIP-317 fee for 1 Sapling spend + 1 shielded output (padded to 2 actions).
+///
+/// Logical actions = 1 Sapling spend + 2 Orchard/Ironwood actions. The marginal fee follows
+/// ZIP 2009 via `block`, then Nozy multiplies by [`PRIORITY_MULTIPLIER`].
+pub fn sapling_shield_fee_zatoshis(block: FeeBlock) -> u64 {
     let logical = 1u32.saturating_add(2);
     let billable = logical.max(GRACE_ACTIONS) as u64;
-    MARGINAL_FEE_ZATOSHIS
+    block
+        .marginal_fee()
         .saturating_mul(billable)
         .saturating_mul(PRIORITY_MULTIPLIER)
+}
+
+/// Shield fee for the next block on the configured node.
+pub async fn current_sapling_shield_fee_zatoshis() -> u64 {
+    let config = crate::config::load_config();
+    let zebra = ZebraClient::from_config(&config);
+    let block = zebra.fee_block_for_next_block().await;
+    sapling_shield_fee_zatoshis(block)
 }
 
 struct FixedShieldFeeRule {
@@ -442,12 +453,15 @@ pub async fn build_sapling_shield_to_self(
     network_type: NetworkType,
     expiry_delta_blocks: u32,
 ) -> NozyResult<SaplingShieldBuilt> {
-    let fee = sapling_shield_fee_zatoshis();
+    let zebra_tip0 = zebra.get_best_block_height().await?;
+    let fee = sapling_shield_fee_zatoshis(FeeBlock::next_block(
+        matches!(network_type, NetworkType::Main),
+        zebra_tip0,
+    ));
     let fee_zat = Zatoshis::from_u64(fee)
         .map_err(|_| NozyError::InvalidOperation("Invalid Sapling shield fee".into()))?;
     let fee_rule = FixedShieldFeeRule { fee: fee_zat };
 
-    let zebra_tip0 = zebra.get_best_block_height().await?;
     let tip0 = sapling_witness_replay_tip(store, zebra_tip0)?;
     if tip0 < zebra_tip0 {
         println!(
@@ -671,6 +685,13 @@ mod tests {
 
     #[test]
     fn shield_fee_is_priority_zip317() {
-        assert_eq!(sapling_shield_fee_zatoshis(), 15_000 * PRIORITY_MULTIPLIER);
+        assert_eq!(
+            sapling_shield_fee_zatoshis(FeeBlock::mainnet_before_zip2009()),
+            15_000 * PRIORITY_MULTIPLIER
+        );
+        assert_eq!(
+            sapling_shield_fee_zatoshis(FeeBlock::from_network_name("testnet", 1)),
+            3_000 * PRIORITY_MULTIPLIER
+        );
     }
 }

@@ -1,0 +1,17 @@
+{
+  "name": "braces",
+  "version": "3.0.4",
+  "description": "Bash-like brace expansion. NozyWallet backport adds a nesting-depth limit for GHSA-vfj7-8cjw-p6xm; drop this override when upstream braces >3.0.3 is published.",
+  "license": "MIT",
+  "main": "index.js",
+  "files": [
+    "index.js",
+    "lib"
+  ],
+  "engines": {
+    "node": ">=8"
+  },
+  "dependencies": {
+    "fill-range": "^7.1.1"
+  }
+}

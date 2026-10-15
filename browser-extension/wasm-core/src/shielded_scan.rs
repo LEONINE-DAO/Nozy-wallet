@@ -387,4 +387,31 @@ pub fn orchard_scan_tracker_apply_block(
     v.serialize(&serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true))
         .map_err(|e| JsError::new(&format!("{}", e)))
 }
+
+/// Decrypt ZIP-302 memos from a `getrawtransaction` hex blob.
+///
+/// Returns `[{ cmx, rho, value, memo }]` where `memo` is display text.
+/// An empty `memo` means the output decrypted and the memo has no text.
+#[wasm_bindgen]
+pub fn decrypt_memos_from_raw_tx(mnemonic: &str, raw_tx_hex: &str) -> Result<JsValue, JsError> {
+    let wallet = HDWallet::from_mnemonic(mnemonic).map_err(|e| JsError::new(&format!("{e}")))?;
+    let cleaned = raw_tx_hex.trim().trim_start_matches("0x");
+    let raw = hex::decode(cleaned).map_err(|e| JsError::new(&format!("raw tx hex: {e}")))?;
+    let found = nozy::received_memo::memos_from_raw_transaction(&wallet, &raw);
+    let rows: Vec<Value> = found
+        .into_iter()
+        .map(|row| {
+            json!({
+                "cmx": hex::encode(row.cmx),
+                "rho": hex::encode(row.rho),
+                "nullifier": hex::encode(row.canonical_nullifier),
+                "value": row.value,
+                "memo": row.memo_text,
+            })
+        })
+        .collect();
+    json!(rows)
+        .serialize(&serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true))
+        .map_err(|e| JsError::new(&format!("{e}")))
+}
 //Nozy people dont use zebra, they use zcashd

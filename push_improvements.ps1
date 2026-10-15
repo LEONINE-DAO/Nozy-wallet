@@ -22,7 +22,7 @@ Write-Host "Core files staged" -ForegroundColor Green
 Write-Host "`n=== Step 3: Checking main.rs ===" -ForegroundColor Cyan
 Write-Host "You need to stage main.rs changes manually:" -ForegroundColor Yellow
 Write-Host "Run: git add -p src/main.rs" -ForegroundColor Yellow
-Write-Host "Then select only the Nozy improvements (skip Monero/Shade/Swap)" -ForegroundColor Yellow
+Write-Host "Then select only the Nozy improvements (skip Monero/Secret/Swap)" -ForegroundColor Yellow
 
 $staged = git diff --cached --name-only
 if ($staged -match "main.rs") {

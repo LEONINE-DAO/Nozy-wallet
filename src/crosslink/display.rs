@@ -261,7 +261,7 @@ pub fn display_positions(positions: &StakingPositions, full_keys: bool) {
         }
     }
     if !full_keys {
-        println!("Tip: pass --full-keys to print complete pk / finalizer hex for RPC actions.");
+        println!("Tip: pass --full-keys to print complete bond keys. Stake and retarget need a zfinv1 address, not this hex id.");
     }
 }
 
@@ -286,6 +286,9 @@ pub fn display_roster(entries: &[RosterEntry], full_keys: bool) {
             zat_to_ctaz(e.stake_zat),
             e.share * 100.0
         );
+        if let Some(addr) = e.address.as_deref() {
+            println!("      stake target: {addr}");
+        }
     }
 }
 

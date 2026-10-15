@@ -11,11 +11,16 @@ use crate::notes::{
 };
 use crate::paths::get_wallet_data_dir;
 use crate::shielded_pool::ShieldedPool;
-use orchard::keys::{FullViewingKey, SpendingKey};
+use orchard::keys::{
+    FullViewingKey, IncomingViewingKey, PreparedIncomingViewingKey, Scope, SpendingKey,
+};
+use orchard::note::ExtractedNoteCommitment;
+use orchard::note_encryption::{CompactAction, IronwoodDomain, OrchardDomain};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
 use zeaking::lwd::{orchard_slice_from_compact_block, LwdCompactStore};
 use zip32::AccountId;
 
@@ -104,42 +109,71 @@ fn mark_spent(
     marked
 }
 
-fn discovered_from_compact(
-    wallet: &HDWallet,
-    address: &str,
+pub(crate) fn try_decrypt_compact(
     fvk: &FullViewingKey,
+    ivk_external: &IncomingViewingKey,
+    ivk_internal: &IncomingViewingKey,
     action: &OrchardActionCompactData,
     height: u32,
     txid: &str,
     pool: ShieldedPool,
-) -> NozyResult<Option<SerializableOrchardNote>> {
-    let Some(decrypted) =
-        wallet.decrypt_orchard_action_compact(action, address, height, txid, pool)?
-    else {
-        return Ok(None);
-    };
-    let mut note = SerializableOrchardNote {
-        note_bytes: decrypted.cmx.to_vec(),
-        value: decrypted.value,
-        address_bytes: decrypted.orchard_address_raw,
-        nullifier_bytes: decrypted.nullifier.to_vec(),
-        block_height: height,
-        txid: txid.to_string(),
-        spent: false,
-        memo: Vec::new(),
-        orchard_incremental_witness_hex: None,
-        orchard_witness_tip_height: None,
-        ironwood_incremental_witness_hex: None,
-        ironwood_witness_tip_height: None,
-        rho_bytes: Some(decrypted.rho.to_vec()),
-        rseed_bytes: Some(decrypted.rseed.to_vec()),
-        spent_in_txid: None,
-        pool,
-    };
-    if let Some(canonical) = note.canonical_nullifier_bytes(fvk) {
-        note.nullifier_bytes = canonical.to_vec();
+) -> Option<SerializableOrchardNote> {
+    if action.encrypted_note.len() < 52 {
+        return None;
     }
-    Ok(Some(note))
+    let nullifier = orchard::note::Nullifier::from_bytes(&action.nullifier).into_option()?;
+    let cmx = ExtractedNoteCommitment::from_bytes(&action.cmx).into_option()?;
+    let ephemeral_key = EphemeralKeyBytes::from(action.ephemeral_key);
+    let mut compact_enc_ciphertext = [0u8; 52];
+    compact_enc_ciphertext.copy_from_slice(&action.encrypted_note[..52]);
+    let compact_action =
+        CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
+    for ivk in [ivk_external, ivk_internal] {
+        let prepared = PreparedIncomingViewingKey::new(ivk);
+        let decrypted = match pool {
+            ShieldedPool::Orchard => {
+                let domain = OrchardDomain::for_compact_action(&compact_action);
+                try_compact_note_decryption(&domain, &prepared, &compact_action)
+            }
+            ShieldedPool::Ironwood => {
+                let domain = IronwoodDomain::for_compact_action(&compact_action);
+                try_compact_note_decryption(&domain, &prepared, &compact_action)
+            }
+        };
+        let Some((note, note_address)) = decrypted else {
+            continue;
+        };
+        let decrypted_value = note.value().inner();
+        let rho = note.rho().to_bytes();
+        let rseed = *note.rseed().as_bytes();
+        let address_bytes = note_address.to_raw_address_bytes().to_vec();
+        let decrypted = SerializableOrchardNote {
+            note_bytes: action.cmx.to_vec(),
+            value: decrypted_value,
+            address_bytes,
+            nullifier_bytes: action.nullifier.to_vec(),
+            block_height: height,
+            txid: txid.to_string(),
+            spent: false,
+            // Compact blocks omit the memo half of encCiphertext. `received_memo`
+            // fills this from the full transaction before history is served.
+            memo: Vec::new(),
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
+            rho_bytes: Some(rho.to_vec()),
+            rseed_bytes: Some(rseed.to_vec()),
+            spent_in_txid: None,
+            pool,
+        };
+        let mut note = decrypted;
+        if let Some(canonical) = note.canonical_nullifier_bytes(fvk) {
+            note.nullifier_bytes = canonical.to_vec();
+        }
+        return Some(note);
+    }
+    None
 }
 
 fn other_pool(pool: ShieldedPool) -> ShieldedPool {
@@ -150,28 +184,28 @@ fn other_pool(pool: ShieldedPool) -> ShieldedPool {
 }
 
 fn decrypt_either_pool(
-    wallet: &HDWallet,
-    address: &str,
     fvk: &FullViewingKey,
+    ivk_external: &IncomingViewingKey,
+    ivk_internal: &IncomingViewingKey,
     compact: &OrchardActionCompactData,
     height: u32,
     txid: &str,
     preferred: ShieldedPool,
 ) -> Option<SerializableOrchardNote> {
     for pool in [preferred, other_pool(preferred)] {
-        match discovered_from_compact(wallet, address, fvk, compact, height, txid, pool) {
-            Ok(Some(note)) => return Some(note),
-            Ok(None) => {}
-            Err(_) => {}
+        if let Some(note) =
+            try_decrypt_compact(fvk, ivk_external, ivk_internal, compact, height, txid, pool)
+        {
+            return Some(note);
         }
     }
     None
 }
 
 fn scan_action_list(
-    wallet: &HDWallet,
-    address: &str,
     fvk: &FullViewingKey,
+    ivk_external: &IncomingViewingKey,
+    ivk_internal: &IncomingViewingKey,
     actions: &[zeaking::lwd::OrchardCompactActionBytes],
     height: u32,
     txid: &str,
@@ -198,9 +232,15 @@ fn scan_action_list(
             ephemeral_key: action.ephemeral_key,
             encrypted_note: action.ciphertext.clone(),
         };
-        if let Some(discovered) =
-            decrypt_either_pool(wallet, address, fvk, &compact, height, txid, preferred)
-        {
+        if let Some(discovered) = decrypt_either_pool(
+            fvk,
+            ivk_external,
+            ivk_internal,
+            &compact,
+            height,
+            txid,
+            preferred,
+        ) {
             stats.notes_discovered += 1;
             match discovered.pool {
                 ShieldedPool::Ironwood => stats.ironwood_notes_discovered += 1,
@@ -272,13 +312,10 @@ pub fn scan_orchard_wallet_from_compact_store(
 
     let mut prepared = Vec::new();
     for account in accounts {
-        let address = wallet.generate_orchard_address(
-            account,
-            0,
-            zcash_protocol::consensus::NetworkType::Main,
-        )?;
         let fvk = fvk_for_account(&wallet, account)?;
-        prepared.push((address, fvk));
+        let ivk_external = fvk.to_ivk(Scope::External);
+        let ivk_internal = fvk.to_ivk(Scope::Internal);
+        prepared.push((fvk, ivk_external, ivk_internal));
     }
 
     store
@@ -294,11 +331,11 @@ pub fn scan_orchard_wallet_from_compact_store(
                 } else {
                     ShieldedPool::Orchard
                 };
-                for (address, fvk) in &prepared {
+                for (fvk, ivk_external, ivk_internal) in &prepared {
                     scan_action_list(
-                        &wallet,
-                        address,
                         fvk,
+                        ivk_external,
+                        ivk_internal,
                         &tx.orchard_actions,
                         height_u32,
                         &txid,
@@ -309,9 +346,9 @@ pub fn scan_orchard_wallet_from_compact_store(
                     )
                     .map_err(|e| zeaking::error::ZeakingError::InvalidOperation(e.to_string()))?;
                     scan_action_list(
-                        &wallet,
-                        address,
                         fvk,
+                        ivk_external,
+                        ivk_internal,
                         &tx.ironwood_actions,
                         height_u32,
                         &txid,
@@ -322,6 +359,11 @@ pub fn scan_orchard_wallet_from_compact_store(
                     )
                     .map_err(|e| zeaking::error::ZeakingError::InvalidOperation(e.to_string()))?;
                 }
+            }
+            if totals.blocks_scanned % 32 == 0 {
+                let _ = save_progress(&OrchardCompactScanProgress {
+                    last_scanned_height: height,
+                });
             }
             Ok(())
         })

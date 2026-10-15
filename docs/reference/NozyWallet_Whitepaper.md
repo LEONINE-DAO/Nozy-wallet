@@ -6,11 +6,10 @@
 
 **NozyWallet**  
 White Paper  
-Architecture, Shielded Pools, Network Privacy, Zcash Names, and Mainnet Operation
+Architecture, Shielded Pools, **Dynamic Fees**, **Nym Hybrid**, Zcash Names, and Mainnet Operation
 
 **LEONINE DAO**  
-Version **2.4.1** (Ironwood era)  
-July 2026  
+Version **2.4.1** (Ironwood era) · field evidence through **September 2026**
 
 github.com/LEONINE-DAO/Nozy-wallet · nozywallet.com
 
@@ -20,15 +19,34 @@ github.com/LEONINE-DAO/Nozy-wallet · nozywallet.com
 
 NozyWallet is a self-custodial, shielded-first Zcash wallet and companion stack—not a consensus node. Operators run **Zebrad** for JSON-RPC (broadcast, tip, treestate) and **lightwalletd** for compact-block sync. The wallet derives Merkle witnesses **locally**, computes **ZIP-317** fees on-device, and builds ZIP-225 / Ironwood transactions with Halo 2 proofs on the user’s machine.
 
-**What ships today (v2.4.x).** Mainnet-validated CLI (latest line **v2.4.1 / v2.4.1.1**), localhost **api-server**, desktop **1.0.0-beta.2**, browser extension beta, and mobile companion surfaces—all sharing the `nozy` Rust core and `zeaking` compact sync. Nozy participates in the Shielded Labs **dynamic-fee pilot** (client-side conventional fee, ×4 priority, five-block expiry) and ships **Ironwood (NU6.3)** migration tooling aligned with draft **ZIP 318**.
+**What ships today (v2.4.x).** Mainnet-validated CLI (latest line **v2.4.1 / v2.4.1.1**), localhost **api-server**, desktop **1.0.0-beta.2**, browser extension beta, and mobile companion surfaces—all sharing the `nozy` Rust core and `zeaking` compact sync. Nozy ships the Shielded Labs **dynamic-fee pilot** (client-side ZIP-317, ×4 priority on every send surface, five-block expiry) **and** the **Nym-recommended hybrid** (mixnet for remote submit, 2-hop dVPN for bulk sync, Local when Zebrad is LAN). Ironwood (NU6.3) migration follows draft **ZIP 318**. That pairing is the contribution recorded in the next section.
 
 **Why Ironwood.** In 2026, a soundness issue in Orchard’s circuit motivated sealing Orchard and opening Ironwood with a corrected circuit and a **turnstile** so circulating supply can be reasoned about again. After activation height **3,428,143** (2026-07-28), ordinary sends move to Ironwood; Orchard value migrates via Plan → Split → Migrate → Broadcast.
 
-**Network metadata.** Shielded proofs hide note contents; they do **not** hide that an IP submitted a transaction. Nozy’s Priority-1 path is a **hybrid**: baseline hygiene (start-height obfuscation, broadcast delay, tip guard) plus optional **Nym mixnet** broadcast / dVPN sync spikes—without claiming full “Nym integration” until live remote submit evidence is complete.
+**Network metadata.** Shielded proofs hide note contents; they do **not** hide that an IP submitted a transaction. Nozy’s Priority-1 path is the **Nym-recommended hybrid**: baseline hygiene (start-height obfuscation, broadcast delay, tip guard) plus optional **smolmix** broadcast and **smol-dvpn** sync, with Case A1 (local Zebrad) staying **direct**. That is the Nym **connect** we built—subprocess helpers so the wallet core does not link the Nym SDK graph. Product copy still does not treat attestation-only as “Nym integrated”; live remote mixnet `sendraw` (D2c-live) remains the remaining proof row when Zebrad is a public RPC.
 
 **Zcash Names.** Everyday and merchant UX will resolve `name.zcash` → UA via the ZNS indexer (proxied by `nozywallet-api`), link names to a **Business** Orchard account, and ship **Sell mode**—with in-wallet claim gated until ZNS signing is clear. Nozy is not the name registry.
 
-This paper states architecture decisions, **mathematical policy** (fees, expiry, ZIP 318 buckets and denominations), Ironwood, Nym, and ZNS plans, release history, field evidence, and lessons for operators, Shielded Labs reviewers, grant readers, and contributors.
+This paper states architecture decisions, **mathematical policy** (fees, expiry, ZIP 318 buckets and denominations), Ironwood, the **dynamic-fee × Nym** record, ZNS plans, release history, field evidence, and lessons for operators, Shielded Labs reviewers, Nym/Zcash SDK readers, grant readers, and contributors.
+
+---
+
+# Historic contribution: dynamic fees × Nym hybrid
+
+Zcash shielded circuits hide **notes**. They never hid **who submitted**. The Shielded Labs fee pilot asks wallets to compute **ZIP-317 on-device** (Zebrad has no `estimatefee`) and to use a short expiry so Expired → priority rebuild works. Nym’s published Zcash guidance asks wallets to put **small submits on the mixnet** and **bulk compact sync on 2-hop dVPN**, never bulk sync on Sphinx.
+
+**What we record as first.** NozyWallet is, to the authors’ knowledge, the first self-custodial Zcash wallet to **operate both** as shipping architecture:
+
+| Layer | What Nozy shipped | Evidence |
+|-------|-------------------|----------|
+| **Fees (proof / mempool)** | Client ZIP-317; \(F_{\mathrm{Nozy}}=4\times F_{\mathrm{conv}}\); \(\Delta_{\mathrm{exp}}=5\); Ironwood v6 2-action floor **0.0004 ZEC** | `fee_policy.rs`; mainnet v6 txs 9166 B, explorer fee 0.0004 ZEC — `661cf93e…`, `77760342…` (2026-09) |
+| **Wire (IP)** | Hybrid: Local Zebrad skip (A1); smolmix for remote `sendraw`; smol-dvpn for remote compact sync; send-egress badge | IP relocate PASS (D2a); mixnet gRPC load vs Joaco proxy; IEEE-style note [`IEEE_NYM_ZCASH_IP_PRIVACY_PAPER.md`](IEEE_NYM_ZCASH_IP_PRIVACY_PAPER.md) |
+
+**What this is not.** It is not a claim that Nozy invented ZIP-317 or Nym. It is not a claim that remote mixnet `sendrawtransaction` to a **public** Zebrad is already proven on the operator box (D2c-live stays **open** until an exit-reachable RPC is used). Local-node mainnet sends (including the 2026-09 Ironwood Max send) correctly used **direct** LAN Zebrad—Case A1—while still paying the **dynamic** 0.0004 ZEC fee. History here is **policy + implementation + evidence**, not a single toggle labeled “Nym.”
+
+![Figure H. One wallet, two policies](whitepaper-figures/fig-historic-fee-wire.png)
+
+*Figure H. Fee plane (ZIP-317 on-device) and wire plane (Nym-recommended hybrid) as one shipping architecture.*
 
 ---
 
@@ -66,7 +84,7 @@ Each decision uses an ADR pattern: context → decision → consequences.
 
 **Decision.** `fee_policy.rs`: ZIP-317 conventional fee; Nozy applies priority multiplier \(m = 4\) on all send surfaces.
 
-**Consequences.** Orchard/Ironwood logical actions use \(\max(n_{\mathrm{spends}}, n_{\mathrm{outputs}})\), not the sum (v2.3.2 fix).
+**Consequences.** Orchard/Ironwood logical actions use \(\max(n_{\mathrm{spends}}, n_{\mathrm{outputs}})\), not the sum (v2.3.2 fix). Desktop Ironwood sends still spend **one note**; ZIP 318 leaves canonical-sized notes, so Max = largest note minus the 2-action priority fee (0.0004 ZEC). Mainnet v6 txs of that shape are 9166 bytes with explorer fee 0.0004 ZEC — see [`DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md).
 
 ### 1.5 Five-block pilot expiry (not fifteen)
 
@@ -96,9 +114,9 @@ Each decision uses an ADR pattern: context → decision → consequences.
 
 **Context.** Clearnet submit links IP to mempool arrival time and (for turnstile) amount.
 
-**Decision.** Baseline hygiene always available; Priority-1 modes include `NymMixnetBroadcast`; dVPN compact-sync spike tracked separately. Local Zebrad (Case A1) needs no mixnet.
+**Decision.** Baseline hygiene always available; Priority-1 modes include `NymMixnetBroadcast` (smolmix subprocess); dVPN compact-sync spike tracked separately. Local Zebrad (Case A1) needs no mixnet—that skip is required by Nym’s own hybrid, not a missing connect.
 
-**Consequences.** Do not market “Nym integrated” from attestation alone; require live remote evidence for strong claims.
+**Consequences.** Together with §1.4, this is the **first-to-combine** record (dynamic fee on-device + Nym hybrid on the wire). Do not market “Nym integrated” from OS-VPN attestation alone; require live remote submit evidence (D2c-live) for that slogan. Publish IP-relocate and mixnet gRPC measurements instead.
 
 ### 1.9 System stack
 
@@ -114,7 +132,7 @@ CLI · api-server · desktop · extension · mobile
 
 # 2. Mathematical Model
 
-This section states the formulas Nozy implements. Constants match `src/fee_policy.rs` and `src/ironwood/migration.rs`.
+This section states the formulas Nozy implements. Constants match `src/fee_policy.rs` and `src/ironwood/migration.rs`. Figures 2.1–2.6 are the same model in print form ([`whitepaper-figures/`](whitepaper-figures/README.md)).
 
 ## 2.1 ZIP-317 conventional fee
 
@@ -142,6 +160,10 @@ F_{\mathrm{Nozy}} = m \cdot F_{\mathrm{conv}}, \qquad m = 4
 
 Floor when \(a = g = 2\): \(F_{\mathrm{conv}} = 10\,000\) zat, \(F_{\mathrm{Nozy}} = 40\,000\) zat.
 
+![Figure 2.1. ZIP-317 actions and Nozy priority fee](whitepaper-figures/fig-2-1-zip317-actions.png)
+
+*Figure 2.1. Single-note send (\(a=2\), \(F_{\mathrm{Nozy}}=0.0004\) ZEC) versus a six-note spend (\(a=6\), \(0.0012\) ZEC) that the desktop does not implement yet.*
+
 ## 2.2 Pilot expiry height
 
 Given chain tip \(h_{\mathrm{tip}}\) and delta \(\Delta_{\mathrm{exp}} = 5\):
@@ -160,6 +182,10 @@ T_{\mathrm{exp}} \approx \Delta_{\mathrm{exp}} \cdot t_b \approx 375\,\mathrm{s}
 \]
 
 (Fifteen-block policy would have been \(\approx 19\,\mathrm{min}\)—rejected for pilot UX.)
+
+![Figure 2.2. Pilot expiry timeline](whitepaper-figures/fig-2-2-expiry-timeline.png)
+
+*Figure 2.2. Ships \(\Delta_{\mathrm{exp}}=5\) (\(\approx 6.25\) min). \(\Delta=15\) was reverted (`a72bc6e8`); rebuild \(\le 3\) instead of stretching mempool life.*
 
 ## 2.3 Witness lag guard
 
@@ -185,6 +211,10 @@ T_{\mathrm{send}} \approx T_{\mathrm{witness}} + T_{\mathrm{setup}} + T_{\mathrm
 
 Synced wallets (\(L \le 50\)) observed \(T_{\mathrm{send}} \sim 200\,\mathrm{s}\) on a WSL Zebrad + Windows CLI stack (June 2026).
 
+![Figure 2.3. Witness lag gate and send latency](whitepaper-figures/fig-2-3-witness-lag.png)
+
+*Figure 2.3. Allow send iff \(L \le 50\). Halo 2 prove dominates \(T_{\mathrm{send}}\) when witnesses are already caught up.*
+
 ## 2.4 ZIP 318 anchor buckets (Ironwood migration)
 
 Draft ZIP 318 groups migrations into shared **anchor-height buckets** of width \(B = 256\) blocks:
@@ -201,6 +231,10 @@ T_{\mathrm{bucket}} \approx 256 \cdot 75\,\mathrm{s} \approx 5.33\,\mathrm{h}
 \]
 
 Transfer window / expiry alignment uses \(B\) blocks (`ZIP318_TRANSFER_EXPIRY_BLOCKS`). Default same-denomination cap per bucket: \(K_{\max} = 4\) (until ZIP finalizes).
+
+![Figure 2.4. ZIP 318 256-block buckets](whitepaper-figures/fig-2-4-zip318-buckets.png)
+
+*Figure 2.4. Bucket geometry \(B=256\) (\(\approx 5.33\) h). Hygiene checkpoints in §2.6 use the same spacing.*
 
 ## 2.5 Migration denominations \(\{1,2,5\}\times 10^k\)
 
@@ -220,6 +254,10 @@ are **abandoned** rather than emitted as one-off turnstile sizes (`ZOOKO_RESIDUA
 
 ZIP 318 power-of-ten ladders remain as a **compatibility** path; the wallet’s active default is the \(\{1,2,5\}\times 10^k\) schedule.
 
+![Figure 2.5. Canonical denomination split](whitepaper-figures/fig-2-5-denomination-split.png)
+
+*Figure 2.5. Composite notes split on \(\{1,2,5\}\times 10^k\); residuals \(< 0.001\) ZEC are abandoned. Desktop Max send is the largest remaining note minus \(F_{\mathrm{Nozy}}\).*
+
 ## 2.6 Baseline network hygiene (parameters)
 
 Implemented defaults (`baseline_hygiene.rs`), complementary to mixnet:
@@ -230,6 +268,10 @@ Implemented defaults (`baseline_hygiene.rs`), complementary to mixnet:
 | Max overlap rewind | 128 blocks | Bounds start-height choice |
 | Broadcast delay | uniform in \([30, 300]\) s | Breaks “sync-then-immediate-submit” timing |
 | Tip-sync guard | refuse migrate-broadcast if tip sync within 120 s | Reduces tip-correlated submit |
+
+![Figure 2.6. Hygiene on the ZIP 318 axis](whitepaper-figures/fig-2-6-hygiene-axis.png)
+
+*Figure 2.6. Checkpoint 256, overlap \(\le 128\), broadcast delay \(U[30,300]\) s, and a 120 s tip-sync guard. Complementary to mixnet; Case A1 stays direct.*
 
 ---
 
@@ -512,7 +554,7 @@ Ordered phases from the locked backlog (do not skip gates):
 **v1.** Send-by-name everywhere + Business CSV export.  
 **v2.** In-wallet claim/update + UFVK grant with audit log.
 
-**Explicitly deferred.** Secret/SILK/Fina as primary business story; multi-user org custody without shared seed; fiat instant settlement; in-wallet claim before resolve + Sell are stable.
+**Explicitly deferred.** Secret Network as primary business story; multi-user org custody without shared seed; fiat instant settlement; in-wallet claim before resolve + Sell are stable.
 
 ## 5.4 Privacy and security notes for names
 
@@ -632,12 +674,16 @@ Ironwood / Nym evidence continues under `docs/reference/evidence/` and case-brea
 
 # 11. Dynamic-Fee Pilot Alignment
 
+Nozy is an operator in the Shielded Labs **dynamic-fee pilot**. Fees are **not** a node RPC; they are wallet policy. Combined with §4 (Nym), this is the historic pairing recorded above.
+
 | Pilot feature | Implementation | Lesson |
 |---------------|----------------|--------|
 | Standard fee | ZIP-317 in `fee_policy.rs` | Zebrad has no fee RPC |
-| Priority ×4 | All Nozy send surfaces | Speed-up after Expired |
+| Priority ×4 | All Nozy send surfaces | Speed-up after Expired; mainnet Ironwood 2-action floor **0.0004 ZEC** |
 | Short expiry | \(h_{\mathrm{expiry}} = h_{\mathrm{tip}}+1+5\) | Keep 5; rebuild for slow proves |
 | Speed-up | New tx at priority fee | Not rebroadcast of expired bytes |
+| Single-note Ironwood send | `select_single_ironwood_spend_note` | ZIP 318 notes + 2-action fee ⇒ Max chunks, not one “send all” ([`DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md)) |
+| Nym hybrid (same wallet) | smolmix / smol-dvpn / Local A1 | First shipping wallet known to us to run **this fee pilot and this Nym hybrid together** |
 
 ---
 
@@ -651,17 +697,18 @@ Ironwood / Nym evidence continues under `docs/reference/evidence/` and case-brea
 6. Cache migrations (NoteIndex v2) bite if any path still uses legacy parsers.  
 7. Surface parity is expensive and mandatory.  
 8. Ironwood migration is cryptography **plus** schedule math **plus** network metadata.  
-9. Do not overclaim Nym: ship hygiene, wire mixnet, publish evidence.  
+9. Do not overclaim Nym: ship hygiene, wire mixnet, publish evidence—and still record that **dynamic fees + Nym hybrid in one wallet** is the history.  
 10. TXIDs and measured timings outperform narrative alone.  
-11. ZNS is identity on top of shielding—resolve/link first; claim later; never become the registry.
+11. ZNS is identity on top of shielding—resolve/link first; claim later; never become the registry.  
+12. Ironwood UI **sum** ≠ one spendable note; ZIP-317 \(m=4\) on a 2-action send is 0.0004 ZEC — chunk Max sends, do not treat “send all” as the fee-pilot path ([`DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md)).
 
 ---
 
 # 13. Conclusion
 
-NozyWallet shows a shielded-first wallet can run on Zebrad + lightwalletd with client-side ZIP-317 fees, short pilot expiry, and local witnesses—without zcashd and without stretching mempool expiry to hide slow proves. **Ironwood** extends that story to NU6.3 supply soundness and ZIP 318 migration. **Nym-oriented** broadcast and hygiene address the IP↔submit gap that ZK notes never covered. **Zcash Names** are the planned human layer for merchant and everyday send/receive—resolve and link on a pure ZEC Business profile, with in-wallet claim gated on protocol reality. Releases through **v2.4.1.x** and desktop **beta.2** carry the core into operator hands.
+NozyWallet shows a shielded-first wallet can run on Zebrad + lightwalletd with **client-side ZIP-317 dynamic fees**, short pilot expiry, and local witnesses—without zcashd and without stretching mempool expiry to hide slow proves. **Ironwood** extends that story to NU6.3 supply soundness and ZIP 318 migration. The **Nym-recommended hybrid** (Local when the node is local; mixnet for remote submit; dVPN for remote sync) addresses the IP↔submit gap that ZK notes never covered. **Together**, dynamic fees and that Nym connect are what we record as **first in a shipping Zcash wallet**—with TXIDs and measurements, not a store-badge slogan. **Zcash Names** remain the planned human layer for merchant and everyday send/receive. Releases through **v2.4.1.x** and desktop **beta.2** carry the core into operator hands.
 
-Continued work: Ironwood migrate hardening, honest Nym evidence for remote nodes, surface parity, ZNS Phase 1–3 (profiles, resolve/link, Sell), native merchant invoices, and pilot observatory metrics.
+Continued work: Ironwood migrate hardening, D2c-live mixnet `sendraw` when a public Zebrad is in play, surface parity, ZNS Phase 1–3, native merchant invoices, and pilot observatory metrics.
 
 ---
 
@@ -670,6 +717,8 @@ Continued work: Ironwood migrate hardening, honest Nym evidence for remote nodes
 - LEONINE-DAO/Nozy-wallet — github.com/LEONINE-DAO/Nozy-wallet  
 - nozywallet.com (marketing / Ironwood dashboard)  
 - `docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md`  
+- `docs/reference/DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`  
+- `docs/reference/IEEE_NYM_ZCASH_IP_PRIVACY_PAPER.md`  
 - `docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md`  
 - `docs/reference/IRONWOOD_WALLET_READINESS.md`  
 - `docs/reference/IRONWOOD_PRIVACY_EXPECTATIONS_ARTICLE.md`  

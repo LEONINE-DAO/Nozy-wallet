@@ -146,15 +146,26 @@ pub fn zebra_connect_api_code(err: &str) -> &'static str {
 }
 
 /// ZIP-317 client-side fee for an Orchard send (Zebrad does not implement `estimatefee`).
+///
+/// The marginal fee follows ZIP 2009: 5,000 zats/action until mainnet block 3,590,000,
+/// then 1,000. Nozy multiplies that conventional fee by 4.
 pub async fn estimate_transaction_fee_for_send(
-    _zebra_client: &ZebraClient,
+    zebra_client: &ZebraClient,
     memo: Option<&[u8]>,
     _priority: bool,
 ) -> u64 {
-    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, true);
+    let block = zebra_client.fee_block_for_next_block().await;
+    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, true, block);
+    let schedule = if block.zip2009_active() {
+        "ZIP-2009"
+    } else {
+        "ZIP-317"
+    };
     println!(
-        "💰 Estimated fee (priority ×4): {:.8} ZEC ({fee_zatoshis} zats, ZIP-317)",
-        fee_zatoshis as f64 / 100_000_000.0,
+        "💰 Estimated fee ({schedule} ×4, marginal {} zats, block {}): {:.8} ZEC ({fee_zatoshis} zats)",
+        block.marginal_fee(),
+        block.height,
+        fee_zatoshis as f64 / 100_000_000.0
     );
     fee_zatoshis
 }
@@ -290,7 +301,8 @@ pub async fn build_and_broadcast_transaction(
 ) -> NozyResult<String> {
     let fee_zatoshis = if let Some(fee) = fee_zatoshis {
         // Never allow underpayment vs mandatory ZIP-317 ×4 (legacy callers used 10_000).
-        let min = estimate_orchard_send_fee_zatoshis(memo, true);
+        let block = zebra_client.fee_block_for_next_block().await;
+        let min = estimate_orchard_send_fee_zatoshis(memo, true, block);
         fee.max(min)
     } else {
         estimate_transaction_fee_for_send(zebra_client, memo, pilot.priority).await

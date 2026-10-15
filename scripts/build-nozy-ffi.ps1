@@ -1,5 +1,7 @@
 # Build nozy-ffi for mobile targets and optionally generate UniFFI bindings.
 # Requires: Rust, and for Android: NDK + cargo-ndk (see nozy-ffi/README.md).
+# Android cross-compile needs rustup's rustc (android std). If `cargo` is the
+# standalone "Rust MSVC" install, prepend `$env:USERPROFILE\.cargo\bin` to PATH.
 
 param(
     [ValidateSet("host", "android", "ios")]
@@ -10,29 +12,30 @@ param(
 
 $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent $PSScriptRoot
+$TargetDir = if ($env:CARGO_TARGET_DIR) { $env:CARGO_TARGET_DIR } else { Join-Path $Root "target" }
 Push-Location $Root
 
 try {
     switch ($Target) {
         "host" {
             cargo build -p nozy-ffi --release
-            $lib = Join-Path $Root "target\release\nozy_ffi.dll"
+            $lib = Join-Path $TargetDir "release\nozy_ffi.dll"
             if (-not (Test-Path $lib)) {
-                $lib = Join-Path $Root "target\release\libnozy_ffi.so"
+                $lib = Join-Path $TargetDir "release\libnozy_ffi.so"
             }
             Write-Host "Built: $lib"
         }
         "android" {
             Write-Host "Android cross-compile requires cargo-ndk and NDK targets."
             cargo ndk -t arm64-v8a -t x86_64 build -p nozy-ffi --release
-            $lib = Join-Path $Root "target\aarch64-linux-android\release\libnozy_ffi.so"
+            $lib = Join-Path $TargetDir "aarch64-linux-android\release\libnozy_ffi.so"
             $jni = Join-Path $Root "nozy-mobile\modules\nozy-wallet\android\src\main\jniLibs"
             if (Test-Path $lib) {
                 New-Item -ItemType Directory -Force -Path (Join-Path $jni "arm64-v8a") | Out-Null
                 Copy-Item $lib (Join-Path $jni "arm64-v8a\libnozy_ffi.so") -Force
                 Write-Host "Copied arm64-v8a libnozy_ffi.so"
             }
-            $lib64 = Join-Path $Root "target\x86_64-linux-android\release\libnozy_ffi.so"
+            $lib64 = Join-Path $TargetDir "x86_64-linux-android\release\libnozy_ffi.so"
             if (Test-Path $lib64) {
                 New-Item -ItemType Directory -Force -Path (Join-Path $jni "x86_64") | Out-Null
                 Copy-Item $lib64 (Join-Path $jni "x86_64\libnozy_ffi.so") -Force
@@ -46,18 +49,14 @@ try {
     }
 
     if ($Bindgen -ne "none" -and (Test-Path $lib)) {
-        $bindgen = Get-Command uniffi-bindgen -ErrorAction SilentlyContinue
-        if (-not $bindgen) {
-            Write-Host "Install: cargo install uniffi_bindgen --locked --version 0.28.0"
-            exit 1
-        }
         $outDir = if ($Bindgen -eq "kotlin") {
-            Join-Path $Root "nozy-mobile\modules\nozy-wallet\android\src\main\java\uniffi\nozy_ffi"
+            # bindgen writes uniffi/<crate>.kt under this root (package uniffi.nozy_ffi)
+            Join-Path $Root "nozy-mobile\modules\nozy-wallet\android\src\main\java"
         } else {
             Join-Path $Root "nozy-mobile\modules\nozy-wallet\ios\bindings\swift"
         }
         New-Item -ItemType Directory -Force -Path $outDir | Out-Null
-        uniffi-bindgen generate --library $lib --language $Bindgen --out-dir $outDir
+        cargo run -p nozy-ffi --features bindgen --bin uniffi-bindgen -- generate --library $lib --language $Bindgen --out-dir $outDir
         Write-Host "Generated $Bindgen bindings in $outDir"
     }
 }

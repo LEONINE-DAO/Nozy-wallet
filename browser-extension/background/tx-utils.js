@@ -1,16 +1,86 @@
-/** Typical ZIP-317 × 4 orchard send with empty memo (NozyWallet policy). */
+/** ZIP-317 marginal fee before ZIP 2009, zatoshis per logical action. */
+export const ZIP317_MARGINAL_FEE_ZATS = 5_000;
+/** ZIP 2009 marginal fee, zatoshis per logical action. */
+export const ZIP2009_MARGINAL_FEE_ZATS = 1_000;
+/** Mainnet block the transaction is mined in, from which ZIP 2009 applies. */
+export const ZIP2009_MAINNET_ACTIVATION_HEIGHT = 3_590_000;
+/** Nozy multiplies the active conventional fee by this on every send. */
+export const PRIORITY_MULTIPLIER = 4;
+/** ZIP-317 grace actions. A normal send bills at least this many. */
+export const GRACE_ACTIONS = 2;
+
+/** Pre-ZIP-2009 empty-memo floor (5,000 × 2 × 4). Used when the chain tip is unknown. */
 export const MANDATORY_ORCHARD_FEE_FALLBACK_ZATS = 40_000;
 
 /**
- * ZIP-317 × 4 is required on every Nozy surface (CLI / API / desktop / extension).
- * Callers may pass a `fee` for display only — prove paths must use this value.
+ * Marginal fee for a transaction mined in `minedBlockHeight` (chain tip + 1).
+ * Test networks use ZIP 2009 at every height. Mainnet switches at 3,590,000.
  */
-export function mandatoryOrchardFeeZats(wasm, memo = "") {
+export function marginalFeeForMinedBlock(mainnet, minedBlockHeight) {
+  const height = Number(minedBlockHeight);
+  if (!mainnet || (Number.isFinite(height) && height >= ZIP2009_MAINNET_ACTIVATION_HEIGHT)) {
+    return ZIP2009_MARGINAL_FEE_ZATS;
+  }
+  return ZIP317_MARGINAL_FEE_ZATS;
+}
+
+/** Empty-memo ZIP-317 ×4 floor for the active marginal fee. */
+export function orchardFeeFloorZats(mainnet, minedBlockHeight) {
+  return marginalFeeForMinedBlock(mainnet, minedBlockHeight) * GRACE_ACTIONS * PRIORITY_MULTIPLIER;
+}
+
+/**
+ * Ask the node which ZIP 2009 fee block the next transaction is mined in.
+ * `request(method, params)` returns the JSON-RPC result.
+ */
+export async function feeBlockFromRpc(request) {
+  const tip = Number(await request("getblockcount", []));
+  let mainnet = true;
   try {
-    const fee = Number(wasm?.estimate_orchard_send_fee_zats?.(String(memo || ""), true));
+    const info = await request("getblockchaininfo", []);
+    const chain = String(info?.chain ?? "main").toLowerCase();
+    mainnet = chain !== "test" && chain !== "testnet" && chain !== "regtest";
+  } catch (_) {
+    // A missing chain name stays on mainnet so the wallet cannot underpay.
+  }
+  const minedBlockHeight = (Number.isFinite(tip) && tip >= 0 ? Math.floor(tip) : 0) + 1;
+  return { mainnet, minedBlockHeight };
+}
+
+/**
+ * ZIP-317 × 4 of the active ZIP 2009 schedule.
+ * `feeBlock` is `{ mainnet, minedBlockHeight }` from `feeBlockFromRpc`.
+ * Without a rebuilt WASM that exports `estimate_orchard_send_fee_zats_at`, this
+ * stays on the pre-2009 floor so it matches the prove-path clamp.
+ */
+export function mandatoryOrchardFeeZats(wasm, memo = "", feeBlock = null) {
+  const memoStr = String(memo || "");
+  if (
+    feeBlock &&
+    typeof wasm?.estimate_orchard_send_fee_zats_at === "function"
+  ) {
+    try {
+      const fee = Number(
+        wasm.estimate_orchard_send_fee_zats_at(
+          memoStr,
+          true,
+          !!feeBlock.mainnet,
+          Number(feeBlock.minedBlockHeight) || 0
+        )
+      );
+      if (Number.isFinite(fee) && fee > 0) return Math.floor(fee);
+    } catch (_) {
+      // Fall through to the legacy export.
+    }
+  }
+  try {
+    const fee = Number(wasm?.estimate_orchard_send_fee_zats?.(memoStr, true));
     if (Number.isFinite(fee) && fee > 0) return Math.floor(fee);
   } catch (_) {
     // Fall through to the known empty-memo floor.
+  }
+  if (feeBlock && typeof wasm?.estimate_orchard_send_fee_zats_at === "function") {
+    return orchardFeeFloorZats(!!feeBlock.mainnet, feeBlock.minedBlockHeight);
   }
   return MANDATORY_ORCHARD_FEE_FALLBACK_ZATS;
 }

@@ -639,6 +639,16 @@ pub async fn sync_wallet_notes(
             )
         })?;
 
+    match crate::received_memo::backfill_unresolved_memos(wallet, &zebra_client, &mut cached_notes)
+        .await
+    {
+        Ok(n) if n > 0 => {
+            tracing::info!(memos = n, "filled shielded memos from full transactions");
+        }
+        Ok(_) => {}
+        Err(e) => tracing::warn!(error = %e, "received memo backfill failed"),
+    }
+
     save_wallet_notes(&cached_notes).map_err(|e| {
         WalletSyncError::with_range(
             WalletSyncPhase::Persist,
@@ -814,6 +824,33 @@ async fn finish_caught_up_sync(
                     Some(range.chain_tip),
                 )
             })?;
+        save_wallet_notes(&notes_mut).map_err(|e| {
+            WalletSyncError::with_range(
+                WalletSyncPhase::Persist,
+                e,
+                None,
+                None,
+                None,
+                Some(range.chain_tip),
+            )
+        })?;
+    }
+
+    let memos_filled =
+        match crate::received_memo::backfill_unresolved_memos(wallet, zebra_client, &mut notes_mut)
+            .await
+        {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::warn!(error = %e, "received memo backfill failed");
+                0
+            }
+        };
+    if memos_filled > 0 {
+        tracing::info!(
+            memos = memos_filled,
+            "filled shielded memos from full transactions"
+        );
         save_wallet_notes(&notes_mut).map_err(|e| {
             WalletSyncError::with_range(
                 WalletSyncPhase::Persist,

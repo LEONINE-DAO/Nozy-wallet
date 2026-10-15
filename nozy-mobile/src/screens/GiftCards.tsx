@@ -17,6 +17,7 @@ import { Card } from "../components/Card";
 import { Input } from "../components/Input";
 import { PageHeader } from "../components/PageHeader";
 import { useWalletSession } from "../context/WalletSessionContext";
+import { NOZY_PUBLIC_LWD_URL } from "../lib/connectionPresets";
 import { addressQrDataUrl } from "../lib/qrPng";
 import { api } from "../services/api";
 import {
@@ -25,8 +26,23 @@ import {
   listOnDeviceGiftCards,
   redeemOnDeviceGiftCard,
 } from "../services/onDeviceGiftCards";
+import { lwdGetInfo } from "nozy-wallet";
+import { loadOnDevicePaths } from "../services/onDeviceSapling";
+import { onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
 import { colors, fontSize, radius, spacing } from "../theme";
 import type { GiftCard, GiftCardCreated, GiftCardStatus } from "../types";
+
+async function nozyServerGiftNote(lightwalletdUrl?: string): Promise<string> {
+  const url = lightwalletdUrl?.trim() || NOZY_PUBLIC_LWD_URL;
+  try {
+    const info = await lwdGetInfo(url);
+    const height = Number(info.block_height || info.estimated_height || 0);
+    const block = height > 0 ? height.toLocaleString() : "an unknown block";
+    return `Nozy server is online at block ${block}. A gift card is built on this phone and sent through that server.`;
+  } catch {
+    return "The Nozy server did not answer, so the gift card was not paid.";
+  }
+}
 
 function statusLabel(status: GiftCardStatus): string {
   switch (status) {
@@ -54,6 +70,9 @@ export function GiftCardsScreen() {
   const [action, setAction] = useState<"buy" | "redeem" | "cancel" | null>(null);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [status, setStatus] = useState("");
+  const [serverNote, setServerNote] = useState("");
+  const [spendable, setSpendable] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
 
   const claimQr = useMemo(() => {
@@ -67,7 +86,18 @@ export function GiftCardsScreen() {
 
   const refresh = useCallback(async () => {
     if (onDevice) {
-      setCards(await listOnDeviceGiftCards());
+      const [cardsNext, snap] = await Promise.all([
+        listOnDeviceGiftCards(),
+        onDeviceShieldedSnapshot(),
+      ]);
+      setSpendable(snap.unspentZec);
+      setCards(cardsNext);
+      const paths = await loadOnDevicePaths();
+      if (!paths?.zebraUrl?.trim()) {
+        setServerNote(await nozyServerGiftNote(paths?.lightwalletdUrl));
+      } else {
+        setServerNote("");
+      }
       return;
     }
     const res = await api.listGiftCards(20);
@@ -77,7 +107,8 @@ export function GiftCardsScreen() {
   useFocusEffect(
     useCallback(() => {
       void refresh().catch((e) => {
-        setError(e instanceof Error ? e.message : "Could not load gift cards");
+        const message = e instanceof Error ? e.message : "Could not load gift cards";
+        setError(message);
       });
     }, [refresh]),
   );
@@ -91,7 +122,32 @@ export function GiftCardsScreen() {
       return;
     }
     setAction("buy");
+    setStatus("Checking your balance…");
     try {
+      if (onDevice) {
+        const paths = await loadOnDevicePaths();
+        const snap = await onDeviceShieldedSnapshot();
+        setSpendable(snap.unspentZec);
+        const sendFeeZec = 0.0001;
+        const needed = parsed + sendFeeZec;
+        const short = snap.unspentZec + 1e-10 < needed;
+        const hasZebra = Boolean(paths?.zebraUrl?.trim());
+        if (short) {
+          setStatus("");
+          setError(
+            `Not enough ZEC. This wallet can spend ${snap.unspentZec.toFixed(8)} ZEC. This gift card needs ${parsed.toFixed(8)} ZEC plus a ${sendFeeZec.toFixed(4)} ZEC send fee.`,
+          );
+          setAction(null);
+          return;
+        }
+        setStatus(
+          hasZebra
+            ? "Sending the shielded payment…"
+            : "Building the gift card on this phone…",
+        );
+      } else {
+        setStatus("Sending the shielded payment…");
+      }
       const card = onDevice
         ? await buyOnDeviceGiftCard({
             amountZec: parsed,
@@ -109,8 +165,15 @@ export function GiftCardsScreen() {
       setNotice("Paid. Copy the claim code now and send it. It is not saved.");
       await refresh();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not buy gift card");
+      const raw = e instanceof Error ? e.message : "Could not buy gift card";
+      const message = /not enough|insufficient/i.test(raw)
+        ? "Not enough ZEC to buy this gift card."
+        : /Failed to connect to local Zebra|8232/i.test(raw)
+          ? "The local node did not answer, so the gift card was not paid."
+          : raw;
+      setError(message);
     } finally {
+      setStatus("");
       setAction(null);
     }
   }
@@ -123,6 +186,7 @@ export function GiftCardsScreen() {
       return;
     }
     setAction("redeem");
+    setStatus("Looking for the gift card on the Nozy server…");
     try {
       const card = onDevice
         ? await redeemOnDeviceGiftCard(claimCode.trim())
@@ -141,8 +205,10 @@ export function GiftCardsScreen() {
         return prev.map((row) => (row.gift_id === card.gift_id ? card : row));
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not redeem gift card");
+      const raw = e instanceof Error ? e.message : "Could not redeem gift card";
+      setError(raw);
     } finally {
+      setStatus("");
       setAction(null);
     }
   }
@@ -213,6 +279,13 @@ export function GiftCardsScreen() {
             placeholder="Coffee"
             editable={!busy}
           />
+          {onDevice && spendable != null ? (
+            <Text style={styles.meta}>
+              Spendable {spendable.toFixed(8)} ZEC
+            </Text>
+          ) : null}
+          {serverNote ? <Text style={styles.meta}>{serverNote}</Text> : null}
+          {status ? <Text style={styles.meta}>{status}</Text> : null}
           <Button
             label="Buy with shielded ZEC"
             onPress={() => void buy()}
@@ -267,6 +340,9 @@ export function GiftCardsScreen() {
             placeholder="NZGC-…"
             editable={!busy}
           />
+          {action === "redeem" && status ? (
+            <Text style={styles.meta}>{status}</Text>
+          ) : null}
           <Button
             label="Redeem"
             onPress={() => void redeem()}
@@ -277,7 +353,9 @@ export function GiftCardsScreen() {
           {error ? <Text style={styles.error}>{error}</Text> : null}
           {notice ? <Text style={styles.ok}>{notice}</Text> : null}
 
-          {cards.length > 0 ? (
+          {cards.length === 0 ? (
+            <Text style={styles.meta}>No gift cards on this phone yet.</Text>
+          ) : (
             <View style={styles.list}>
               {cards.map((card) => (
                 <Card key={card.gift_id}>
@@ -298,7 +376,7 @@ export function GiftCardsScreen() {
                 </Card>
               ))}
             </View>
-          ) : null}
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

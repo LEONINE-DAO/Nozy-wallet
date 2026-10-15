@@ -41,6 +41,8 @@ export type OrchardReceivedNoteNative = {
   value_zec: number;
   spent: boolean;
   pool: string;
+  /** ZIP-302 text. Null when the memo is empty or not recovered yet. */
+  memo?: string | null;
 };
 
 export type OrchardStatusNative = {
@@ -141,6 +143,19 @@ type NozyFfiNative = {
     full: boolean,
   ) => Promise<OrchardScanNative>;
   orchardStatus?: (walletDataDir: string) => Promise<OrchardStatusNative>;
+  orchardBackfillMemos?: (
+    mnemonic: string,
+    walletDataDir: string,
+    lightwalletdUrl: string,
+  ) => Promise<number>;
+  orchardSendPayment?: (
+    mnemonic: string,
+    walletDataDir: string,
+    lightwalletdUrl: string,
+    recipient: string,
+    amountZec: number,
+    memo: string,
+  ) => Promise<string>;
   saplingShield?: (
     mnemonic: string,
     walletDataDir: string,
@@ -359,6 +374,46 @@ export async function orchardScan(params: {
     params.startFloor ?? null,
     params.maxAccount ?? 0,
     params.full ?? false,
+  );
+}
+
+export async function orchardBackfillMemos(params: {
+  mnemonic: string;
+  walletDataDir: string;
+  lightwalletdUrl: string;
+}): Promise<number> {
+  const n = requireNative();
+  if (!n.orchardBackfillMemos) {
+    return 0;
+  }
+  return n.orchardBackfillMemos(
+    params.mnemonic,
+    params.walletDataDir,
+    params.lightwalletdUrl,
+  );
+}
+
+export async function orchardSendPayment(params: {
+  mnemonic: string;
+  walletDataDir: string;
+  lightwalletdUrl: string;
+  recipient: string;
+  amountZec: number;
+  memo?: string;
+}): Promise<string> {
+  const n = requireNative();
+  if (!n.orchardSendPayment) {
+    throw new Error(
+      "On-device send requires a native rebuild with libnozy_ffi.",
+    );
+  }
+  return n.orchardSendPayment(
+    params.mnemonic,
+    params.walletDataDir,
+    params.lightwalletdUrl,
+    params.recipient,
+    params.amountZec,
+    params.memo ?? "",
   );
 }
 

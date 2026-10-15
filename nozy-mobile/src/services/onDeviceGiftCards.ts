@@ -1,4 +1,5 @@
 import { Platform } from "react-native";
+import { NOZY_PUBLIC_LWD_URL } from "../lib/connectionPresets";
 import {
   giftCardBuy,
   giftCardCancel,
@@ -37,10 +38,13 @@ export async function buyOnDeviceGiftCard(params: {
   if (!paths) {
     throw new Error("No wallet on this phone. Create or restore one first.");
   }
+  const zebraUrl = paths.zebraUrl.trim()
+    ? zebraFromPhone(paths.zebraUrl)
+    : `lwd:${paths.lightwalletdUrl.trim() || NOZY_PUBLIC_LWD_URL}`;
   const raw = await giftCardBuy({
     mnemonic: paths.mnemonic,
     walletDataDir: paths.walletDataDir,
-    zebraUrl: zebraFromPhone(paths.zebraUrl),
+    zebraUrl,
     amountZec: params.amountZec,
     label: params.label,
   });
@@ -54,10 +58,13 @@ export async function redeemOnDeviceGiftCard(
   if (!paths) {
     throw new Error("No wallet on this phone. Create or restore one first.");
   }
+  const zebraUrl = paths.zebraUrl.trim()
+    ? zebraFromPhone(paths.zebraUrl)
+    : `lwd:${paths.lightwalletdUrl.trim() || NOZY_PUBLIC_LWD_URL}`;
   const raw = await giftCardRedeem({
     mnemonic: paths.mnemonic,
     walletDataDir: paths.walletDataDir,
-    zebraUrl: zebraFromPhone(paths.zebraUrl),
+    zebraUrl,
     claimCode,
   });
   return parseCard(raw);

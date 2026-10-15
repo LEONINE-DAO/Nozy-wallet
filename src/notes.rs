@@ -765,6 +765,9 @@ fn merge_note_scan_fields(
     if existing.spent_in_txid.is_none() {
         existing.spent_in_txid = new_note.spent_in_txid.clone();
     }
+    if existing.memo.is_empty() && !new_note.memo.is_empty() {
+        existing.memo = new_note.memo.clone();
+    }
 }
 
 /// Notes found for a spending key that is not this wallet's seed.
@@ -1560,6 +1563,28 @@ impl<'a> NoteScanner<'a> {
 
         let compact_action =
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
+
+        if let Some((note, address, memo)) = crate::received_memo::try_decrypt_full_action(
+            pool,
+            ivk,
+            &action.nullifier,
+            &action.cmx,
+            &action.ephemeral_key,
+            &action.encrypted_note,
+        ) {
+            scan_verbose!("Decrypted full note (with memo) in transaction {}", txid);
+            let canonical_nullifier = note.nullifier(orchard_fvk);
+            return Ok(Some(OrchardNote {
+                value: note.value().inner(),
+                address,
+                nullifier: canonical_nullifier,
+                block_height,
+                txid: txid.to_string(),
+                spent: false,
+                memo,
+                note,
+            }));
+        }
 
         let prepared_ivk = PreparedIncomingViewingKey::new(ivk);
 

@@ -393,7 +393,7 @@ pub struct IronwoodSplitResponse {
 pub async fn ironwood_split(
     Json(payload): Json<IronwoodSplitRequest>,
 ) -> Result<ResponseJson<IronwoodSplitResponse>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    let (config, _chain_tip, ironwood_active, _tip) = chain_context().await?;
+    let (config, chain_tip, ironwood_active, _tip) = chain_context().await?;
     if !ironwood_active {
         return Err(error_response_with_code(
             StatusCode::BAD_REQUEST,
@@ -428,14 +428,17 @@ pub async fn ironwood_split(
                     "SPLIT_NOT_REQUIRED",
                 )
             })?;
-        let (outputs, fee) = plan_orchard_note_split_outputs(spend_note.orchard_note.value)
-            .map_err(|e| {
-                error_response_with_code(
-                    StatusCode::INTERNAL_SERVER_ERROR,
-                    format!("Failed to plan split: {e}"),
-                    "SPLIT_PLAN_FAILED",
-                )
-            })?;
+        let (outputs, fee) = plan_orchard_note_split_outputs(
+            spend_note.orchard_note.value,
+            nozy::FeeBlock::from_network_name(&config.network, chain_tip),
+        )
+        .map_err(|e| {
+            error_response_with_code(
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("Failed to plan split: {e}"),
+                "SPLIT_PLAN_FAILED",
+            )
+        })?;
         return Ok(ResponseJson(IronwoodSplitResponse {
             dry_run: true,
             source_value_zat: spend_note.orchard_note.value,

@@ -189,7 +189,7 @@ curl -s -H 'content-type: application/json' \
 | NET_001, `127.0.0.1:8232` fails | No Zebrad on Windows; wrong default after config parse failure | Start node or fix `zebra_url`; check BOM/JSON |
 | TCP connects but RPC closes | Port owned by non-Zebrad service (e.g. Windows IP Helper on 8232) | Change Zebrad `listen_addr` (e.g. 18232) |
 | CLI works, desktop fails | Opened Vite URL in browser (`localhost:5173`) not Tauri app | Use taskbar **NozyWallet** window (`RUNTIME_001`) |
-| `test-zebra` OK, sync stuck | lightwalletd / compact path separate from Zebrad | Check `lightwalletd_url`, LWD tip in sync status |
+| `test-zebra` OK, sync stuck | compact path separate from Zebrad | Check `LIGHTWALLETD_GRPC` (Nozy Sync Engine or lightwalletd), tip in sync status |
 | Sync “success” but send blocked | Witness lag | Sync to tip; wait for witness refresh |
 | Wrong chain / height 0 | Testnet vs mainnet mismatch | Align `privacy_network` and Zebrad network |
 
@@ -207,7 +207,8 @@ curl -s -H 'content-type: application/json' \
           │  compact blocks (optional)                     │ P2P
           ▼                                                ▼
 ┌─────────────────────┐                           ┌──────────────────┐
-│ lightwalletd        │                           │ Zcash network    │
+│ Nozy Sync Engine /  │                           │ Zcash network    │
+│ lightwalletd        │                           │                  │
 │ (local or remote)   │                           │                  │
 └─────────────────────┘                           └──────────────────┘
 

@@ -2,7 +2,7 @@
 $ErrorActionPreference = "Continue"
 $Rpc = "http://127.0.0.1:18232"
 $Log = "C:\Users\User\NozyWallet\tools\crosslink\sync-watch.log"
-$GuiName = "zebrad_win32_gui_v13"
+$GuiName = "zebrad_v15_win32"
 $TargetHeight = 280000
 $IntervalSec = 20
 $history = New-Object System.Collections.Generic.List[int]
@@ -32,8 +32,8 @@ while ($true) {
         $positions = Invoke-Rpc "wallet_staking_positions"
         $active = 0
         if ($positions.result.active) { $active = @($positions.result.active.PSObject.Properties).Count }
-        $cycle = 150
-        $window = 70
+        $cycle = 10368
+        $window = 3456
         $pos = $height % $cycle
         $open = $pos -lt $window
         $left = if ($open) { $window - $pos } else { $cycle - $pos }

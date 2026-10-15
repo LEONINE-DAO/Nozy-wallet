@@ -966,6 +966,23 @@ Add the node to trusted_zebra_urls for operator infrastructure, or enable Tor."
         self.get_block_count().await
     }
 
+    /// ZIP 2009 fee block for a transaction mined in the next block.
+    ///
+    /// A missing tip or chain name stays on mainnet-before-ZIP-2009 so a send cannot underpay.
+    /// A reported test network uses the ZIP 2009 marginal fee at every height.
+    pub async fn fee_block_for_next_block(&self) -> crate::fee_policy::FeeBlock {
+        use crate::fee_policy::FeeBlock;
+        let tip = self.get_block_count().await.unwrap_or(0);
+        match self.get_blockchain_info().await {
+            Ok(info) => {
+                let chain = info.get("chain").and_then(|v| v.as_str()).unwrap_or("main");
+                FeeBlock::from_network_name(chain, tip)
+            }
+            Err(_) if tip == 0 => FeeBlock::mainnet_before_zip2009(),
+            Err(_) => FeeBlock::next_block(true, tip),
+        }
+    }
+
     /// Full Orchard treestate from `z_gettreestate` (JSON-RPC only).
     pub async fn get_orchard_treestate_parsed(
         &self,

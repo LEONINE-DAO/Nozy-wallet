@@ -43,7 +43,34 @@ export function defaultHostedApiUrl(): string {
 export const NOZY_PUBLIC_LWD_URL = "https://lwd.nozywallet.org:443";
 
 export function defaultHostedLwdUrl(): string {
-  return expoExtra("hostedLwdUrl") ?? NOZY_PUBLIC_LWD_URL;
+  return NOZY_PUBLIC_LWD_URL;
+}
+
+export const FOREIGN_SERVER_MESSAGE =
+  "Only a local node or the Nozy server (lwd.nozywallet.org) can be used. Other servers, including zec.rocks, are not allowed.";
+
+function isNozySyncHost(host: string): boolean {
+  return host === "lwd.nozywallet.org";
+}
+
+/** Why this compact-sync URL cannot be used. Local nodes and the Nozy server are allowed. */
+export function syncServerBlockReason(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  const host = hostFromUrl(trimmed);
+  if (!host) return "That address is not a valid server URL.";
+  if (isPrivateLanHost(host) || isNozySyncHost(host)) return null;
+  return FOREIGN_SERVER_MESSAGE;
+}
+
+/** Why this full-node URL cannot be used. Only a node on this device or the home network is allowed. */
+export function localNodeBlockReason(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  const host = hostFromUrl(trimmed);
+  if (!host) return "That address is not a valid node URL.";
+  if (isPrivateLanHost(host)) return null;
+  return FOREIGN_SERVER_MESSAGE;
 }
 
 /** Retired Nozy-operated companion hostname — never a product default. */

@@ -34,8 +34,8 @@ export function SyncSettings({ onBack }: Props) {
             <View style={styles.toggleCopy}>
               <Text style={styles.toggleTitle}>Keep synced while unlocked</Text>
               <Text style={styles.toggleDesc}>
-                Checks every ~20s and catches up when tip moves. Syncs again when you
-                reopen the app.
+                While the wallet is unlocked, it checks about every 20 seconds for
+                new shielded notes, including on the Receive tab.
               </Text>
             </View>
             <Switch

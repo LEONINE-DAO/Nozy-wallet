@@ -2,6 +2,8 @@
 
 Evidence for Shielded Labs / Mark: send → expiry → speed-up rebuild at ×4 fee, plus v2.3.6.3 confirmation-detection fix.
 
+**Later Ironwood field note (2026-09):** one-note desktop sends, ZIP-317 ×4 = 0.0004 ZEC, why Max chunks instead of one large send — [`reference/DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](reference/DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md).
+
 **Environment:** local zebrad (WSL) + `nozy` CLI **v2.3.6.3** · mainnet · pilot expiry **5 blocks**
 
 ---

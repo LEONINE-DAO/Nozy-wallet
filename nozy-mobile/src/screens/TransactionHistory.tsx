@@ -12,7 +12,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
-import { onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
+import {
+  onDeviceRefreshNoteMemos,
+  onDeviceShieldedSnapshot,
+} from "../services/onDeviceWallet";
 import { colors, fontSize, spacing } from "../theme";
 import type { RootStackParamList, TransactionRecord } from "../types";
 
@@ -29,6 +32,7 @@ export function TransactionHistoryScreen({ navigation }: Props) {
     if (onDevice) {
       setError("");
       try {
+        await onDeviceRefreshNoteMemos();
         const snap = await onDeviceShieldedSnapshot();
         setItems(
           snap.notes.map((note) => ({
@@ -40,12 +44,13 @@ export function TransactionHistoryScreen({ navigation }: Props) {
             block_height: note.block_height,
             confirmations: null,
             broadcast_at: null,
-            memo: null,
+            memo: note.memo,
           })),
         );
       } catch (e) {
+        const message = e instanceof Error ? e.message : "Could not load notes";
         setItems([]);
-        setError(e instanceof Error ? e.message : "Could not load notes");
+        setError(message);
       } finally {
         setLoading(false);
       }
@@ -107,6 +112,11 @@ export function TransactionHistoryScreen({ navigation }: Props) {
             <Text style={styles.recipient} numberOfLines={1}>
               {item.recipient}
             </Text>
+            {item.memo ? (
+              <Text style={styles.memo} numberOfLines={2}>
+                {item.memo}
+              </Text>
+            ) : null}
             <Text style={styles.meta}>
               Fee {item.fee_zec.toFixed(8)} ·{" "}
               {item.confirmations ?? 0} conf
@@ -136,6 +146,7 @@ const styles = StyleSheet.create({
   amount: { color: colors.text, fontWeight: "700", fontSize: fontSize.md },
   status: { color: colors.primary, fontSize: fontSize.sm },
   recipient: { color: colors.textMuted, fontSize: fontSize.sm, marginTop: 4 },
+  memo: { color: colors.text, fontSize: fontSize.sm, marginTop: 4 },
   meta: { color: colors.textMuted, fontSize: 12, marginTop: 4 },
   empty: { color: colors.textMuted, textAlign: "center", marginTop: spacing.xl },
   error: { color: colors.error, marginBottom: spacing.md },

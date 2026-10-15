@@ -18,9 +18,9 @@ name = "nym-smolmix-broadcast-spike"
 path = "src/main.rs"
 
 [dependencies]
-# Pin per Mark / https://zcash-sdk.nym.com/guidance/ and nym.com/docs/developers/smolmix
-smolmix = "1.21.4"
-nym-bin-common = { version = "1.21.4", features = ["basic_tracing"] }
+# Pin per Max (#57000/27): crates.io 1.21.5. Crate renamed smolmix → nym-smolmix.
+nym-smolmix = "1.21.5"
+nym-bin-common = { version = "1.21.5", features = ["basic_tracing"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-util", "net"] }
 tokio-rustls = "0.26"
@@ -40,6 +40,6 @@ url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# Same rustc 1.88 E0716 workaround as tools/nym-dvpn-lwd-spike.
+# E0716 workaround: use 0.0.10 vendor (same as lwd-mixnet-proxy 1.21.5 rebuild).
 [patch.crates-io]
-libcrux-psq = { path = "../nym-dvpn-lwd-spike/vendor/libcrux-psq" }
+libcrux-psq = { path = "../lwd-mixnet-proxy/vendor/libcrux-psq" }

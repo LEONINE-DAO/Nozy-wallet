@@ -1,7 +1,10 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { deleteSecret, getSecret, setSecret } from "../lib/secretStorage";
 import {
   generateMnemonic,
   orchardUnifiedAddress,
+  orchardBackfillMemos,
+  orchardSendPayment,
   orchardScan,
   orchardStatus,
   lwdGetInfo,
@@ -20,7 +23,7 @@ import {
   ONDEVICE_PASSWORD_KEY,
   ONDEVICE_WALLET_KIND_KEY,
 } from "../components/settings/OnDeviceWalletSettings";
-import { defaultHostedLwdUrl } from "../lib/connectionPresets";
+import { defaultHostedLwdUrl, syncServerBlockReason } from "../lib/connectionPresets";
 import {
   NU5_ORCHARD_MAINNET,
   parseRestoreHeight,
@@ -31,6 +34,43 @@ import {
   persistOnDeviceBirthday,
 } from "./onDeviceSapling";
 import { ensureOnDeviceAccounts, getActiveOnDeviceAccountIndex, listOnDeviceAccounts } from "./onDeviceAccounts";
+
+const RECEIVE_ADDRESS_CACHE_KEY = "nozy.ondevice.receiveUa";
+
+async function rememberReceiveAddress(mnemonic: string): Promise<void> {
+  const account = await getActiveOnDeviceAccountIndex();
+  const ua = await orchardUnifiedAddress(mnemonic, account);
+  const address = (ua.address ?? "").trim();
+  if (!address) return;
+  await AsyncStorage.setItem(
+    RECEIVE_ADDRESS_CACHE_KEY,
+    JSON.stringify({ account, address }),
+  );
+}
+
+export async function warmReceiveAddressCache(): Promise<void> {
+  const mnemonic = await getSecret(ONDEVICE_MNEMONIC_KEY);
+  if (!mnemonic?.trim()) return;
+  const account = await getActiveOnDeviceAccountIndex();
+  const cached = await readCachedReceiveAddress(account);
+  if (cached) return;
+  await rememberReceiveAddress(mnemonic.trim());
+}
+
+export async function readCachedReceiveAddress(
+  account: number,
+): Promise<string | null> {
+  const raw = await AsyncStorage.getItem(RECEIVE_ADDRESS_CACHE_KEY);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as { account?: number; address?: string };
+    if (parsed.account !== account) return null;
+    const address = (parsed.address ?? "").trim();
+    return address || null;
+  } catch {
+    return null;
+  }
+}
 
 export type OnDeviceWalletMeta = {
   exists: boolean;
@@ -54,7 +94,9 @@ async function applyDefaultPaths(): Promise<{
     [ONDEVICE_COMPACT_DB_KEY, compactDbPath],
     [
       ONDEVICE_LWD_URL_KEY,
-      storedLwd?.trim() || defaultHostedLwdUrl(),
+      !storedLwd?.trim() || syncServerBlockReason(storedLwd)
+        ? defaultHostedLwdUrl()
+        : storedLwd.trim(),
     ],
   ]);
   return { walletDataDir, compactDbPath };
@@ -62,8 +104,8 @@ async function applyDefaultPaths(): Promise<{
 
 export async function onDeviceWalletMeta(): Promise<OnDeviceWalletMeta> {
   const [mnemonic, password] = await Promise.all([
-    AsyncStorage.getItem(ONDEVICE_MNEMONIC_KEY),
-    AsyncStorage.getItem(ONDEVICE_PASSWORD_KEY),
+    getSecret(ONDEVICE_MNEMONIC_KEY),
+    getSecret(ONDEVICE_PASSWORD_KEY),
   ]);
   return {
     exists: Boolean(mnemonic?.trim()),
@@ -90,13 +132,13 @@ export async function persistOnDeviceWallet(params: {
 }): Promise<void> {
   await validateMnemonic(params.mnemonic.trim());
   await applyDefaultPaths();
-  await AsyncStorage.setItem(ONDEVICE_MNEMONIC_KEY, params.mnemonic.trim());
+  await setSecret(ONDEVICE_MNEMONIC_KEY, params.mnemonic.trim());
   await persistOnDeviceBirthday(params.birthday);
   await AsyncStorage.setItem(ONDEVICE_WALLET_KIND_KEY, params.kind);
   if (params.password) {
-    await AsyncStorage.setItem(ONDEVICE_PASSWORD_KEY, params.password);
+    await setSecret(ONDEVICE_PASSWORD_KEY, params.password);
   } else {
-    await AsyncStorage.removeItem(ONDEVICE_PASSWORD_KEY);
+    await deleteSecret(ONDEVICE_PASSWORD_KEY);
   }
   await ensureOnDeviceAccounts();
 }
@@ -104,7 +146,10 @@ export async function persistOnDeviceWallet(params: {
 export async function createOnDeviceWallet(password: string): Promise<string> {
   const mnemonic = await generateMnemonic();
   const lwdStored = await AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY);
-  const lwd = lwdStored?.trim() || defaultHostedLwdUrl();
+  const lwd =
+    !lwdStored?.trim() || syncServerBlockReason(lwdStored)
+      ? defaultHostedLwdUrl()
+      : lwdStored.trim();
   const birthday = await birthdayForNewWallet(lwd);
   await persistOnDeviceWallet({ mnemonic, password, birthday, kind: "create" });
   return mnemonic;
@@ -125,8 +170,8 @@ export async function restoreOnDeviceWallet(
 
 export async function unlockOnDeviceWallet(password: string): Promise<void> {
   const [mnemonic, stored] = await Promise.all([
-    AsyncStorage.getItem(ONDEVICE_MNEMONIC_KEY),
-    AsyncStorage.getItem(ONDEVICE_PASSWORD_KEY),
+    getSecret(ONDEVICE_MNEMONIC_KEY),
+    getSecret(ONDEVICE_PASSWORD_KEY),
   ]);
   if (!mnemonic?.trim()) {
     throw new Error("No wallet on this phone. Create or restore one first.");
@@ -145,6 +190,26 @@ export async function onDeviceSpendableZec(): Promise<number> {
   return snap.unspentZec;
 }
 
+export async function onDeviceSendPayment(params: {
+  recipient: string;
+  amountZec: number;
+  memo?: string;
+}): Promise<string> {
+  const paths = await loadOnDevicePaths();
+  if (!paths?.mnemonic || !paths.walletDataDir) {
+    throw new Error("No wallet on this phone. Create or restore one first.");
+  }
+  const lightwalletdUrl = paths.lightwalletdUrl.trim() || defaultHostedLwdUrl();
+  return orchardSendPayment({
+    mnemonic: paths.mnemonic,
+    walletDataDir: paths.walletDataDir,
+    lightwalletdUrl,
+    recipient: params.recipient,
+    amountZec: params.amountZec,
+    memo: params.memo,
+  });
+}
+
 export type OnDeviceShieldedSnapshot = {
   unspentZec: number;
   orchardZec: number;
@@ -155,6 +220,7 @@ export type OnDeviceShieldedSnapshot = {
     value_zec: number;
     spent: boolean;
     pool: string;
+    memo: string | null;
   }[];
 };
 
@@ -180,7 +246,10 @@ export async function onDeviceShieldedSnapshot(): Promise<OnDeviceShieldedSnapsh
       unspentZec: status.unspent_zec,
       orchardZec,
       ironwoodZec,
-      notes: status.notes,
+      notes: status.notes.map((note) => ({
+        ...note,
+        memo: note.memo?.trim() ? note.memo : null,
+      })),
     };
   } catch {
     try {
@@ -189,6 +258,24 @@ export async function onDeviceShieldedSnapshot(): Promise<OnDeviceShieldedSnapsh
     } catch {
       return empty;
     }
+  }
+}
+
+/** Recover ZIP-302 memos for notes that were found in compact blocks. */
+export async function onDeviceRefreshNoteMemos(
+  paths?: Awaited<ReturnType<typeof loadOnDevicePaths>>,
+): Promise<void> {
+  const resolved = paths ?? (await loadOnDevicePaths());
+  if (!resolved?.mnemonic || !resolved.walletDataDir) return;
+  const lwd = resolved.lightwalletdUrl.trim() || defaultHostedLwdUrl();
+  try {
+    await orchardBackfillMemos({
+      mnemonic: resolved.mnemonic,
+      walletDataDir: resolved.walletDataDir,
+      lightwalletdUrl: lwd,
+    });
+  } catch {
+    // History still lists the notes when lightwalletd cannot return the raw tx.
   }
 }
 
@@ -267,6 +354,7 @@ export async function onDeviceCompactSync(): Promise<{
   } catch {
     // Compact download succeeded; Orchard/Ironwood scan can catch up next tap.
   }
+  await onDeviceRefreshNoteMemos(paths);
   const snap = await onDeviceShieldedSnapshot();
   return {
     chainTip,

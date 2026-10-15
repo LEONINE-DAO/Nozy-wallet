@@ -1,7 +1,7 @@
 //! lightwalletd submit + treestate (Zodl-style: no public JSON-RPC).
 
 use super::client::LwdClient;
-use super::proto::{BlockId, Empty, RawTransaction};
+use super::proto::{BlockId, Empty, RawTransaction, TxFilter};
 use super::sync::map_grpc_transport;
 use crate::error::{ZeakingError, ZeakingResult};
 
@@ -14,6 +14,7 @@ pub struct LwdTreeState {
     pub time: u32,
     pub sapling_tree: String,
     pub orchard_tree: String,
+    pub ironwood_tree: String,
 }
 
 fn map_tree_state(ts: super::proto::TreeState) -> LwdTreeState {
@@ -24,6 +25,7 @@ fn map_tree_state(ts: super::proto::TreeState) -> LwdTreeState {
         time: ts.time,
         sapling_tree: ts.sapling_tree,
         orchard_tree: ts.orchard_tree,
+        ironwood_tree: ts.ironwood_tree,
     }
 }
 
@@ -52,6 +54,70 @@ pub async fn get_tree_state(
         .map_err(|e| map_grpc_transport("GetTreeState", e))?
         .into_inner();
     Ok(map_tree_state(ts))
+}
+
+fn txid_hash_candidates(txid_hex: &str) -> ZeakingResult<Vec<Vec<u8>>> {
+    let cleaned = txid_hex.trim().trim_start_matches("0x");
+    let raw = hex::decode(cleaned)
+        .map_err(|e| ZeakingError::InvalidOperation(format!("txid is not hex: {e}")))?;
+    if raw.len() != 32 {
+        return Err(ZeakingError::InvalidOperation(format!(
+            "txid must be 32 bytes, got {}",
+            raw.len()
+        )));
+    }
+    let mut flipped = raw.clone();
+    flipped.reverse();
+    if flipped == raw {
+        Ok(vec![raw])
+    } else {
+        // Compact blocks store the hash little-endian. Display txids are reversed.
+        Ok(vec![raw, flipped])
+    }
+}
+
+/// Full transaction bytes from lightwalletd `GetTransaction`.
+///
+/// Tries the given txid and its reversed 32-byte form. `Ok(None)` means the
+/// server answered and does not have that transaction.
+pub async fn get_transaction(
+    client: &mut LwdClient,
+    txid_hex: &str,
+) -> ZeakingResult<Option<Vec<u8>>> {
+    let candidates = txid_hash_candidates(txid_hex)?;
+    let mut transport_error = None;
+    for hash in candidates {
+        match client
+            .get_transaction(TxFilter {
+                block: None,
+                index: 0,
+                hash,
+            })
+            .await
+        {
+            Ok(resp) => {
+                let raw = resp.into_inner().data;
+                if !raw.is_empty() {
+                    return Ok(Some(raw));
+                }
+            }
+            Err(status) => {
+                let missing = matches!(
+                    status.code(),
+                    tonic::Code::NotFound | tonic::Code::InvalidArgument
+                );
+                if missing {
+                    continue;
+                }
+                transport_error = Some(map_grpc_transport("GetTransaction", status));
+                break;
+            }
+        }
+    }
+    if let Some(err) = transport_error {
+        return Err(err);
+    }
+    Ok(None)
 }
 
 /// Broadcast a raw tx via lightwalletd `SendTransaction` (same door Zodl uses).
@@ -87,6 +153,7 @@ mod tests {
             time: 0,
             sapling_tree: String::new(),
             orchard_tree: "00".into(),
+            ironwood_tree: String::new(),
         });
         assert_eq!(ts.height, 1);
         assert_eq!(ts.orchard_tree, "00");

@@ -15,6 +15,7 @@
 | [`ZEBRAD_NOZYWALLET_CONNECTIVITY.md`](ZEBRAD_NOZYWALLET_CONNECTIVITY.md) | Verify Zebrad RPC before sync/send |
 | [`../issues/bugs/2026-06-send-expiry-before-broadcast.md`](../issues/bugs/2026-06-send-expiry-before-broadcast.md) | BUG-2026-011 |
 | [`../PILOT_MAINNET_EVIDENCE.md`](../PILOT_MAINNET_EVIDENCE.md) | Post-broadcast expiry + speed-up |
+| [`DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md`](DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md) | **2026-09** desktop Ironwood Max send — one-note vs ZIP-317 ×4 (Mark / paper) |
 
 ---
 

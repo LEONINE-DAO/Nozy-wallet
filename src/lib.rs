@@ -58,6 +58,8 @@ pub mod lite_tui;
 #[cfg(feature = "native")]
 pub mod local_analytics;
 #[cfg(feature = "native")]
+pub mod lwd_gift;
+#[cfg(feature = "native")]
 pub mod merchant_invoices;
 #[cfg(feature = "native")]
 pub mod monero;
@@ -101,6 +103,7 @@ pub mod privacy_ui;
 pub mod progress;
 #[cfg(feature = "native")]
 pub mod proving;
+pub mod received_memo;
 #[cfg(feature = "native")]
 pub mod rpc_test;
 #[cfg(feature = "native")]
@@ -166,9 +169,10 @@ pub mod zsa;
 pub use error::{NozyError, NozyResult};
 pub use fee_policy::{
     estimate_orchard_send_fee_zatoshis, fee_zatoshis, is_expiry_consensus_error,
-    pilot_expiry_height, pilot_transaction_expired, OrchardSendFeeShape, PilotSendOptions,
-    NOZY_WALLET_PRIORITY_FEE, PILOT_EXPIRY_DELTA_BLOCKS, PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS,
-    PRIORITY_MULTIPLIER,
+    pilot_expiry_height, pilot_transaction_expired, FeeBlock, OrchardSendFeeShape,
+    PilotSendOptions, NOZY_WALLET_PRIORITY_FEE, PILOT_EXPIRY_DELTA_BLOCKS,
+    PILOT_EXPIRY_MAX_REBUILD_ATTEMPTS, PRIORITY_MULTIPLIER, ZIP2009_MAINNET_ACTIVATION_HEIGHT,
+    ZIP2009_MARGINAL_FEE_ZATOSHIS,
 };
 pub use hd_wallet::HDWallet;
 pub use transactions::{SignedTransaction, TransactionBuilder, TransactionDetails};
@@ -300,8 +304,9 @@ pub use sapling_scan::{
 };
 #[cfg(feature = "native")]
 pub use sapling_tx::{
-    build_sapling_shield_to_self, refresh_sapling_witnesses_from_compact_store,
-    sapling_note_ready_to_shield, sapling_shield_fee_zatoshis, SaplingShieldBuilt,
+    build_sapling_shield_to_self, current_sapling_shield_fee_zatoshis,
+    refresh_sapling_witnesses_from_compact_store, sapling_note_ready_to_shield,
+    sapling_shield_fee_zatoshis, SaplingShieldBuilt,
 };
 #[cfg(feature = "secret-network")]
 pub use secret::{

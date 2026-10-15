@@ -218,7 +218,7 @@ pub fn sapling_status(wallet_data_dir: String) -> Result<SaplingStatusFfi, NozyF
             .filter(|n| nozy::sapling_note_ready_to_shield(n))
             .count();
         let bal = nozy::sapling_unspent_balance_zatoshis(&notes);
-        let fee = nozy::sapling_shield_fee_zatoshis();
+        let fee = runtime().block_on(nozy::current_sapling_shield_fee_zatoshis());
         let message = if ready > 0 {
             "Legacy funds ready to move into your shielded balance.".to_string()
         } else if with_rseed > 0 {
@@ -302,6 +302,8 @@ pub struct OrchardReceivedNoteFfi {
     pub value_zec: f64,
     pub spent: bool,
     pub pool: String,
+    /// ZIP-302 memo text. `None` is an empty or not-yet-recovered memo.
+    pub memo: Option<String>,
 }
 
 #[derive(Clone, uniffi::Record)]
@@ -361,6 +363,69 @@ pub fn orchard_scan(
     })
 }
 
+/// Fetch full transactions from lightwalletd and store ZIP-302 memos on notes.
+///
+/// Compact blocks omit the memo. Call this after a scan, or when opening history.
+#[uniffi::export]
+pub fn orchard_backfill_memos(
+    mnemonic: String,
+    wallet_data_dir: String,
+    lightwalletd_url: String,
+) -> Result<u32, NozyFfiError> {
+    let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let url = lightwalletd_url.trim().to_string();
+    if url.is_empty() {
+        return Err(NozyFfiError::Message(
+            "lightwalletd URL is empty".to_string(),
+        ));
+    }
+    nozy::with_wallet_data_dir(Path::new(&wallet_data_dir), || {
+        let updated = runtime()
+            .block_on(nozy::received_memo::backfill_and_save_from_lwd(
+                &wallet, &url,
+            ))
+            .map_err(map_err)?;
+        Ok(updated as u32)
+    })
+}
+
+/// Build, prove, and broadcast a shielded payment from notes already on this phone.
+///
+/// Returns the transaction id. The seed never leaves the device.
+#[uniffi::export]
+pub fn orchard_send_payment(
+    mnemonic: String,
+    wallet_data_dir: String,
+    lightwalletd_url: String,
+    recipient: String,
+    amount_zec: f64,
+    memo: String,
+) -> Result<String, NozyFfiError> {
+    let url = lightwalletd_url.trim().to_string();
+    if url.is_empty() {
+        return Err(NozyFfiError::Message(
+            "lightwalletd URL is empty".to_string(),
+        ));
+    }
+    let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let wallet_dir = wallet_data_dir.clone();
+    let recipient = recipient.trim().to_string();
+    let memo_text = memo.trim().to_string();
+    block_on_wallet_dir(Path::new(&wallet_data_dir), async move {
+        let compact = Path::new(&wallet_dir).join("lwd_compact.sqlite");
+        let memo_opt = if memo_text.is_empty() {
+            None
+        } else {
+            Some(memo_text.as_str())
+        };
+        nozy::lwd_gift::send_payment_via_lightwalletd(
+            &wallet, &recipient, amount_zec, memo_opt, &url, &compact,
+        )
+        .await
+    })
+    .map_err(map_err)
+}
+
 /// Persisted Orchard/Ironwood notes under `wallet_data_dir`.
 #[uniffi::export]
 pub fn orchard_status(wallet_data_dir: String) -> Result<OrchardStatusFfi, NozyFfiError> {
@@ -376,6 +441,7 @@ pub fn orchard_status(wallet_data_dir: String) -> Result<OrchardStatusFfi, NozyF
                 value_zec: n.value as f64 / 100_000_000.0,
                 spent: n.spent,
                 pool: n.pool.as_str().to_string(),
+                memo: nozy::received_memo::memo_note_bytes_to_history_string(&n.memo),
             })
             .collect();
         received.sort_by(|a, b| b.block_height.cmp(&a.block_height));
@@ -428,7 +494,7 @@ async fn shield_inner(
     no_broadcast: bool,
 ) -> Result<SaplingShieldResultFfi, NozyFfiError> {
     let mut notes = nozy::load_sapling_notes().unwrap_or_default();
-    let fee = nozy::sapling_shield_fee_zatoshis();
+    let fee = nozy::current_sapling_shield_fee_zatoshis().await;
     let candidates: Vec<_> = notes
         .iter()
         .filter(|n| !n.spent && nozy::sapling_note_has_rseed(n))
@@ -706,14 +772,32 @@ pub fn gift_card_buy(
     label: String,
 ) -> Result<String, NozyFfiError> {
     let zebra = zebra_url.trim().to_string();
-    if zebra.is_empty() {
-        return Err(NozyFfiError::Message(
-            "Set a Zebrad JSON-RPC URL in Settings → On-device wallet. The gift card is paid from this phone through that node.".into(),
-        ));
-    }
     let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let wallet_dir = wallet_data_dir.clone();
     let created = block_on_wallet_dir(Path::new(&wallet_data_dir), async move {
-        nozy::gift_cards::buy_gift_card(&wallet, amount_zec, gift_label(label), &zebra).await
+        if let Some(lwd) = zebra.strip_prefix("lwd:") {
+            let lwd = lwd.trim();
+            if lwd.is_empty() {
+                return Err(nozy::error::NozyError::InvalidInput(
+                    "Nozy server URL is empty.".into(),
+                ));
+            }
+            let compact = Path::new(&wallet_dir).join("lwd_compact.sqlite");
+            nozy::gift_cards::buy_gift_card_via_lightwalletd(
+                &wallet,
+                amount_zec,
+                gift_label(label),
+                lwd,
+                &compact,
+            )
+            .await
+        } else if zebra.is_empty() {
+            Err(nozy::error::NozyError::InvalidInput(
+                "Set a Zebrad JSON-RPC URL in Settings → On-device wallet. The gift card is paid from this phone through that node.".into(),
+            ))
+        } else {
+            nozy::gift_cards::buy_gift_card(&wallet, amount_zec, gift_label(label), &zebra).await
+        }
     })
     .map_err(map_err)?;
     serde_json::to_string(&created).map_err(map_err)
@@ -728,14 +812,31 @@ pub fn gift_card_redeem(
     claim_code: String,
 ) -> Result<String, NozyFfiError> {
     let zebra = zebra_url.trim().to_string();
-    if zebra.is_empty() {
-        return Err(NozyFfiError::Message(
-            "Set a Zebrad JSON-RPC URL in Settings → On-device wallet. Redeem scans and spends through that node.".into(),
-        ));
-    }
     let wallet = wallet_from_mnemonic(&mnemonic)?;
+    let wallet_dir = wallet_data_dir.clone();
     let card = block_on_wallet_dir(Path::new(&wallet_data_dir), async move {
-        nozy::gift_cards::redeem_gift_card(&wallet, &claim_code, &zebra).await
+        if let Some(lwd) = zebra.strip_prefix("lwd:") {
+            let lwd = lwd.trim();
+            if lwd.is_empty() {
+                return Err(nozy::error::NozyError::InvalidInput(
+                    "Nozy server URL is empty.".into(),
+                ));
+            }
+            let compact = Path::new(&wallet_dir).join("lwd_compact.sqlite");
+            nozy::gift_cards::redeem_gift_card_via_lightwalletd(
+                &wallet,
+                &claim_code,
+                lwd,
+                &compact,
+            )
+            .await
+        } else if zebra.is_empty() {
+            Err(nozy::error::NozyError::InvalidInput(
+                "Set a Zebrad JSON-RPC URL in Settings → On-device wallet. Redeem scans and spends through that node.".into(),
+            ))
+        } else {
+            nozy::gift_cards::redeem_gift_card(&wallet, &claim_code, &zebra).await
+        }
     })
     .map_err(map_err)?;
     serde_json::to_string(&card).map_err(map_err)

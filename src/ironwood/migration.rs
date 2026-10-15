@@ -1383,7 +1383,10 @@ pub fn plan_orchard_migration_at(
         transfers,
         ironwood_active,
         zip318: Zip318ScheduleSummary {
-            note_split_required: orchard_wallet_needs_note_split(&notes),
+            note_split_required: orchard_wallet_needs_note_split(
+                &notes,
+                crate::fee_policy::FeeBlock::next_block(true, chain_tip),
+            ),
             anchor_bucket_interval_blocks: ZIP318_ANCHOR_BUCKET_INTERVAL_BLOCKS,
             k_max: ZIP318_DEFAULT_K_MAX,
             denomination_transfers,
@@ -1590,6 +1593,7 @@ pub async fn execute_orchard_migration(
     let migration_fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(
         None,
         crate::fee_policy::NOZY_WALLET_PRIORITY_FEE,
+        crate::fee_policy::FeeBlock::next_block(network == NetworkType::Main, chain_tip),
     );
 
     let witness_lag = crate::send_readiness::max_witness_lag_blocks(spendable_notes, chain_tip);
@@ -2016,29 +2020,39 @@ pub fn note_requires_canonical_split(value_zat: u64) -> bool {
 ///
 /// Fee-dust notes may fail [`note_requires_canonical_split`] but cannot fit a split fee; they do
 /// not block turnstile prebuild once splittable composites are gone.
-pub fn orchard_note_needs_splittable_split(value_zat: u64) -> bool {
-    note_requires_canonical_split(value_zat) && plan_orchard_note_split_outputs(value_zat).is_ok()
+pub fn orchard_note_needs_splittable_split(
+    value_zat: u64,
+    block: crate::fee_policy::FeeBlock,
+) -> bool {
+    note_requires_canonical_split(value_zat)
+        && plan_orchard_note_split_outputs(value_zat, block).is_ok()
 }
 
 /// True when any unspent Orchard note still needs a splittable ZIP 318 note-split transaction.
-pub fn orchard_wallet_needs_note_split(notes: &[crate::notes::SerializableOrchardNote]) -> bool {
+pub fn orchard_wallet_needs_note_split(
+    notes: &[crate::notes::SerializableOrchardNote],
+    block: crate::fee_policy::FeeBlock,
+) -> bool {
     notes
         .iter()
         .filter(|n| !n.spent && n.pool == crate::shielded_pool::ShieldedPool::Orchard)
-        .any(|n| orchard_note_needs_splittable_split(n.value))
+        .any(|n| orchard_note_needs_splittable_split(n.value, block))
 }
 
-fn migration_split_fee_zatoshis(output_count: u32) -> u64 {
+fn migration_split_fee_zatoshis(output_count: u32, block: crate::fee_policy::FeeBlock) -> u64 {
     let output_count = output_count.max(1);
     let shape = crate::fee_policy::OrchardSendFeeShape {
         orchard_actions: 1.max(output_count),
         memo_len: 0,
     };
-    crate::fee_policy::fee_zatoshis(&shape, false)
+    crate::fee_policy::fee_zatoshis(&shape, false, block)
 }
 
 /// Plan Orchard outputs for a ZIP 318 note-split transaction (fee deducted from the source note).
-pub fn plan_orchard_note_split_outputs(input_value_zat: u64) -> NozyResult<(Vec<u64>, u64)> {
+pub fn plan_orchard_note_split_outputs(
+    input_value_zat: u64,
+    block: crate::fee_policy::FeeBlock,
+) -> NozyResult<(Vec<u64>, u64)> {
     if input_value_zat == 0 {
         return Err(NozyError::InvalidOperation(
             "Cannot split a zero-value note.".to_string(),
@@ -2051,7 +2065,7 @@ pub fn plan_orchard_note_split_outputs(input_value_zat: u64) -> NozyResult<(Vec<
     }
 
     let mut outputs = flatten_canonical_denomination_zatoshis(input_value_zat);
-    let mut fee = migration_split_fee_zatoshis(outputs.len() as u32);
+    let mut fee = migration_split_fee_zatoshis(outputs.len() as u32, block);
 
     for _ in 0..16 {
         let output_total: u64 = outputs.iter().sum();
@@ -2061,7 +2075,7 @@ pub fn plan_orchard_note_split_outputs(input_value_zat: u64) -> NozyResult<(Vec<
                 .saturating_sub(output_total);
             if remainder > 0 {
                 outputs.push(remainder);
-                fee = migration_split_fee_zatoshis(outputs.len() as u32);
+                fee = migration_split_fee_zatoshis(outputs.len() as u32, block);
                 continue;
             }
             if outputs.len() <= 1 {
@@ -2089,7 +2103,7 @@ pub fn plan_orchard_note_split_outputs(input_value_zat: u64) -> NozyResult<(Vec<
         *last -= deficit;
         if *last == 0 {
             outputs.pop();
-            fee = migration_split_fee_zatoshis(outputs.len().max(1) as u32);
+            fee = migration_split_fee_zatoshis(outputs.len().max(1) as u32, block);
         }
     }
 
@@ -2271,12 +2285,12 @@ pub async fn execute_orchard_note_split(
         )
     })?;
 
+    let zebra = crate::zebra_integration::ZebraClient::new(zebra_url.to_string());
+    let fee_block = zebra.fee_block_for_next_block().await;
     let (output_values_zat, fee_zat) =
-        plan_orchard_note_split_outputs(spend_note.orchard_note.value)?;
+        plan_orchard_note_split_outputs(spend_note.orchard_note.value, fee_block)?;
     let source_nullifier_hex = hex::encode(spend_note.orchard_note.nullifier.to_bytes());
     let source_value_zat = spend_note.orchard_note.value;
-
-    let zebra = crate::zebra_integration::ZebraClient::new(zebra_url.to_string());
     let chain_tip = zebra.get_best_block_height().await?;
     let info = zebra.get_blockchain_info().await?;
     let network = parse_network_type(&info);
@@ -2304,7 +2318,8 @@ pub async fn execute_orchard_note_split(
         {
             return false;
         }
-        !note.orchard_note.spent && orchard_note_needs_splittable_split(note.orchard_note.value)
+        !note.orchard_note.spent
+            && orchard_note_needs_splittable_split(note.orchard_note.value, fee_block)
     });
 
     Ok(OrchardNoteSplitResult {
@@ -2658,7 +2673,9 @@ mod tests {
 
     #[test]
     fn split_plan_adjusts_outputs_for_fee() {
-        let (outputs, fee) = plan_orchard_note_split_outputs(110_000_000).expect("split plan");
+        let legacy = crate::fee_policy::FeeBlock::mainnet_before_zip2009();
+        let (outputs, fee) =
+            plan_orchard_note_split_outputs(110_000_000, legacy).expect("split plan");
         assert_eq!(outputs.first().copied(), Some(100_000_000));
         assert!(outputs.len() >= 2);
         assert!(fee > 0);
@@ -2677,13 +2694,14 @@ mod tests {
 
     #[test]
     fn splittable_split_gate_ignores_transfer_count_mismatch() {
-        assert!(orchard_note_needs_splittable_split(110_000_000));
-        assert!(!orchard_note_needs_splittable_split(100_000_000));
-        assert!(!orchard_note_needs_splittable_split(10_000_000));
+        let legacy = crate::fee_policy::FeeBlock::mainnet_before_zip2009();
+        assert!(orchard_note_needs_splittable_split(110_000_000, legacy));
+        assert!(!orchard_note_needs_splittable_split(100_000_000, legacy));
+        assert!(!orchard_note_needs_splittable_split(10_000_000, legacy));
         // Single canonical bucket and residual-below-floor amounts are not split candidates.
         assert!(!note_requires_canonical_split(200_000));
         assert!(!note_requires_canonical_split(50_000));
-        assert!(!orchard_note_needs_splittable_split(50_000));
+        assert!(!orchard_note_needs_splittable_split(50_000, legacy));
 
         fn sample_note(value: u64, nullifier_byte: u8) -> crate::notes::SerializableOrchardNote {
             crate::notes::SerializableOrchardNote {
@@ -2712,7 +2730,10 @@ mod tests {
             // Residual / fee-dust leftover — not a split candidate under {1,2,5}×10^k.
             sample_note(50_000, 3),
         ];
-        assert!(!orchard_wallet_needs_note_split(&notes));
+        assert!(!orchard_wallet_needs_note_split(
+            &notes,
+            crate::fee_policy::FeeBlock::mainnet_before_zip2009()
+        ));
     }
 
     #[test]

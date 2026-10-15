@@ -149,7 +149,7 @@ pub async fn ironwood_plan_save() -> Result<IronwoodPlanSaveResponse, TauriError
 pub async fn ironwood_split(
     request: IronwoodSplitRequest,
 ) -> Result<IronwoodSplitResponse, TauriError> {
-    let (config, _chain_tip, ironwood_active, _tip) = chain_context().await?;
+    let (config, chain_tip, ironwood_active, _tip) = chain_context().await?;
     if !ironwood_active {
         return Err(TauriError::from(nozy::NozyError::InvalidOperation(
             "Ironwood (NU6.3) is not active yet. Note splitting opens after activation."
@@ -173,8 +173,11 @@ pub async fn ironwood_split(
                     "No Orchard note requires canonical splitting.".to_string(),
                 ))
             })?;
-        let (outputs, fee) = plan_orchard_note_split_outputs(spend_note.orchard_note.value)
-            .map_err(TauriError::from)?;
+        let (outputs, fee) = plan_orchard_note_split_outputs(
+            spend_note.orchard_note.value,
+            nozy::FeeBlock::from_network_name(&config.network, chain_tip),
+        )
+        .map_err(TauriError::from)?;
         return Ok(IronwoodSplitResponse {
             dry_run: true,
             source_value_zat: spend_note.orchard_note.value,

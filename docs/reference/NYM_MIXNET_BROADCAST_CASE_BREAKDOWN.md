@@ -17,12 +17,12 @@ Case IDs here deepen **family D2** (mixnet submit). Hygiene (H*) and dVPN sync (
 |----|------|--------|----------|
 | D2a | IP relocate (clearnet ≠ mixnet exit) | **PASS** (2026-07-11; **re-PASS 2026-07-26**) | `docs/reference/evidence/nym-d2a-rerun.json` |
 | D2b-reachability | Refuse LAN / classify candidate URLs | **PASS** | Live WSL node `172.20.199.206:8232` correctly **N/A** — `nym-d2b-wsl-lan-refuse.json` |
-| D2b | `getblockcount` over mixnet to exit-reachable Zebrad | **N/A on this machine** | Operator Zebrad is WSL LAN only (Case A1). Public RPC still needed for remote-submit proof. |
+| D2b | `getblockcount` over mixnet to exit-reachable Zebrad | **PASS** 2026-09-16 | VPS: `nym-d2b-vps-20260916.json` height **3485958** / **3485971** via `https://nozywallet.org/d2-<token>` → Caddy → localhost filter → `127.0.0.1:8232`. Raw RPC not published. Earlier WSL tunnel: `nym-d2b-live-20260916.json` height 3485922. |
 | D2c-wire | Wallet subprocess gate for remote `sendraw` | **Landed** | `nym_mixnet_broadcast` + env/config |
 | D2c-local-skip | Local/LAN never uses mixnet helper | **PASS** (unit) | Case A1 preserved — **this is the correct path for the running WSL node** |
-| D2c-live | Real remote `sendrawtransaction` over mixnet | **Open / not required for local-node ops** | Only needed when zebra_url is public |
+| D2c-live | Real remote `sendrawtransaction` over mixnet | **Open** | D2b URL shape is proven. Two `--sendraw` junk-hex tries timed out at mixnet connect (`nym-d2c-path-20260916.json`). Still needs a signed tx + nozy CLI. |
 | D2d | Ironwood migrate-broadcast shares gate | **Wired** | Priority 1 `NymMixnetBroadcast` |
-| D2e | Desktop live session UI | **Partial** | CLI `privacy-network nym-mixnet` landed; full UI later |
+| D2e | Desktop / CLI live session UI | **Landed (egress badge)** | `send_egress` + `privacy-network send-egress`; see [NYM_SEND_EGRESS_CASE_BREAKDOWN.md](NYM_SEND_EGRESS_CASE_BREAKDOWN.md) |
 | D2-evidence | Structured JSON evidence writer | **Landed** | `--evidence-json path` |
 
 ---
@@ -162,7 +162,9 @@ Writes under `docs/reference/evidence/` when paths are writable.
 | 2026-07-25 | D2b live / D2c-live | **BLOCKED** | awaiting operator exit-reachable Zebrad |
 | 2026-07-26 | Live WSL Zebrad `172.20.199.206:8232` | **UP** | `getblockcount` → tip **3425397** (Windows→WSL). Mixnet dry-reachability correctly **N/A** (RFC1918). |
 | 2026-07-26 | D2a IP relocate re-run | **PASS** | clearnet `2607:fb90:…:e819`; mixnet `82.221.101.117` (~9.6s) — `evidence/nym-d2a-rerun.json` |
-| 2026-07-26 | D2b vs live node | **N/A** | Same LAN refuse; Case A1 is the intended submit path for this host |
+| 2026-09-16 | D2b live `getblockcount` over mixnet | **PASS** | Height 3485922 in 18.2s — `evidence/nym-d2b-live-20260916.json`. Short-lived HTTPS method-filter to WSL Zebrad (`scripts/d2-rpc-method-filter.py`); VPS `:8232` not opened. |
+| 2026-09-16 | D2c-path `--sendraw 00` | **FAIL** (connect timeout) | Two smolmix connects timed out; no JSON-RPC body. `evidence/nym-d2c-path-20260916.json`. |
+| 2026-09-16 | D2c-live signed tx | **Open** | No `nozy` CLI/wallet on this host. |
 
 ---
 

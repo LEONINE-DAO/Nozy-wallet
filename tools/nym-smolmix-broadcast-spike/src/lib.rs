@@ -12,7 +12,7 @@ use hyper::Request;
 use hyper_util::rt::TokioIo;
 use rustls::pki_types::ServerName;
 use serde_json::json;
-use smolmix::Tunnel;
+use nym_smolmix::Tunnel;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio_rustls::TlsConnector;
 use url::Url;

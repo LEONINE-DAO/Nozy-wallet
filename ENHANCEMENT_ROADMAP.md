@@ -123,6 +123,98 @@ Separate product under `nozy-agent/` (not inside `web-app/`). It sits on top of 
 - Medium draft (PDF): [`docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.pdf`](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.pdf)
 - Chrome extension (live): [NozyWallet on Chrome Web Store](https://chromewebstore.google.com/detail/nozywallet/kjbpoimgafbikmachlilkhoamdlnhooj)
 
+### Wallet action catalog (locked)
+
+The agent does anything the user can do in the wallet by calling the localhost companion, one typed action per user-facing route. Full write-up: [The whole wallet, as a catalog](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#the-whole-wallet-as-a-catalog).
+
+| Class | Rule |
+|-------|------|
+| Look | Balance, history, status, sync, invoices, and the other read routes run after unlock |
+| Change | Send, migrate, vote, stake, invoices, local gift cards, ZNS, and viewing-key export each wait for a confirmation card |
+| Hands off | Create, restore, and unlock stay on the user’s screen. The agent never takes a seed or password |
+| Refused | Transparent addresses, disabling Nym, skipping approval, raw broadcast of a foreign transaction, spend-key export |
+
+### Voice (locked)
+
+Voice is push-to-talk on the island, using local speech-to-text ([whisper.cpp](https://github.com/ggml-org/whisper.cpp)) and local speech ([Piper](https://github.com/OHF-Voice/piper1-gpl)). On the phone, the small on-device models are used. Spoken answers use the same catalog. A spoken “yes” does not approve a spend. Secrets stay on screen. Audio does not leave the device. Full write-up: [Voice on the island](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#voice-on-the-island).
+
+Desktop: an **Agent** tab in the top bar, immediately after Home. Mobile: an **Agent** tab in the bottom bar, immediately after Home, with hold-to-talk as the main control. Settings moves under More. Until that seed’s agent exists, the tab is the pay-and-create gate. The same seed is the same agent on desktop, extension, and mobile. The extension does not create a second agent. Full write-up: [Where the agent sits in the wallet](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#where-the-agent-sits-in-the-wallet).
+
+### Threshold spend — FROST (locked for the later build)
+
+Recorded so the agent scaffold does not invent custody rules later. **Not part of the first skeleton.** Full write-up: [FROST spend authority](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#frost-spend-authority-planned-after-the-proposer-loop) in the agent draft. Reference: [ZIP-312](https://zips.z.cash/zip-0312), [ZF FROST status](https://zfnd.org/the-state-of-frost-for-zcash/), [ZF FROST Book](https://frost.zfnd.org/zcash/technical-details.html).
+
+| Decision | Status |
+|----------|--------|
+| When | After the single-sig proposer loop (local model, Nym, human approval, companion build) is tested |
+| What it splits | Orchard spend-authorizing key (`ask`) via rerandomized RedPallas FROST. Ironwood waits on a compatibility check |
+| Default | Agent holds **no** spend share. It may coordinate. Shares stay in the companion share store |
+| Key generation | Distributed. A complete `ask` is never assembled on one machine |
+| Personal | User device + second device or hardware, threshold 2 |
+| Merchant till | Owner + hardware, threshold 2. Invoices and note matching do not require a spend share |
+| Legacy Guardian | Later, dedicated wallet only: founder / heir / trustee, 2-of-3. A missed check-in does not sign |
+| Agent co-signer | Off by default; separate review if ever proposed |
+| Relay | `frostd` is an untrusted encrypted relay. Off-box session traffic uses the Nym gate and fails closed |
+| Restore | Share + verifying shares + participant ids + full viewing key. A seed alone does not restore it |
+| Viewing / disclosure | Unchanged: UFVK or scoped incoming viewing key and the Phase 5 grant log |
+
+### Milestone verify inbox (locked for Legacy Guardian)
+
+School and college records can arrive by email to an address the agent owns. The heir asks the institution to send the transcript there. Uploading a screenshot is the low-value path only. Full write-up: [Milestone verify inbox](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#milestone-verify-inbox).
+
+| Decision | Status |
+|----------|--------|
+| Address | One inbound-only address per milestone, on a domain the operator controls. No replies |
+| Who may send | Exact domains the founder wrote when the milestone was created. The model cannot add one |
+| Check | Raw RFC 5322 message. Agent verifies SPF, DKIM, and DMARC with Rust `mail-auth`. DMARC must pass and align with that allowlist |
+| Receive | Stalwart (or equivalent) on the operator host when port 25 is open. Otherwise a raw-preserving front (Cloudflare Email Worker or a receive-only VPS) that posts the original bytes to the agent. Consumer mailboxes are out |
+| Identity | Extracted fields must match the heir details the founder recorded. A real transcript for someone else fails |
+| Strength | Inbox plus a trustee is medium. Inheritance still needs an issuer-signed credential or institutional verification, plus the trustee quorum |
+| Privacy | Encrypted local evidence store. No cloud model, no verification SaaS |
+
+### Privacy town (locked for the later build)
+
+A place where agents practice private ordering and are checked on user privacy. **Not part of the first skeleton.** User agents do not share a world or a VPS. Full write-up: [The privacy town](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#the-privacy-town-planned-after-a-single-user-agent-works).
+
+| Decision | Status |
+|----------|--------|
+| Shape | Mainland is the VPS. Each user agent lives on a private island (their machine). Shared AI Town-style memory is rejected |
+| Tasks | The user seals the task on the island. On the mainland the agent does only that task. The dock drops anything that is not the receipt |
+| Practice | Synthetic orders only. Reward is a local practice mark (software + suite version), not ZEC and not a public scoreboard |
+| Real orders | Town gate carries fixed invoice messages. Gift-card codes and other bearer secrets are encrypted to the buyer’s island and not stored on the VPS. Merchant Desk confirmation still releases goods |
+| Mainland stalls | Shops, invoice desk, encrypted delivery, practice yard, Warden rules, a public bulletin, merchant-published stats, and the market stall. No wallets or keys on the VPS |
+| Warden | Higher-up checker of agent builds. Sees pass/fail reports with user content removed. Cannot spend or open an island |
+| Break-in control | One OS user, process, and database per homestead. Signed envelopes only. Other agents’ text is untrusted. Nym for off-box gate traffic |
+| Host | The VPS is the town agents visit. Homes stay on the user machine. Shared on the VPS: practice mark and fixed order envelopes only. Gate host: 1984, Njalla, or Privex |
+| Create / buy | One agent per seed, derived by the wallet on a non-spend path. The same seed is the same paid agent on desktop, extension, and mobile. Memory syncs as ciphertext only the seed can open |
+| Learn | On the island only: episodes and playbooks the user can read, correct, or wipe. The next similar task is proposed from that playbook. Approval, tools, and Nym stay fixed |
+
+### Agent spending wallet (locked, separate from Nozy)
+
+A second Zcash wallet with its own seed, so the agent can receive bought ZEC and spend it under a cap. The human Nozy wallet stays shielded-only. Full write-up: [The agent’s own wallet](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#the-agents-own-wallet-separate-from-nozy).
+
+| Decision | Status |
+|----------|--------|
+| Keys | Own seed. Not derived from the Nozy seed. Neither wallet can spend the other |
+| Buy ZEC | Exchange withdrawal to the agent wallet’s transparent address. That history is public |
+| Then | Shield into the agent wallet’s own Orchard. Change stays there |
+| Cap | User-set. Under the cap the agent may spend this wallet on allowed tasks. Over the cap it asks. It cannot raise the cap or spend the human wallet |
+| Home | Each payout uses a new diversified shielded address from the human wallet, paid once from the agent’s shielded funds. No standing Nozy address. No transparent input on that payment |
+| Restore | The user backs up and restores this seed on each device. It is not inside the Nozy backup |
+
+### Market adapters (locked)
+
+The Zcash agent wallet does not trade on Solana, Ethereum, Namada, or Osmosis. Each chain is a separate key and a separate adapter. The agent does these tasks at the mainland market stall. The island keeps the keys and signs. Full write-up: [Wiring markets beyond Zcash](docs/medium/BUILDING_NOZY_AGENT_INFRASTRUCTURE.md#wiring-markets-beyond-zcash).
+
+| Order | Adapter |
+|-------|---------|
+| 1 | Zcash agent wallet: `t1` receive, shield into its own Orchard, capped spend, fresh address home |
+| 2 | Namada MASP sidecar. No ZEC bridge inside this adapter |
+| 3 | Penumbra shielded DEX sidecar, before any public DEX |
+| 4 | Osmosis, Ethereum, and Solana, each opted in alone: own key, own cap, public-trade warning |
+
+Bridges and IBC wait on their own review. NEAR is not the router. The human Nozy seed is never an adapter key.
+
 ### Bounded trading — NEAR Intents demoted (locked)
 
 | Decision | Status |
@@ -148,7 +240,7 @@ Other venues: one adapter per security review; prefer clearer settlement/refund 
 4. Business profile + mobile Sell mode (issue #85)
 5. Desktop formal GA label (downloads already published under beta tags)
 6. Dynamic fee A2 in Zeaking (when Shielded Labs approves)
-7. **Nozy Agent** RFC + scaffold (parallel; Nym + local LLM gates)
+7. **Nozy Agent** RFC + scaffold (parallel; Nym + local LLM gates). FROST, the verify inbox, and the privacy town are specified in the agent draft and stay out of this scaffold
 8. Multichain sidecars (Penumbra smoke → Namada spike per RFC)
 9. Mobile App Store / Play (STORE-CHECKLIST)
 10. Bounded trading adapters (**NEAR paper/canary only** until promotion criteria)

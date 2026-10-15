@@ -39,6 +39,12 @@ export function isValidFinalizerHex(hex: string): boolean {
   return /^[0-9a-f]{64}$/.test(normalizeFinalizerHex(hex));
 }
 
+/** v15 `wallet_staking_action` target. Case is preserved; the node checks the checksum. */
+export function isFinalizerAddress(value: string): boolean {
+  const addr = value.trim();
+  return addr.length >= 16 && /^zfinv1[A-Za-z0-9_-]+$/i.test(addr);
+}
+
 export async function fetchHybridPosScoreboard(): Promise<HybridPosFinalizer[]> {
   const res = await fetch(`${HYBRID_POS_BASE}/api/scoreboard`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Hybrid PoS scoreboard failed (${res.status})`);

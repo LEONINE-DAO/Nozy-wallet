@@ -200,6 +200,59 @@ pub async fn build_single_ironwood_spend(
     memo: Option<&[u8]>,
     expiry_delta_blocks: u32,
 ) -> NozyResult<OrchardBuiltSpend> {
+    build_single_ironwood_spend_inner(
+        zebra_client,
+        witness_provider,
+        spendable_notes,
+        recipient_address,
+        amount_zatoshis,
+        fee_zatoshis,
+        memo,
+        expiry_delta_blocks,
+        None,
+    )
+    .await
+}
+
+/// Same spend as [`build_single_ironwood_spend`], with the anchor and tip already
+/// taken from lightwalletd. The zebra client is not contacted.
+pub async fn build_single_ironwood_spend_prepared(
+    zebra_client: &ZebraClient,
+    spend_note: &SpendableNote,
+    recipient_address: &str,
+    amount_zatoshis: u64,
+    fee_zatoshis: u64,
+    memo: Option<&[u8]>,
+    expiry_delta_blocks: u32,
+    tip_height: u32,
+    anchor: Anchor,
+    merkle_path: MerklePath,
+) -> NozyResult<OrchardBuiltSpend> {
+    build_single_ironwood_spend_inner(
+        zebra_client,
+        &ZebraJsonRpcIronwoodWitnessProvider,
+        std::slice::from_ref(spend_note),
+        recipient_address,
+        amount_zatoshis,
+        fee_zatoshis,
+        memo,
+        expiry_delta_blocks,
+        Some((tip_height, anchor, merkle_path)),
+    )
+    .await
+}
+
+async fn build_single_ironwood_spend_inner(
+    zebra_client: &ZebraClient,
+    witness_provider: &dyn IronwoodWitnessProvider,
+    spendable_notes: &[SpendableNote],
+    recipient_address: &str,
+    amount_zatoshis: u64,
+    fee_zatoshis: u64,
+    memo: Option<&[u8]>,
+    expiry_delta_blocks: u32,
+    prepared: Option<(u32, Anchor, MerklePath)>,
+) -> NozyResult<OrchardBuiltSpend> {
     let recipient_address = crate::input_validation::normalize_unified_address(recipient_address);
     let (network_type, recipient_decoded) =
         zcash_address::unified::Address::decode(&recipient_address)
@@ -248,10 +301,18 @@ pub async fn build_single_ironwood_spend(
             );
         }
 
-        let chain_tip = zebra_client.get_best_block_height().await?;
-        let (ironwood_anchor, merkle_path) = witness_provider
-            .prepare_spend_anchor_and_path(zebra_client, spend_note, chain_tip)
-            .await?;
+        let chain_tip = if let Some((tip, _, _)) = &prepared {
+            *tip
+        } else {
+            zebra_client.get_best_block_height().await?
+        };
+        let (ironwood_anchor, merkle_path) = if let Some((_, anchor, path)) = &prepared {
+            (anchor.clone(), path.clone())
+        } else {
+            witness_provider
+                .prepare_spend_anchor_and_path(zebra_client, spend_note, chain_tip)
+                .await?
+        };
         let target_height = BlockHeight::from_u32(chain_tip.saturating_add(1));
         let build_config = BuildConfig::Standard {
             sapling_anchor: None,
@@ -353,7 +414,11 @@ pub async fn build_single_ironwood_spend(
             .extract()
             .map_err(|e| NozyError::InvalidOperation(format!("ironwood tx extract: {e:?}")))?;
 
-        let expiry_tip = zebra_client.get_best_block_height().await?;
+        let expiry_tip = if let Some((tip, _, _)) = &prepared {
+            *tip
+        } else {
+            zebra_client.get_best_block_height().await?
+        };
         let expiry_height_u32 = pilot_expiry_height(expiry_tip, expiry_delta_blocks);
         let txid = tx.txid().to_string();
         let mut raw_transaction = Vec::new();

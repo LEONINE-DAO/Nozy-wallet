@@ -2,14 +2,18 @@ import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Clipboard from "expo-clipboard";
 import { useEffect, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
 import {
   ONDEVICE_LWD_URL_KEY,
   ONDEVICE_ZEBRA_URL_KEY,
 } from "../components/settings/OnDeviceWalletSettings";
-import { defaultHostedLwdUrl } from "../lib/connectionPresets";
+import {
+  defaultHostedLwdUrl,
+  defaultLocalZebraUrl,
+  localNodeBlockReason,
+} from "../lib/connectionPresets";
 import { AppLogo } from "../components/AppLogo";
 import { Card } from "../components/Card";
 import { ConnectionSetupFields } from "../components/ConnectionSetupFields";
@@ -58,6 +62,10 @@ export function WelcomeScreen({ navigation }: Props) {
   const [connStatus, setConnStatus] = useState("");
   const [connError, setConnError] = useState("");
   const [syncChoice, setSyncChoice] = useState<SyncChoice>("ask");
+  const [syncError, setSyncError] = useState("");
+  const [localNodeUrl, setLocalNodeUrl] = useState(
+    Platform.OS === "android" ? "http://10.0.2.2:8232" : defaultLocalZebraUrl(),
+  );
   const [connSaving, setConnSaving] = useState(false);
 
   const [createPassword, setCreatePassword] = useState("");
@@ -141,9 +149,13 @@ export function WelcomeScreen({ navigation }: Props) {
         AsyncStorage.getItem(ONDEVICE_ZEBRA_URL_KEY),
       ]);
       if (cancelled) return;
-      if (zebra?.trim()) {
+      if (zebra?.trim() && !localNodeBlockReason(zebra)) {
+        setLocalNodeUrl(zebra.trim());
         setSyncChoice("local");
         return;
+      }
+      if (zebra?.trim()) {
+        await AsyncStorage.removeItem(ONDEVICE_ZEBRA_URL_KEY);
       }
       if (choice === "vps" || choice === "own") setSyncChoice(choice);
       else setSyncChoice("ask");
@@ -153,15 +165,33 @@ export function WelcomeScreen({ navigation }: Props) {
     };
   }, [isOnDeviceNativeAvailable]);
 
-  async function acceptPublicSync() {
-    await AsyncStorage.setItem(ONDEVICE_LWD_URL_KEY, defaultHostedLwdUrl());
-    await AsyncStorage.setItem(SYNC_CHOICE_KEY, "vps");
+  async function chooseNozyVps() {
+    await AsyncStorage.multiSet([
+      [ONDEVICE_LWD_URL_KEY, defaultHostedLwdUrl()],
+      [SYNC_CHOICE_KEY, "vps"],
+    ]);
+    await AsyncStorage.removeItem(ONDEVICE_ZEBRA_URL_KEY);
+    setSyncError("");
     setSyncChoice("vps");
   }
 
-  async function declinePublicSync() {
-    await AsyncStorage.setItem(SYNC_CHOICE_KEY, "own");
-    setSyncChoice("own");
+  async function chooseLocalNode() {
+    const url =
+      localNodeUrl.trim() ||
+      (Platform.OS === "android" ? "http://10.0.2.2:8232" : defaultLocalZebraUrl());
+    const blocked = localNodeBlockReason(url);
+    if (blocked) {
+      setSyncError(blocked);
+      return;
+    }
+    setSyncError("");
+    await AsyncStorage.multiSet([
+      [ONDEVICE_ZEBRA_URL_KEY, url],
+      [ONDEVICE_LWD_URL_KEY, defaultHostedLwdUrl()],
+      [SYNC_CHOICE_KEY, "local"],
+    ]);
+    setLocalNodeUrl(url);
+    setSyncChoice("local");
   }
 
   async function handleSaveConnection() {
@@ -224,11 +254,11 @@ export function WelcomeScreen({ navigation }: Props) {
       await unlockSession(pwd);
       navigation.replace("Main");
     } catch (err: unknown) {
-      setError(
+      const message =
         err instanceof Error
           ? err.message
-          : "Failed to unlock wallet. Check your password.",
-      );
+          : "Failed to unlock wallet. Check your password.";
+      setError(message);
     } finally {
       setIsLoading(false);
     }
@@ -414,25 +444,48 @@ export function WelcomeScreen({ navigation }: Props) {
               </Text>
             ) : null}
 
-            {isOnDeviceNativeAvailable && syncChoice === "ask" ? (
+            {isOnDeviceNativeAvailable ? (
               <Card variant="elevated" padding="lg">
-                <Text style={styles.sectionTitle}>No local node found</Text>
+                <Text style={styles.sectionTitle}>Connect</Text>
                 <Text style={styles.subtitle}>
-                  This phone is not set to a Zebrad or Zakura node. Connect to
-                  the Nozy sync server ({defaultHostedLwdUrl()})? Your keys
-                  stay on this phone.
+                  Use a local node, or the Nozy server. Keys stay on this phone.
+                  Other servers, including zec.rocks, are not used.
                 </Text>
                 <Button
-                  label="Yes — connect"
-                  onPress={() => void acceptPublicSync()}
+                  label="NozyWallet"
+                  variant={syncChoice === "vps" ? "primary" : "secondary"}
+                  onPress={() => void chooseNozyVps()}
                   size="lg"
                 />
                 <Button
-                  label="No — I'll use my own node"
-                  variant="secondary"
-                  onPress={() => void declinePublicSync()}
+                  label="Local node"
+                  variant={syncChoice === "local" ? "primary" : "secondary"}
+                  onPress={() => void chooseLocalNode()}
                   size="lg"
                 />
+                {syncChoice === "local" ? (
+                  <>
+                    <Input
+                      label="Local node URL"
+                      placeholder="http://10.0.2.2:8232"
+                      value={localNodeUrl}
+                      onChangeText={setLocalNodeUrl}
+                      autoCapitalize="none"
+                      autoCorrect={false}
+                    />
+                    <Button
+                      label="Save local node"
+                      onPress={() => void chooseLocalNode()}
+                      size="lg"
+                    />
+                  </>
+                ) : (
+                  <Text style={styles.subtitle}>
+                    NozyWallet sync uses {defaultHostedLwdUrl()}. A node on this
+                    PC is http://10.0.2.2:8232 from the emulator.
+                  </Text>
+                )}
+                {syncError ? <Text style={styles.error}>{syncError}</Text> : null}
               </Card>
             ) : null}
 

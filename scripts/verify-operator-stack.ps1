@@ -3,7 +3,7 @@
 # Checks: DNS, TCP ports, Zebra JSON-RPC, lightwalletd gRPC (donation UA), optional Nozy CLI.
 #
 # Usage:
-#   Set-Location C:\Users\User\NozyWallet
+#   Set-Location "$env:USERPROFILE\NozyWallet"
 #   powershell -ExecutionPolicy Bypass -File .\scripts\verify-operator-stack.ps1
 #   powershell -ExecutionPolicy Bypass -File .\scripts\verify-operator-stack.ps1 -OperatorHost zec.leoninedao.org
 #   powershell -ExecutionPolicy Bypass -File .\scripts\verify-operator-stack.ps1 -SkipBuild

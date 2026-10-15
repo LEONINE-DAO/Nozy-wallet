@@ -11,12 +11,15 @@ PowerShell / bash helpers for **Nozy** (CLI, desktop, `api-server` / zeaking com
 | Script | Purpose |
 |--------|---------|
 | `zebra-wsl-rpc.ps1` | Windows: **dot-source** to set **`ZEBRA_RPC_URL`** to `http://<WSL-IP>:8232` once per shell. `-Localhost` if RPC is reachable at `127.0.0.1:8232` from Windows. |
-| `start-lightwalletd-wsl.ps1` | Windows/WSL: start or check **lightwalletd** on `0.0.0.0:9067` (backend: zebrad `127.0.0.1:8232` inside WSL). `-Status`, `-Stop`. |
+| `start-lightwalletd-wsl.ps1` | Windows/WSL: start or check **lightwalletd** on `0.0.0.0:9067` (fallback; preferred: `.\scripts\start-nozy-sync-engine.ps1`). `-Status`, `-Stop`. |
+| `start-nozy-sync-engine.ps1` | Windows: run **Nozy Sync Engine** (`cargo run -p nozy-sync-engine`); sets `LIGHTWALLETD_GRPC`. `-Release`, `-RpcUrl`, `-Bind`. |
+| `zeaking-lwd-smoke.ps1` | Windows: compact-sync smoke; **`-LiveSync`** hits `:9067` (Nozy Sync Engine or lightwalletd). |
 | `run-nozy-api.ps1` | Windows: start **`nozywallet-api`** with `LIGHTWALLETD_GRPC` → WSL lightwalletd. **`-HttpPort 0`** (default) picks first free port **3000–3100**; **`-HttpPort 3000`** to pin. Set extension companion `baseUrl` if not 3000. |
+| `prepare-mobile-store-credentials.ps1` | Generate gitignored `nozy-mobile/hosted-api.env` (`NOZY_API_KEY`) for Expo preview/production + VPS. **Mobile only** — not extension companion. |
+| `run-production-api-for-mobile-qa.ps1` | Start api-server with `NOZY_PRODUCTION=true` + key from `hosted-api.env` (local mobile QA like VPS). |
 | `run-nozy.ps1` | Windows: ensure Zebrad in WSL, then `cargo tauri dev` for desktop. |
 | `set-wallet-rpc.ps1` | Windows: one RPC URL across CLI/desktop/api (`config --set-zebra-url` + `ZEBRA_RPC_URL`) and print URL for extension Settings. |
-| `show-dev-stack.ps1` | Windows: which services should run, port UP/DOWN for zebrad `:8232`, lightwalletd `:9067`, API `:3000`. |
-| `zeaking-lwd-smoke.ps1` | Windows: compact-sync smoke test; **`-LiveSync`** hits live lightwalletd (needs 9067 UP). |
+| `show-dev-stack.ps1` | Windows: which services should run, port UP/DOWN for zebrad `:8232`, Nozy Sync Engine/lightwalletd `:9067`, API `:3000`. |
 | `extension-smoke.ps1` | Windows: automated extension smoke suite (from repo root). |
 | `stop-nozy.ps1` | Stop Nozy desktop / optionally Zebrad in WSL. |
 | `run-nozy-wsl.sh` | Linux/WSL: same idea as `run-nozy.ps1` (bash). |
@@ -24,6 +27,7 @@ PowerShell / bash helpers for **Nozy** (CLI, desktop, `api-server` / zeaking com
 | `run-nozy-api.sh` | WSL/Linux: start **`nozywallet-api`**. Auto-picks port **3000–3100** or set **`NOZY_HTTP_PORT`**. |
 | `build-release.ps1` / `build-release.sh` | Release build helpers. |
 | `nozy-lite-bench.ps1` | Measure Nozy Lite CLI size / `--version` / `health` timings for [`docs/reference/NOZY_LITE_BENCHES.md`](../docs/reference/NOZY_LITE_BENCHES.md). |
+| [`ops/nozywallet-org/`](../ops/nozywallet-org/) | Contabo public node: Zebrad + lightwalletd + Caddy (`lwd.nozywallet.org`). |
 | `test-zebrad-nozywallet.ps1` | Windows Zebrad + config smoke test |
 | `test-zakura-nozywallet.ps1` | Windows Zakurad + treestate + LWD smoke test |
 
@@ -68,7 +72,7 @@ Optional: `-NozyRoot "D:\repos\Nozy-wallet"` if you did not start from inside th
 **API server (WSL):**
 
 ```bash
-cd ~/projects/Nozy-wallet   # or /mnt/c/Users/User/NozyWallet
+cd ~/projects/Nozy-wallet   # or /mnt/c/Users/User/NozyWallet (Lowo88 operator box)
 bash scripts/run-nozy-api.sh
 ```
 

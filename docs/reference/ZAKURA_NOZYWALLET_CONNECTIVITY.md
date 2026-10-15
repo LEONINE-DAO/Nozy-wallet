@@ -2,7 +2,7 @@
 
 **Status:** Operator guide — July 2026  
 **Audience:** NozyWallet users who run their own [Zakura](https://zakura.com/) node  
-**Stack:** Zakurad JSON-RPC + lightwalletd + NozyWallet (CLI, desktop, api-server, mobile)
+**Stack:** Zakurad JSON-RPC + **Nozy Sync Engine** (or lightwalletd fallback) + NozyWallet (CLI, desktop, api-server, mobile)
 
 NozyWallet does **not** bundle Zakura. This guide is for users who install and operate `zakurad` themselves.
 
@@ -20,8 +20,8 @@ NozyWallet does **not** bundle Zakura. This guide is for users who install and o
 
 1. **Zakura is a Zebra fork** — NozyWallet uses the same JSON-RPC surface (`z_gettreestate`, `sendrawtransaction`, `getblock`, …). Point `zebra_url` at Zakura’s RPC port.
 2. **Do not use zcashd compat mode** for NozyWallet — that path is for legacy `zcashd` wallet RPC (exchanges). Nozy keeps keys locally and speaks Zebra-family RPC.
-3. **Run lightwalletd against Zakura** for compact sync — same as Zebrad. Disable Zakura RPC cookie auth when lightwalletd connects (or use Zakura’s `docker-compose.lwd.yml`).
-4. **Cookie auth:** Zakura enables RPC cookies by default. Nozy reads `~/.cache/zakura/.cookie` automatically, or set `ZAKURA_RPC_COOKIE` / disable auth for local dev.
+3. **Preferred compact sync:** run **[Nozy Sync Engine](../../nozy-sync-engine/README.md)** against Zakura (cookie auth supported). Fallback: lightwalletd (often requires `enable_cookie_auth = false`).
+4. **Cookie auth:** Zakura enables RPC cookies by default. Nozy and Nozy Sync Engine read `~/.cache/zakura/.cookie` automatically, or set `ZAKURA_RPC_COOKIE`.
 
 ---
 
@@ -34,7 +34,7 @@ NozyWallet does **not** bundle Zakura. This guide is for users who install and o
 | `z_getsubtreesbyindex` | Subtree sync (when used) |
 | `getblock` (verbose) | RPC scan path |
 | `sendrawtransaction` | Broadcast |
-| **lightwalletd** gRPC | Compact-block sync (`zeaking::lwd`) |
+| **lightwalletd** / **Nozy Sync Engine** gRPC | Compact-block sync (`zeaking::lwd`) |
 
 Orchard witnesses are **not** served by the node — derived locally in the wallet.
 
@@ -64,9 +64,15 @@ zakurad start
 
 **Faster bootstrap:** use [Zakura snapshots](https://zakura.com/snapshots/) instead of full P2P sync.
 
-### 2. lightwalletd
+### 2. Compact sync — Nozy Sync Engine (preferred) or lightwalletd
 
-Follow [Zakura’s lightwalletd guide](https://github.com/zakura-core/zakura/blob/v1.0.0/book/src/user/lightwalletd.md). Minimal flow:
+**Preferred (in-repo):** [#274](https://github.com/LEONINE-DAO/Nozy-wallet/issues/274) — [Nozy Sync Engine](../../nozy-sync-engine/README.md) talks to Zakura with cookie auth and serves CompactTxStreamer on `:9067`:
+
+```bash
+cargo run -p nozy-sync-engine --release -- --rpc-url http://127.0.0.1:8232 --bind 127.0.0.1:9067
+```
+
+**Fallback — lightwalletd:** Follow [Zakura’s lightwalletd guide](https://github.com/zakura-core/zakura/blob/v1.0.0/book/src/user/lightwalletd.md). Minimal flow:
 
 ```bash
 git clone https://github.com/zcash/lightwalletd

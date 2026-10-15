@@ -123,7 +123,8 @@ impl ZcashTransactionBuilder {
             let has_change =
                 spend_note.orchard_note.value > amount_zatoshis.saturating_add(fee_zatoshis);
             let shape = OrchardSendFeeShape::single_spend_send(has_change, memo);
-            let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority);
+            let fee_block = crate::fee_policy::FeeBlock::next_block(!testnet, chain_tip);
+            let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority, fee_block);
             if fee_zatoshis < expected_fee {
                 return Err(NozyError::InvalidOperation(format!(
                     "Fee {} zats is below ZIP-317 minimum {} zats for this transaction shape",
@@ -181,7 +182,8 @@ impl ZcashTransactionBuilder {
         let has_change =
             spend_note.orchard_note.value > amount_zatoshis.saturating_add(fee_zatoshis);
         let shape = OrchardSendFeeShape::single_spend_send(has_change, memo);
-        let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority);
+        let fee_block = crate::fee_policy::FeeBlock::next_block(!testnet, chain_tip);
+        let expected_fee = crate::fee_policy::fee_zatoshis(&shape, pilot.priority, fee_block);
         if fee_zatoshis < expected_fee {
             return Err(NozyError::InvalidOperation(format!(
                 "Fee {} zats is below ZIP-317 minimum {} zats for this transaction shape",
@@ -200,6 +202,7 @@ impl ZcashTransactionBuilder {
                 fee_zatoshis,
                 memo,
                 pilot.expiry_delta_blocks,
+                None,
             )
             .await?;
 

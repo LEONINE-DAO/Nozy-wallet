@@ -20,6 +20,8 @@ import {
   inferNodeConnectionMode,
   isHostedApiUrl,
   isLocalZebraUrl,
+  localNodeBlockReason,
+  syncServerBlockReason,
 } from "../../lib/connectionPresets";
 import { colors, fontSize, spacing } from "../../theme";
 
@@ -42,7 +44,8 @@ export function NetworkSettings({ onBack }: Props) {
   useEffect(() => {
     if (backendMode === "on_device") {
       void AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY).then((v) => {
-        setLwdUrl(v?.trim() || defaultHostedLwdUrl());
+        const url = v?.trim() || defaultHostedLwdUrl();
+        setLwdUrl(syncServerBlockReason(url) ? defaultHostedLwdUrl() : url);
       });
       return;
     }
@@ -84,6 +87,12 @@ export function NetworkSettings({ onBack }: Props) {
 
   async function persistUrl(url: string) {
     const trimmed = url.trim();
+    const blocked = localNodeBlockReason(trimmed);
+    if (blocked) {
+      setError(blocked);
+      Alert.alert("Server not allowed", blocked);
+      return;
+    }
     if (!trimmed) {
       const msg = "Enter a full-node RPC URL before saving.";
       setError(msg);
@@ -127,6 +136,12 @@ export function NetworkSettings({ onBack }: Props) {
 
   async function save() {
     const trimmed = zebraUrl.trim();
+    const blocked = localNodeBlockReason(trimmed);
+    if (blocked) {
+      setError(blocked);
+      Alert.alert("Server not allowed", blocked);
+      return;
+    }
     const wasLocal = isLocalZebraUrl(initialZebraUrl);
     const goingPublic = wasLocal && !isLocalZebraUrl(trimmed);
 
@@ -193,6 +208,12 @@ export function NetworkSettings({ onBack }: Props) {
     setStatus("");
     try {
       const url = lwdUrl.trim() || defaultHostedLwdUrl();
+      const blocked = syncServerBlockReason(url);
+      if (blocked) {
+        setError(blocked);
+        Alert.alert("Server not allowed", blocked);
+        return;
+      }
       await AsyncStorage.setItem(ONDEVICE_LWD_URL_KEY, url);
       setLwdUrl(url);
       const info = await lwdGetInfo(url);
@@ -216,8 +237,8 @@ export function NetworkSettings({ onBack }: Props) {
         >
           <Text style={styles.title}>Network & node</Text>
           <Text style={styles.subtitle}>
-            This phone syncs compact blocks from lightwalletd. Default is
-            lwd.nozywallet.org. Set your own URL if you run a node.
+            This phone syncs from the Nozy server, or from a lightwalletd on
+            your home network. Other servers, including zec.rocks, are not used.
           </Text>
           <Card>
             <Input

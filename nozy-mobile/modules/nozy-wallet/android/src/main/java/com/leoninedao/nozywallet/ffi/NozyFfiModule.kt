@@ -5,6 +5,8 @@ import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 class NozyModuleException(message: String) : CodedException(message)
 
@@ -60,24 +62,26 @@ class NozyFfiModule : Module() {
       }
     }
 
-    AsyncFunction("lwdSyncCompactToTip") { lightwalletdUrl: String, compactDbPath: String, startFloor: Double? ->
-      wrap {
-        val rawFloor = startFloor?.toLong() ?: 0L
-        val floor = if (rawFloor >= NU5_ORCHARD_MAINNET) rawFloor else NU5_ORCHARD_MAINNET
-        val db = File(compactDbPath)
-        val parent = db.parentFile ?: db
-        parent.mkdirs()
-        val avail = try {
-          StatFs(parent.absolutePath).availableBytes
-        } catch (_: Exception) {
-          -1L
+    AsyncFunction("lwdSyncCompactToTip").SuspendBody { lightwalletdUrl: String, compactDbPath: String, startFloor: Double? ->
+      withContext(Dispatchers.IO) {
+        wrap {
+          val rawFloor = startFloor?.toLong() ?: 0L
+          val floor = if (rawFloor >= NU5_ORCHARD_MAINNET) rawFloor else NU5_ORCHARD_MAINNET
+          val db = File(compactDbPath)
+          val parent = db.parentFile ?: db
+          parent.mkdirs()
+          val avail = try {
+            StatFs(parent.absolutePath).availableBytes
+          } catch (_: Exception) {
+            -1L
+          }
+          if (avail in 0 until MIN_FREE_BYTES && db.exists()) {
+            db.delete()
+            File("$compactDbPath-wal").delete()
+            File("$compactDbPath-shm").delete()
+          }
+          uniffi.nozy_ffi.lwdSyncCompactToTip(lightwalletdUrl, compactDbPath, floor.toULong()).toLong()
         }
-        if (avail in 0 until MIN_FREE_BYTES && db.exists()) {
-          db.delete()
-          File("$compactDbPath-wal").delete()
-          File("$compactDbPath-shm").delete()
-        }
-        uniffi.nozy_ffi.lwdSyncCompactToTip(lightwalletdUrl, compactDbPath, floor.toULong()).toLong()
       }
     }
 
@@ -116,7 +120,8 @@ class NozyFfiModule : Module() {
       }
     }
 
-    AsyncFunction("saplingScan") { mnemonic: String, walletDataDir: String, compactDbPath: String, startFloor: Double?, full: Boolean ->
+    AsyncFunction("saplingScan").SuspendBody { mnemonic: String, walletDataDir: String, compactDbPath: String, startFloor: Double?, full: Boolean ->
+      withContext(Dispatchers.IO) {
       wrap {
         val floor = startFloor?.toLong()?.takeIf { it >= 0 }?.toULong()
         val s = uniffi.nozy_ffi.saplingScan(mnemonic, walletDataDir, compactDbPath, floor, full)
@@ -132,9 +137,11 @@ class NozyFfiModule : Module() {
           "message" to s.message,
         )
       }
+      }
     }
 
-    AsyncFunction("orchardScan") { mnemonic: String, walletDataDir: String, compactDbPath: String, startFloor: Double?, maxAccount: Int, full: Boolean ->
+    AsyncFunction("orchardScan").SuspendBody { mnemonic: String, walletDataDir: String, compactDbPath: String, startFloor: Double?, maxAccount: Int, full: Boolean ->
+      withContext(Dispatchers.IO) {
       wrap {
         val floor = startFloor?.toLong()?.takeIf { it >= 0 }?.toULong()
         val s = uniffi.nozy_ffi.orchardScan(
@@ -162,6 +169,23 @@ class NozyFfiModule : Module() {
           "message" to s.message,
         )
       }
+      }
+    }
+
+    AsyncFunction("orchardBackfillMemos").SuspendBody { mnemonic: String, walletDataDir: String, lightwalletdUrl: String ->
+      withContext(Dispatchers.IO) {
+        wrap {
+          uniffi.nozy_ffi.orchardBackfillMemos(mnemonic, walletDataDir, lightwalletdUrl).toInt()
+        }
+      }
+    }
+
+    AsyncFunction("orchardSendPayment").SuspendBody { mnemonic: String, walletDataDir: String, lightwalletdUrl: String, recipient: String, amountZec: Double, memo: String ->
+      withContext(Dispatchers.IO) {
+        wrap {
+          uniffi.nozy_ffi.orchardSendPayment(mnemonic, walletDataDir, lightwalletdUrl, recipient, amountZec, memo)
+        }
+      }
     }
 
     AsyncFunction("orchardStatus") { walletDataDir: String ->
@@ -178,6 +202,7 @@ class NozyFfiModule : Module() {
               "value_zec" to n.valueZec,
               "spent" to n.spent,
               "pool" to n.pool,
+              "memo" to n.memo,
             )
           },
           "message" to s.message,
@@ -237,6 +262,30 @@ class NozyFfiModule : Module() {
           "message" to v.message,
         )
       }
+    }
+
+    AsyncFunction("giftCardBuy").SuspendBody { mnemonic: String, walletDataDir: String, zebraUrl: String, amountZec: Double, label: String ->
+      withContext(Dispatchers.IO) {
+        wrap {
+          uniffi.nozy_ffi.giftCardBuy(mnemonic, walletDataDir, zebraUrl, amountZec, label)
+        }
+      }
+    }
+
+    AsyncFunction("giftCardRedeem").SuspendBody { mnemonic: String, walletDataDir: String, zebraUrl: String, claimCode: String ->
+      withContext(Dispatchers.IO) {
+        wrap {
+          uniffi.nozy_ffi.giftCardRedeem(mnemonic, walletDataDir, zebraUrl, claimCode)
+        }
+      }
+    }
+
+    AsyncFunction("giftCardList") { walletDataDir: String, limit: Double ->
+      wrap { uniffi.nozy_ffi.giftCardList(walletDataDir, limit.toInt().toUInt()) }
+    }
+
+    AsyncFunction("giftCardCancel") { walletDataDir: String, giftId: String ->
+      wrap { uniffi.nozy_ffi.giftCardCancel(walletDataDir, giftId) }
     }
 
     AsyncFunction("voteSignDelegation") { mnemonic: String, requestJson: String ->

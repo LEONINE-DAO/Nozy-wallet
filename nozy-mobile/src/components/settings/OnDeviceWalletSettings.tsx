@@ -7,8 +7,13 @@ import { Input } from "../Input";
 import { SettingsBackButton } from "./SettingsBackButton";
 import { useWalletSession } from "../../context/WalletSessionContext";
 import { isOnDeviceBackendAvailable } from "../../lib/walletBackend";
-import { defaultHostedLwdUrl } from "../../lib/connectionPresets";
+import {
+  defaultHostedLwdUrl,
+  localNodeBlockReason,
+  syncServerBlockReason,
+} from "../../lib/connectionPresets";
 import { NU5_ORCHARD_MAINNET, parseRestoreHeight } from "../../lib/zcashHeights";
+import { getSecret, setSecret } from "../../lib/secretStorage";
 import { colors, fontSize, spacing } from "../../theme";
 
 export const ONDEVICE_MNEMONIC_KEY = "nozy.ondevice.mnemonic";
@@ -40,7 +45,7 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
   useEffect(() => {
     void (async () => {
       const [m, d, c, z, l, b] = await Promise.all([
-        AsyncStorage.getItem(ONDEVICE_MNEMONIC_KEY),
+        getSecret(ONDEVICE_MNEMONIC_KEY),
         AsyncStorage.getItem(ONDEVICE_DATA_DIR_KEY),
         AsyncStorage.getItem(ONDEVICE_COMPACT_DB_KEY),
         AsyncStorage.getItem(ONDEVICE_ZEBRA_URL_KEY),
@@ -50,8 +55,8 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
       if (m) setMnemonic(m);
       if (d) setDataDir(d);
       if (c) setCompactDb(c);
-      if (z) setZebraUrl(z);
-      if (l) setLwdUrl(l);
+      if (z && !localNodeBlockReason(z)) setZebraUrl(z);
+      if (l && !syncServerBlockReason(l)) setLwdUrl(l);
       else setLwdUrl(defaultHostedLwdUrl());
       if (b) setBirthday(b);
     })();
@@ -59,15 +64,22 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
 
   async function savePaths() {
     setError("");
+    const lwd = lwdUrl.trim() || defaultHostedLwdUrl();
+    const blocked = syncServerBlockReason(lwd) || localNodeBlockReason(zebraUrl);
+    if (blocked) {
+      setError(blocked);
+      setStatus("");
+      return;
+    }
     await AsyncStorage.multiSet([
       [ONDEVICE_DATA_DIR_KEY, dataDir.trim()],
       [ONDEVICE_COMPACT_DB_KEY, compactDb.trim()],
       [ONDEVICE_ZEBRA_URL_KEY, zebraUrl.trim()],
-      [ONDEVICE_LWD_URL_KEY, lwdUrl.trim()],
+      [ONDEVICE_LWD_URL_KEY, lwd],
       [ONDEVICE_BIRTHDAY_KEY, String(parseRestoreHeight(birthday))],
     ]);
     if (mnemonic.trim()) {
-      await AsyncStorage.setItem(ONDEVICE_MNEMONIC_KEY, mnemonic.trim());
+      await setSecret(ONDEVICE_MNEMONIC_KEY, mnemonic.trim());
     }
     setStatus("On-device Sapling paths saved.");
   }
@@ -101,11 +113,10 @@ export function OnDeviceWalletSettings({ onBack }: Props) {
         <Text style={styles.title}>On-device wallet</Text>
         <Text style={styles.body}>
           This is Nozy’s on-device wallet. Keys stay on this phone. Compact
-          sync uses lightwalletd (default https://lwd.nozywallet.org:443). To
-          use a node you run, set your lightwalletd gRPC URL below — and
-          Zebrad JSON-RPC if you have one. Companion API is only if you run
-          nozywallet-api on your own machine; it is not a shared hosted
-          wallet.
+          sync uses the Nozy server (https://lwd.nozywallet.org:443) or a
+          node on your home network. Other servers, including zec.rocks, are
+          not used. Companion API is only if you run nozywallet-api on your
+          own machine; it is not a shared hosted wallet.
         </Text>
         <Text style={styles.meta}>
           Native FFI: {available ? "available" : "not loaded"} · Mode:{" "}

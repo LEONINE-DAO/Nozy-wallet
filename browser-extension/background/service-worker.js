@@ -34,6 +34,7 @@ import {
   compactTreeState
 } from "./lwd-compact.js";
 import {
+  feeBlockFromRpc,
   mandatoryOrchardFeeZats,
   selectNotesForSpend,
   rpcFallbackWithRequester
@@ -480,7 +481,10 @@ async function _inlineProveTransaction(params) {
   if (!recipientAddress) throw new Error("Missing recipient address.");
 
   const endpoint = normalizeRpcEndpoint(rpcEndpoint);
-  const requestedFee = mandatoryOrchardFeeZats(wasm, memo);
+  const feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+    _inlineRpcRequest(endpoint, method, rpcParams)
+  );
+  const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
   const requiredValue = requestedAmount + requestedFee;
   if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
     throw new Error(`Invalid amount/fee (amount=${requestedAmount}, fee=${requestedFee}).`);
@@ -542,7 +546,9 @@ async function _inlineProveTransaction(params) {
     selectedWitnesses.push({
       incremental_witness_hex: witnessHex,
       anchor_hex: anchorHex,
-      target_height: txBuildHeight
+      target_height: txBuildHeight,
+      fee_block_height: feeBlock.minedBlockHeight,
+      fee_mainnet: feeBlock.mainnet
     });
   }
 
@@ -768,6 +774,105 @@ async function loadSessionPolicy() {
 
 async function saveSessionPolicy(state) {
   await storageSet({ [SESSION_POLICY_KEY]: state });
+}
+
+function noteCmxHex(note) {
+  return _bytesToHex(note?.cmx ?? []).toLowerCase();
+}
+
+function txidHexCandidates(txid) {
+  const id = String(txid || "").trim().toLowerCase();
+  const bytes = id.match(/../g);
+  if (!bytes || bytes.length !== 32) return [id];
+  const flipped = bytes.reverse().join("");
+  return flipped === id ? [id] : [id, flipped];
+}
+
+async function backfillScanNoteMemos() {
+  if (!session.unlocked || !session.mnemonic) return;
+  if (typeof wasm.decrypt_memos_from_raw_tx !== "function") return;
+  const state = await loadScanState();
+  if (!state || !Array.isArray(state.discoveredNotes) || !state.discoveredNotes.length) return;
+  const pending = [];
+  const seen = new Set();
+  for (const row of state.discoveredNotes) {
+    const note = row?.note ?? row;
+    if (!note || typeof note.memo === "string") continue;
+    const txid = String(row?.txid ?? note?.txid ?? "").trim();
+    if (!/^[0-9a-fA-F]{64}$/.test(txid) || seen.has(txid.toLowerCase())) continue;
+    seen.add(txid.toLowerCase());
+    pending.push(txid);
+    if (pending.length >= 4) break;
+  }
+  if (!pending.length) return;
+  let changed = false;
+  for (const txid of pending) {
+    let found = null;
+    for (const candidate of txidHexCandidates(txid)) {
+      let rawHex = "";
+      try {
+        const raw = await rpcCall("getrawtransaction", [candidate]);
+        rawHex = typeof raw === "string" ? raw.trim() : "";
+      } catch (_) {
+        continue;
+      }
+      if (rawHex.length < 20) continue;
+      try {
+        found = wasmJsonValue(wasm.decrypt_memos_from_raw_tx(session.mnemonic, rawHex));
+      } catch (_) {
+        found = null;
+        continue;
+      }
+      if (Array.isArray(found)) break;
+    }
+    if (!Array.isArray(found) || !found.length) continue;
+    for (const row of state.discoveredNotes) {
+      const note = row?.note ?? row;
+      if (!note || typeof note.memo === "string") continue;
+      const rowTx = String(row?.txid ?? note?.txid ?? "").toLowerCase();
+      if (rowTx !== txid.toLowerCase()) continue;
+      const cmx = noteCmxHex(note);
+      const sameValue = found.filter((item) => Number(item?.value) === Number(note.value));
+      const hit =
+        found.find((item) => String(item?.cmx || "").toLowerCase() === cmx) ||
+        (sameValue.length === 1 ? sameValue[0] : null);
+      if (!hit) continue;
+      const text = typeof hit.memo === "string" ? hit.memo : "";
+      if (row.note && typeof row.note === "object") row.note.memo = text;
+      else row.memo = text;
+      changed = true;
+    }
+  }
+  if (changed) await saveScanState(state);
+}
+
+function receivedActivityEntries(scanState) {
+  const rows = Array.isArray(scanState?.discoveredNotes) ? scanState.discoveredNotes : [];
+  const entries = [];
+  rows.forEach((row, i) => {
+    const note = row?.note ?? row;
+    const amount = Number(row?.value ?? note?.value ?? 0);
+    if (!Number.isFinite(amount) || amount <= 0) return;
+    const txid = String(row?.txid ?? note?.txid ?? "");
+    const height = Number(row?.height ?? note?.block_height ?? 0);
+    entries.push({
+      id: `received-${txid}-${Number.isFinite(height) ? height : 0}-${i}`,
+      txid: txid || null,
+      state: "confirmed",
+      origin: "received",
+      direction: "received",
+      recipientAddress: "",
+      amount,
+      fee: null,
+      memo: typeof note?.memo === "string" ? note.memo : "",
+      createdAt: Number.isFinite(height) ? height : 0,
+      updatedAt: Number.isFinite(height) ? height : 0,
+      error: null,
+      blockHeight: Number.isFinite(height) ? height : null
+    });
+  });
+  entries.sort((a, b) => (b.blockHeight || 0) - (a.blockHeight || 0));
+  return entries;
 }
 
 async function loadTxState() {
@@ -1179,8 +1284,33 @@ async function tryCompanionZebraUrl() {
   return null;
 }
 
+function endpointHost(url) {
+  const raw = String(url || "").trim();
+  if (!raw) return "";
+  try {
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `http://${raw}`;
+    return new URL(withScheme).hostname.toLowerCase();
+  } catch (_) {
+    return "";
+  }
+}
+
+function isLocalNodeHost(host) {
+  if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "10.0.2.2") {
+    return true;
+  }
+  const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+  if (!v4) return false;
+  const a = Number(v4[1]);
+  const b = Number(v4[2]);
+  if (a === 10) return true;
+  if (a === 192 && b === 168) return true;
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  return false;
+}
+
 function isNozyPublicSyncUrl(url) {
-  return /lwd\.nozywallet\.org|zec\.rocks|api\.nozywallet\.org/i.test(String(url || ""));
+  return endpointHost(url) === "lwd.nozywallet.org";
 }
 
 /**
@@ -1189,6 +1319,11 @@ function isNozyPublicSyncUrl(url) {
  */
 async function connectZebradRpc(opts = {}) {
   const explicitUrl = String(opts?.url ?? "").trim();
+  if (explicitUrl && !isNozyPublicSyncUrl(explicitUrl) && !isLocalNodeHost(endpointHost(explicitUrl))) {
+    throw new Error(
+      "Only a local node or the Nozy server (lwd.nozywallet.org) can be used. Other servers, including zec.rocks, are not allowed."
+    );
+  }
   if (explicitUrl && isNozyPublicSyncUrl(explicitUrl)) {
     const publicRes = await connectPublicLwd();
     return {
@@ -1931,13 +2066,23 @@ async function resolveScanBirthday(ws, chainTip, scanState) {
 }
 
 async function estimateFeeZats(memo = "", _priority = true) {
-  // Always ZIP-317 × 4; `_priority` kept for call-site compat and ignored.
+  // ZIP-317 ×4 of the ZIP 2009 schedule. `_priority` is ignored.
   try {
     await ensureWasm();
-    return mandatoryOrchardFeeZats(wasm, memo);
   } catch (_) {
     return mandatoryOrchardFeeZats(null, memo);
   }
+  let feeBlock = null;
+  try {
+    if (session.rpcEndpoint) {
+      feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+        rpcCall(method, rpcParams)
+      );
+    }
+  } catch (_) {
+    feeBlock = null;
+  }
+  return mandatoryOrchardFeeZats(wasm, memo, feeBlock);
 }
 
 function ironwoodNotesFromScan(state) {
@@ -2672,7 +2817,7 @@ async function scanTick() {
                 if (!Number.isFinite(v) || v <= 0) continue;
                 const txid = String(n?.txid ?? block?.hash ?? `h${h}`);
                 const pool = notePoolTag(n);
-                const already = (state.discoveredNotes ?? []).some((row) => {
+                const existing = (state.discoveredNotes ?? []).find((row) => {
                   const prev = row?.note ?? row;
                   return (
                     Number(row?.height) === h &&
@@ -2681,7 +2826,14 @@ async function scanTick() {
                     Number(row?.value ?? prev?.value ?? 0) === v
                   );
                 });
-                if (already) continue;
+                if (existing) {
+                  const prev = existing.note ?? existing;
+                  if (typeof prev.memo !== "string" && typeof n.memo === "string") {
+                    if (existing.note && typeof existing.note === "object") existing.note.memo = n.memo;
+                    else existing.memo = n.memo;
+                  }
+                  continue;
+                }
                 state.discoveredNotes.push({
                   note: n,
                   height: h,
@@ -3410,7 +3562,22 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         }
         case "wallet_get_transactions":
           await refreshTxExpiryStates();
-          sendResponse(ok(await loadTxState()));
+          try {
+            await backfillScanNoteMemos();
+          } catch (_) {
+            /* history still returns without a memo if the node is down */
+          }
+          {
+            const sent = await loadTxState();
+            const scan = await loadScanState();
+            const outgoing = Array.isArray(sent.txs) ? sent.txs : [];
+            sendResponse(
+              ok({
+                txs: [...receivedActivityEntries(scan), ...outgoing],
+                updatedAt: sent.updatedAt || 0
+              })
+            );
+          }
           return;
         case "wallet_retry_broadcast":
           sendResponse(ok({ txid: await retryBroadcastById(String(params.id ?? "")) }));

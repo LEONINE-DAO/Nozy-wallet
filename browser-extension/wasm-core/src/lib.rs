@@ -805,17 +805,37 @@ pub fn build_orchard_v5_tx_from_note(
         return Err(JsError::new("Spend notes and witnesses length mismatch"));
     }
 
-    // Mandatory NozyWallet fee: ZIP-317 × PRIORITY_MULTIPLIER (same as CLI/API/desktop).
+    // Mandatory NozyWallet fee: ZIP-317 ×4 of the ZIP 2009 schedule (same as CLI/API/desktop).
     // Callers may still pass a legacy 10_000; clamp up so extension cannot underpay.
+    // `fee_block_height` is the block the tx is mined in (tip + 1). `fee_mainnet` defaults
+    // to true because this builder targets MainNetwork.
     let memo_opt: Option<&[u8]> = if memo.is_empty() {
         None
     } else {
         Some(memo.as_bytes())
     };
+    let mined_block_height = witnesses[0]
+        .get("fee_block_height")
+        .and_then(|v| v.as_u64())
+        .map(|h| h as u32)
+        .unwrap_or(0);
+    let fee_mainnet = witnesses[0]
+        .get("fee_mainnet")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let fee_block = if mined_block_height == 0 {
+        nozy::FeeBlock::mainnet_before_zip2009()
+    } else {
+        nozy::FeeBlock {
+            mainnet: fee_mainnet,
+            height: mined_block_height,
+        }
+    };
     let spends = spend_notes.len() as u32;
     let total_input_preview: u64 = spend_notes.iter().map(|n| n.value).sum();
-    let mut fee_zatoshis =
-        fee_zatoshis.max(nozy::estimate_orchard_send_fee_zatoshis(memo_opt, true));
+    let mut fee_zatoshis = fee_zatoshis.max(nozy::estimate_orchard_send_fee_zatoshis(
+        memo_opt, true, fee_block,
+    ));
     let mut has_change = total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
     let mut outputs = if has_change { 2u32 } else { 1 };
     let mut shape = if spends <= 1 {
@@ -826,7 +846,7 @@ pub fn build_orchard_v5_tx_from_note(
             memo_len: memo_opt.map(|m| m.len()).unwrap_or(0),
         }
     };
-    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true));
+    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true, fee_block));
     has_change = total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
     outputs = if has_change { 2 } else { 1 };
     shape = if spends <= 1 {
@@ -837,7 +857,7 @@ pub fn build_orchard_v5_tx_from_note(
             memo_len: memo_opt.map(|m| m.len()).unwrap_or(0),
         }
     };
-    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true));
+    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true, fee_block));
 
     let target_height_u32 = witnesses[0]
         .get("target_height")
@@ -1041,16 +1061,39 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }
 
-/// ZIP-317 fee in zatoshis. NozyWallet always applies the priority multiplier (×4);
-/// the `priority` argument is accepted for API compatibility and ignored.
+/// ZIP-317 ×4 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
+///
+/// Callers that know the chain tip should use [`estimate_orchard_send_fee_zats_at`].
 #[wasm_bindgen]
 pub fn estimate_orchard_send_fee_zats(memo: &str, _priority: bool) -> u64 {
+    estimate_orchard_send_fee_zats_at(memo, _priority, true, 0)
+}
+
+/// ZIP-317 ×4 fee for the block the transaction is mined in.
+///
+/// `mined_block_height` is chain tip + 1. Mainnet stays at 5,000 zats/action until
+/// height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000 at every height.
+#[wasm_bindgen]
+pub fn estimate_orchard_send_fee_zats_at(
+    memo: &str,
+    _priority: bool,
+    mainnet: bool,
+    mined_block_height: u32,
+) -> u64 {
     let memo_opt: Option<&[u8]> = if memo.is_empty() {
         None
     } else {
         Some(memo.as_bytes())
     };
-    nozy::estimate_orchard_send_fee_zatoshis(memo_opt, true)
+    let block = if mainnet && mined_block_height == 0 {
+        nozy::FeeBlock::mainnet_before_zip2009()
+    } else {
+        nozy::FeeBlock {
+            mainnet,
+            height: mined_block_height,
+        }
+    };
+    nozy::estimate_orchard_send_fee_zatoshis(memo_opt, true, block)
 }
 
 #[wasm_bindgen]

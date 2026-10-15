@@ -9,13 +9,30 @@ export function create_wallet(password: string): any;
 
 export function decrypt_from_storage(encrypted: Uint8Array, password: string): Uint8Array;
 
+/**
+ * Decrypt ZIP-302 memos from a `getrawtransaction` hex blob.
+ *
+ * Returns `[{ cmx, rho, value, memo }]` where `memo` is display text.
+ * An empty `memo` means the output decrypted and the memo has no text.
+ */
+export function decrypt_memos_from_raw_tx(mnemonic: string, raw_tx_hex: string): any;
+
 export function encrypt_for_storage(data: Uint8Array, password: string): Uint8Array;
 
 /**
- * ZIP-317 fee in zatoshis. NozyWallet always applies the priority multiplier (×4);
- * the `priority` argument is accepted for API compatibility and ignored.
+ * ZIP-317 ×4 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
+ *
+ * Callers that know the chain tip should use [`estimate_orchard_send_fee_zats_at`].
  */
 export function estimate_orchard_send_fee_zats(memo: string, _priority: boolean): bigint;
+
+/**
+ * ZIP-317 ×4 fee for the block the transaction is mined in.
+ *
+ * `mined_block_height` is chain tip + 1. Mainnet stays at 5,000 zats/action until
+ * height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000 at every height.
+ */
+export function estimate_orchard_send_fee_zats_at(memo: string, _priority: boolean, mainnet: boolean, mined_block_height: number): bigint;
 
 /**
  * Build `nozy-vote-notes-v1` JSON from scanned Ironwood notes (cached witnesses).
@@ -61,17 +78,13 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
-    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-    readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
-    readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly advance_orchard_witness_hex: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
     readonly create_wallet: (a: number, b: number) => [number, number, number];
     readonly decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly estimate_orchard_send_fee_zats: (a: number, b: number, c: number) => bigint;
+    readonly estimate_orchard_send_fee_zats_at: (a: number, b: number, c: number, d: number, e: number) => bigint;
     readonly generate_address: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly get_nu5_activation_height: () => number;
     readonly get_zcash_chain_id: () => [number, number];
@@ -84,6 +97,12 @@ export interface InitOutput {
     readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly decrypt_memos_from_raw_tx: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+    readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
+    readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly rustsecp256k1_v0_10_0_context_create: (a: number) => number;
     readonly rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;
     readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;

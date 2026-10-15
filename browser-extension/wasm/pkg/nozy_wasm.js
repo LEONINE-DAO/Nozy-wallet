@@ -90,6 +90,27 @@ export function decrypt_from_storage(encrypted, password) {
 }
 
 /**
+ * Decrypt ZIP-302 memos from a `getrawtransaction` hex blob.
+ *
+ * Returns `[{ cmx, rho, value, memo }]` where `memo` is display text.
+ * An empty `memo` means the output decrypted and the memo has no text.
+ * @param {string} mnemonic
+ * @param {string} raw_tx_hex
+ * @returns {any}
+ */
+export function decrypt_memos_from_raw_tx(mnemonic, raw_tx_hex) {
+    const ptr0 = passStringToWasm0(mnemonic, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ptr1 = passStringToWasm0(raw_tx_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len1 = WASM_VECTOR_LEN;
+    const ret = wasm.decrypt_memos_from_raw_tx(ptr0, len0, ptr1, len1);
+    if (ret[2]) {
+        throw takeFromExternrefTable0(ret[1]);
+    }
+    return takeFromExternrefTable0(ret[0]);
+}
+
+/**
  * @param {Uint8Array} data
  * @param {string} password
  * @returns {Uint8Array}
@@ -109,8 +130,9 @@ export function encrypt_for_storage(data, password) {
 }
 
 /**
- * ZIP-317 fee in zatoshis. NozyWallet always applies the priority multiplier (×4);
- * the `priority` argument is accepted for API compatibility and ignored.
+ * ZIP-317 ×4 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
+ *
+ * Callers that know the chain tip should use [`estimate_orchard_send_fee_zats_at`].
  * @param {string} memo
  * @param {boolean} _priority
  * @returns {bigint}
@@ -119,6 +141,24 @@ export function estimate_orchard_send_fee_zats(memo, _priority) {
     const ptr0 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ret = wasm.estimate_orchard_send_fee_zats(ptr0, len0, _priority);
+    return BigInt.asUintN(64, ret);
+}
+
+/**
+ * ZIP-317 ×4 fee for the block the transaction is mined in.
+ *
+ * `mined_block_height` is chain tip + 1. Mainnet stays at 5,000 zats/action until
+ * height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000 at every height.
+ * @param {string} memo
+ * @param {boolean} _priority
+ * @param {boolean} mainnet
+ * @param {number} mined_block_height
+ * @returns {bigint}
+ */
+export function estimate_orchard_send_fee_zats_at(memo, _priority, mainnet, mined_block_height) {
+    const ptr0 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.estimate_orchard_send_fee_zats_at(ptr0, len0, _priority, mainnet, mined_block_height);
     return BigInt.asUintN(64, ret);
 }
 

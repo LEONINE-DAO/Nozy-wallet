@@ -10,6 +10,7 @@ import {
   hybridPosStanding,
   hybridPosStandingLabel,
   indexScoreboard,
+  isFinalizerAddress,
   isValidFinalizerHex,
   normalizeFinalizerHex,
   retargetRiskLabel,
@@ -734,7 +735,7 @@ export function CrosslinkView() {
           mono
           value={finalizer}
           onChange={(e) => setFinalizer(e.target.value.trim())}
-          placeholder="64-hex finalizer key"
+          placeholder="zfinv1… from the Crosslink GUI"
           disabled={busy}
         />
         {isValidFinalizerHex(finalizer) && (
@@ -754,6 +755,11 @@ export function CrosslinkView() {
                 if (!Number.isFinite(n) || n <= 0) {
                   throw new Error("Enter a positive cTAZ amount");
                 }
+                if (!isFinalizerAddress(finalizer)) {
+                  throw new Error(
+                    "Paste the finalizer's zfinv1 address. The 64-hex roster key is not accepted on v15."
+                  );
+                }
                 const prefs = await getCompanionPrefs();
                 const res = await extensionApi.companionCrosslinkStake({
                   baseUrl: prefs.baseUrl,
@@ -772,6 +778,11 @@ export function CrosslinkView() {
             disabled={busy || !finalizer || !bondKey}
             onClick={() =>
               run(async () => {
+                if (!isFinalizerAddress(finalizer)) {
+                  throw new Error(
+                    "Paste the finalizer's zfinv1 address. The 64-hex roster key is not accepted on v15."
+                  );
+                }
                 const prefs = await getCompanionPrefs();
                 const res = await extensionApi.companionCrosslinkRetarget({
                   baseUrl: prefs.baseUrl,
