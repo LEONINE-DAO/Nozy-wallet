@@ -22,6 +22,11 @@
 | Balance | `nozy balance` | `GET /api/balance` | | **Chain / wallet state** |
 | Sync | `nozy sync` / `nozy sync --to-tip` | `POST /api/sync` | | **Chain** — checkpoint / height fields may differ |
 | Send | `nozy send` | `POST /api/transaction/send` | | **Chain** |
+| Gift card mint | `nozy gift-card buy` | `POST /api/gift-cards` | | **Chain.** Claim code is returned once and is not stored. Mints from this wallet |
+| Gift card list | `nozy gift-card list` | `GET /api/gift-cards` | | Local store. Covered by `parity-local.sh` |
+| Gift card get | `nozy gift-card get` | `GET /api/gift-cards/{id}` | | Local store |
+| Gift card cancel | `nozy gift-card cancel` | `POST /api/gift-cards/{id}/cancel` | | Cancels an unclaimed record. A paid card must be redeemed; cancel does not return that ZEC |
+| Gift card redeem | `nozy gift-card redeem` | `POST /api/gift-cards/redeem` | | **Chain.** The network fee comes out of the card |
 | Fee estimate | N/A (fee policy inside send) | `GET /api/transaction/fee-estimate` | | Shape probe in `parity-local.sh`; confirm ZIP-317 vs CLI send |
 | Speed-up | CLI/desktop alignment via tx lifecycle | `POST /api/transaction/speed-up` | | |
 | LWD info | N/A | `GET /api/lwd/info` | | Soft without lightwalletd |

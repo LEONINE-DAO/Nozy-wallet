@@ -59,6 +59,7 @@ else
   echo "FAIL GET /api/wallet/status  (got ${code})"
   failed=1
 fi
+check GET "/api/gift-cards?limit=1" 2xx
 # Fee estimate may 200 with defaults or 4xx/5xx if node missing — accept both shapes as "reachable".
 code=$(curl -sS "${CURL_AUTH[@]}" -o /tmp/nozy-parity-body.$$ -w "%{http_code}" --connect-timeout 5 --max-time 15 "${BASE_URL}/api/transaction/fee-estimate" 2>/dev/null || true)
 if [[ "$code" =~ ^[245] ]]; then

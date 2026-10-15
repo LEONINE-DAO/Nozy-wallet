@@ -100,6 +100,15 @@ These routes call **`zeaking::lwd`** in-process (same as Tauri and [`zeaking-ffi
 ### Transaction Endpoints
 - `POST /api/transaction/send` - Send transaction
 
+### Gift cards
+Same wallet as the CLI (`nozy gift-card`). The claim code is returned once by create and is not stored. `api.nozywallet.org` is this operator's wallet, not a shared mint.
+
+- `POST /api/gift-cards` — body `{ "amount_zec": 0.01, "label"?: string, "password"?: string }`
+- `GET /api/gift-cards?limit=50` — list cards without the claim code
+- `GET /api/gift-cards/{id}`
+- `POST /api/gift-cards/{id}/cancel` — cancel an unclaimed record. A paid card must be redeemed
+- `POST /api/gift-cards/redeem` — body `{ "claim_code": "NZGC-…", "password"?: string }`. The network fee comes out of the card
+
 ### Config Endpoints
 - `GET /api/config` - Get configuration
 - `POST /api/config/zebra-url` - Set Zebra URL

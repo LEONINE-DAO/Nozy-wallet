@@ -22,4 +22,4 @@ macro_rules! set_release_codename {
     };
 }
 
-set_release_codename!("Teriyaki Hot (CLI)");
+set_release_codename!("Mango Habanero");

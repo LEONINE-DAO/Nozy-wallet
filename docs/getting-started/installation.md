@@ -22,7 +22,7 @@ Release page: [latest release](https://github.com/LEONINE-DAO/Nozy-wallet/releas
 
 Current tags called out from the project page:
 
-- CLI [v2.4.7 — Mango Habanero](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.7)
+- CLI [v2.4.8 — Mango Habanero](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.8)
 - Desktop [Hot Lemon Pepper Sprinkles beta.7](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.7)
 - Extension Sweet Chili 0.1.26 (source; not a store listing)
 
