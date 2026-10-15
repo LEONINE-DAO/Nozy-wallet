@@ -1,17 +1,13 @@
 /* tslint:disable */
 /* eslint-disable */
 export const memory: WebAssembly.Memory;
-export const export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-export const sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-export const orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-export const orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
-export const shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const advance_orchard_witness_hex: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
 export const create_wallet: (a: number, b: number) => [number, number, number];
 export const decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const estimate_orchard_send_fee_zats: (a: number, b: number, c: number) => bigint;
+export const estimate_orchard_send_fee_zats_at: (a: number, b: number, c: number, d: number, e: number) => bigint;
 export const generate_address: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const get_nu5_activation_height: () => number;
 export const get_zcash_chain_id: () => [number, number];
@@ -24,6 +20,12 @@ export const restore_wallet: (a: number, b: number, c: number, d: number) => [nu
 export const scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
 export const sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+export const sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+export const decrypt_memos_from_raw_tx: (a: number, b: number, c: number, d: number) => [number, number, number];
+export const orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
+export const orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
+export const shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const rustsecp256k1_v0_10_0_context_create: (a: number) => number;
 export const rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;
 export const rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;

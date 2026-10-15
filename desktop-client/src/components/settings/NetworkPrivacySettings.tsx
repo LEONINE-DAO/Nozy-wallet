@@ -12,7 +12,29 @@ const NYM_VPN_URL = "https://nym.com/vpn";
 const NYM_GITHUB = "https://github.com/nymtech/nym";
 const NYM_VPN_GITHUB = "https://github.com/nymtech/nym-vpn-client";
 const ZCASH_SDK_NYM = "https://zcash-sdk.nym.com/";
-const DEFAULT_PUBLIC_LWD = "https://zec.rocks:443";
+const DEFAULT_PUBLIC_LWD = "https://lwd.nozywallet.org:443";
+const FOREIGN_SERVER_MESSAGE =
+  "Only a local node or the Nozy server (lwd.nozywallet.org) can be used. Other servers, including zec.rocks, are not allowed.";
+
+function probeServerBlockReason(url: string): string | null {
+  const trimmed = url.trim();
+  if (!trimmed) return null;
+  try {
+    const host = new URL(/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`).hostname.toLowerCase();
+    if (host === "lwd.nozywallet.org" || host === "localhost" || host === "127.0.0.1" || host === "::1") {
+      return null;
+    }
+    const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+    if (v4) {
+      const a = Number(v4[1]);
+      const b = Number(v4[2]);
+      if (a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31)) return null;
+    }
+    return FOREIGN_SERVER_MESSAGE;
+  } catch {
+    return "That address is not a valid server URL.";
+  }
+}
 
 interface NetworkPrivacySettingsProps {
   onBack: () => void;
@@ -34,6 +56,11 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
 
   const refreshDvpn = useCallback(async () => {
     setDvpnError(null);
+    const blocked = probeServerBlockReason(publicLwd);
+    if (blocked) {
+      setDvpnError(blocked);
+      return;
+    }
     try {
       const { data } = await walletApi.getNymDvpnSyncStatus(publicLwd.trim() || undefined);
       setDvpnStatus(data);
@@ -64,6 +91,12 @@ export function NetworkPrivacySettings({ onBack }: NetworkPrivacySettingsProps) 
     setDvpnBusy(true);
     setDvpnError(null);
     setProbeResult(null);
+    const blocked = probeServerBlockReason(publicLwd);
+    if (blocked) {
+      setDvpnError(blocked);
+      setDvpnBusy(false);
+      return;
+    }
     try {
       await walletApi.setSyncViaNymDvpn(true);
       const { data } = await walletApi.runNymDvpnSyncProbe({

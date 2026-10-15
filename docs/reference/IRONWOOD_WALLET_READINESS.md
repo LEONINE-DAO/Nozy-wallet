@@ -1,12 +1,20 @@
 # Ironwood (NU6.3) wallet readiness — NozyWallet
 
-**Status:** CLI **v2.4.0** shipped (July 2026) — testnet loop complete; **mainnet Orchard→Ironwood turnstile confirmed** 2026-07-30 (see evidence); desktop Ironwood UX beta  
-**Release:** [v2.4.0 Ironwood (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0)  
+**Status:** CLI **v2.4.x** shipped — mainnet Orchard→Ironwood turnstile confirmed; ZIP 318 path on CLI + desktop; residual Orchard finish UX on Home / Ironwood tab  
+**Release:** [v2.4.0 Ironwood (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.0) (see `/releases/latest` for current binaries)  
 **Mainnet migration evidence:** [`MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md`](MAINNET_IRONWOOD_MIGRATION_EVIDENCE.md) — TXID `ea2fa4e64a5c…7048fd` @ height **3,430,663**  
-**Target:** Mainnet activation **2026-07-28** at height **3,428,143** (ecosystem PSA; wallet falls back to this height if `zcash_protocol` has not pinned NU6.3 yet)  
-**Forum:** [Ironwood: Verifying the Soundness of Zcash's Circulating Supply](https://forum.zcashcommunity.com/t/ironwood-verifying-the-soundness-of-zcash-s-circulating-supply/56044) · [wallets update Aug 1](https://forum.zcashcommunity.com/t/ironwood-is-here-updated-wallets-libraries-aug-1/56557/38)  
-**Wallet migration draft:** [ZIP 318 PR #1317](https://github.com/zcash/zips/pull/1317)  
+**Target:** Mainnet activation **2026-07-28** at height **3,428,143** (live; Orchard sealed)  
+**Forum:** [Ironwood wallets update Aug 20](https://forum.zcashcommunity.com/t/ironwood-is-here-updated-wallets-libraries-aug-20/56557) · [supply verification](https://forum.zcashcommunity.com/t/ironwood-verifying-the-soundness-of-zcash-s-circulating-supply/56044)  
+**Wallet migration:** [ZIP 318](https://zips.z.cash/zip-0318)  
 **Privacy guidance:** Shielded Labs — *Security issues in migrating user funds from Orchard to Ironwood* (Zooko Wilcox & Taylor Hornby): network-level privacy (Defense A) + `{1,2,5}×10^k` concurrent mixing (Defense B / Appendix A)
+
+### Release / store polish checklist (operators)
+
+1. **CLI / companion API** — ship from `/releases/latest`; bump `Cargo.toml` version when cutting a tag; attach `HASHES.txt`.
+2. **Desktop** — pin `landing/src/lib/downloads.ts` `DESKTOP_TAG` to the installer tag; keep Ironwood tab + Home residual banner in the build.
+3. **Extension** — Chrome Web Store listing + `browser-extension/manifest.json` version; zip tag `extension-v*` for load-unpacked.
+4. **Users finishing migration** — residual Orchard → Home “Finish migration” → Ironwood Plan/Split/Migrate/Broadcast; CLI: `nozy ironwood plan|split|migrate|broadcast`.
+5. **Deps (optional)** — move off `orchard` 0.15-pre / librustzcash git pins to crates.io finals when convenient.
 
 ---
 
@@ -28,6 +36,8 @@
 | Safer migration Priority 3 (amounts/timing) | **Shielded Labs `{1,2,5}×10^k` active** — residual below 0.001 ZEC abandoned; ZIP 318 power-of-ten kept as compatibility ladder; memoryless timing / consolidation rounds next |
 
 **Safer migration writeup:** [`SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md`](SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md) · code: `src/ironwood/network_privacy.rs`
+
+**User / book / whitepaper copy:** [`IRONWOOD_USER_EXPLAINER.md`](IRONWOOD_USER_EXPLAINER.md) — transparent shield vs receive vs Orchard ZIP 318 migrate; **Zingo instant path in depth**; why Plan-only; why sync for incoming Ironwood.
 
 **Formal verification** (Lean 4 `zcash/ironwood` repo) is separate from wallet work — see [`IRONWOOD_PR4_NOTES.md`](IRONWOOD_PR4_NOTES.md).
 
@@ -293,7 +303,7 @@ Implementation evidence:
 
 Conclusion: a `0 ZEC` result after an incremental no-new-note scan should be treated as a cache/reporting bug if `ironwood status`, `preflight`, or a saved schedule still proves an older unspent note exists. The targeted recovery is to rescan from the note's block height and then rerun Ironwood readiness checks.
 
-**Half balance after ZIP 318 splits (twin notes):** see [`ZIP318_TWIN_BALANCE_RECOVERY.md`](ZIP318_TWIN_BALANCE_RECOVERY.md) (steps) and [`ZIP318_TWIN_BALANCE_CASE_BREAKDOWN.md`](ZIP318_TWIN_BALANCE_CASE_BREAKDOWN.md) (postmortem).
+**Half balance after ZIP 318 splits (twin notes):** see [`ZIP318_TWIN_BALANCE_RECOVERY.md`](ZIP318_TWIN_BALANCE_RECOVERY.md).
 
 ---
 
@@ -806,7 +816,7 @@ After the Path C turnstile loop, Orchard notes on profile **Ironwood Testnet** (
 | E | **Phase 3.4 blocked** | `orchard_only_send_blocker` rejected all sends post-activation | No `add_ironwood_spend` path in normal send builder | New `src/ironwood_tx.rs`: V6 PCZT `add_ironwood_spend` + `add_ironwood_output`; `transaction_builder` routes when `is_ironwood_active` |
 | F | **`wallet_ready` stuck false** | `ironwood status` always "no (see blockers)" after fixes | `wallet_ready` hardcoded `false` in CLI | Dynamic: `ironwood_zat > 0`, `orchard_zat == 0`, no blockers |
 | G | **Mainnet autostart scope** | Operator asked for mainnet autostart only — no testnet | `install-zebrad-autostart.ps1` registers `ZebradWSL-*` → `start-zebrad-wsl.ps1` (mainnet `/home/lowo/zebra-mainnet/`, `:8232`) | Verified tasks **Ready**; testnet remains **manual** WSL start (by design) |
-| H | **Stale `nozy.exe` after edits** | Prior sessions saw code changes with no operator effect | Cursor sandbox may redirect `CARGO_TARGET_DIR` away from `NozyWallet\target` | Rebuild with `$env:CARGO_TARGET_DIR = "C:\Users\User\NozyWallet\target"` before operator runs |
+| H | **Stale `nozy.exe` after edits** | Prior sessions saw code changes with no operator effect | Cursor sandbox may redirect `CARGO_TARGET_DIR` away from `NozyWallet\target` | Rebuild with `$env:CARGO_TARGET_DIR = "$env:USERPROFILE\NozyWallet\target"` or use `.\scripts\nozy.ps1` |
 
 **What we shipped**
 
@@ -1083,7 +1093,7 @@ nozy @z ironwood status           # expect Ironwood zat > 0, Ironwood-ready: yes
 # nozy @z send <ua> <amount>
 
 # Rebuild CLI after code changes (sandbox may redirect CARGO_TARGET_DIR):
-#   $env:CARGO_TARGET_DIR = "C:\Users\User\NozyWallet\target"
+#   $env:CARGO_TARGET_DIR = "$env:USERPROFILE\NozyWallet\target"
 #   cargo build --release -p nozy
 ```
 

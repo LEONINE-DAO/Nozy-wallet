@@ -15,13 +15,13 @@ export function NetworkPrivacySettings({ onBack }: Props) {
       >
         <Text style={styles.title}>Network privacy</Text>
         <Text style={styles.body}>
-          Compact sync talks to lightwalletd. Default is
-          https://lwd.nozywallet.org:443. That server sees your IP and that you
-          are syncing — not your seed or keys.
+          Compact sync uses the Nozy server at
+          https://lwd.nozywallet.org:443, or a node on your home network. That
+          server sees your IP and that you are syncing — not your seed or keys.
         </Text>
         <Text style={styles.body}>
-          For stronger network privacy, set your own lightwalletd URL in
-          On-device wallet or Network & node, on a machine you control.
+          Other servers, including zec.rocks, are not used. A node you run
+          yourself on this phone, this computer, or your home network is allowed.
         </Text>
       </ScrollView>
     </SafeAreaView>

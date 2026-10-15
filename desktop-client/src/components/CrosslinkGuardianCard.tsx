@@ -21,6 +21,7 @@ import {
   hybridPosStanding,
   hybridPosStandingLabel,
   indexScoreboard,
+  isFinalizerAddress,
   isValidFinalizerHex,
   normalizeFinalizerHex,
   retargetRiskLabel,
@@ -973,7 +974,7 @@ export function CrosslinkGuardianCard() {
       <div ref={stakeActionsRef} className="relative mt-6 grid gap-4 lg:grid-cols-2">
         <Panel title="Stake" subtitle="Create a new delegation bond">
           <label className="block text-sm text-gray-400">
-            Amount (cTAZ)
+            Amount (cTAZ, power of 10: 0.01, 0.1, 1, 10, …)
             <input
               className={inputClass}
               value={amount}
@@ -982,12 +983,12 @@ export function CrosslinkGuardianCard() {
             />
           </label>
           <label className="block text-sm text-gray-400">
-            Finalizer (64 hex)
+            Finalizer (zfinv1 address)
             <input
               className={`${inputClass} font-mono`}
               value={finalizer}
               onChange={(e) => setFinalizer(e.target.value.trim())}
-              placeholder="Paste from roster or monolith UI"
+              placeholder="zfinv1… from the Crosslink GUI"
               disabled={!!busy}
             />
           </label>
@@ -1017,6 +1018,21 @@ export function CrosslinkGuardianCard() {
                   const n = Number(amount);
                   if (!Number.isFinite(n) || n <= 0) {
                     throw new Error("Enter a positive cTAZ amount");
+                  }
+                  let zats = Math.round(n * 1e8);
+                  if (!Number.isSafeInteger(zats) || zats < 1) {
+                    throw new Error("Amount out of range");
+                  }
+                  while (zats % 10 === 0) zats = Math.floor(zats / 10);
+                  if (zats !== 1) {
+                    throw new Error(
+                      "v15 bonds must be a power of 10 (0.01, 0.1, 1, 10, 100, … cTAZ)"
+                    );
+                  }
+                  if (!isFinalizerAddress(finalizer)) {
+                    throw new Error(
+                      "Paste the finalizer's zfinv1 address. The 64-hex roster key is not accepted on v15."
+                    );
                   }
                   const res = await walletApi.crosslinkStake({
                     amount_ctaz: n,
@@ -1073,6 +1089,11 @@ export function CrosslinkGuardianCard() {
               disabled={!!busy || !finalizer || !bondKey}
               onClick={() =>
                 void run("retarget", async () => {
+                  if (!isFinalizerAddress(finalizer)) {
+                    throw new Error(
+                      "Paste the finalizer's zfinv1 address. The 64-hex roster key is not accepted on v15."
+                    );
+                  }
                   await walletApi.crosslinkRetarget({
                     bond: bondKey,
                     finalizer,
@@ -1296,7 +1317,7 @@ export function CrosslinkGuardianCard() {
         {roster.length > 0 && (
           <ListPanel
             title={`Network roster · ${roster.length}`}
-            subtitle="Prefer spread over the largest third — tap to fill finalizer"
+            subtitle="Tap a row that has a zfinv1 address to fill stake / retarget"
             items={roster}
             renderItem={(e, i) => {
               const row = hybridByKey.get(normalizeFinalizerHex(e.finalizer));
@@ -1310,8 +1331,16 @@ export function CrosslinkGuardianCard() {
                 <button
                   type="button"
                   className="min-w-0 truncate text-left text-gray-300 hover:text-gray-100"
-                  title="Paste as finalizer"
-                  onClick={() => selectFinalizer(e.finalizer)}
+                  title={e.address ? "Paste zfinv1 address" : "No zfinv1 address from the node yet"}
+                  onClick={() => {
+                    if (e.address) {
+                      selectFinalizer(e.address);
+                      return;
+                    }
+                    toast.error(
+                      "This roster entry has no zfinv1 address yet. Copy it from the Crosslink GUI."
+                    );
+                  }}
                 >
                   <span className="text-gray-600">{i + 1}.</span>{" "}
                   {name ? (

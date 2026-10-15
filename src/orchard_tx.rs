@@ -271,6 +271,7 @@ impl OrchardTransactionBuilder {
         fee_zatoshis: u64,
         memo: Option<&[u8]>,
         expiry_delta_blocks: u32,
+        prepared: Option<(u32, Anchor, MerklePath)>,
     ) -> NozyResult<OrchardBuiltSpend> {
         println!("Building Orchard transaction...");
 
@@ -350,7 +351,11 @@ impl OrchardTransactionBuilder {
                 );
             }
 
-            let tip_height = zebra_client.get_best_block_height().await?;
+            let tip_height = if let Some((tip, _, _)) = &prepared {
+                *tip
+            } else {
+                zebra_client.get_best_block_height().await?
+            };
 
             println!(
                 "Adding spend action for {} zatoshis",
@@ -359,9 +364,13 @@ impl OrchardTransactionBuilder {
 
             let fvk = FullViewingKey::from(&spendable_note.spending_key);
 
-            let (anchor, merkle_path) = witness_provider
-                .prepare_spend_anchor_and_path(zebra_client, spendable_note, tip_height)
-                .await?;
+            let (anchor, merkle_path) = if let Some((_, anchor, path)) = &prepared {
+                (anchor.clone(), path.clone())
+            } else {
+                witness_provider
+                    .prepare_spend_anchor_and_path(zebra_client, spendable_note, tip_height)
+                    .await?
+            };
 
             let mut builder = OrchardBuilder::new(
                 bundle_type,
@@ -423,7 +432,11 @@ impl OrchardTransactionBuilder {
 
             // Refresh tip immediately before encoding expiry — witness fetch + bundle build can
             // span multiple blocks on slow hosts (VPS/WSL proving stacks).
-            let expiry_tip = zebra_client.get_best_block_height().await?;
+            let expiry_tip = if let Some((tip, _, _)) = &prepared {
+                *tip
+            } else {
+                zebra_client.get_best_block_height().await?
+            };
             let tx_build_height = expiry_tip.saturating_add(1);
             let expiry_height_u32 = pilot_expiry_height(expiry_tip, expiry_delta_blocks);
             let expiry_height = BlockHeight::from_u32(expiry_height_u32);
@@ -521,7 +534,11 @@ impl OrchardTransactionBuilder {
             println!("   Transaction size: {} bytes", raw_transaction.len());
             println!("   Expiry height: {}", expiry_height_u32);
 
-            let tip_now = zebra_client.get_best_block_height().await?;
+            let tip_now = if let Some((tip, _, _)) = &prepared {
+                *tip
+            } else {
+                zebra_client.get_best_block_height().await?
+            };
             if !crate::fee_policy::pilot_transaction_expired(tip_now, expiry_height_u32) {
                 return Ok(OrchardBuiltSpend {
                     raw_transaction,

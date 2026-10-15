@@ -28,11 +28,11 @@ export function ConnectionSetupFields({
   return (
     <>
       <Text style={styles.hint}>
-        Nozy keeps keys on this phone. Compact sync uses our public
-        lightwalletd (https://lwd.nozywallet.org:443). To use a node you run,
-        set your own lightwalletd URL in On-device settings. Optional:
-        connect your own nozywallet-api (home PC) under Advanced — never a
-        shared hosted wallet.
+        Nozy keeps keys on this phone. Compact sync uses the Nozy server
+        (https://lwd.nozywallet.org:443) or a node on your home network.
+        Other servers, including zec.rocks, are not used. Optional: connect
+        your own nozywallet-api (home PC) under Advanced — never a shared
+        hosted wallet.
       </Text>
       <Input
         label="API server URL"

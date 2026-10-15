@@ -65,4 +65,6 @@ This is **not** bond rewards (`latest_val − initial_val`). Rewards stay on the
 | Desktop | Crosslink tab → **Available to stake** hero |
 | Extension | XL tab → status card |
 
-Related: `get_wallet_ufvk` for Season 1 ZEC payout — `nozy crosslink ufvk` (works on current v13 builds).
+Related: `get_wallet_ufvk` for Season 1 ZEC payout — `nozy crosslink ufvk`. The Windows GUI pin is monolith [v15](https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/v15) (`tools/crosslink/zebrad_v15_win32.exe`).
+
+v15 activates a network upgrade at PoW height **55,296**. Bond creation must be a power of 10 in zatoshis (`0.01`, `0.1`, `1`, `10`, … cTAZ). Keep the Feature Net cache directory named `crosslink_featurenet_20260929_staking3d` (rename a near-miss to that exact name). If a launch syncs from scratch or shows a new wallet, stop it and put the previous cache back — back up `secret.seed` first. On this machine that folder already lives under the `cache_dir` in `%LOCALAPPDATA%\zebra\zebrad-crosslink-gui.toml`. Start the GUI with that config (`scripts/start-crosslink-gui.ps1`); a bare launch mints a new cache.

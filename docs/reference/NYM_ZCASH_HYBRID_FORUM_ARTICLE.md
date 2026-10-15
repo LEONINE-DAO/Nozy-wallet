@@ -101,6 +101,7 @@ The smolmix helper is still a **subprocess** (sqlite `links` clash with in-proce
 | Product-wire **smol-dvpn** compact sync | Spike **C2/C3 PASS**; **C5** zeaking connector; **C6** desktop Network privacy opt-in + probe (subprocess) — [NYM_DVPN_SYNC_CASE_BREAKDOWN.md](NYM_DVPN_SYNC_CASE_BREAKDOWN.md) |
 | Browser **mixFetch** for extension submits | Later; sync stays companion/local |
 | Dual-endpoint destination split UX | Guidance now; auto-config later |
+| Neighbor mixnet gRPC pipe (Joaco) | External client run **PASS**; PR https://github.com/jpgonzalezra/lwd-mixnet-proxy/pull/3 — **not** a sync path |
 | NYM credential / swap UX for users | Prerequisite before marketing “Nym supported” |
 
 We will **not** claim “Nym integrated” in store copy until broadcast-over-mixnet is proven on a real remote path and the hybrid sync story is more than a spike.

@@ -420,7 +420,8 @@ pub async fn buy_gift_card(
     let config = crate::config::load_config();
     let zebra =
         crate::zebra_integration::ZebraClient::from_config_with_url(&config, Some(zebra_url));
-    let redeem_fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(None, true);
+    let block = zebra.fee_block_for_next_block().await;
+    let redeem_fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(None, true, block);
     if amount_zatoshis <= redeem_fee {
         raw_key.zeroize();
         let fee_zec = redeem_fee as f64 / 100_000_000.0;
@@ -455,6 +456,135 @@ pub async fn buy_gift_card(
     let claim_code = encode_claim_code(&raw_key, height);
     raw_key.zeroize();
 
+    let card = record_bought_card(BoughtGift {
+        payment_address,
+        amount_zatoshis,
+        amount_zec,
+        label,
+        claim_code: claim_code.clone(),
+        funding_txid: txid,
+    })?;
+    Ok(GiftCardCreated { card, claim_code })
+}
+
+/// Pay a gift card from notes this phone already scanned, using the Nozy sync server
+/// for the tree and for `SendTransaction`. The seed never leaves the phone.
+pub async fn buy_gift_card_via_lightwalletd(
+    wallet: &HDWallet,
+    amount_zec: f64,
+    label: Option<String>,
+    lwd_url: &str,
+    compact_db: &std::path::Path,
+) -> NozyResult<GiftCardCreated> {
+    if !(amount_zec.is_finite() && amount_zec > 0.0) {
+        return Err(NozyError::InvalidInput(
+            "amount_zec must be a positive finite value".into(),
+        ));
+    }
+    let amount_zatoshis = (amount_zec * 100_000_000.0).round() as u64;
+    if amount_zatoshis == 0 {
+        return Err(NozyError::InvalidInput(
+            "amount_zec is too small (rounds to 0 zats)".into(),
+        ));
+    }
+    let label = normalize_label(label)?;
+    let network = gift_network();
+    let (spending_key, mut raw_key) = ephemeral_spending_key()?;
+    let payment_address = match gift_unified_address(&spending_key, network) {
+        Ok(address) => address,
+        Err(e) => {
+            raw_key.zeroize();
+            return Err(e);
+        }
+    };
+    let block = crate::fee_policy::FeeBlock::next_block(
+        network != zcash_protocol::consensus::NetworkType::Test,
+        3_500_000,
+    );
+    let send_fee =
+        crate::fee_policy::estimate_orchard_send_fee_zatoshis(Some(b"Nozy gift"), true, block);
+    let redeem_fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(None, true, block);
+    if amount_zatoshis <= redeem_fee {
+        raw_key.zeroize();
+        let fee_zec = redeem_fee as f64 / 100_000_000.0;
+        return Err(NozyError::InvalidInput(format!(
+            "Gift card must be larger than the redeem fee ({fee_zec:.8} ZEC). That fee comes out of the card."
+        )));
+    }
+    let prepared = match crate::lwd_gift::prepare_gift_spend_from_lightwalletd(
+        wallet,
+        lwd_url,
+        compact_db,
+        amount_zatoshis.saturating_add(send_fee),
+    )
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(e) => {
+            raw_key.zeroize();
+            return Err(e);
+        }
+    };
+    let memo = b"Nozy gift".as_slice();
+    let zebra = crate::zebra_integration::ZebraClient::new("http://127.0.0.1:1".to_string());
+    let built = match prepared.pool {
+        crate::shielded_pool::ShieldedPool::Ironwood => {
+            crate::ironwood_tx::build_single_ironwood_spend_prepared(
+                &zebra,
+                &prepared.note,
+                &payment_address,
+                amount_zatoshis,
+                send_fee,
+                Some(memo),
+                crate::lwd_gift::PHONE_GIFT_EXPIRY_DELTA_BLOCKS,
+                prepared.tip_height,
+                prepared.anchor,
+                prepared.merkle_path,
+            )
+            .await
+        }
+        crate::shielded_pool::ShieldedPool::Orchard => {
+            let builder = crate::orchard_tx::OrchardTransactionBuilder::new(true);
+            builder
+                .build_single_spend(
+                    &zebra,
+                    &crate::orchard_tx::ZebraJsonRpcOrchardWitnessProvider,
+                    std::slice::from_ref(&prepared.note),
+                    &payment_address,
+                    amount_zatoshis,
+                    send_fee,
+                    Some(memo),
+                    crate::lwd_gift::PHONE_GIFT_EXPIRY_DELTA_BLOCKS,
+                    Some((prepared.tip_height, prepared.anchor, prepared.merkle_path)),
+                )
+                .await
+        }
+    };
+    let built = match built {
+        Ok(built) => built,
+        Err(e) => {
+            raw_key.zeroize();
+            return Err(e);
+        }
+    };
+    let txid = built.txid.clone();
+    let send_result = async {
+        let mut client = zeaking::lwd::connect_lightwalletd(lwd_url)
+            .await
+            .map_err(|e| NozyError::InvalidOperation(format!("Nozy server submit: {e}")))?;
+        zeaking::lwd::send_transaction(&mut client, built.raw_transaction)
+            .await
+            .map_err(|e| {
+                NozyError::InvalidOperation(format!("Nozy server rejected the gift card: {e}"))
+            })
+    }
+    .await;
+    if let Err(e) = send_result {
+        raw_key.zeroize();
+        return Err(e);
+    }
+    let claim_code = encode_claim_code(&raw_key, prepared.tip_height);
+    raw_key.zeroize();
     let card = record_bought_card(BoughtGift {
         payment_address,
         amount_zatoshis,
@@ -547,7 +677,8 @@ pub async fn redeem_gift_card(
         ));
     };
 
-    let fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(None, true);
+    let block = zebra.fee_block_for_next_block().await;
+    let fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(None, true, block);
     if note.orchard_note.value <= fee {
         return Err(NozyError::InvalidOperation(
             "This gift card is smaller than the network fee, so it cannot be redeemed.".into(),
@@ -578,6 +709,162 @@ pub async fn redeem_gift_card(
         payment_address,
         amount_zatoshis: note.orchard_note.value,
         amount_zec: note.orchard_note.value as f64 / 100_000_000.0,
+        label: None,
+        diversifier_index: 0,
+        account,
+        created_at: Utc::now().to_rfc3339(),
+        zcash_uri: String::new(),
+        backing_nullifier: None,
+        funding_txid: None,
+        redeem_txid: Some(txid),
+        recipient: Some(recipient),
+        payout_zatoshis: Some(payout),
+    })
+}
+
+/// Sweep a gift card using compact blocks and `SendTransaction` on the Nozy server.
+pub async fn redeem_gift_card_via_lightwalletd(
+    wallet: &HDWallet,
+    claim_code: &str,
+    lwd_url: &str,
+    compact_db: &std::path::Path,
+) -> NozyResult<GiftCard> {
+    let (mut raw_key, height) = decode_claim_code(claim_code)?;
+    let parsed = SpendingKey::from_bytes(raw_key);
+    raw_key.zeroize();
+    if !bool::from(parsed.is_some()) {
+        return Err(NozyError::InvalidInput(
+            "Gift card code was not recognized.".into(),
+        ));
+    }
+    let spending_key = parsed.unwrap();
+    let network = gift_network();
+    let payment_address = match gift_unified_address(&spending_key, network) {
+        Ok(address) => address,
+        Err(e) => return Err(e),
+    };
+    let store = zeaking::lwd::LwdCompactStore::open(compact_db)
+        .map_err(|e| NozyError::InvalidOperation(format!("open compact store: {e}")))?;
+    let mut client = zeaking::lwd::connect_lightwalletd(lwd_url)
+        .await
+        .map_err(|e| NozyError::InvalidOperation(format!("Nozy server: {e}")))?;
+    zeaking::lwd::sync_compact_to_tip_with_options(
+        &mut client,
+        &store,
+        zeaking::lwd::SyncCompactToTipOptions {
+            start_floor: Some(u64::from(height).max(1)),
+            persist_progress_every: 32,
+        },
+    )
+    .await
+    .map_err(|e| NozyError::InvalidOperation(format!("Nozy server sync: {e}")))?;
+    let latest = zeaking::lwd::get_latest_tree_state(&mut client)
+        .await
+        .map_err(|e| NozyError::InvalidOperation(format!("Nozy server tree: {e}")))?;
+    if u64::from(height) > latest.height {
+        return Err(NozyError::InvalidOperation(
+            "This gift card is not confirmed yet. Redeem it again after the payment is mined."
+                .into(),
+        ));
+    }
+    let max_h = store
+        .max_compact_height()
+        .map_err(|e| NozyError::Storage(format!("compact max: {e}")))?
+        .unwrap_or(0);
+    let anchor_height = max_h.min(latest.height);
+    let scanned =
+        crate::lwd_gift::scan_compact_store_for_key(&store, &spending_key, height, anchor_height)?;
+    let Some(note) = scanned.note else {
+        if scanned.spent {
+            return Err(NozyError::InvalidOperation(
+                "This gift card has already been redeemed.".into(),
+            ));
+        }
+        return Err(NozyError::InvalidOperation(
+            "This gift card is not confirmed yet. Redeem it again after the payment is mined."
+                .into(),
+        ));
+    };
+    let anchor_state = if anchor_height == latest.height {
+        latest
+    } else {
+        zeaking::lwd::get_tree_state(&mut client, anchor_height, None)
+            .await
+            .map_err(|e| {
+                NozyError::InvalidOperation(format!("Nozy server tree at {anchor_height}: {e}"))
+            })?
+    };
+    let prepared = crate::lwd_gift::prepare_external_spend_from_lightwalletd(
+        &mut client,
+        &store,
+        &anchor_state,
+        anchor_height,
+        note,
+        spending_key,
+    )
+    .await?;
+    let block = crate::fee_policy::FeeBlock::next_block(
+        network != zcash_protocol::consensus::NetworkType::Test,
+        3_500_000,
+    );
+    let fee = crate::fee_policy::estimate_orchard_send_fee_zatoshis(None, true, block);
+    if prepared.note.orchard_note.value <= fee {
+        return Err(NozyError::InvalidOperation(
+            "This gift card is smaller than the network fee, so it cannot be redeemed.".into(),
+        ));
+    }
+    let payout = prepared.note.orchard_note.value - fee;
+    let account = crate::config::load_config().active_orchard_account();
+    let recipient = wallet.generate_orchard_address(account, 0, network)?;
+    let zebra = crate::zebra_integration::ZebraClient::new("http://127.0.0.1:1".to_string());
+    let built = match prepared.pool {
+        crate::shielded_pool::ShieldedPool::Ironwood => {
+            crate::ironwood_tx::build_single_ironwood_spend_prepared(
+                &zebra,
+                &prepared.note,
+                &recipient,
+                payout,
+                fee,
+                None,
+                crate::lwd_gift::PHONE_GIFT_EXPIRY_DELTA_BLOCKS,
+                prepared.tip_height,
+                prepared.anchor,
+                prepared.merkle_path,
+            )
+            .await
+        }
+        crate::shielded_pool::ShieldedPool::Orchard => {
+            let builder = crate::orchard_tx::OrchardTransactionBuilder::new(true);
+            builder
+                .build_single_spend(
+                    &zebra,
+                    &crate::orchard_tx::ZebraJsonRpcOrchardWitnessProvider,
+                    std::slice::from_ref(&prepared.note),
+                    &recipient,
+                    payout,
+                    fee,
+                    None,
+                    crate::lwd_gift::PHONE_GIFT_EXPIRY_DELTA_BLOCKS,
+                    Some((prepared.tip_height, prepared.anchor, prepared.merkle_path)),
+                )
+                .await
+        }
+    }?;
+    let txid = built.txid.clone();
+    zeaking::lwd::send_transaction(&mut client, built.raw_transaction)
+        .await
+        .map_err(|e| {
+            NozyError::InvalidOperation(format!("Nozy server rejected the redeem: {e}"))
+        })?;
+    if let Some(card) = mark_redeemed_if_known(claim_code, &txid, payout)? {
+        return Ok(card);
+    }
+    Ok(GiftCard {
+        gift_id: format!("gift_redeemed_{}", Utc::now().timestamp_millis()),
+        status: GiftCardStatus::Redeemed,
+        payment_address,
+        amount_zatoshis: payout.saturating_add(fee),
+        amount_zec: (payout.saturating_add(fee)) as f64 / 100_000_000.0,
         label: None,
         diversifier_index: 0,
         account,

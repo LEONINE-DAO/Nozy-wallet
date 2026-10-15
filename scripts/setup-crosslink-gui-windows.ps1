@@ -1,14 +1,15 @@
-# Reuse the WSL Crosslink wallet (secret.seed) in the Windows monolith GUI (v13).
+# Reuse the WSL Crosslink wallet (secret.seed) in the Windows monolith GUI (v15).
 # Run from repo root:  powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-crosslink-gui-windows.ps1
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path $PSScriptRoot -Parent
 
 $ToolDir = Join-Path $RepoRoot "tools\crosslink"
-$GuiExe = Join-Path $ToolDir "zebrad_win32_gui_v13.exe"
+$GuiExe = Join-Path $ToolDir "zebrad_v15_win32.exe"
 $SeedStaging = Join-Path $ToolDir "secret.seed.from-wsl"
+$FeatureNetCacheName = "crosslink_featurenet_20260929_staking3d"
 $WslSeed = "/home/lowo/zebra-crosslink/cache/zebra_crosslink_workshop_season_one_v3_ehtedht_cache_delete_me/secret.seed"
-$GuiUrl = "https://github.com/ShieldedLabs/crosslink_monolith/releases/download/v13/zebrad_win32_gui_v13.exe"
+$GuiUrl = "https://github.com/ShieldedLabs/crosslink_monolith/releases/download/v15/zebrad_v15_win32.exe"
 
 Write-Host "== Crosslink GUI setup (reuse WSL wallet) ==" -ForegroundColor Cyan
 
@@ -28,7 +29,7 @@ if ($seedLen -ne 32) {
 Write-Host "  Staged: $SeedStaging ($seedLen bytes)"
 
 # 3) Download GUI if missing.
-Write-Host "`n[3/5] Ensuring Windows GUI v13..."
+Write-Host "`n[3/5] Ensuring Windows GUI v15..."
 if (-not (Test-Path $GuiExe)) {
     Write-Host "  Downloading $GuiUrl ..."
     Invoke-WebRequest -Uri $GuiUrl -OutFile $GuiExe
@@ -50,8 +51,17 @@ if ($existing.Count -eq 0) {
     exit 1
 }
 
-# Prefer newest cache dir (GUI may create v13-named folder).
-$targetDir = ($existing | Sort-Object LastWriteTime -Descending | Select-Object -First 1).FullName
+# v15 Feature Net cache. A differently named sibling is a fresh wallet — do not install the seed there.
+$named = Get-ChildItem $ZebraCacheRoot -Recurse -Directory -Filter $FeatureNetCacheName -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+if (-not $named) {
+    Write-Host "  No '$FeatureNetCacheName' cache yet." -ForegroundColor Yellow
+    Write-Host "  If v15 created a similarly named folder, stop the GUI, back it up, and rename that folder to:"
+    Write-Host "    $FeatureNetCacheName"
+    Write-Host "  Then re-run this script. Do not copy a new cache over the old one."
+    exit 1
+}
+$targetDir = $named.FullName
 $targetSeed = Join-Path $targetDir "secret.seed"
 if (Test-Path $targetSeed) {
     Copy-Item $targetSeed (Join-Path $ToolDir "secret.seed.backup-before-overwrite") -Force
@@ -71,10 +81,14 @@ Next in the GUI:
   4. On Staking Day: Stake -> Paste Identity -> pick 1 cTAZ (or 0.01 per UI)
 
 Nozy still points at Crosslink RPC. After GUI is up, set:
-  nozy config --set-crosslink-url http://127.0.0.1:8232
-(if GUI uses default RPC port; check zebrad.toml in the cache folder)
+  nozy config --set-crosslink-url http://127.0.0.1:18232
+(this GUI config listens on 18232; a launch without -c mints a new wallet)
 
 "@ -ForegroundColor Green
 
-Start-Process -FilePath $GuiExe
-Write-Host "Done."
+$GuiConfig = Join-Path $env:LOCALAPPDATA "zebra\zebrad-crosslink-gui.toml"
+if (-not (Test-Path $GuiConfig)) {
+    throw "Missing $GuiConfig — refusing to start v15 without it (that creates a new cache)."
+}
+Start-Process -FilePath $GuiExe -ArgumentList @("-c", $GuiConfig)
+Write-Host "Done. Cache: $targetDir"

@@ -80,7 +80,10 @@ fn tx_record_json(tx: &SentTransactionRecord) -> serde_json::Value {
         "amount_zec": tx.amount_zatoshis as f64 / 100_000_000.0,
         "fee_zatoshis": tx.fee_zatoshis,
         "fee_zec": tx.fee_zatoshis as f64 / 100_000_000.0,
-        "memo": tx.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok()),
+        "memo": tx
+            .memo
+            .as_deref()
+            .and_then(nozy::received_memo::memo_note_bytes_to_history_string),
         "status": status_key(&tx.status),
         "transaction_type": "sent",
         "type": "sent",
@@ -379,11 +382,14 @@ pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriEr
     };
 
     let config = load_config();
+    let zebra_client = ZebraClient::new(config.zebra_url.clone());
+    if let Ok(wallet) = load_session_wallet(None).await {
+        let _ = nozy::received_memo::backfill_and_save(&wallet, &zebra_client).await;
+    }
     let current_height = config.last_scan_height.unwrap_or(0);
     let mut views = collect_wallet_transaction_views(current_height)
         .map_err(|e| TauriError::from(e.to_string()))?;
 
-    let zebra_client = ZebraClient::new(config.zebra_url);
     enrich_block_times_for_views(&mut views, &zebra_client).await;
 
     Ok(views.iter().map(transaction_view_to_history_json).collect())
@@ -396,6 +402,10 @@ pub async fn get_transaction(txid: String) -> Result<serde_json::Value, TauriErr
     };
 
     let config = load_config();
+    let zebra_client = ZebraClient::new(config.zebra_url.clone());
+    if let Ok(wallet) = load_session_wallet(None).await {
+        let _ = nozy::received_memo::backfill_and_save(&wallet, &zebra_client).await;
+    }
     let current_height = config.last_scan_height.unwrap_or(0);
 
     if let Some(view) = transaction_view_for_txid(&txid, current_height)

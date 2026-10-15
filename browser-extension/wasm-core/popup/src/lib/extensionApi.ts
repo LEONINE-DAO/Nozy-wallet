@@ -1,3 +1,5 @@
+import { isPublicLwdUrl } from "./nodeConnect";
+
 type ApiRequest = {
   method: string;
   params?: Record<string, unknown>;
@@ -28,6 +30,8 @@ export type TxStateEntry = {
   amount: number;
   fee: number | null;
   memo: string;
+  /** Set on notes found by scan. Sent rows omit this. */
+  direction?: "received" | "sent";
   createdAt: number;
   updatedAt: number;
   error: string | null;
@@ -902,8 +906,25 @@ export const PUBLIC_LWD_URL = "https://lwd.nozywallet.org:443";
 function normalizeStoredLwdUrl(raw: string): string {
   const s = String(raw ?? "").trim();
   if (!s) return DEFAULT_LWD_URL;
-  // Allow explicit public LWD opt-in (lwd.nozywallet.org or community zec.rocks).
+  if (!isPublicLwdUrl(s) && !isLocalWalletEndpoint(s)) return PUBLIC_LWD_URL;
   return s;
+}
+
+function isLocalWalletEndpoint(url: string): boolean {
+  try {
+    const withScheme = /^https?:\/\//i.test(url) ? url : `http://${url}`;
+    const host = new URL(withScheme).hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1" || host === "::1" || host === "10.0.2.2") {
+      return true;
+    }
+    const v4 = /^(\d+)\.(\d+)\.(\d+)\.(\d+)$/.exec(host);
+    if (!v4) return false;
+    const a = Number(v4[1]);
+    const b = Number(v4[2]);
+    return a === 10 || (a === 192 && b === 168) || (a === 172 && b >= 16 && b <= 31);
+  } catch {
+    return false;
+  }
 }
 
 /** Local Nozy API + optional lightwalletd URL (popup chrome.storage; not sent to sites). */

@@ -1,9 +1,73 @@
 //! Client-side ZIP-317 fee policy for Orchard sends (Zebrad has no `estimatefee`).
 //!
+//! ZIP 2009 lowers the marginal fee from 5,000 to 1,000 zatoshis per logical action.
+//! Mainnet wallets switch when the block the transaction is mined in is at height
+//! [`ZIP2009_MAINNET_ACTIVATION_HEIGHT`]. Test networks use the ZIP 2009 rate at every
+//! height. Nozy still multiplies the active conventional fee by [`PRIORITY_MULTIPLIER`].
+//!
 //! Interim home until Shielded Labs approves moving shared logic into `zeaking`.
 
-/// ZIP-317 marginal fee per logical action (zatoshis).
+/// ZIP-317 marginal fee per logical action before ZIP 2009 (zatoshis).
 pub const MARGINAL_FEE_ZATOSHIS: u64 = 5_000;
+/// ZIP 2009 marginal fee per logical action (zatoshis).
+pub const ZIP2009_MARGINAL_FEE_ZATOSHIS: u64 = 1_000;
+/// Mainnet height of the block a transaction is mined in, from which ZIP 2009 applies.
+///
+/// Zebra `getstandardfee` reports 5,000 until the next block is at this height, then 1,000.
+/// The mempool may accept 1,000 earlier; wallets switch together at this height.
+pub const ZIP2009_MAINNET_ACTIVATION_HEIGHT: u32 = 3_590_000;
+
+/// Chain position used to pick the ZIP 317 / ZIP 2009 marginal fee.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FeeBlock {
+    /// `false` for testnet and regtest. Those networks use the ZIP 2009 rate at every height.
+    pub mainnet: bool,
+    /// Height of the block this transaction is built to be mined in (chain tip + 1).
+    pub height: u32,
+}
+
+impl FeeBlock {
+    /// Fee context for a transaction mined in the block after `tip_height`.
+    pub fn next_block(mainnet: bool, tip_height: u32) -> Self {
+        Self {
+            mainnet,
+            height: tip_height.saturating_add(1),
+        }
+    }
+
+    /// Mainnet before ZIP 2009. Used when the tip is unknown so a send cannot underpay.
+    pub fn mainnet_before_zip2009() -> Self {
+        Self {
+            mainnet: true,
+            height: 0,
+        }
+    }
+
+    /// `network` is a Nozy config or Zebra `chain` name (`main`, `test`, `testnet`, `regtest`).
+    pub fn from_network_name(network: &str, tip_height: u32) -> Self {
+        Self::next_block(!is_test_network_name(network), tip_height)
+    }
+
+    /// Marginal fee in zatoshis per logical action for this block.
+    pub fn marginal_fee(self) -> u64 {
+        if !self.mainnet || self.height >= ZIP2009_MAINNET_ACTIVATION_HEIGHT {
+            ZIP2009_MARGINAL_FEE_ZATOSHIS
+        } else {
+            MARGINAL_FEE_ZATOSHIS
+        }
+    }
+
+    pub fn zip2009_active(self) -> bool {
+        self.marginal_fee() == ZIP2009_MARGINAL_FEE_ZATOSHIS
+    }
+}
+
+fn is_test_network_name(network: &str) -> bool {
+    matches!(
+        network.trim().to_ascii_lowercase().as_str(),
+        "test" | "testnet" | "regtest"
+    )
+}
 /// ZIP-317 grace logical actions (minimum billable action count).
 pub const GRACE_ACTIONS: u32 = 2;
 /// NozyWallet standard fee multiplier (ZIP-317 × 4 on every send surface).
@@ -107,25 +171,36 @@ pub fn logical_actions(shape: &OrchardSendFeeShape) -> u32 {
 }
 
 /// ZIP-317 conventional fee in zatoshis: `marginal_fee × max(grace_actions, logical_actions)`.
-pub fn conventional_fee_zatoshis(shape: &OrchardSendFeeShape) -> u64 {
+///
+/// `block` selects the ZIP 317 or ZIP 2009 marginal fee.
+pub fn conventional_fee_zatoshis(shape: &OrchardSendFeeShape, block: FeeBlock) -> u64 {
+    let marginal = block.marginal_fee();
     let actions = logical_actions(shape);
     let billable = actions.max(GRACE_ACTIONS) as u64;
-    MARGINAL_FEE_ZATOSHIS
+    marginal
         .saturating_mul(billable)
-        .max(MARGINAL_FEE_ZATOSHIS.saturating_mul(GRACE_ACTIONS as u64))
+        .max(marginal.saturating_mul(GRACE_ACTIONS as u64))
 }
 
-/// Final fee for a NozyWallet send (always ZIP-317 × [`PRIORITY_MULTIPLIER`]).
-pub fn fee_zatoshis(shape: &OrchardSendFeeShape, _priority: bool) -> u64 {
-    conventional_fee_zatoshis(shape).saturating_mul(PRIORITY_MULTIPLIER)
+/// Final fee for a NozyWallet send (active ZIP-317 conventional fee × [`PRIORITY_MULTIPLIER`]).
+pub fn fee_zatoshis(shape: &OrchardSendFeeShape, _priority: bool, block: FeeBlock) -> u64 {
+    conventional_fee_zatoshis(shape, block).saturating_mul(PRIORITY_MULTIPLIER)
 }
 
 /// Fee estimate for UI / CLI preview (assumes change output exists).
-pub fn estimate_orchard_send_fee_zatoshis(memo: Option<&[u8]>, priority: bool) -> u64 {
+pub fn estimate_orchard_send_fee_zatoshis(
+    memo: Option<&[u8]>,
+    priority: bool,
+    block: FeeBlock,
+) -> u64 {
     let shape = OrchardSendFeeShape::estimate_preview(memo);
-    let fee = fee_zatoshis(&shape, priority);
+    let fee = fee_zatoshis(&shape, priority, block);
     if fee == 0 {
-        FALLBACK_FEE_ZATOSHIS
+        block
+            .marginal_fee()
+            .saturating_mul(GRACE_ACTIONS as u64)
+            .saturating_mul(PRIORITY_MULTIPLIER)
+            .max(FALLBACK_FEE_ZATOSHIS)
     } else {
         fee
     }
@@ -142,13 +217,17 @@ fn div_ceil(a: usize, b: usize) -> usize {
 mod tests {
     use super::*;
 
+    fn legacy() -> FeeBlock {
+        FeeBlock::mainnet_before_zip2009()
+    }
+
     #[test]
     fn grace_minimum_fee_is_10000_zats() {
         let shape = OrchardSendFeeShape {
             orchard_actions: 1,
             memo_len: 0,
         };
-        assert_eq!(conventional_fee_zatoshis(&shape), 10_000);
+        assert_eq!(conventional_fee_zatoshis(&shape, legacy()), 10_000);
     }
 
     #[test]
@@ -156,24 +235,56 @@ mod tests {
         // 1 spend + 2 outputs (recipient + change) => max(1, 2) = 2 Orchard actions.
         let shape = OrchardSendFeeShape::single_spend_send(true, None);
         assert_eq!(shape.orchard_actions, 2);
-        assert_eq!(conventional_fee_zatoshis(&shape), 10_000);
+        assert_eq!(conventional_fee_zatoshis(&shape, legacy()), 10_000);
     }
 
     #[test]
     fn nozy_wallet_fee_is_always_priority_times_four() {
         let shape = OrchardSendFeeShape::estimate_preview(None);
-        assert_eq!(fee_zatoshis(&shape, false), 40_000);
-        assert_eq!(fee_zatoshis(&shape, true), 40_000);
+        assert_eq!(fee_zatoshis(&shape, false, legacy()), 40_000);
+        assert_eq!(fee_zatoshis(&shape, true, legacy()), 40_000);
     }
 
     #[test]
     fn estimate_preview_matches_typical_send_floor() {
-        assert_eq!(estimate_orchard_send_fee_zatoshis(None, false), 40_000);
-        assert_eq!(estimate_orchard_send_fee_zatoshis(None, true), 40_000);
         assert_eq!(
-            estimate_orchard_send_fee_zatoshis(Some(b"hi"), true),
+            estimate_orchard_send_fee_zatoshis(None, false, legacy()),
             40_000
         );
+        assert_eq!(
+            estimate_orchard_send_fee_zatoshis(None, true, legacy()),
+            40_000
+        );
+        assert_eq!(
+            estimate_orchard_send_fee_zatoshis(Some(b"hi"), true, legacy()),
+            40_000
+        );
+    }
+
+    #[test]
+    fn zip2009_switches_on_the_mined_block_not_the_tip() {
+        let before = FeeBlock::next_block(true, ZIP2009_MAINNET_ACTIVATION_HEIGHT - 2);
+        let at_activation = FeeBlock::next_block(true, ZIP2009_MAINNET_ACTIVATION_HEIGHT - 1);
+        assert_eq!(before.height, ZIP2009_MAINNET_ACTIVATION_HEIGHT - 1);
+        assert_eq!(before.marginal_fee(), MARGINAL_FEE_ZATOSHIS);
+        assert_eq!(at_activation.height, ZIP2009_MAINNET_ACTIVATION_HEIGHT);
+        assert_eq!(at_activation.marginal_fee(), ZIP2009_MARGINAL_FEE_ZATOSHIS);
+        assert!(at_activation.zip2009_active());
+    }
+
+    #[test]
+    fn zip2009_testnet_uses_1000_before_mainnet_activation() {
+        let test = FeeBlock::from_network_name("testnet", 100);
+        assert_eq!(test.marginal_fee(), ZIP2009_MARGINAL_FEE_ZATOSHIS);
+        assert_eq!(estimate_orchard_send_fee_zatoshis(None, true, test), 8_000);
+    }
+
+    #[test]
+    fn zip2009_mainnet_priority_fee_is_four_times_the_new_conventional_fee() {
+        let block = FeeBlock::next_block(true, ZIP2009_MAINNET_ACTIVATION_HEIGHT);
+        let shape = OrchardSendFeeShape::estimate_preview(None);
+        assert_eq!(conventional_fee_zatoshis(&shape, block), 2_000);
+        assert_eq!(fee_zatoshis(&shape, true, block), 8_000);
     }
 
     #[test]
@@ -200,6 +311,6 @@ mod tests {
         // logical action beyond the 2 free chunks, raising both.
         let shape = OrchardSendFeeShape::single_spend_send(true, Some(&[0u8; 1200]));
         assert!(logical_actions(&shape) > 2);
-        assert!(conventional_fee_zatoshis(&shape) > 10_000);
+        assert!(conventional_fee_zatoshis(&shape, legacy()) > 10_000);
     }
 }

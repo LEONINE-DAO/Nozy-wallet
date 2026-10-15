@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 
-/// Feature-net calendar from Crosslink monolith v14 (`STAKING_PERIOD` / `STAKING_DAY_WINDOW`).
-/// A new Staking Day starts every 10,368 PoW blocks and stays open for 3,456 (~1 day of a ~3 day cycle).
+/// Feature-net calendar for cache `crosslink_featurenet_20260929_staking3d` (monolith v15).
+/// A new Staking Day starts every 10,368 PoW blocks and stays open for 3,456 (3-day window).
 pub const SEASON1_STAKING_CYCLE_BLOCKS: u32 = 10_368;
 pub const SEASON1_STAKING_WINDOW_BLOCKS: u32 = 3_456;
 
@@ -78,7 +78,11 @@ pub struct FinalizedTip {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RosterEntry {
+    /// 64-hex finalizer id from the roster (`pub_key`). Used to match bonds and the scoreboard.
     pub finalizer: String,
+    /// v15 stake / retarget target. `None` when the node has not published `finalizer_address`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
     pub stake_zat: u64,
     pub share: f64,
 }

@@ -8,7 +8,7 @@ use serde_json::Value;
 use crate::handlers::error_response_with_code;
 use nozy::crosslink::{
     block_finality, bond_info, build_crosslink_client, ctaz_to_zat, fetch_doctor_report,
-    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_hex, roster,
+    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_address, roster,
     staking_action, staking_day_at, staking_positions, tx_finality, wallet_sync_status,
     wallet_ufvk, DoctorReport, GuardianSnapshot, PayoutClaimPack, StakingAction, StakingPositions,
     WalletSyncStatus,
@@ -141,7 +141,7 @@ pub async fn crosslink_stake(
 ) -> Result<ResponseJson<ActionResponse>, ApiError> {
     ensure_staking_day(body.force).await?;
     let amount_zats = ctaz_to_zat(body.amount_ctaz).map_err(map_user_err)?;
-    let target = normalize_finalizer_hex(&body.finalizer).map_err(map_user_err)?;
+    let target = normalize_finalizer_address(&body.finalizer).map_err(map_user_err)?;
     let action = StakingAction::CreateNewDelegationBond {
         amount_zats,
         target_finalizer: target,
@@ -163,7 +163,7 @@ pub struct RetargetBody {
 pub async fn crosslink_retarget(
     Json(body): Json<RetargetBody>,
 ) -> Result<ResponseJson<ActionResponse>, ApiError> {
-    let target = normalize_finalizer_hex(&body.finalizer).map_err(map_user_err)?;
+    let target = normalize_finalizer_address(&body.finalizer).map_err(map_user_err)?;
     let action = StakingAction::RetargetDelegationBond {
         bond_key: body.bond,
         target_finalizer: target,

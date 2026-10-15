@@ -5,8 +5,24 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::sync::Mutex as StdMutex;
 use std::sync::OnceLock;
 use tokio::sync::Mutex;
+
+static API_WALLET_PASSWORD: StdMutex<Option<String>> = StdMutex::new(None);
+
+fn remember_wallet_password(password: &str) {
+    if let Ok(mut guard) = API_WALLET_PASSWORD.lock() {
+        *guard = Some(password.to_string());
+    }
+}
+
+fn cached_wallet_password() -> Option<String> {
+    API_WALLET_PASSWORD
+        .lock()
+        .ok()
+        .and_then(|guard| guard.clone())
+}
 
 static WALLET_SYNC_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
@@ -255,8 +271,29 @@ pub(crate) async fn load_wallet_with_password(
         )
     })?;
     let _ = nozy::notes_vault::unlock_notes_vault(&pwd);
+    remember_wallet_password(&pwd);
 
     Ok((wallet, storage))
+}
+
+async fn backfill_history_memos(zebra: &nozy::ZebraClient) {
+    let notes = nozy::load_wallet_notes().unwrap_or_default();
+    if !notes.iter().any(|note| note.memo.is_empty()) {
+        return;
+    }
+    let cached = cached_wallet_password();
+    let loaded = if let Some(password) = cached {
+        load_wallet_with_password(Some(password)).await.ok()
+    } else {
+        None
+    };
+    let Some((wallet, _)) = loaded else {
+        if let Ok((wallet, _)) = load_wallet_with_password(None).await {
+            let _ = nozy::received_memo::backfill_and_save(&wallet, zebra).await;
+        }
+        return;
+    };
+    let _ = nozy::received_memo::backfill_and_save(&wallet, zebra).await;
 }
 
 pub async fn check_wallet_exists() -> ResponseJson<WalletInfo> {
@@ -628,8 +665,10 @@ pub async fn send_transaction(
     };
 
     let pilot = nozy::PilotSendOptions::for_send();
+    let zebra_client = ZebraClient::from_config_with_url(&config, Some(&zebra_url));
+    let fee_block = zebra_client.fee_block_for_next_block().await;
     let fee_zatoshis =
-        estimate_orchard_send_fee_zatoshis(memo_bytes_opt.as_deref(), pilot.priority);
+        estimate_orchard_send_fee_zatoshis(memo_bytes_opt.as_deref(), pilot.priority, fee_block);
 
     let cached_balance = cached_unspent_balance_zatoshis().map_err(|e| {
         (
@@ -679,8 +718,6 @@ pub async fn send_transaction(
             ));
         }
     };
-
-    let zebra_client = ZebraClient::from_config_with_url(&config, Some(&zebra_url));
 
     let mut tx_builder = ZcashTransactionBuilder::new();
     tx_builder.set_zebra_url(&zebra_url);
@@ -770,15 +807,21 @@ pub async fn send_transaction(
 
 pub async fn estimate_fee(
 ) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
-    let fee_zatoshis = nozy::estimate_orchard_send_fee_zatoshis(None, true);
+    let config = nozy::load_config();
+    let zebra = nozy::ZebraClient::from_config(&config);
+    let block = zebra.fee_block_for_next_block().await;
+    let fee_zatoshis = nozy::estimate_orchard_send_fee_zatoshis(None, true, block);
     let fee_zec = fee_zatoshis as f64 / 100_000_000.0;
 
     Ok(ResponseJson(serde_json::json!({
         "fee_zatoshis": fee_zatoshis,
         "fee_zec": fee_zec,
         "priority": true,
+        "marginal_fee_zatoshis": block.marginal_fee(),
+        "zip2009_active": block.zip2009_active(),
+        "mined_block_height": block.height,
         "expiry_delta_blocks": nozy::PILOT_EXPIRY_DELTA_BLOCKS,
-        "fee_source": "zip317_client",
+        "fee_source": "zip317_zip2009",
         "estimated_at": chrono::Utc::now().to_rfc3339()
     })))
 }
@@ -1101,10 +1144,9 @@ pub async fn get_transaction_history(
     use nozy::{load_config, ZebraClient};
 
     let config = load_config();
-    let current_height = ZebraClient::from_config(&config)
-        .get_block_count()
-        .await
-        .unwrap_or(0);
+    let zebra_client = ZebraClient::from_config(&config);
+    backfill_history_memos(&zebra_client).await;
+    let current_height = zebra_client.get_block_count().await.unwrap_or(0);
 
     let views = collect_wallet_transaction_views(current_height).map_err(|e| {
         (
@@ -1115,7 +1157,6 @@ pub async fn get_transaction_history(
         )
     })?;
 
-    let zebra_client = ZebraClient::from_config(&config);
     let mut views = views;
     nozy::transaction_history::enrich_block_times_for_views(&mut views, &zebra_client).await;
 
@@ -1169,10 +1210,9 @@ pub async fn get_transaction(
     use nozy::{load_config, ZebraClient};
 
     let config = load_config();
-    let current_height = ZebraClient::from_config(&config)
-        .get_block_count()
-        .await
-        .unwrap_or(0);
+    let zebra_client = ZebraClient::from_config(&config);
+    backfill_history_memos(&zebra_client).await;
+    let current_height = zebra_client.get_block_count().await.unwrap_or(0);
 
     if let Ok(views) = collect_wallet_transaction_views(current_height) {
         if let Some(view) = views.iter().find(|v| v.txid == txid) {
@@ -1205,7 +1245,7 @@ pub async fn get_transaction(
             "block_height": t.block_height,
             "confirmations": t.confirmations,
             "broadcast_at": t.broadcast_at.map(|d| d.to_rfc3339()),
-            "memo": t.memo.as_ref().and_then(|m| String::from_utf8(m.clone()).ok()),
+            "memo": t.memo.as_deref().and_then(nozy::received_memo::memo_note_bytes_to_history_string),
             "spent_note_ids": t.spent_note_ids
         }))),
         None => Err((
@@ -1850,7 +1890,7 @@ pub async fn get_notes(
                 "block_height": n.block_height,
                 "txid": n.txid,
                 "spent": n.spent,
-                "memo": String::from_utf8(n.memo.clone()).unwrap_or_default()
+                "memo": nozy::received_memo::memo_note_bytes_to_history_string(&n.memo)
             })
         })
         .collect();

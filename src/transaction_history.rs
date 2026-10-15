@@ -253,13 +253,9 @@ impl TransactionView {
         let block_height = Some(first_note.note.block_height);
         let block_time = None;
 
-        let memo = notes.iter().find_map(|n| {
-            if !n.note.memo.is_empty() {
-                String::from_utf8(n.note.memo.clone()).ok()
-            } else {
-                None
-            }
-        });
+        let memo = notes
+            .iter()
+            .find_map(|n| crate::received_memo::memo_note_bytes_to_history_string(&n.note.memo));
 
         let my_addresses: Vec<String> = notes
             .iter()
@@ -303,8 +299,8 @@ impl TransactionView {
             status: record.status.clone(),
             memo: record
                 .memo
-                .as_ref()
-                .and_then(|m| String::from_utf8(m.clone()).ok()),
+                .as_deref()
+                .and_then(crate::received_memo::memo_note_bytes_to_history_string),
             notes_involved: record.spent_note_ids.clone(),
             created_at: record.created_at,
         }
@@ -622,6 +618,43 @@ mod tests {
         assert_eq!(view.amount_zec(), 1.0);
         assert_eq!(view.fee_zec(), Some(0.0001));
         assert_eq!(view.net_amount_zatoshis, -100_000_000);
+    }
+
+    #[test]
+    fn test_history_json_returns_zip302_text_memo() {
+        let mut raw = [0u8; 512];
+        let text = b"hello zodl";
+        raw[..text.len()].copy_from_slice(text);
+        let record = SentTransactionRecord::new(
+            "memo123".to_string(),
+            "u1test".to_string(),
+            50_000,
+            5_000,
+            Some(raw.to_vec()),
+            vec![],
+        );
+        let view = TransactionView::from_sent_record(&record);
+        assert_eq!(view.memo.as_deref(), Some("hello zodl"));
+        let json = transaction_view_to_history_json(&view);
+        assert_eq!(json["memo"], "hello zodl");
+    }
+
+    #[test]
+    fn test_history_json_nulls_empty_zip302_memo() {
+        let mut raw = [0u8; 512];
+        raw[0] = 0xF6;
+        let record = SentTransactionRecord::new(
+            "empty-memo".to_string(),
+            "u1test".to_string(),
+            50_000,
+            5_000,
+            Some(raw.to_vec()),
+            vec![],
+        );
+        let view = TransactionView::from_sent_record(&record);
+        assert!(view.memo.is_none());
+        let json = transaction_view_to_history_json(&view);
+        assert!(json["memo"].is_null());
     }
 
     #[test]

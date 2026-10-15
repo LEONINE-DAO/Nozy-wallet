@@ -5,6 +5,9 @@ Content covers Orchard→Ironwood, ZIP-317 / ZIP 318 math, Nym network privacy,
 and release history through the v2.4.1 Ironwood era.
 
   python scripts/generate-nozy-whitepaper.py
+
+Do not pass --export-md unless you intend to overwrite the LaTeX Markdown.
+§2 figures: docs/reference/whitepaper-figures/ (PNG embedded here).
 """
 
 from datetime import date
@@ -17,6 +20,7 @@ from docx.shared import Inches, Pt, RGBColor
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_DOCX = REPO_ROOT / "docs" / "NozyWallet_Whitepaper.docx"
 OUTPUT_MD = REPO_ROOT / "docs" / "reference" / "NozyWallet_Whitepaper.md"
+FIGURES = REPO_ROOT / "docs" / "reference" / "whitepaper-figures"
 VERSION = "2.4.1 (Ironwood era)"
 
 
@@ -81,6 +85,26 @@ def add_formula(doc, text):
     p.paragraph_format.left_indent = Inches(0.25)
 
 
+def add_figure(doc, filename, caption, width=6.3):
+    """Embed a PNG from docs/reference/whitepaper-figures/."""
+    path = FIGURES / filename
+    if not path.is_file():
+        add_body(doc, f"[Figure missing: {filename}]")
+        return
+    p = doc.add_paragraph()
+    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    p.paragraph_format.space_before = Pt(8)
+    run = p.add_run()
+    run.add_picture(str(path), width=Inches(width))
+    cap = doc.add_paragraph()
+    cap.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    r = cap.add_run(caption)
+    r.italic = True
+    r.font.size = Pt(10)
+    r.font.name = "Calibri"
+    cap.paragraph_format.space_after = Pt(12)
+
+
 def cover_page(doc):
     logo_path = REPO_ROOT / "docs" / "reference" / "NozyWallet_Whitepaper_logo.png"
     if logo_path.is_file():
@@ -105,7 +129,7 @@ def cover_page(doc):
     sub.alignment = WD_ALIGN_PARAGRAPH.CENTER
     r2 = sub.add_run(
         "White Paper\n"
-        "Architecture, Shielded Pools, Network Privacy, Zcash Names, and Mainnet Operation"
+        "Architecture, Shielded Pools, Dynamic Fees, Nym Hybrid, Zcash Names, and Mainnet Operation"
     )
     r2.font.size = Pt(14)
     r2.font.name = "Calibri"
@@ -142,9 +166,13 @@ def section_executive_summary(doc):
         doc,
         "What ships today (v2.4.x): mainnet-validated CLI (v2.4.1 / v2.4.1.1), localhost "
         "api-server, desktop 1.0.0-beta.2, browser extension beta, and mobile companion "
-        "surfaces—sharing the nozy Rust core and zeaking compact sync. Nozy participates in the "
-        "Shielded Labs dynamic-fee pilot and ships Ironwood (NU6.3) migration tooling aligned "
-        "with draft ZIP 318.",
+        "surfaces—sharing the nozy Rust core and zeaking compact sync. Nozy ships the Shielded "
+        "Labs dynamic-fee pilot (client-side ZIP-317, ×4 priority, five-block expiry) and the "
+        "Nym-recommended hybrid (mixnet for remote submit, 2-hop dVPN for bulk sync, Local when "
+        "Zebrad is LAN). Ironwood (NU6.3) migration follows draft ZIP 318. To the authors’ "
+        "knowledge this is the first production Zcash wallet to operate both programs together, "
+        "with public TXIDs and published Nym measurements—not a slogan of full Nym integration "
+        "for every remote sendraw.",
     )
     add_body(
         doc,
@@ -156,15 +184,44 @@ def section_executive_summary(doc):
     add_body(
         doc,
         "Network metadata: shielded proofs hide note contents; they do not hide that an IP "
-        "submitted a transaction. Nozy’s Priority-1 path is a hybrid—baseline hygiene plus "
-        "optional Nym mixnet broadcast / dVPN sync—without claiming full “Nym integration” "
-        "until live remote submit evidence is complete.",
+        "submitted a transaction. Nozy’s Priority-1 path is the Nym-recommended hybrid—baseline "
+        "hygiene, optional smolmix broadcast / smol-dvpn sync, Local when Zebrad is loopback/LAN. "
+        "Live remote mixnet sendraw (D2c-live) remains the remaining proof row for public RPC.",
     )
     add_body(
         doc,
-        "This paper states architecture decisions, mathematical policy (fees, expiry, ZIP 318 "
-        "buckets and denominations), Ironwood and Nym work, release history, field evidence, "
-        "and lessons for operators, Shielded Labs reviewers, grant readers, and contributors.",
+        "This paper states architecture decisions, mathematical policy (fees, expiry, ZIP 318), "
+        "the dynamic-fee × Nym historic record, Ironwood, ZNS, release history, field evidence, "
+        "and lessons for operators, Shielded Labs, Nym/Zcash SDK readers, and grant reviewers.",
+    )
+    doc.add_page_break()
+
+
+def section_historic_contribution(doc):
+    add_heading(doc, "Historic contribution: dynamic fees × Nym hybrid", 1)
+    add_body(
+        doc,
+        "Zcash shielded circuits hide notes. They never hid who submitted. The Shielded Labs "
+        "fee pilot asks wallets to compute ZIP-317 on-device (Zebrad has no estimatefee) and to "
+        "use a short expiry so Expired → priority rebuild works. Nym’s published Zcash guidance "
+        "asks wallets to put small submits on the mixnet and bulk compact sync on 2-hop dVPN, "
+        "never bulk sync on Sphinx.",
+    )
+    add_body(
+        doc,
+        "What we record as first: to the authors’ knowledge, NozyWallet is the first "
+        "self-custodial Zcash wallet to operate both as shipping architecture—client ZIP-317 "
+        "with m=4 and Δ_exp=5 on the proof/mempool side, and the Nym-recommended hybrid "
+        "(Local Zebrad skip, smolmix for remote sendraw, smol-dvpn for remote compact sync) "
+        "on the wire. Evidence includes mainnet v6 txs 661cf93e… and 77760342… (0.0004 ZEC "
+        "explorer fee, 9166 bytes) and D2a IP-relocate PASS. This is not a claim that Nozy "
+        "invented ZIP-317 or Nym, nor that D2c-live public-RPC mixnet sendraw is closed. "
+        "Local-node sends correctly stay Case A1 while still paying the dynamic fee.",
+    )
+    add_figure(
+        doc,
+        "fig-historic-fee-wire.png",
+        "Figure H. Fee plane (ZIP-317 on-device) and wire plane (Nym-recommended hybrid).",
     )
     doc.add_page_break()
 
@@ -202,7 +259,8 @@ def section_architecture_decisions(doc):
         "1.4 Client-side ZIP-317 fees",
         "Pilot needs deterministic fees; Zebrad lacks fee estimation RPCs.",
         "fee_policy.rs: ZIP-317 conventional fee; priority multiplier m = 4 on all sends.",
-        "Logical actions use max(spends, outputs), not sum (v2.3.2 fix).",
+        "Logical actions use max(spends, outputs), not sum (v2.3.2 fix). Desktop Ironwood is "
+        "one note per send; 2-action priority fee is 0.0004 ZEC on mainnet v6 (2026-09).",
     )
     add_adr(
         doc,
@@ -229,8 +287,10 @@ def section_architecture_decisions(doc):
         doc,
         "1.8 Network metadata privacy (Nym hybrid + hygiene)",
         "Clearnet submit links IP to mempool arrival (and turnstile amount).",
-        "Baseline hygiene always; Priority-1 includes NymMixnetBroadcast; local Zebrad needs no mixnet.",
-        "Do not market “Nym integrated” from attestation alone.",
+        "Baseline hygiene always; Priority-1 includes NymMixnetBroadcast (smolmix); local "
+        "Zebrad stays direct (Case A1).",
+        "First-to-combine record with §1.4 (dynamic fee + Nym hybrid). Do not market “Nym "
+        "integrated” from attestation alone; D2c-live remains open for public RPC.",
     )
     add_heading(doc, "1.9 System stack", 3)
     add_formula(
@@ -245,7 +305,8 @@ def section_math(doc):
     add_heading(doc, "2. Mathematical Model", 1)
     add_body(
         doc,
-        "Constants match src/fee_policy.rs and src/ironwood/migration.rs.",
+        "Constants match src/fee_policy.rs and src/ironwood/migration.rs. "
+        "Figures 2.1–2.6 illustrate the same model.",
     )
 
     add_heading(doc, "2.1 ZIP-317 conventional fee", 2)
@@ -266,6 +327,11 @@ def section_math(doc):
         doc,
         "Floor when a = g = 2: F_conv = 10,000 zat, F_Nozy = 40,000 zat.",
     )
+    add_figure(
+        doc,
+        "fig-2-1-zip317-actions.png",
+        "Figure 2.1. Single-note send (a=2, 0.0004 ZEC) vs six-note spend (a=6, 0.0012 ZEC).",
+    )
 
     add_heading(doc, "2.2 Pilot expiry height", 2)
     add_formula(doc, "h_build = h_tip + 1")
@@ -274,6 +340,11 @@ def section_math(doc):
         doc,
         "Expired when h_tip > h_expiry. At mean block time t_b ≈ 75 s: "
         "T_exp ≈ Δ_exp · t_b ≈ 375 s ≈ 6.25 min. Fifteen-block policy (~19 min) was rejected.",
+    )
+    add_figure(
+        doc,
+        "fig-2-2-expiry-timeline.png",
+        "Figure 2.2. Ships Δ_exp = 5 (~6.25 min). Δ = 15 was reverted; rebuild ≤3 instead.",
     )
 
     add_heading(doc, "2.3 Witness lag guard", 2)
@@ -284,6 +355,11 @@ def section_math(doc):
         "Latency model: T_send ≈ T_witness + T_setup + T_Halo2 + T_sign + T_broadcast. "
         "Synced wallets (L ≤ 50) observed T_send ~ 200 s on WSL Zebrad + Windows CLI (June 2026).",
     )
+    add_figure(
+        doc,
+        "fig-2-3-witness-lag.png",
+        "Figure 2.3. Allow send iff L ≤ 50. Halo 2 prove dominates T_send when witnesses are caught up.",
+    )
 
     add_heading(doc, "2.4 ZIP 318 anchor buckets", 2)
     add_body(doc, "Draft ZIP 318 bucket width B = 256 blocks:")
@@ -293,6 +369,11 @@ def section_math(doc):
         "T_bucket ≈ 256 · 75 s ≈ 5.33 h. Transfer expiry aligns with B. Default K_max = 4 "
         "same-denomination sends per bucket (until ZIP finalizes).",
     )
+    add_figure(
+        doc,
+        "fig-2-4-zip318-buckets.png",
+        "Figure 2.4. ZIP 318 buckets B = 256 (~5.33 h). Hygiene checkpoints use the same spacing.",
+    )
 
     add_heading(doc, "2.5 Migration denominations {1,2,5}×10^k", 2)
     add_body(
@@ -300,6 +381,11 @@ def section_math(doc):
         "Active Shielded Labs / Appendix A ladder: amounts v ∈ {1,2,5} × 10^k (zatoshis; "
         "smallest practical bucket 0.001 ZEC = 10^5 zat). Residuals r < r_min = 10^5 zat are "
         "abandoned (ZOOKO_RESIDUAL_ABANDON_ZAT). ZIP 318 power-of-ten remains compatibility-only.",
+    )
+    add_figure(
+        doc,
+        "fig-2-5-denomination-split.png",
+        "Figure 2.5. {1,2,5}×10^k split; abandon r < 0.001 ZEC. Desktop Max is the largest note minus F_Nozy.",
     )
 
     add_heading(doc, "2.6 Baseline network hygiene", 2)
@@ -312,6 +398,11 @@ def section_math(doc):
             ("Broadcast delay", "U[30, 300] s", "Breaks sync-then-submit timing"),
             ("Tip-sync guard", "120 s", "Refuse migrate-broadcast if tip sync too recent"),
         ],
+    )
+    add_figure(
+        doc,
+        "fig-2-6-hygiene-axis.png",
+        "Figure 2.6. Checkpoint 256, overlap ≤128, delay U[30,300] s, 120 s tip-sync guard.",
     )
     doc.add_page_break()
 
@@ -665,9 +756,14 @@ def section_dynamic_fee_pilot(doc):
         ["Pilot feature", "Implementation", "Lesson"],
         [
             ("Standard fee", "ZIP-317 in fee_policy.rs", "Zebrad has no fee RPC"),
-            ("Priority ×4", "All Nozy send surfaces", "Speed-up after Expired"),
+            ("Priority ×4", "All Nozy send surfaces", "Speed-up after Expired; Ironwood 2-action floor 0.0004 ZEC"),
             ("Short expiry", "h_expiry = h_tip + 1 + 5", "Keep 5; rebuild for slow proves"),
             ("Speed-up", "New tx at priority fee", "Not rebroadcast of expired bytes"),
+            (
+                "Nym hybrid (same wallet)",
+                "smolmix / smol-dvpn / Local A1",
+                "First shipping wallet known to us to run this fee pilot and this Nym hybrid together",
+            ),
         ],
     )
     doc.add_page_break()
@@ -684,8 +780,12 @@ def section_lessons(doc):
         "Cache migrations (NoteIndex v2) bite if any path still uses legacy parsers.",
         "Surface parity is expensive and mandatory.",
         "Ironwood migration is cryptography plus schedule math plus network metadata.",
-        "Do not overclaim Nym: ship hygiene, wire mixnet, publish evidence.",
+        "Do not overclaim Nym: ship hygiene, wire mixnet, publish evidence—and record that "
+        "dynamic fees + Nym hybrid in one wallet is the history.",
         "TXIDs and measured timings outperform narrative alone.",
+        "ZNS is identity on top of shielding—resolve/link first; claim later; never become the registry.",
+        "Ironwood UI sum ≠ one spendable note; ZIP-317 m=4 on a 2-action send is 0.0004 ZEC—"
+        "chunk Max sends, do not treat send-all as the fee-pilot path.",
     ]
     for i, lesson in enumerate(lessons, 1):
         add_body(doc, f"{i}. {lesson}")
@@ -697,11 +797,13 @@ def section_conclusion(doc):
     add_body(
         doc,
         "NozyWallet shows a shielded-first wallet can run on Zebrad + lightwalletd with "
-        "client-side ZIP-317 fees, short pilot expiry, and local witnesses—without zcashd and "
-        "without stretching mempool expiry to hide slow proves. Ironwood extends that story to "
-        "NU6.3 supply soundness and ZIP 318 migration. Nym-oriented broadcast and hygiene "
-        "address the IP↔submit gap that ZK notes never covered. Releases through v2.4.1.x and "
-        "desktop beta.2 carry this into operator hands.",
+        "client-side ZIP-317 dynamic fees, short pilot expiry, and local witnesses—without "
+        "zcashd and without stretching mempool expiry to hide slow proves. Ironwood extends "
+        "that story to NU6.3 and ZIP 318. The Nym-recommended hybrid addresses the IP↔submit "
+        "gap that ZK notes never covered. Together, dynamic fees and that Nym connect are "
+        "what we record as first in a shipping Zcash wallet—with TXIDs and measurements, not "
+        "a store-badge slogan. Releases through v2.4.1.x and desktop beta.2 carry this into "
+        "operator hands.",
     )
     add_body(
         doc,
@@ -715,6 +817,8 @@ def section_conclusion(doc):
         "LEONINE-DAO/Nozy-wallet — github.com/LEONINE-DAO/Nozy-wallet",
         "nozywallet.com",
         "docs/reference/MAINNET_SEND_READINESS_EVIDENCE.md",
+        "docs/reference/DYNAMIC_FEE_SINGLE_NOTE_IRONWOOD_MAINNET_2026-09.md",
+        "docs/reference/IEEE_NYM_ZCASH_IP_PRIVACY_PAPER.md",
         "docs/reference/PILOT_EXPIRY_PROVING_LATENCY.md",
         "docs/reference/IRONWOOD_WALLET_READINESS.md",
         "docs/reference/IRONWOOD_PRIVACY_EXPECTATIONS_ARTICLE.md",
@@ -817,6 +921,7 @@ def main(export_md: bool = False):
     set_margins(doc.sections[0])
     cover_page(doc)
     section_executive_summary(doc)
+    section_historic_contribution(doc)
     section_architecture_decisions(doc)
     section_math(doc)
     section_ironwood(doc)

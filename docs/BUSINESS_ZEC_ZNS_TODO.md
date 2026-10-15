@@ -2,10 +2,13 @@
 
 **Status:** Planning — ordered backlog; do not start large slices without a GitHub issue ([`AGENTS.md`](../AGENTS.md)).  
 **Goal:** One wallet for **personal use** and **business owners** (solo vendor → company), shielded Orchard ZEC, optional **Zcash Names (ZNS)**, mobile **Sell mode** for QR/tap-style pay.  
-**Out of scope (primary path):** Secret / SILK / Fina stack — see [`PRIVACY_DEFI_IMPLEMENTATION_TODO.md`](PRIVACY_DEFI_IMPLEMENTATION_TODO.md) for optional Secret work only.
+**Out of scope (primary path):** Secret Network — see [`PRIVACY_DEFI_IMPLEMENTATION_TODO.md`](PRIVACY_DEFI_IMPLEMENTATION_TODO.md) for optional Secret work only.
 
 **Related:** [ZcashNames docs](https://www.zcashnames.com/docs), [`zcashname-sdk`](https://www.npmjs.com/package/zcashname-sdk), [`nozy-mobile/`](../nozy-mobile/), [`api-server/`](../api-server/).  
-**Native merchant service (canonical):** [`NOZY_MERCHANT_NATIVE.md`](NOZY_MERCHANT_NATIVE.md) — extend `nozywallet-api` only; no CipherPay / ZECd / PayPal on the primary path.  
+**Native merchant service:** [`NOZY_MERCHANT_NATIVE.md`](NOZY_MERCHANT_NATIVE.md) — local POS in `nozywallet-api`; public node app is **[ZekuraPay](https://github.com/Lowo88/ZekuraPay)** (UFVK watch on `lwd.nozywallet.org` / this Zebrad; settle to the merchant’s Nozy, never `api.nozywallet.org`). No CipherPay / ZECd / PayPal on the primary path.  
+**Hosted vs Local:** [`NOZY_HOSTED_VS_LOCAL.md`](NOZY_HOSTED_VS_LOCAL.md) — mobile/extension use Nozy’s node only; desktop/CLI stay local.  
+**Business charter:** [`NOZY_LABS_HOSTED_BUSINESS_CHARTER.md`](NOZY_LABS_HOSTED_BUSINESS_CHARTER.md) — mission, model, requirements, draft SLAs.  
+**Private settlement (requirements overlay):** [`PRIVATE_SETTLEMENT_PRINCIPLES.md`](PRIVATE_SETTLEMENT_PRINCIPLES.md) · [`PRIVATE_SETTLEMENT_REQUIREMENTS.md`](PRIVATE_SETTLEMENT_REQUIREMENTS.md) — venue for private ordering (terms + evidence); Hosted Sync Engine gate [#274](https://github.com/LEONINE-DAO/Nozy-wallet/issues/274); FEAT-2026-010.  
 **External research (reference only):** [`journal/research/2026-06-21-cipherpay-nozywallet-integration.md`](journal/research/2026-06-21-cipherpay-nozywallet-integration.md).
 
 ---
@@ -119,7 +122,7 @@ Target: food stall, market vendor — phone as register.
 - [x] **Per-invoice address** — Diversified Orchard UA from Business account index **1**; persist diversifier ↔ invoice mapping.
 - [x] **`GET /api/business/invoices/:id`** — Status: `open` | `detected` | `confirmed` | `expired` | `cancelled`.
 - [x] **`POST /api/business/invoices/:id/cancel`** — Cancel open invoice.
-- [ ] **Payment matcher** — After sync, match notes to open invoices (address + amount ± policy; optional memo); idempotent on txid/nullifier. (helper `match_incoming_payment` exists; wire to sync path open)
+- [x] **Payment matcher** — After sync, match notes to open invoices (address + amount ± policy; optional memo); idempotent on txid/nullifier. (`match_notes_after_sync` wired from `wallet_sync`).
 - [x] **`GET /api/business/invoices/:id/qr`** — QR / URI payload for Sell mode and checkout (ZIP-321).
 - [ ] **Trigger sync helper** — Optional endpoint or documented poll pattern for post-sale sync (extends Phase 3 ops item).
 
@@ -220,7 +223,7 @@ After resolve is stable; optional for MVP.
 
 ## Explicitly deferred (track separately)
 
-- [ ] Secret / SILK / Fina / Shade Quick Actions as **primary** business story ([`PRIVACY_DEFI_IMPLEMENTATION_TODO.md`](PRIVACY_DEFI_IMPLEMENTATION_TODO.md)).
+- [ ] Secret Network Quick Actions as **primary** business story ([`PRIVACY_DEFI_IMPLEMENTATION_TODO.md`](PRIVACY_DEFI_IMPLEMENTATION_TODO.md)).
 - [ ] Apple Pay–style instant fiat settlement (on-chain ZEC remains block-time bound).
 - [ ] Full multi-user org custody (shared spend without shared seed) — needs own RFC.
 

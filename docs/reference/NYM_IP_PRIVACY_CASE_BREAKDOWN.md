@@ -2,7 +2,7 @@
 
 **Status:** Engineering in progress (Priority 1 network metadata)  
 **Tracking:** [issue #146](https://github.com/LEONINE-DAO/Nozy-wallet/issues/146) (smol-dvpn compact sync spike) · [issue #147](https://github.com/LEONINE-DAO/Nozy-wallet/issues/147) (broadcast / submit over Nym — biggest win)  
-**Related:** [SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md](SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md) · [`src/ironwood/network_privacy.rs`](../../src/ironwood/network_privacy.rs) · [`src/ironwood/baseline_hygiene.rs`](../../src/ironwood/baseline_hygiene.rs) · [`tools/nym-dvpn-lwd-spike/`](../../tools/nym-dvpn-lwd-spike/) · [`tools/nym-smolmix-broadcast-spike/`](../../tools/nym-smolmix-broadcast-spike/) · [`src/nym_mixnet_broadcast.rs`](../../src/nym_mixnet_broadcast.rs) · [SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md](SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md) (2026-07-11 omnibus) · [NYM_IRONWOOD_BASELINE_HYGIENE_CASE_BREAKDOWN.md](NYM_IRONWOOD_BASELINE_HYGIENE_CASE_BREAKDOWN.md) (2026-07-25) · Nym docs: https://zcash-sdk.nym.com/  
+**Related:** [SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md](SAFE_MIGRATION_NETWORK_PRIVACY_FORUM_POST.md) · [`src/ironwood/network_privacy.rs`](../../src/ironwood/network_privacy.rs) · [`src/ironwood/baseline_hygiene.rs`](../../src/ironwood/baseline_hygiene.rs) · [`tools/nym-dvpn-lwd-spike/`](../../tools/nym-dvpn-lwd-spike/) · [`tools/nym-smolmix-broadcast-spike/`](../../tools/nym-smolmix-broadcast-spike/) · [`src/nym_mixnet_broadcast.rs`](../../src/nym_mixnet_broadcast.rs) · [SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md](SESSION_NYM_IRONWOOD_DESKTOP_CASE_BREAKDOWN.md) (2026-07-11 omnibus) · [NYM_IRONWOOD_BASELINE_HYGIENE_CASE_BREAKDOWN.md](NYM_IRONWOOD_BASELINE_HYGIENE_CASE_BREAKDOWN.md) (2026-07-25) · [NYM_OMNIBUS_CASE_BREAKDOWN.md](NYM_OMNIBUS_CASE_BREAKDOWN.md) (2026-08-17 forum + scoreboard) · Nym docs: https://zcash-sdk.nym.com/  
 **Guidance (Nym / Mark / Harry):** Biggest remote win is **IP ↔ tx submit**. Recommended hybrid: **dVPN sync + mixnet broadcast**, plus **baseline hygiene** the transport cannot provide.
 
 ---
@@ -23,7 +23,7 @@
 
 **Operator do-list (next concrete runs):**
 
-1. Keep using local/WSL Zebrad for sync/send (Case A1) — no mixnet required.
+1. Keep using local/WSL Zebrad for sync/send (Case A1) — no mixnet required. **Snapshot 2026-08-19:** mixnet flag **on**, dVPN flag **off**, URL still RFC1918 → submit is **Local**. Explainer: [NYM_SEND_EGRESS_CASE_BREAKDOWN.md](NYM_SEND_EGRESS_CASE_BREAKDOWN.md#for-nym-people-and-newcomers-read-this-first).
 2. Evidence harness: `powershell -File scripts\nym-smolmix-d2-evidence.ps1` (dry + LAN refuse).
 3. Optional: `-IpRelocate` to re-prove D2a; `-ZebraUrl <public> -RpcProbe` for D2b.
 4. For remote submit (D2c-live): set `NOZY_NYM_SMOLMIX_BIN` + mixnet env; zebra URL must be exit-reachable.
@@ -228,11 +228,14 @@ Ordered by **linkage severity** (updated after Mark’s “biggest win” guidan
 | D4 / D2e | Desktop Advanced: real session status (not only attest) | After D2b+D2c |
 | D5 | mix-fetch for extension | Later |
 | D6 | Credential-proxy / gifted zk-nyms for end users | Coordinate with Nym |
+| D7 | Neighbor: Joaco `lwd-mixnet-proxy` client run | **External PASS** 2026-08-15–17 — [PR #3](https://github.com/jpgonzalezra/lwd-mixnet-proxy/pull/3); mixnet for **small calls only**, not sync |
+| D8 | Midnight reclaim heartbeat (dial ±10 min 00:00 UTC) | **Harness + live runs** — dead far end 19/19 unanswered; live far end 20/20 answered. Script runs `GetLightdInfo` via `verify_lwd` each minute (~3–6 s over mixnet). Evidence `lwd-mixnet-midnight-heartbeat-20260818-215629.txt`, `…20260819-225456.txt`. [PR #6](https://github.com/jpgonzalezra/lwd-mixnet-proxy/pull/6) |
+| D9 | Product UI: local vs mixnet vs blocked vs stopgap | **Landed** — [NYM_SEND_EGRESS_CASE_BREAKDOWN.md](NYM_SEND_EGRESS_CASE_BREAKDOWN.md) |
 
 ### Success criteria for “Nym IP done enough to claim”
 
 1. Remote submit of a testnet send **does not** expose the host public IP to the submit endpoint (verified via exit IP / operator log agreement).
-2. Product UI distinguishes **local node** vs **Nym mixnet submit** vs **clearnet exception**.
+2. Product UI distinguishes **local node** vs **Nym mixnet submit** vs **clearnet exception**. **Landed** 2026-08-18 — [NYM_SEND_EGRESS_CASE_BREAKDOWN.md](NYM_SEND_EGRESS_CASE_BREAKDOWN.md).
 3. Ironwood `broadcast` uses the same egress policy as normal send.
 4. Docs never claim sync-over-dVPN alone protects tx linkage.
 

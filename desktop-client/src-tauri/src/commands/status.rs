@@ -258,7 +258,8 @@ pub async fn get_ironwood_status(
     let ironwood_wallet_zat: u64 = ironwood_notes.iter().copied().sum();
     let ironwood_note_count = ironwood_notes.len();
     let ironwood_max_note_zat = ironwood_notes.iter().copied().max().unwrap_or(0);
-    let send_fee_zat = estimate_orchard_send_fee_zatoshis(None, true);
+    let fee_block = nozy::FeeBlock::from_network_name(&config.network, chain_tip.unwrap_or(0));
+    let send_fee_zat = estimate_orchard_send_fee_zatoshis(None, true, fee_block);
     let ironwood_max_send_zat = ironwood_max_note_zat.saturating_sub(send_fee_zat);
 
     let migration_schedule_tip = if ironwood_active {

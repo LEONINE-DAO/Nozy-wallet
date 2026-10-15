@@ -119,6 +119,27 @@ pub fn ctaz_to_zat(amount: f64) -> NozyResult<u64> {
     Ok(zat as u64)
 }
 
+/// v15 creates a bond only when `amount_zats` is a positive power of ten
+/// (`0.01`, `0.1`, `1`, `10`, … cTAZ).
+pub fn ensure_power_of_ten_bond_zats(amount_zats: u64) -> NozyResult<()> {
+    if is_power_of_ten(amount_zats) {
+        return Ok(());
+    }
+    Err(NozyError::InvalidInput(
+        "Bond amount must be a power of 10 in zatoshis (0.01, 0.1, 1, 10, 100, … cTAZ)".into(),
+    ))
+}
+
+fn is_power_of_ten(mut n: u64) -> bool {
+    if n == 0 {
+        return false;
+    }
+    while n % 10 == 0 {
+        n /= 10;
+    }
+    n == 1
+}
+
 pub fn normalize_finalizer_hex(s: &str) -> NozyResult<String> {
     let hex = s.trim().trim_start_matches("0x").to_ascii_lowercase();
     if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -127,6 +148,30 @@ pub fn normalize_finalizer_hex(s: &str) -> NozyResult<String> {
         ));
     }
     Ok(hex)
+}
+
+/// v15 `target_finalizer` is the finalizer's `zfinv1…` address. The 64-hex roster key is rejected.
+pub fn normalize_finalizer_address(s: &str) -> NozyResult<String> {
+    let addr = s.trim();
+    let hex = addr.trim_start_matches("0x");
+    if hex.len() == 64 && hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(NozyError::InvalidInput(
+            "v15 stake and retarget need the finalizer's zfinv1 address, not the 64-hex key. Copy it from the Crosslink GUI or the node log line \"finalizer address:\".".into(),
+        ));
+    }
+    let body_ok = addr.len() >= 16
+        && addr
+            .get(..6)
+            .is_some_and(|p| p.eq_ignore_ascii_case("zfinv1"))
+        && addr
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_');
+    if body_ok {
+        return Ok(addr.to_string());
+    }
+    Err(NozyError::InvalidInput(
+        "Finalizer must be a zfinv1 address (copy from the Crosslink GUI or the node log).".into(),
+    ))
 }
 
 #[cfg(test)]
@@ -165,5 +210,25 @@ mod tests {
     fn ctaz_conversion() {
         assert_eq!(ctaz_to_zat(0.01).unwrap(), 1_000_000);
         assert!((zat_to_ctaz(1_000_000) - 0.01).abs() < 1e-12);
+    }
+
+    #[test]
+    fn v15_bond_amounts_are_powers_of_ten() {
+        for ctaz in [0.01, 0.1, 1.0, 10.0, 100.0] {
+            let zats = ctaz_to_zat(ctaz).unwrap();
+            assert!(ensure_power_of_ten_bond_zats(zats).is_ok(), "{ctaz}");
+        }
+        for ctaz in [0.02, 0.5, 2.0, 15.0] {
+            let zats = ctaz_to_zat(ctaz).unwrap();
+            assert!(ensure_power_of_ten_bond_zats(zats).is_err(), "{ctaz}");
+        }
+    }
+
+    #[test]
+    fn v15_stake_target_is_zfin_address() {
+        let addr = "zfinv1ExampleAddress_with-mixedCASE12";
+        assert_eq!(normalize_finalizer_address(addr).unwrap(), addr);
+        assert!(normalize_finalizer_address(&"ab".repeat(32)).is_err());
+        assert!(normalize_finalizer_address("not-an-address").is_err());
     }
 }

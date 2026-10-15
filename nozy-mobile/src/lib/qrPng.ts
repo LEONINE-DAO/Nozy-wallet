@@ -86,7 +86,7 @@ export function addressQrDataUrl(text: string): string {
   const modules = qr.modules;
   if (!modules) throw new Error("QR encode failed");
   const n = modules.size;
-  const margin = 2;
+  const margin = 4;
   const scale = 6;
   const dim = (n + margin * 2) * scale;
   const raw = new Uint8Array(dim * (dim + 1));
@@ -97,8 +97,8 @@ export function addressQrDataUrl(text: string): string {
     for (let x = 0; x < dim; x++) {
       const mx = Math.floor(x / scale) - margin;
       const dark =
-        mx >= 0 && my >= 0 && mx < n && my < n && modules.get(mx, my);
-      raw[row + 1 + x] = dark ? 0x11 : 0xff;
+        mx >= 0 && my >= 0 && mx < n && my < n && Boolean(modules.get(my, mx));
+      raw[row + 1 + x] = dark ? 0x00 : 0xff;
     }
   }
   const ihdr = concat([

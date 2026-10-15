@@ -15,7 +15,7 @@ Write-Host ""
 Write-Host "⚠️  For src/main.rs, you need to manually review and stage only Nozy improvements:" -ForegroundColor Yellow
 Write-Host "   Run: git add -p src/main.rs" -ForegroundColor Yellow
 Write-Host "   Then select only the Nozy improvements (error handling, progress, validation)" -ForegroundColor Yellow
-Write-Host "   Skip: Monero, Shade, Swap command handlers" -ForegroundColor Yellow
+Write-Host "   Skip: Monero, Secret, Swap command handlers" -ForegroundColor Yellow
 Write-Host ""
 
 Write-Host "📋 Files staged so far:" -ForegroundColor Cyan

@@ -175,7 +175,7 @@ def section1_intro(doc):
     for item in [
         "In scope: Orchard HD wallets, CLI and companion APIs, compact sync, local witness derivation.",
         "Out of scope: Consensus rule changes, t-address support in UI, custodial key hosting as a product goal.",
-        "Deferred on roadmap: Secret/Shade/XMR multichain lanes; near-term focus is pure Zcash.",
+        "Deferred on roadmap: Secret/XMR multichain lanes; near-term focus is pure Zcash.",
     ]:
         add_bullet(doc, item)
 
@@ -771,7 +771,7 @@ def section8_roadmap(doc):
     add_heading(doc, "8.1 Strategic Pivot", 2)
     add_body(
         doc,
-        "Near-term engineering pauses Secret/Shade/XMR multichain lanes and concentrates on Zebrad + "
+        "Near-term engineering pauses Secret/XMR multichain lanes and concentrates on Zebrad + "
         "lightwalletd + Orchard + Zeaking + mobile + ZNS. Multichain code may remain for contributors "
         "but is not the public product story.",
     )

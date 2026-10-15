@@ -15,12 +15,12 @@ use hyper::Request;
 use hyper_util::rt::TokioIo;
 use nym_smolmix_broadcast_spike::{
     build_tunnel, dry_reachability_evidence, install_crypto, json_rpc_post_over_tunnel,
-    parse_rpc_target, sendrawtransaction_over_smolmix, BoxError, EvidenceStep,
+    parse_rpc_target, BoxError, EvidenceStep,
 };
 use rustls::pki_types::ServerName;
 use rustls::RootCertStore;
 use serde_json::json;
-use smolmix::Tunnel;
+use nym_smolmix::Tunnel;
 use std::sync::Arc;
 use tokio_rustls::TlsConnector;
 use tracing::info;
@@ -308,12 +308,42 @@ async fn run_sendraw(zebra: &str, hex: &str, ipr: Option<&str>) -> Result<Eviden
         "sendrawtransaction via smolmix → {zebra} ({} hex chars)",
         hex.len()
     );
-    let txid = sendrawtransaction_over_smolmix(zebra, hex, ipr).await?;
-    // Machine-readable: sole stdout line for wallet subprocess parser.
+    info!("Building smolmix tunnel (may take a while on first connect)…");
+    let tunnel = build_tunnel(ipr).await?;
+    info!("Tunnel ready");
+    let step = run_sendraw_on_tunnel(&tunnel, zebra, hex).await;
+    tunnel.shutdown().await;
+    step
+}
+
+async fn run_sendraw_on_tunnel(
+    tunnel: &Tunnel,
+    zebra: &str,
+    hex: &str,
+) -> Result<EvidenceStep, BoxError> {
+    let body = serde_json::json!({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "sendrawtransaction",
+        "params": [hex],
+    })
+    .to_string();
+    let (text, elapsed) = json_rpc_post_over_tunnel(tunnel, zebra, &body).await?;
+    let v: serde_json::Value = serde_json::from_str(&text)?;
+    if let Some(err) = v.get("error").filter(|e| !e.is_null()) {
+        return Ok(EvidenceStep::pass(
+            "D2c-path",
+            format!("sendraw JSON-RPC over mixnet in {elapsed:?} (node rejected hex): {err}"),
+        ));
+    }
+    let txid = v
+        .get("result")
+        .and_then(|r| r.as_str())
+        .ok_or_else(|| format!("no txid in sendrawtransaction response: {text}"))?;
     println!("{txid}");
     Ok(EvidenceStep::pass(
         "D2c",
-        format!("sendrawtransaction over mixnet → txid {txid}"),
+        format!("sendrawtransaction over mixnet → txid {txid} in {elapsed:?}"),
     ))
 }
 
@@ -356,10 +386,19 @@ async fn run() -> Result<(), BoxError> {
         }
         Mode::SendRaw(hex) => {
             let step = run_sendraw(&cli.zebra, hex, cli.ipr.as_deref()).await?;
+            let path_only = step.id == "D2c-path";
+            if path_only {
+                eprintln!("  [{}] {}: {}", step.result, step.id, step.detail);
+            }
             steps.push(step);
             if let Some(path) = &cli.evidence_json {
-                // Evidence goes to stderr-side file; stdout remains txid-only.
                 write_evidence(path, &steps)?;
+            }
+            if path_only {
+                return Err(
+                    "sendraw reached Zebrad over mixnet but the node rejected the hex (D2c-path, not D2c-live)"
+                        .into(),
+                );
             }
             return Ok(());
         }
@@ -389,7 +428,14 @@ async fn run() -> Result<(), BoxError> {
 
     match &cli.mode {
         Mode::IpRelocate => steps.push(run_ip_relocate(&tunnel).await?),
-        Mode::RpcProbe => steps.push(run_rpc_probe(&tunnel, &cli.zebra).await?),
+        Mode::RpcProbe => {
+            steps.push(run_rpc_probe(&tunnel, &cli.zebra).await?);
+            if let Ok(hex) = std::env::var("D2_SENDRAW_HEX") {
+                if !hex.is_empty() {
+                    steps.push(run_sendraw_on_tunnel(&tunnel, &cli.zebra, &hex).await?);
+                }
+            }
+        }
         Mode::Both => {
             steps.push(run_ip_relocate(&tunnel).await?);
             steps.push(run_rpc_probe(&tunnel, &cli.zebra).await?);

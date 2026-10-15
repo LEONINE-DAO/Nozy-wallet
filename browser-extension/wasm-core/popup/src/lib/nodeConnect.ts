@@ -18,8 +18,14 @@ export const NODE_SETUP_MODES: Array<{ id: NodeSetupMode; label: string }> = [
 ];
 
 export function isPublicLwdUrl(url: string): boolean {
-  const u = url.trim().toLowerCase();
-  return u.includes("lwd.nozywallet.org") || /(^|\/\/)(mainnet\.)?zec\.rocks\b/.test(u);
+  const raw = url.trim();
+  if (!raw) return false;
+  try {
+    const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+    return new URL(withScheme).hostname.toLowerCase() === "lwd.nozywallet.org";
+  } catch {
+    return false;
+  }
 }
 
 export function isWslZebradUrl(url: string): boolean {

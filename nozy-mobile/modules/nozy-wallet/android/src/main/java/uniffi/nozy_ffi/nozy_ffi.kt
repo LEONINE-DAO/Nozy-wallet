@@ -741,6 +741,18 @@ internal interface UniffiForeignFutureCompleteVoid : com.sun.jna.Callback {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
 // A JNA Library to expose the extern-C FFI definitions.
 // This is an implementation detail which will be called internally by the public API.
 
@@ -758,6 +770,14 @@ internal interface UniffiLib : Library {
 
     fun uniffi_nozy_ffi_fn_func_generate_mnemonic(uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
+    fun uniffi_nozy_ffi_fn_func_gift_card_buy(`mnemonic`: RustBuffer.ByValue,`walletDataDir`: RustBuffer.ByValue,`zebraUrl`: RustBuffer.ByValue,`amountZec`: Double,`label`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_nozy_ffi_fn_func_gift_card_cancel(`walletDataDir`: RustBuffer.ByValue,`giftId`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_nozy_ffi_fn_func_gift_card_list(`walletDataDir`: RustBuffer.ByValue,`limit`: Int,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_nozy_ffi_fn_func_gift_card_redeem(`mnemonic`: RustBuffer.ByValue,`walletDataDir`: RustBuffer.ByValue,`zebraUrl`: RustBuffer.ByValue,`claimCode`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
     fun uniffi_nozy_ffi_fn_func_lwd_get_info(`lightwalletdUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_nozy_ffi_fn_func_lwd_get_latest_tree_state(`lightwalletdUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
@@ -766,7 +786,11 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_nozy_ffi_fn_func_lwd_sync_compact_to_tip(`lightwalletdUrl`: RustBuffer.ByValue,`compactDbPath`: RustBuffer.ByValue,`startFloor`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): Long
+    fun uniffi_nozy_ffi_fn_func_orchard_backfill_memos(`mnemonic`: RustBuffer.ByValue,`walletDataDir`: RustBuffer.ByValue,`lightwalletdUrl`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
+    ): Int
     fun uniffi_nozy_ffi_fn_func_orchard_scan(`mnemonic`: RustBuffer.ByValue,`walletDataDir`: RustBuffer.ByValue,`compactDbPath`: RustBuffer.ByValue,`startFloor`: RustBuffer.ByValue,`maxAccount`: Int,`full`: Byte,uniffi_out_err: UniffiRustCallStatus, 
+    ): RustBuffer.ByValue
+    fun uniffi_nozy_ffi_fn_func_orchard_send_payment(`mnemonic`: RustBuffer.ByValue,`walletDataDir`: RustBuffer.ByValue,`lightwalletdUrl`: RustBuffer.ByValue,`recipient`: RustBuffer.ByValue,`amountZec`: Double,`memo`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
     fun uniffi_nozy_ffi_fn_func_orchard_status(`walletDataDir`: RustBuffer.ByValue,uniffi_out_err: UniffiRustCallStatus, 
     ): RustBuffer.ByValue
@@ -900,6 +924,14 @@ internal interface UniffiLib : Library {
     ): Unit
     fun uniffi_nozy_ffi_checksum_func_generate_mnemonic(
     ): Short
+    fun uniffi_nozy_ffi_checksum_func_gift_card_buy(
+    ): Short
+    fun uniffi_nozy_ffi_checksum_func_gift_card_cancel(
+    ): Short
+    fun uniffi_nozy_ffi_checksum_func_gift_card_list(
+    ): Short
+    fun uniffi_nozy_ffi_checksum_func_gift_card_redeem(
+    ): Short
     fun uniffi_nozy_ffi_checksum_func_lwd_get_info(
     ): Short
     fun uniffi_nozy_ffi_checksum_func_lwd_get_latest_tree_state(
@@ -908,7 +940,11 @@ internal interface UniffiLib : Library {
     ): Short
     fun uniffi_nozy_ffi_checksum_func_lwd_sync_compact_to_tip(
     ): Short
+    fun uniffi_nozy_ffi_checksum_func_orchard_backfill_memos(
+    ): Short
     fun uniffi_nozy_ffi_checksum_func_orchard_scan(
+    ): Short
+    fun uniffi_nozy_ffi_checksum_func_orchard_send_payment(
     ): Short
     fun uniffi_nozy_ffi_checksum_func_orchard_status(
     ): Short
@@ -948,6 +984,18 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_nozy_ffi_checksum_func_generate_mnemonic() != 36896.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_nozy_ffi_checksum_func_gift_card_buy() != 47389.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_nozy_ffi_checksum_func_gift_card_cancel() != 60275.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_nozy_ffi_checksum_func_gift_card_list() != 25121.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_nozy_ffi_checksum_func_gift_card_redeem() != 28478.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_nozy_ffi_checksum_func_lwd_get_info() != 36757.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
@@ -960,7 +1008,13 @@ private fun uniffiCheckApiChecksums(lib: UniffiLib) {
     if (lib.uniffi_nozy_ffi_checksum_func_lwd_sync_compact_to_tip() != 26700.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
+    if (lib.uniffi_nozy_ffi_checksum_func_orchard_backfill_memos() != 28780.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
     if (lib.uniffi_nozy_ffi_checksum_func_orchard_scan() != 25653.toShort()) {
+        throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
+    }
+    if (lib.uniffi_nozy_ffi_checksum_func_orchard_send_payment() != 13201.toShort()) {
         throw RuntimeException("UniFFI API checksum mismatch: try cleaning and rebuilding your project")
     }
     if (lib.uniffi_nozy_ffi_checksum_func_orchard_status() != 42486.toShort()) {
@@ -1281,7 +1335,11 @@ data class OrchardReceivedNoteFfi (
     var `blockHeight`: kotlin.UInt, 
     var `valueZec`: kotlin.Double, 
     var `spent`: kotlin.Boolean, 
-    var `pool`: kotlin.String
+    var `pool`: kotlin.String, 
+    /**
+     * ZIP-302 memo text. `None` is an empty or not-yet-recovered memo.
+     */
+    var `memo`: kotlin.String?
 ) {
     
     companion object
@@ -1298,6 +1356,7 @@ public object FfiConverterTypeOrchardReceivedNoteFfi: FfiConverterRustBuffer<Orc
             FfiConverterDouble.read(buf),
             FfiConverterBoolean.read(buf),
             FfiConverterString.read(buf),
+            FfiConverterOptionalString.read(buf),
         )
     }
 
@@ -1306,7 +1365,8 @@ public object FfiConverterTypeOrchardReceivedNoteFfi: FfiConverterRustBuffer<Orc
             FfiConverterUInt.allocationSize(value.`blockHeight`) +
             FfiConverterDouble.allocationSize(value.`valueZec`) +
             FfiConverterBoolean.allocationSize(value.`spent`) +
-            FfiConverterString.allocationSize(value.`pool`)
+            FfiConverterString.allocationSize(value.`pool`) +
+            FfiConverterOptionalString.allocationSize(value.`memo`)
     )
 
     override fun write(value: OrchardReceivedNoteFfi, buf: ByteBuffer) {
@@ -1315,6 +1375,7 @@ public object FfiConverterTypeOrchardReceivedNoteFfi: FfiConverterRustBuffer<Orc
             FfiConverterDouble.write(value.`valueZec`, buf)
             FfiConverterBoolean.write(value.`spent`, buf)
             FfiConverterString.write(value.`pool`, buf)
+            FfiConverterOptionalString.write(value.`memo`, buf)
     }
 }
 
@@ -1991,6 +2052,58 @@ public object FfiConverterSequenceTypeOrchardReceivedNoteFfi: FfiConverterRustBu
     
 
         /**
+         * Pay `amount_zec` in shielded ZEC from this phone's wallet. Returns the claim code once.
+         */
+    @Throws(NozyFfiException::class) fun `giftCardBuy`(`mnemonic`: kotlin.String, `walletDataDir`: kotlin.String, `zebraUrl`: kotlin.String, `amountZec`: kotlin.Double, `label`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(NozyFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_gift_card_buy(
+        FfiConverterString.lower(`mnemonic`),FfiConverterString.lower(`walletDataDir`),FfiConverterString.lower(`zebraUrl`),FfiConverterDouble.lower(`amountZec`),FfiConverterString.lower(`label`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Cancel an unpaid gift card record. A paid card stays spendable only with its claim code.
+         */
+    @Throws(NozyFfiException::class) fun `giftCardCancel`(`walletDataDir`: kotlin.String, `giftId`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(NozyFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_gift_card_cancel(
+        FfiConverterString.lower(`walletDataDir`),FfiConverterString.lower(`giftId`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Gift cards bought on this phone. Claim codes are not included.
+         */
+    @Throws(NozyFfiException::class) fun `giftCardList`(`walletDataDir`: kotlin.String, `limit`: kotlin.UInt): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(NozyFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_gift_card_list(
+        FfiConverterString.lower(`walletDataDir`),FfiConverterUInt.lower(`limit`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Sweep a claim code into this phone's shielded address.
+         */
+    @Throws(NozyFfiException::class) fun `giftCardRedeem`(`mnemonic`: kotlin.String, `walletDataDir`: kotlin.String, `zebraUrl`: kotlin.String, `claimCode`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(NozyFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_gift_card_redeem(
+        FfiConverterString.lower(`mnemonic`),FfiConverterString.lower(`walletDataDir`),FfiConverterString.lower(`zebraUrl`),FfiConverterString.lower(`claimCode`),_status)
+}
+    )
+    }
+    
+
+        /**
          * `GetLightdInfo` — ping public or self-hosted lightwalletd.
          */
     @Throws(NozyFfiException::class) fun `lwdGetInfo`(`lightwalletdUrl`: kotlin.String): LwdInfoFfi {
@@ -2042,6 +2155,21 @@ public object FfiConverterSequenceTypeOrchardReceivedNoteFfi: FfiConverterRustBu
     
 
         /**
+         * Fetch full transactions from lightwalletd and store ZIP-302 memos on notes.
+         *
+         * Compact blocks omit the memo. Call this after a scan, or when opening history.
+         */
+    @Throws(NozyFfiException::class) fun `orchardBackfillMemos`(`mnemonic`: kotlin.String, `walletDataDir`: kotlin.String, `lightwalletdUrl`: kotlin.String): kotlin.UInt {
+            return FfiConverterUInt.lift(
+    uniffiRustCallWithError(NozyFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_orchard_backfill_memos(
+        FfiConverterString.lower(`mnemonic`),FfiConverterString.lower(`walletDataDir`),FfiConverterString.lower(`lightwalletdUrl`),_status)
+}
+    )
+    }
+    
+
+        /**
          * Scan LWD compact cache for Orchard/Ironwood notes belonging to this mnemonic.
          */
     @Throws(NozyFfiException::class) fun `orchardScan`(`mnemonic`: kotlin.String, `walletDataDir`: kotlin.String, `compactDbPath`: kotlin.String, `startFloor`: kotlin.ULong?, `maxAccount`: kotlin.UInt, `full`: kotlin.Boolean): OrchardScanResultFfi {
@@ -2049,6 +2177,21 @@ public object FfiConverterSequenceTypeOrchardReceivedNoteFfi: FfiConverterRustBu
     uniffiRustCallWithError(NozyFfiException) { _status ->
     UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_orchard_scan(
         FfiConverterString.lower(`mnemonic`),FfiConverterString.lower(`walletDataDir`),FfiConverterString.lower(`compactDbPath`),FfiConverterOptionalULong.lower(`startFloor`),FfiConverterUInt.lower(`maxAccount`),FfiConverterBoolean.lower(`full`),_status)
+}
+    )
+    }
+    
+
+        /**
+         * Build, prove, and broadcast a shielded payment from notes already on this phone.
+         *
+         * Returns the transaction id. The seed never leaves the device.
+         */
+    @Throws(NozyFfiException::class) fun `orchardSendPayment`(`mnemonic`: kotlin.String, `walletDataDir`: kotlin.String, `lightwalletdUrl`: kotlin.String, `recipient`: kotlin.String, `amountZec`: kotlin.Double, `memo`: kotlin.String): kotlin.String {
+            return FfiConverterString.lift(
+    uniffiRustCallWithError(NozyFfiException) { _status ->
+    UniffiLib.INSTANCE.uniffi_nozy_ffi_fn_func_orchard_send_payment(
+        FfiConverterString.lower(`mnemonic`),FfiConverterString.lower(`walletDataDir`),FfiConverterString.lower(`lightwalletdUrl`),FfiConverterString.lower(`recipient`),FfiConverterDouble.lower(`amountZec`),FfiConverterString.lower(`memo`),_status)
 }
     )
     }

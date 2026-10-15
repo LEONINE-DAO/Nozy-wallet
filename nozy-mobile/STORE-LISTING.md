@@ -1,6 +1,8 @@
-# Store listing copy — NozyWallet Mobile
+# Store listing copy — NozyWallet Mobile 1.0.0
 
-Draft text for Google Play and Apple App Store. Edit before submit.
+Copy for Google Play. Match the binary: keys stay on the phone, compact sync goes to public lightwalletd, this version receives shielded ZEC. Spending from the phone is the next release. Do not describe this build as a companion that holds keys on a server.
+
+iOS is not a submit candidate until `libnozy_ffi` is built on a Mac and linked in the Xcode project. The copy below is the Android listing.
 
 ---
 
@@ -10,32 +12,32 @@ NozyWallet
 
 ## Short description (Play, 80 chars)
 
-Shielded Zcash companion wallet — Orchard privacy via your API or Nozy hosted.
+Shielded Zcash wallet. Keys stay on your phone. Receive and sync ZEC.
+
+(68 characters)
 
 ## Full description
 
-NozyWallet Mobile is a privacy-first companion for Orchard shielded ZEC.
+NozyWallet is a shielded Zcash wallet. Your seed and keys stay on this phone. The app syncs compact blocks from lightwalletd at lwd.nozywallet.org and shows a unified address so you can receive Orchard ZEC.
 
-Connect to a NozyWallet API server — on your home PC or via Nozy hosted — to create a wallet, sync with the Zcash network, receive shielded ZEC, and send fully private transactions.
+**In this version**
 
-**Features**
+- Create or restore a wallet on the phone
+- Compact sync over HTTPS (default lwd.nozywallet.org)
+- Shielded balance and a unified receive address
+- Seed and password stored in the device keystore
 
-- Orchard shielded balance and unified addresses
-- Send and receive with ZIP-317 fee estimates
-- Transaction history with explorer links
-- Wallet profiles and account security settings
-- Ironwood (NU6.3) readiness tools (when your API supports it)
+**Not in this version**
 
-**How it works**
-
-This app is a **companion client**. Wallet scan, proving, and sync run on the API server you configure, which connects to a Zebra node. Your phone does not download the full blockchain.
-
-For maximum control, run your own API at home. For convenience, use Nozy hosted with an API key from your operator.
+Spending ZEC from the phone. Send opens an explanation and points you to Receive. An on-phone Orchard spend proof is the next release.
 
 **Privacy**
 
-- On-chain: Orchard shielded pool hides amounts and addresses
-- Off-chain: if you use a hosted API, the operator can see when you sync and send. Read the in-app risk disclosure before using hosted mode.
+- On-chain: Orchard shielded pool
+- Off-chain: compact sync does not upload your seed. The lightwalletd operator can see that a client connected.
+- No analytics SDK in this version
+
+A self-hosted nozywallet-api is an advanced option in Settings. It is not the store default, and this listing does not point users at the operator wallet on api.nozywallet.org.
 
 ## Category
 
@@ -45,7 +47,7 @@ Finance
 
 - Cryptocurrency wallet
 - No gambling, no user-generated public content
-- Users manage their own funds; no in-app purchases in v1
+- Users hold their own keys; no in-app purchases in 1.0.0
 
 ## Support URL
 
@@ -55,40 +57,44 @@ https://github.com/LEONINE-DAO/Nozy-wallet/issues
 
 https://leonine-dao.github.io/Nozy-wallet/privacy/
 
-(Hosted on the NozyWallet GitHub Pages landing site. Technical architecture: [privacy model](https://leonine-dao.github.io/Nozy-wallet/book/nozy/privacy-model.html).)
-
-## Keywords (App Store)
+## Keywords (App Store, when iOS ships)
 
 zcash, zec, orchard, shielded, privacy, wallet, cryptocurrency
 
 ---
 
-## Data safety (Google Play) — draft answers
+## Data safety (Google Play) — answers for 1.0.0
 
-| Data type | Collected? | Shared? | Notes |
-|-----------|------------|---------|-------|
-| Wallet password | Stored on device only | No | AsyncStorage session |
-| API key | Stored on device only | Sent to user-configured API | HTTPS to hosted/self server |
-| Seed phrase | Shown at create/restore via API | Depends on API deployment | Disclosed in About |
-| Transaction data | Via API from Zebra | No third-party analytics in v1 | |
+| Data type | Collected by the publisher? | Shared? | Notes |
+|-----------|-----------------------------|---------|-------|
+| Seed phrase | No. Stored on device only | No | Android Keystore via expo-secure-store. Shown once at create/restore. |
+| Wallet password | No. Stored on device only | No | Same keystore. Not sent to lightwalletd. |
+| Unified address | No publisher collection | The user can copy it | Compact sync does not upload the seed. |
+| API key | Only if the user types a self-hosted companion key | Sent only to the URL they set | Store default does not use an API key. |
+| Diagnostics | Not collected | No analytics SDK | |
 
-**Encryption in transit:** Yes (HTTPS for production / hosted)  
-**Users can request deletion:** Wallet data on device cleared by uninstall; server data depends on operator
+**Encryption in transit:** Yes. Release builds allow HTTPS only.  
+**Data deletion:** Uninstall clears app data. There is no publisher account to delete.
 
----
-
-## Apple privacy nutrition labels — draft
-
-- **Data linked to you:** None collected by app publisher directly in v1 companion model
-- **Data not linked to you:** None (no analytics SDK in v1)
-- **Encryption:** Uses standard HTTPS; app uses encryption — exempt (`ITSAppUsesNonExemptEncryption: false`)
+Suggested Play form: Data is encrypted in transit. Users can request that data be deleted (uninstall). No data is shared with third parties by the app publisher. Financial info is not collected by the developer; it stays on device.
 
 ---
 
-## Screenshot checklist
+## Apple privacy nutrition labels — draft (do not submit iOS yet)
 
-1. Welcome — hosted connection + API key
-2. Dashboard — balance, sync bar, receive/send
-3. Send — amount, fee, review
-4. Receive — QR + unified address
-5. Settings — connection, account, about/privacy
+- Data linked to you: none collected by the publisher
+- Data not linked to you: none (no analytics SDK)
+- Encryption: standard HTTPS; `ITSAppUsesNonExemptEncryption` is false
+
+---
+
+## Screenshot set
+
+Captured from the NozyPixel emulator at 1080×2160 (Play’s 2:1 limit). The receive address and QR are covered so the store image does not publish a live unified address.
+
+1. `store-assets/android/01-welcome.png` — keys stay on the phone
+2. `store-assets/android/02-home.png` — balance and compact sync
+3. `store-assets/android/03-receive.png` — receive layout, address covered
+4. `store-assets/android/04-send.png` — spend is the next release
+5. `store-assets/android/05-settings.png` — connection and account
+6. `store-assets/android/06-about.png` — privacy and lwd.nozywallet.org

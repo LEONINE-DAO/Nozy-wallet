@@ -627,6 +627,8 @@ export interface CrosslinkGuardianSnapshot {
 
 export interface CrosslinkRosterEntry {
   finalizer: string;
+  /** v15 stake target. Missing while the node leaves `finalizer_address` empty. */
+  address?: string | null;
   stake_zat: number;
   share: number;
 }

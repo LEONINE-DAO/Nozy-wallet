@@ -6,5 +6,5 @@ edition = "2021"
 [workspace]
 
 [dependencies]
-zebra-crosslink = { path = "/home/lowo/projects/crosslink-monolith-v13/zebra-crosslink/zebra-crosslink" }
+zebra-crosslink = { path = "/home/lowo/projects/crosslink-monolith-v14/zebra-crosslink/zebra-crosslink" }
 hex = "0.4"

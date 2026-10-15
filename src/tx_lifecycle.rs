@@ -98,7 +98,8 @@ pub async fn speed_up_transaction(
 
     let memo = refreshed.memo.as_deref();
     let pilot = PilotSendOptions::for_send();
-    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, pilot.priority);
+    let fee_block = zebra_client.fee_block_for_next_block().await;
+    let fee_zatoshis = estimate_orchard_send_fee_zatoshis(memo, pilot.priority, fee_block);
     let total_needed = refreshed.amount_zatoshis.saturating_add(fee_zatoshis);
     let available: u64 = spendable_notes.iter().map(|n| n.orchard_note.value).sum();
     if available < total_needed {

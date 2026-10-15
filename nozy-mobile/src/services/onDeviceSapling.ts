@@ -4,6 +4,7 @@ import {
   saplingScan,
   saplingShield,
   saplingStatus,
+  walletPaths,
   type SaplingStatusNative,
 } from "nozy-wallet";
 import {
@@ -15,7 +16,12 @@ import {
   ONDEVICE_WALLET_KIND_KEY,
   ONDEVICE_ZEBRA_URL_KEY,
 } from "../components/settings/OnDeviceWalletSettings";
-import { defaultHostedLwdUrl } from "../lib/connectionPresets";
+import {
+  NOZY_PUBLIC_LWD_URL,
+  localNodeBlockReason,
+  syncServerBlockReason,
+} from "../lib/connectionPresets";
+import { getSecret } from "../lib/secretStorage";
 import { NU5_ORCHARD_MAINNET } from "../lib/zcashHeights";
 import type { SaplingStatusResponse } from "../types";
 
@@ -28,23 +34,53 @@ export type OnDevicePaths = {
 };
 
 export async function loadOnDevicePaths(): Promise<OnDevicePaths | null> {
-  const [mnemonic, walletDataDir, compactDbPath, zebraUrl, lightwalletdUrl] =
+  const [mnemonic, storedDir, storedDb, zebraUrl, lightwalletdUrl] =
     await Promise.all([
-      AsyncStorage.getItem(ONDEVICE_MNEMONIC_KEY),
+      getSecret(ONDEVICE_MNEMONIC_KEY),
       AsyncStorage.getItem(ONDEVICE_DATA_DIR_KEY),
       AsyncStorage.getItem(ONDEVICE_COMPACT_DB_KEY),
       AsyncStorage.getItem(ONDEVICE_ZEBRA_URL_KEY),
       AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY),
     ]);
-  if (!mnemonic?.trim() || !walletDataDir?.trim() || !compactDbPath?.trim()) {
-    return null;
+  if (!mnemonic?.trim()) return null;
+
+  let walletDataDir = storedDir?.trim() ?? "";
+  let compactDbPath = storedDb?.trim() ?? "";
+  if (!walletDataDir || !compactDbPath) {
+    try {
+      const native = walletPaths();
+      walletDataDir = walletDataDir || native.walletDataDir;
+      compactDbPath = compactDbPath || native.compactDbPath;
+    } catch {
+      // Address reveal only needs the seed. Sync can fill paths later.
+    }
+  }
+  if (
+    walletDataDir &&
+    compactDbPath &&
+    (walletDataDir !== storedDir?.trim() || compactDbPath !== storedDb?.trim())
+  ) {
+    await AsyncStorage.multiSet([
+      [ONDEVICE_DATA_DIR_KEY, walletDataDir],
+      [ONDEVICE_COMPACT_DB_KEY, compactDbPath],
+    ]);
+  }
+  let zebra = (zebraUrl ?? "").trim();
+  if (zebra && localNodeBlockReason(zebra)) {
+    zebra = "";
+    await AsyncStorage.removeItem(ONDEVICE_ZEBRA_URL_KEY);
+  }
+  let lwd = (lightwalletdUrl ?? "").trim();
+  if (!lwd || syncServerBlockReason(lwd)) {
+    lwd = NOZY_PUBLIC_LWD_URL;
+    await AsyncStorage.setItem(ONDEVICE_LWD_URL_KEY, lwd);
   }
   return {
     mnemonic: mnemonic.trim(),
-    walletDataDir: walletDataDir.trim(),
-    compactDbPath: compactDbPath.trim(),
-    zebraUrl: (zebraUrl ?? "").trim(),
-    lightwalletdUrl: (lightwalletdUrl ?? "").trim(),
+    walletDataDir,
+    compactDbPath,
+    zebraUrl: zebra,
+    lightwalletdUrl: lwd,
   };
 }
 
@@ -53,9 +89,8 @@ export async function persistOnDeviceBirthday(height: number): Promise<void> {
 }
 
 async function birthdayFromLwdTip(): Promise<number> {
-  const lwd =
-    (await AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY))?.trim() ||
-    defaultHostedLwdUrl();
+  const storedLwd = (await AsyncStorage.getItem(ONDEVICE_LWD_URL_KEY))?.trim() || "";
+  const lwd = !storedLwd || syncServerBlockReason(storedLwd) ? NOZY_PUBLIC_LWD_URL : storedLwd;
   let birthday = NU5_ORCHARD_MAINNET;
   try {
     const info = await lwdGetInfo(lwd);

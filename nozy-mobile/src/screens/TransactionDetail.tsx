@@ -4,8 +4,9 @@ import { ScrollView, StyleSheet, Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
+import { onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
 import { colors, fontSize, spacing } from "../theme";
-import type { RootStackParamList } from "../types";
+import type { RootStackParamList, TransactionRecord } from "../types";
 
 type Props = NativeStackScreenProps<RootStackParamList, "TransactionDetail">;
 
@@ -25,10 +26,35 @@ export function TransactionDetailScreen({ route }: Props) {
   const { txid } = route.params;
   const { backendMode } = useWalletSession();
   const [tx, setTx] = useState<Record<string, unknown> | null>(null);
+  const [note, setNote] = useState<TransactionRecord | null>(null);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (backendMode === "on_device") return;
+    if (backendMode === "on_device") {
+      void onDeviceShieldedSnapshot()
+        .then((snap) => {
+          const found = snap.notes.find((item) => item.txid === txid);
+          setNote(
+            found
+              ? {
+                  txid: found.txid,
+                  status: found.spent ? "spent" : "received",
+                  amount_zec: found.value_zec,
+                  fee_zec: 0,
+                  recipient: found.pool,
+                  block_height: found.block_height,
+                  confirmations: null,
+                  broadcast_at: null,
+                  memo: found.memo,
+                }
+              : null,
+          );
+        })
+        .catch((e) =>
+          setError(e instanceof Error ? e.message : "Failed to load transaction"),
+        );
+      return;
+    }
     void api
       .getTransaction(txid)
       .then(setTx)
@@ -41,8 +67,16 @@ export function TransactionDetailScreen({ route }: Props) {
     return (
       <SafeAreaView style={styles.safe} edges={["bottom"]}>
         <ScrollView contentContainerStyle={styles.container}>
+          {error ? <Text style={styles.error}>{error}</Text> : null}
           {row("TXID", txid)}
-          <Text style={styles.loading}>No details for this transaction yet.</Text>
+          {row("Status", note?.status)}
+          {row("Amount (ZEC)", note?.amount_zec)}
+          {row("Pool", note?.recipient)}
+          {row("Block height", note?.block_height)}
+          {row("Memo", note?.memo)}
+          {!note && !error ? (
+            <Text style={styles.loading}>No details for this transaction yet.</Text>
+          ) : null}
         </ScrollView>
       </SafeAreaView>
     );

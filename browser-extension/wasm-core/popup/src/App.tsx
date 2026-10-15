@@ -390,7 +390,9 @@ function DashboardView({
   const totalZec = scan ? poolBalances.total / 1e8 : null;
   const balanceFiat = totalZec != null ? fiatForZec(totalZec, zecFiat, fiatCode) : null;
   const unitPrice = zecFiat != null ? `1 ZEC ≈ ${formatFiat(zecFiat, fiatCode)}` : null;
-  const recentTxs = txs.slice(-3).reverse();
+  const incoming = txs.filter((t) => t.direction === "received").slice(0, 4);
+  const outgoing = txs.filter((t) => t.direction !== "received").slice(-3).reverse();
+  const recentTxs = [...incoming, ...outgoing];
   const address = status?.address || "";
 
   const assets = [
@@ -524,7 +526,7 @@ function DashboardView({
                           : "neutral"
                     }
                   >
-                    {tx.state}
+                    {tx.direction === "received" ? "received" : tx.state}
                   </Pill>
                   {tx.inputMode && (
                     <Pill tone={tx.inputMode === "multi" ? "accent" : "success"}>
@@ -543,6 +545,11 @@ function DashboardView({
               >
                 {shortAddress(tx.recipientAddress || tx.txid || "n/a")}
               </p>
+              {tx.memo ? (
+                <p className="mt-1 truncate text-[11px]" style={{ color: "var(--nw-text)" }}>
+                  {tx.memo}
+                </p>
+              ) : null}
               {tx.state === "failed" && (
                 <Button size="sm" className="mt-2" onClick={() => onRetry(tx.id)}>
                   Retry broadcast

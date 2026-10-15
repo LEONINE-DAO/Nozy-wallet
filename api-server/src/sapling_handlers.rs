@@ -8,8 +8,8 @@ use crate::handlers::{error_response_with_code, load_wallet_with_password};
 use nozy::fee_policy::PilotSendOptions;
 use nozy::paths::get_wallet_data_dir;
 use nozy::{
-    build_sapling_shield_to_self, derive_sapling_account_keys, load_config, load_sapling_notes,
-    sapling_note_has_rseed, sapling_note_ready_to_shield, sapling_shield_fee_zatoshis,
+    build_sapling_shield_to_self, current_sapling_shield_fee_zatoshis, derive_sapling_account_keys,
+    load_config, load_sapling_notes, sapling_note_has_rseed, sapling_note_ready_to_shield,
     sapling_unspent_balance_zatoshis, save_sapling_notes, scan_sapling_wallet_from_compact_store,
     ZebraClient,
 };
@@ -99,7 +99,7 @@ pub async fn get_sapling_status(
         .filter(|n| sapling_note_ready_to_shield(n))
         .count();
     let bal = sapling_unspent_balance_zatoshis(&notes);
-    let fee = sapling_shield_fee_zatoshis();
+    let fee = current_sapling_shield_fee_zatoshis().await;
     let message = if ready > 0 {
         "Legacy funds ready to move into your shielded balance.".to_string()
     } else if with_rseed > 0 {
@@ -169,7 +169,7 @@ pub async fn shield_sapling(
         .await
         .map_err(|e| error_response_with_code(StatusCode::UNAUTHORIZED, e, "WALLET_AUTH"))?;
     let mut notes = load_sapling_notes().unwrap_or_default();
-    let fee = sapling_shield_fee_zatoshis();
+    let fee = current_sapling_shield_fee_zatoshis().await;
     let candidates: Vec<_> = notes
         .iter()
         .filter(|n| !n.spent && sapling_note_has_rseed(n))

@@ -1,7 +1,7 @@
 import { CompositeScreenProps, useFocusEffect } from "@react-navigation/native";
 import type { BottomTabScreenProps } from "@react-navigation/bottom-tabs";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Button } from "../components/Button";
@@ -11,7 +11,11 @@ import { SyncPill } from "../components/SyncPill";
 import { useWalletSession } from "../context/WalletSessionContext";
 import { api } from "../services/api";
 import { onDeviceMoveLegacy, onDeviceSaplingStatus } from "../services/onDeviceSapling";
-import { onDeviceCompactSync, onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
+import { onDeviceShieldedSnapshot } from "../services/onDeviceWallet";
+import {
+  requestWalletSync,
+  subscribeWalletSync,
+} from "../services/walletAutoSync";
 import { loadHideBalances } from "../lib/displayPrefs";
 import { formatUsd, getZecUsdPrice } from "../lib/zecPrice";
 import { getActiveOnDeviceAccount } from "../services/onDeviceAccounts";
@@ -79,8 +83,7 @@ export function DashboardScreen({ navigation }: Props) {
   const [accountName, setAccountName] = useState("");
   const [orchardZec, setOrchardZec] = useState(0);
   const [ironwoodZec, setIronwoodZec] = useState(0);
-  const autoSyncRan = useRef(false);
-  const syncingRef = useRef(false);
+  const [hasBalance, setHasBalance] = useState(false);
   const onDevice = backendMode === "on_device";
 
   const loadLegacyStatus = useCallback(async () => {
@@ -147,48 +150,59 @@ export function DashboardScreen({ navigation }: Props) {
       setError(e instanceof Error ? e.message : "Failed to load wallet");
     } finally {
       setLoading(false);
+      setHasBalance(true);
     }
   }, [loadWalletStatus, loadLegacyStatus, onDevice, applyPools]);
 
   const runSync = useCallback(async () => {
-    if (syncingRef.current) return;
-    syncingRef.current = true;
-    setSyncing(true);
-    setSyncPhase(0);
-    setSyncElapsed(0);
     setError("");
     try {
-      if (onDevice) {
-        const result = await onDeviceCompactSync();
-        setBalance(result.unspentZec);
-        applyPools(result.unspentZec, result.orchardZec, result.ironwoodZec);
-        setWalletStatus({
-          balance_zec: result.unspentZec,
-          pending_transactions: 0,
-          total_transactions: 0,
-          last_sync_height: result.chainTip,
-          current_block_height: result.chainTip,
-          blocks_behind: 0,
-          witness_lag_blocks: 0,
-          witness_fresh_for_send: false,
-          max_send_witness_lag_blocks: 0,
-          ready_for_send: false,
-        });
-        await loadLegacyStatus();
-        return;
-      }
-      const result = await api.syncWallet(password || undefined);
-      setBalance(result.balance_zec);
-      await loadWalletStatus();
-      await loadLegacyStatus();
-      await loadDashboard();
+      await requestWalletSync({ onDevice, password });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Sync failed");
-    } finally {
-      syncingRef.current = false;
       setSyncing(false);
     }
-  }, [password, loadWalletStatus, loadLegacyStatus, onDevice, applyPools, loadDashboard]);
+  }, [password, onDevice]);
+
+  useEffect(() => {
+    return subscribeWalletSync((event) => {
+      if (event.type === "start") {
+        setSyncing(true);
+        setSyncPhase(0);
+        setSyncElapsed(0);
+        return;
+      }
+      if (event.type === "error") {
+        setSyncing(false);
+        setError(event.message);
+        return;
+      }
+      setSyncing(false);
+      setHasBalance(true);
+      setBalance(event.snapshot.unspentZec);
+      const tip = event.snapshot.chainTip;
+      if (onDevice) {
+        applyPools(
+          event.snapshot.unspentZec,
+          event.snapshot.orchardZec,
+          event.snapshot.ironwoodZec,
+        );
+      }
+      setWalletStatus({
+        balance_zec: event.snapshot.unspentZec,
+        pending_transactions: 0,
+        total_transactions: 0,
+        last_sync_height: tip,
+        current_block_height: tip,
+        blocks_behind: 0,
+        witness_lag_blocks: 0,
+        witness_fresh_for_send: false,
+        max_send_witness_lag_blocks: 0,
+        ready_for_send: false,
+      });
+      if (!onDevice) void loadDashboard();
+    });
+  }, [onDevice, applyPools, loadDashboard]);
 
   useFocusEffect(
     useCallback(() => {
@@ -200,16 +214,9 @@ export function DashboardScreen({ navigation }: Props) {
       } else {
         setAccountName("");
       }
-      setLoading(true);
+      if (!hasBalance) setLoading(true);
       void loadDashboard();
-      if (autoSync && !autoSyncRan.current) {
-        autoSyncRan.current = true;
-        void runSync();
-      }
-      return () => {
-        autoSyncRan.current = false;
-      };
-    }, [autoSync, loadDashboard, runSync, onDevice]),
+    }, [loadDashboard, onDevice, hasBalance]),
   );
 
   useEffect(() => {
@@ -229,11 +236,6 @@ export function DashboardScreen({ navigation }: Props) {
     return () => clearInterval(tick);
   }, [syncing, onDevice]);
 
-  useEffect(() => {
-    if (!onDevice) return;
-    applyPools(balance);
-  }, [onDevice, balance, applyPools]);
-
   const blocksBehind = walletStatus?.blocks_behind ?? null;
   const isSynced = blocksBehind === 0;
   const scannedHeight = walletStatus?.last_sync_height ?? null;
@@ -248,7 +250,9 @@ export function DashboardScreen({ navigation }: Props) {
     : blocksBehind === null
       ? "Tap to sync"
       : isSynced
-        ? "Synced"
+        ? autoSync
+          ? "Watching"
+          : "Synced"
         : syncPercent != null
           ? `${syncPercent}% synced`
           : `${blocksBehind} behind`;
@@ -271,7 +275,11 @@ export function DashboardScreen({ navigation }: Props) {
     ? (onDevice ? SYNC_PHASES_LWD : SYNC_PHASES_API)[syncPhase]
     : scannedHeight != null && chainTip != null
       ? `Height ${scannedHeight.toLocaleString()} / ${chainTip.toLocaleString()}`
-      : "Use Send and Receive tabs below";
+      : onDevice
+        ? autoSync
+          ? "Incoming ZEC is picked up automatically"
+          : "Receive shielded ZEC on the Receive tab"
+        : "Use Send and Receive tabs below";
 
   /** Cyberpunk panel only while syncing or catching up — hidden at 100% synced. */
   const showSyncPanel =
@@ -290,7 +298,7 @@ export function DashboardScreen({ navigation }: Props) {
         </View>
 
         <Text style={styles.balance}>
-          {loading && !syncing ? "—" : hideBalances ? "••••••••" : balance.toFixed(8)}
+          {!hasBalance && loading ? "—" : hideBalances ? "••••••••" : balance.toFixed(8)}
           <Text style={styles.zec}> ZEC</Text>
         </Text>
         {hideBalances ? null : usdPerZec != null && usdPerZec > 0 ? (

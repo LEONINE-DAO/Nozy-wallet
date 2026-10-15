@@ -36,7 +36,7 @@ export function AboutScreen({ navigation }: Props) {
         <Text style={styles.section}>How this app works</Text>
         <Text style={styles.body}>
           {onDevice
-            ? "Keys stay on this phone. Compact sync uses lightwalletd (default lwd.nozywallet.org). Set your own node in Settings if you run one."
+            ? "Keys stay on this phone. Sync uses the Nozy server (lwd.nozywallet.org) or a local node you run. Other servers, including zec.rocks, are not used."
             : "This build talks to a nozywallet-api you run. The API syncs with Zebra. Your phone sends requests to the API URL in Settings."}
         </Text>
 

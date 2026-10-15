@@ -23,6 +23,8 @@ export function ReceiveQr({ address }: { address: string }) {
       <Image
         source={{ uri }}
         style={styles.image}
+        resizeMode="contain"
+        fadeDuration={0}
         accessibilityLabel="Wallet receive address QR code"
       />
     </View>

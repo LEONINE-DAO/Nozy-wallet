@@ -28,7 +28,9 @@ pub use compact_sapling::{
     SaplingCompactTxSlice,
 };
 pub use store::LwdCompactStore;
-pub use submit::{get_latest_tree_state, get_tree_state, send_transaction, LwdTreeState};
+pub use submit::{
+    get_latest_tree_state, get_transaction, get_tree_state, send_transaction, LwdTreeState,
+};
 pub use sync::{
     chain_tip_height, compact_sync_progress_height, fetch_compact_scan_blocks,
     prune_stale_compact_cache, requested_start_height_for_tip_sync, sync_compact_range,

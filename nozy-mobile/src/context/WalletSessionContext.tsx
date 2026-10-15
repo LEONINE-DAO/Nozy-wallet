@@ -22,6 +22,7 @@ import {
   isRetiredNozyHostedApiUrl,
 } from "../lib/connectionPresets";
 import { lockOnDeviceWallet } from "nozy-wallet";
+import { deleteSecret, getSecret, setSecret } from "../lib/secretStorage";
 
 const PASSWORD_KEY = "nozy.session.password";
 const API_URL_KEY = "nozy.api.url";
@@ -76,9 +77,9 @@ export function WalletSessionProvider({
         storedAutoSync,
         storedBackend,
       ] = await Promise.all([
-        AsyncStorage.getItem(PASSWORD_KEY),
+        getSecret(PASSWORD_KEY),
         AsyncStorage.getItem(API_URL_KEY),
-        AsyncStorage.getItem(API_KEY_KEY),
+        getSecret(API_KEY_KEY),
         AsyncStorage.getItem(AUTO_SYNC_KEY),
         AsyncStorage.getItem(BACKEND_MODE_KEY),
       ]);
@@ -96,7 +97,7 @@ export function WalletSessionProvider({
         setApiUrlState(local);
         if (storedApiUrl && isRetiredNozyHostedApiUrl(storedApiUrl)) {
           await AsyncStorage.setItem(API_URL_KEY, local);
-          await AsyncStorage.removeItem(API_KEY_KEY);
+          await deleteSecret(API_KEY_KEY);
           setApiKeyHeader(null);
           setApiKeyState("");
         }
@@ -126,9 +127,9 @@ export function WalletSessionProvider({
     setPasswordState(value);
     setUnlocked(true);
     if (value) {
-      await AsyncStorage.setItem(PASSWORD_KEY, value);
+      await setSecret(PASSWORD_KEY, value);
     } else {
-      await AsyncStorage.removeItem(PASSWORD_KEY);
+      await deleteSecret(PASSWORD_KEY);
     }
   }, []);
 
@@ -142,7 +143,7 @@ export function WalletSessionProvider({
   const clearPassword = useCallback(async () => {
     setPasswordState("");
     setUnlocked(false);
-    await AsyncStorage.removeItem(PASSWORD_KEY);
+    await deleteSecret(PASSWORD_KEY);
     if (backendMode === "on_device" && isOnDeviceBackendAvailable()) {
       try {
         lockOnDeviceWallet();
@@ -164,9 +165,9 @@ export function WalletSessionProvider({
     setApiKeyHeader(trimmed || null);
     setApiKeyState(trimmed);
     if (trimmed) {
-      await AsyncStorage.setItem(API_KEY_KEY, trimmed);
+      await setSecret(API_KEY_KEY, trimmed);
     } else {
-      await AsyncStorage.removeItem(API_KEY_KEY);
+      await deleteSecret(API_KEY_KEY);
     }
   }, []);
 

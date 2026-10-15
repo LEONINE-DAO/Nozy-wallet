@@ -23,7 +23,7 @@ import {
   finalizerCrowdLabel,
   finalizerDisplayName,
   indexScoreboard,
-  isValidFinalizerHex,
+  isFinalizerAddress,
   normalizeFinalizerHex,
   retargetRiskLabel,
   type AtRiskDelegation,
@@ -299,7 +299,7 @@ export function CrosslinkScreen({}: Props) {
           editable={!busy}
         />
         <Input
-          label="Finalizer (64 hex)"
+          label="Finalizer (zfinv1 address)"
           value={finalizer}
           onChangeText={(t) => setFinalizer(t.trim())}
           autoCapitalize="none"
@@ -335,17 +335,19 @@ export function CrosslinkScreen({}: Props) {
                 if (!Number.isFinite(amt) || amt <= 0) {
                   throw new Error("Amount must be a positive number");
                 }
-                if (!isValidFinalizerHex(finalizer)) {
-                  throw new Error("Finalizer must be 64 hex characters");
+                if (!isFinalizerAddress(finalizer)) {
+                  throw new Error(
+                    "Paste the finalizer's zfinv1 address. The 64-hex roster key is not accepted on v15.",
+                  );
                 }
                 const ok = await confirm(
                   "Stake",
-                  `Create a ${amt} cTAZ bond to ${shortHex(finalizer)}? Node wallet signs.`,
+                  `Create a ${amt} cTAZ bond to this zfinv1 address? Node wallet signs.`,
                 );
                 if (!ok) throw new Error("Cancelled");
                 const res = await api.crosslinkStake({
                   amount_ctaz: amt,
-                  finalizer: normalizeFinalizerHex(finalizer),
+                  finalizer: finalizer.trim(),
                   force,
                 });
                 return `${res.action} submitted`;
@@ -361,17 +363,19 @@ export function CrosslinkScreen({}: Props) {
             onPress={() =>
               void run("retarget", async () => {
                 if (!bondKey.trim()) throw new Error("Bond pk required");
-                if (!isValidFinalizerHex(finalizer)) {
-                  throw new Error("Finalizer must be 64 hex characters");
+                if (!isFinalizerAddress(finalizer)) {
+                  throw new Error(
+                    "Paste the finalizer's zfinv1 address. The 64-hex roster key is not accepted on v15.",
+                  );
                 }
                 const ok = await confirm(
                   "Retarget",
-                  `Move bond ${shortHex(bondKey)} to ${shortHex(finalizer)}? Allowed anytime.`,
+                  `Move bond ${shortHex(bondKey)} to this zfinv1 address? Allowed anytime.`,
                 );
                 if (!ok) throw new Error("Cancelled");
                 const res = await api.crosslinkRetarget({
                   bond: bondKey.trim(),
-                  finalizer: normalizeFinalizerHex(finalizer),
+                  finalizer: finalizer.trim(),
                 });
                 return `${res.action} submitted`;
               })

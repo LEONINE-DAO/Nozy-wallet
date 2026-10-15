@@ -38,7 +38,7 @@
 - Fixed build from `master` at or after `a72bc6e8`.
 
 ```powershell
-cd C:\Users\User\NozyWallet
+cd $env:USERPROFILE\NozyWallet
 git pull origin master
 cargo build --release
 cargo build --release -p nozywallet-api
@@ -55,7 +55,7 @@ cargo build --release -p nozywallet-api
 **Terminal 2 — API**
 
 ```powershell
-cd C:\Users\User\NozyWallet
+cd $env:USERPROFILE\NozyWallet
 .\RUN-API.bat
 # or: target\release\nozywallet-api.exe
 ```

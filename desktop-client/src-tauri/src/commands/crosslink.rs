@@ -4,7 +4,7 @@
 use crate::error::TauriError;
 use nozy::crosslink::{
     block_finality, bond_info, build_crosslink_client, ctaz_to_zat, fetch_doctor_report,
-    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_hex, roster,
+    fetch_guardian_snapshot, fetch_payout_claim, finality_tip, normalize_finalizer_address, roster,
     staking_action, staking_day_at, staking_positions, tx_finality, wallet_ufvk, DoctorReport,
     GuardianSnapshot, PayoutClaimPack, StakingAction, StakingPositions,
 };
@@ -197,7 +197,7 @@ pub async fn crosslink_stake(
 ) -> Result<CrosslinkActionResponse, TauriError> {
     ensure_staking_day(request.force).await?;
     let amount_zats = ctaz_to_zat(request.amount_ctaz).map_err(TauriError::from)?;
-    let target = normalize_finalizer_hex(&request.finalizer).map_err(TauriError::from)?;
+    let target = normalize_finalizer_address(&request.finalizer).map_err(TauriError::from)?;
     let action = StakingAction::CreateNewDelegationBond {
         amount_zats,
         target_finalizer: target.clone(),
@@ -262,7 +262,7 @@ pub struct CrosslinkRetargetRequest {
 pub async fn crosslink_retarget(
     request: CrosslinkRetargetRequest,
 ) -> Result<CrosslinkActionResponse, TauriError> {
-    let target = normalize_finalizer_hex(&request.finalizer).map_err(TauriError::from)?;
+    let target = normalize_finalizer_address(&request.finalizer).map_err(TauriError::from)?;
     let action = StakingAction::RetargetDelegationBond {
         bond_key: request.bond,
         target_finalizer: target,

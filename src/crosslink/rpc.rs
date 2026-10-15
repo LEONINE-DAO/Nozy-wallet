@@ -9,7 +9,9 @@ use super::types::{
     FinalizedTip, GuardianSnapshot, RawStakingPositions, RosterEntry, StakingAction,
     StakingPositions, WalletSyncStatus,
 };
-use super::{normalize_finalizer_hex, reverse_bond_pk_hex, staking_day_at};
+use super::{
+    ensure_power_of_ten_bond_zats, normalize_finalizer_address, reverse_bond_pk_hex, staking_day_at,
+};
 use crate::config::{BackendKind, WalletConfig};
 use crate::error::{NozyError, NozyResult};
 use crate::zebra_integration::ZebraClient;
@@ -248,6 +250,7 @@ fn parse_roster(value: &Value) -> Vec<RosterEntry> {
             let stake = stake_from_value(v).unwrap_or(0);
             entries.push(RosterEntry {
                 finalizer: k.clone(),
+                address: None,
                 stake_zat: stake,
                 share: 0.0,
             });
@@ -272,6 +275,7 @@ fn roster_entry_from_value(item: &Value) -> Option<RosterEntry> {
             let stake = stake_from_value(&pair[1])?;
             return Some(RosterEntry {
                 finalizer,
+                address: None,
                 stake_zat: stake,
                 share: 0.0,
             });
@@ -299,8 +303,17 @@ fn roster_entry_from_value(item: &Value) -> Option<RosterEntry> {
             .or_else(|| obj.get("voting_power"))
             .and_then(stake_from_value)
             .unwrap_or(0);
+        let address = obj
+            .get("finalizer_address")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|s| {
+                s.len() >= 16 && s.get(..6).is_some_and(|p| p.eq_ignore_ascii_case("zfinv1"))
+            })
+            .map(str::to_string);
         return Some(RosterEntry {
             finalizer,
+            address,
             stake_zat: stake,
             share: 0.0,
         });
@@ -369,16 +382,18 @@ pub async fn bond_info(client: &ZebraClient, pk_from_positions: &str) -> NozyRes
 pub async fn staking_action(client: &ZebraClient, action: &StakingAction) -> NozyResult<Value> {
     // Retarget / actions use pk as returned by wallet_staking_positions (not reversed).
     if let StakingAction::CreateNewDelegationBond {
-        target_finalizer, ..
+        amount_zats,
+        target_finalizer,
     } = action
     {
-        normalize_finalizer_hex(target_finalizer)?;
+        ensure_power_of_ten_bond_zats(*amount_zats)?;
+        normalize_finalizer_address(target_finalizer)?;
     }
     if let StakingAction::RetargetDelegationBond {
         target_finalizer, ..
     } = action
     {
-        normalize_finalizer_hex(target_finalizer)?;
+        normalize_finalizer_address(target_finalizer)?;
     }
 
     client
@@ -463,6 +478,21 @@ mod tests {
         let entries = parse_roster(&raw);
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].stake_zat, 1_000_000_000);
+        assert!(entries[0].address.is_none());
+    }
+
+    #[test]
+    fn parse_roster_keeps_zfin_address() {
+        let raw = json!([{
+            "pub_key": "abcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcabcd",
+            "voting_power": 10,
+            "finalizer_address": "zfinv1ExampleAddress_ok"
+        }]);
+        let entries = parse_roster(&raw);
+        assert_eq!(
+            entries[0].address.as_deref(),
+            Some("zfinv1ExampleAddress_ok")
+        );
     }
 
     #[test]

@@ -43,3 +43,7 @@ hyper = { version = "1", optional = true, default-features = false }
 
 [build-dependencies]
 tonic-prost-build = "0.14"
+
+[[example]]
+name = "tree_state_probe"
+required-features = ["lightwalletd"]

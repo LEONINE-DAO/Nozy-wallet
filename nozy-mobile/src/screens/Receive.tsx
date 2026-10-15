@@ -8,8 +8,9 @@ import { Card } from "../components/Card";
 import { PageHeader } from "../components/PageHeader";
 import { ReceiveQr } from "../components/ReceiveQr";
 import { useWalletSession } from "../context/WalletSessionContext";
+import { isOnDeviceBackendAvailable } from "../lib/walletBackend";
 import { api } from "../services/api";
-import { onDeviceReceiveAddress } from "../services/onDeviceWallet";
+import { onDeviceReceiveAddress, readCachedReceiveAddress } from "../services/onDeviceWallet";
 import { getActiveOnDeviceAccount } from "../services/onDeviceAccounts";
 import { colors, fontSize, spacing } from "../theme";
 
@@ -18,25 +19,62 @@ export function ReceiveScreen() {
   const [address, setAddress] = useState("");
   const [accountName, setAccountName] = useState("");
   const [copied, setCopied] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const load = useCallback(async () => {
     setError("");
+    setLoading(true);
     try {
-      if (backendMode === "on_device") {
-        const [res, account] = await Promise.all([
-          onDeviceReceiveAddress(),
-          getActiveOnDeviceAccount(),
-        ]);
-        setAddress(res.address);
-        setAccountName(account.name);
-        return;
+      if (backendMode === "on_device" || isOnDeviceBackendAvailable()) {
+        try {
+          const account = await getActiveOnDeviceAccount();
+          const cached = await readCachedReceiveAddress(account.index);
+          if (cached) {
+            setAddress(cached);
+            setAccountName(account.name);
+            return;
+          }
+          const res = await onDeviceReceiveAddress();
+          const next = (res.address ?? "").trim();
+          if (next) {
+            setAddress(next);
+            setAccountName(account.name);
+            return;
+          }
+          if (backendMode === "on_device") {
+            throw new Error("No receive address yet. Create or restore a wallet first.");
+          }
+        } catch (e) {
+          if (backendMode === "on_device") throw e;
+        }
       }
       setAccountName("");
-      const res = await api.generateAddress(password || undefined);
-      setAddress(res.address);
+      const res = await Promise.race([
+        api.generateAddress(password || undefined),
+        new Promise<never>((_, reject) => {
+          setTimeout(
+            () =>
+              reject(
+                new Error(
+                  "Could not reach the wallet. Create or restore a wallet on this phone, then reveal the address again.",
+                ),
+              ),
+            8000,
+          );
+        }),
+      ]);
+      const next = (res.address ?? "").trim();
+      if (!next) {
+        throw new Error("The wallet did not return a receive address.");
+      }
+      setAddress(next);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not load address");
+      const message = e instanceof Error ? e.message : "Could not load address";
+      setAddress("");
+      setError(message);
+    } finally {
+      setLoading(false);
     }
   }, [password, backendMode]);
 
@@ -75,21 +113,34 @@ export function ReceiveScreen() {
             </Text>
           ) : (
             <Text style={styles.empty}>
-              No address yet — unlock and sync your wallet.
+              {loading
+                ? "Revealing your unified address…"
+                : "Reveal your unified address to copy it or show a QR code."}
             </Text>
           )}
+          {address ? <ReceiveQr address={address} /> : null}
           <Button
-            label={copied ? "Copied!" : "Copy address"}
-            onPress={() => void copyAddress()}
-            disabled={!address}
+            label={
+              loading
+                ? "Revealing…"
+                : address
+                  ? copied
+                    ? "Copied!"
+                    : "Copy address"
+                  : "Reveal address"
+            }
+            onPress={() => {
+              if (address) void copyAddress();
+              else void load();
+            }}
+            disabled={loading}
+            loading={loading}
             variant={copied ? "secondary" : "primary"}
           />
-          {address ? <ReceiveQr address={address} /> : null}
         </Card>
 
         <Text style={styles.hint}>
-          After someone pays you, run a sync from Settings so the new note shows
-          in your balance.
+          Incoming ZEC shows up on Home on its own while the wallet is unlocked.
         </Text>
         {error ? <Text style={styles.error}>{error}</Text> : null}
       </ScrollView>
@@ -101,10 +152,10 @@ const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: colors.background },
   container: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl },
   address: {
-    color: colors.textMuted,
-    fontSize: 11,
+    color: colors.text,
+    fontSize: fontSize.sm,
     fontFamily: "monospace",
-    lineHeight: 18,
+    lineHeight: 20,
     marginBottom: spacing.md,
   },
   empty: {

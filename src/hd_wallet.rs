@@ -77,6 +77,10 @@ pub struct OrchardDecryptionResult {
     pub orchard_incremental_witness_hex: Option<String>,
     #[serde(default)]
     pub orchard_witness_tip_height: Option<u32>,
+    /// ZIP-302 memo text. `None` means the full ciphertext was not available yet.
+    /// `Some("")` is a decrypted empty memo.
+    #[serde(default)]
+    pub memo: Option<String>,
 }
 
 impl HDWallet {
@@ -335,6 +339,18 @@ impl HDWallet {
                 }
             };
             if let Some((note, note_address)) = decrypted {
+                let memo = crate::received_memo::try_decrypt_full_action(
+                    pool,
+                    &ivk,
+                    &action.nullifier,
+                    &action.cmx,
+                    &action.ephemeral_key,
+                    &action.encrypted_note,
+                )
+                .map(|(_, _, stored)| {
+                    crate::received_memo::memo_note_bytes_to_history_string(&stored)
+                        .unwrap_or_default()
+                });
                 return Ok(Some(OrchardDecryptionResult {
                     value: note.value().inner(),
                     address: format!("{:?}", note_address),
@@ -347,6 +363,7 @@ impl HDWallet {
                     txid: txid.to_string(),
                     orchard_incremental_witness_hex: None,
                     orchard_witness_tip_height: None,
+                    memo,
                 }));
             }
         }
@@ -408,6 +425,16 @@ impl HDWallet {
 
         match try_compact_note_decryption(&domain, &prepared_ivk, &compact_action) {
             Some((note, note_address)) => {
+                let memo = crate::received_memo::try_decrypt_full_action(
+                    ShieldedPool::Orchard,
+                    &ivk,
+                    &action.nullifier,
+                    &action.cmx,
+                    &action.ephemeral_key,
+                    &action.encrypted_note,
+                )
+                .map(|(_, _, memo)| memo)
+                .unwrap_or_default();
                 let orchard_note = crate::notes::OrchardNote {
                     note: note.clone(),
                     value: note.value().inner(),
@@ -416,7 +443,7 @@ impl HDWallet {
                     block_height,
                     txid: txid.to_string(),
                     spent: false,
-                    memo: Vec::new(),
+                    memo,
                 };
                 Ok(Some(orchard_note))
             }

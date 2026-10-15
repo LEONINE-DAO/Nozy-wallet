@@ -46,6 +46,7 @@ pub fn tree_state_from_zebra_json(network: &str, result: &Value) -> IndexerResul
         time,
         sapling_tree: pool_final_state_hex(result, "sapling"),
         orchard_tree: pool_final_state_hex(result, "orchard"),
+        ironwood_tree: pool_final_state_hex(result, "ironwood"),
     })
 }
 
