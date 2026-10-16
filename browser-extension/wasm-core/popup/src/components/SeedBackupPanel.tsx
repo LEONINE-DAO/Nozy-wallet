@@ -9,7 +9,7 @@ import { Button, Callout, Card, Hint, SectionTitle } from "./ui";
 
 type SeedBackupPanelProps = {
   mnemonic: string;
-  onConfirmed: () => void;
+  onConfirmed: (answers: Record<number, string>) => void;
 };
 
 /**
@@ -56,7 +56,7 @@ export function SeedBackupPanel({ mnemonic, onConfirmed }: SeedBackupPanelProps)
       return;
     }
     setError(null);
-    onConfirmed();
+    onConfirmed(answers);
   };
 
   if (step === "verify" && quiz) {

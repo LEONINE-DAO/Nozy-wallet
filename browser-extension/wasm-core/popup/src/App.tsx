@@ -16,6 +16,7 @@ import { NetworkPrivacyPanel, SendEgressBadge } from "./components/NetworkPrivac
 import { BrowserView, NymVpnPromoCard } from "./components/BrowserView";
 import { NodeConnectCard } from "./components/NodeConnectCard";
 import { SeedBackupPanel } from "./components/SeedBackupPanel";
+import { AccountsCard } from "./components/AccountsCard";
 import { SeedRevealCard } from "./components/SeedRevealCard";
 import { VoteView } from "./components/VoteView";
 import {
@@ -140,11 +141,19 @@ function WelcomeView({
         </div>
         <SeedBackupPanel
           mnemonic={pendingBackupMnemonic}
-          onConfirmed={() => {
-            setPendingBackupMnemonic(null);
-            onCreated();
+          onConfirmed={(answers) => {
+            void extensionApi
+              .walletConfirmSeedBackup(answers)
+              .then(() => {
+                setPendingBackupMnemonic(null);
+                onCreated();
+              })
+              .catch((e: unknown) => {
+                setError(e instanceof Error ? e.message : "Could not confirm the backup.");
+              });
           }}
         />
+        {error && <Callout tone="danger">{error}</Callout>}
       </Screen>
     );
   }
@@ -185,7 +194,7 @@ function WelcomeView({
           />
           <Input
             label="Birthday height (optional)"
-            hint="Leave blank to use the current chain tip as this wallet's birthday. Enter 3050000 only for the original Desktop wallet created at that height."
+            hint="Leave blank to scan from shielded history so existing funds are found. Enter a block height only if you know this wallet's birthday."
             mono
             placeholder="3050000"
             value={restoreBirthday}
@@ -1035,9 +1044,12 @@ function ReceiveView({ status }: { status: WalletStatus | null }) {
         <CopyButton value={address} label="Copy address" fullWidth variant="primary" />
       </Card>
 
-      <Callout>
-        New payments show up in your balance automatically while this wallet is unlocked. This
-        address must match Nozy Desktop Wallet 1 (same recovery phrase).
+        <Callout>
+        New payments show up in your balance automatically while this wallet is unlocked.
+        {status?.activeAccount?.name
+          ? ` This address is ${status.activeAccount.name} (account ${status.activeAccount.index}).`
+          : " This address is account 0."}{" "}
+        Account 0 matches Nozy Desktop Wallet 1 when you use the same recovery phrase.
       </Callout>
     </Screen>
   );
@@ -1692,6 +1704,12 @@ function SettingsView({
 }) {
   const [msg, setMsg] = useState<string | null>(null);
   const [autoLockMin, setAutoLockMin] = useState("15");
+
+  useEffect(() => {
+    if (typeof status?.autoLockMs === "number" && status.autoLockMs >= 60_000) {
+      setAutoLockMin(String(Math.round(status.autoLockMs / 60_000)));
+    }
+  }, [status?.autoLockMs]);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
   return (
@@ -1714,6 +1732,8 @@ function SettingsView({
       <NetworkPrivacyPanel />
 
       <SeedRevealCard />
+
+      <AccountsCard unlocked={Boolean(status?.unlocked)} onChanged={onWalletMetaChanged} />
 
       <ConnectedSitesCard />
 
@@ -1913,6 +1933,49 @@ function ConnectedSitesCard() {
   );
 }
 
+function SeedBackupGate({ onConfirmed }: { onConfirmed: () => void }) {
+  const [mnemonic, setMnemonic] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    extensionApi
+      .walletPendingBackupPhrase()
+      .then((result) => {
+        if (!cancelled) setMnemonic(result.mnemonic);
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) setError(e instanceof Error ? e.message : "Could not open the recovery phrase.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <Screen>
+      <div className="pt-1 text-center">
+        <img className="nw-hero-logo nw-hero-logo--welcome" src="./logo.jpg" alt="Nozy Wallet" />
+        <h1 className="nw-title mt-3">Backup your wallet</h1>
+        <Hint className="mt-1.5">Save the phrase, then confirm a few word numbers before using the wallet.</Hint>
+      </div>
+      {error && <Callout tone="danger">{error}</Callout>}
+      {mnemonic ? (
+        <SeedBackupPanel
+          mnemonic={mnemonic}
+          onConfirmed={(answers) => {
+            void extensionApi.walletConfirmSeedBackup(answers).then(onConfirmed).catch((e: unknown) => {
+              setError(e instanceof Error ? e.message : "Could not confirm the backup.");
+            });
+          }}
+        />
+      ) : !error ? (
+        <Hint className="text-center">Loading recovery phrase…</Hint>
+      ) : null}
+    </Screen>
+  );
+}
+
 function ChainSyncPopup({
   scan,
   onOpenSync
@@ -1956,6 +2019,7 @@ export function App() {
   /** Orchard block scan progress; polled app-wide so it keeps updating when you leave Receive. */
   const [scanProgress, setScanProgress] = useState<WalletScanProgressResult | null>(null);
   const restoreRewindKicked = useRef(false);
+  const activitySyncKey = useRef("");
   const endpoint = useMemo(() => status?.rpcEndpoint || DEFAULT_RPC, [status]);
 
   const refresh = async () => {
@@ -2012,7 +2076,19 @@ export function App() {
     async function tick() {
       try {
         const p = await extensionApi.walletScanProgress();
-        if (!cancelled) setScanProgress(p);
+        if (cancelled) return;
+        if (p.sessionUnlocked === false) {
+          setStatus((current) => (current ? { ...current, unlocked: false } : current));
+          setView("unlock");
+          return;
+        }
+        setScanProgress(p);
+        const activityKey = `${p.discoveredNotes ?? 0}:${p.totalBalanceZats ?? 0}:${p.status}`;
+        if (activitySyncKey.current !== activityKey) {
+          activitySyncKey.current = activityKey;
+          const txState = await extensionApi.walletGetTransactions();
+          if (!cancelled) setTxs(Array.isArray(txState.txs) ? txState.txs : []);
+        }
         if (
           !cancelled &&
           !restoreRewindKicked.current &&
@@ -2048,7 +2124,19 @@ export function App() {
     const fast = setInterval(async () => {
       try {
         const p = await extensionApi.walletScanProgress();
-        if (!cancelled) setScanProgress(p);
+        if (cancelled) return;
+        if (p.sessionUnlocked === false) {
+          setStatus((current) => (current ? { ...current, unlocked: false } : current));
+          setView("unlock");
+          return;
+        }
+        setScanProgress(p);
+        const activityKey = `${p.discoveredNotes ?? 0}:${p.totalBalanceZats ?? 0}:${p.status}`;
+        if (activitySyncKey.current !== activityKey) {
+          activitySyncKey.current = activityKey;
+          const txState = await extensionApi.walletGetTransactions();
+          if (!cancelled) setTxs(Array.isArray(txState.txs) ? txState.txs : []);
+        }
       } catch {
         /* ignore transient poll errors */
       }
@@ -2059,7 +2147,9 @@ export function App() {
     };
   }, [status?.unlocked, scanProgress?.status]);
 
-  const showAppBar = view !== "welcome" && view !== "unlock";
+  const needsSeedBackup = Boolean(status?.unlocked && status.seedBackupConfirmed === false);
+
+  const showAppBar = view !== "welcome" && view !== "unlock" && !needsSeedBackup;
   const pageUnlocked = isFullPage() && Boolean(status?.unlocked);
 
   const lockWallet = async () => {
@@ -2169,17 +2259,29 @@ export function App() {
           onLock={lockWallet}
           onSetAutoLock={async (ms) => {
             await extensionApi.walletSetSessionPolicy(ms);
+            setStatus((current) => (current ? { ...current, autoLockMs: ms } : current));
           }}
         />
       )}
     </>
   );
 
+  if (needsSeedBackup) {
+    return (
+      <SeedBackupGate
+        onConfirmed={() => {
+          refresh().catch(console.error);
+        }}
+      />
+    );
+  }
+
   if (pageUnlocked) {
     return (
       <FullWalletShell
         view={view}
         address={status?.address ?? null}
+        accountName={status?.activeAccount?.name}
         onNavigate={(next) => {
           setMoreOpen(false);
           setView(next);

@@ -2,6 +2,17 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 2.0.2 — 2026-10-16 — Sweet Chili
+
+### Fixed
+- Activity updates when a deposit is found, instead of staying on “No transactions yet” after the balance changes.
+- Restoring with a blank birthday scans from shielded history, and an empty tip-height restore is rewound so existing funds can be found.
+- A new wallet stays on the recovery-phrase quiz until the background checks the words. Send, sign, and prove stay blocked until that check passes.
+- Auto-lock survives service-worker sleep. Background polls and a long sync no longer reset the timer.
+
+### Added
+- Up to 21 accounts on one recovery phrase. The receive address follows the active account.
+
 ## 2.0.0 — 2026-09-30
 
 ### Fixed

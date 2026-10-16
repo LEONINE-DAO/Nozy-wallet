@@ -188,6 +188,12 @@ pub enum Commands {
         memo: Option<String>,
     },
 
+    #[command(about = "Mint, list, cancel, or redeem a shielded gift card from this wallet")]
+    GiftCard {
+        #[command(subcommand)]
+        command: GiftCardCommand,
+    },
+
     #[command(about = "Display wallet information including addresses and network")]
     Info,
 
@@ -611,6 +617,58 @@ pub enum IronwoodCommand {
             help = "Plan the split and build the transaction without broadcasting"
         )]
         dry_run: bool,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GiftCardCommand {
+    #[command(about = "Pay a new gift card from this wallet and print the claim code once")]
+    Buy {
+        #[arg(long, short = 'a', help = "Amount to put on the card in ZEC")]
+        amount: f64,
+        #[arg(
+            long,
+            help = "Optional label stored with the card. The claim code is not stored"
+        )]
+        label: Option<String>,
+        #[arg(
+            long,
+            help = "Override Zebra RPC URL (overrides config and global --zebra-url)"
+        )]
+        zebra_url: Option<String>,
+    },
+    #[command(about = "List gift cards in this wallet. Claim codes are not stored")]
+    List {
+        #[arg(
+            long,
+            default_value_t = 20,
+            help = "Maximum cards to print, newest first"
+        )]
+        limit: usize,
+    },
+    #[command(about = "Show one gift card by id")]
+    Get {
+        #[arg(long, help = "Gift card id")]
+        id: String,
+    },
+    #[command(
+        about = "Cancel an unclaimed card record. A paid card must be redeemed; cancel does not return that ZEC"
+    )]
+    Cancel {
+        #[arg(long, help = "Gift card id")]
+        id: String,
+    },
+    #[command(
+        about = "Sweep a claim code into this wallet. The network fee comes out of the card"
+    )]
+    Redeem {
+        #[arg(long, help = "Claim code (NZGC-…)")]
+        code: String,
+        #[arg(
+            long,
+            help = "Override Zebra RPC URL (overrides config and global --zebra-url)"
+        )]
+        zebra_url: Option<String>,
     },
 }
 
@@ -2937,6 +2995,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     );
                 }
             }
+        }
+
+        Commands::GiftCard { command } => {
+            run_gift_card(command, &mut config, cli.json).await?;
         }
 
         Commands::AddressBook { command } => {
@@ -5354,6 +5416,124 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
     Ok(())
 }
 
+fn gift_status_name(status: nozy::gift_cards::GiftCardStatus) -> &'static str {
+    use nozy::gift_cards::GiftCardStatus::{Cancelled, Funded, Redeemed, Redeeming, Unfunded};
+    match status {
+        Unfunded => "unfunded",
+        Funded => "funded",
+        Redeeming => "redeeming",
+        Redeemed => "redeemed",
+        Cancelled => "cancelled",
+    }
+}
+
+fn print_gift_card(card: &nozy::gift_cards::GiftCard) {
+    println!("Gift card {}", card.gift_id);
+    println!("   Status: {}", gift_status_name(card.status));
+    println!("   Amount: {:.8} ZEC", card.amount_zec);
+    if let Some(label) = &card.label {
+        println!("   Label: {label}");
+    }
+    println!("   Address: {}", card.payment_address);
+    if let Some(txid) = &card.funding_txid {
+        println!("   Funding tx: {txid}");
+    }
+    if let Some(txid) = &card.redeem_txid {
+        println!("   Redeem tx: {txid}");
+    }
+    if let Some(zats) = card.payout_zatoshis {
+        println!("   Payout: {:.8} ZEC", zats as f64 / 100_000_000.0);
+    }
+}
+
+fn print_gift_json<T: serde::Serialize>(value: &T) -> NozyResult<()> {
+    let text = serde_json::to_string_pretty(value)
+        .map_err(|e| NozyError::InvalidOperation(format!("JSON encode failed: {e}")))?;
+    println!("{text}");
+    Ok(())
+}
+
+async fn run_gift_card(
+    command: GiftCardCommand,
+    config: &mut nozy::WalletConfig,
+    as_json: bool,
+) -> NozyResult<()> {
+    match command {
+        GiftCardCommand::Buy {
+            amount,
+            label,
+            zebra_url,
+        } => {
+            if let Some(url) = zebra_url {
+                config.zebra_url = url;
+            }
+            let (wallet, _storage) = load_wallet().await?;
+            if !as_json {
+                println!("Paying {amount:.8} ZEC to a new gift-card address...");
+            }
+            let created =
+                nozy::gift_cards::buy_gift_card(&wallet, amount, label, &config.zebra_url).await?;
+            if as_json {
+                print_gift_json(&created)?;
+            } else {
+                print_gift_card(&created.card);
+                println!();
+                println!("Claim code (shown once, not stored):");
+                println!("{}", created.claim_code);
+                println!("Give this code to the recipient. They redeem it in their own wallet.");
+            }
+        }
+        GiftCardCommand::List { limit } => {
+            let cards = nozy::gift_cards::list_gift_cards(limit)?;
+            if as_json {
+                print_gift_json(&serde_json::json!({ "gift_cards": cards }))?;
+            } else if cards.is_empty() {
+                println!("No gift cards in this wallet.");
+            } else {
+                println!("Gift cards ({})", cards.len());
+                for card in &cards {
+                    println!();
+                    print_gift_card(card);
+                }
+            }
+        }
+        GiftCardCommand::Get { id } => {
+            let card = nozy::gift_cards::get_gift_card(&id)?
+                .ok_or_else(|| NozyError::InvalidOperation(format!("Gift card {id} not found")))?;
+            if as_json {
+                print_gift_json(&card)?;
+            } else {
+                print_gift_card(&card);
+            }
+        }
+        GiftCardCommand::Cancel { id } => {
+            let card = nozy::gift_cards::cancel_gift_card(&id)?;
+            if as_json {
+                print_gift_json(&card)?;
+            } else {
+                print_gift_card(&card);
+            }
+        }
+        GiftCardCommand::Redeem { code, zebra_url } => {
+            if let Some(url) = zebra_url {
+                config.zebra_url = url;
+            }
+            let (wallet, _storage) = load_wallet().await?;
+            if !as_json {
+                println!("Redeeming gift card into this wallet...");
+            }
+            let card =
+                nozy::gift_cards::redeem_gift_card(&wallet, &code, &config.zebra_url).await?;
+            if as_json {
+                print_gift_json(&card)?;
+            } else {
+                print_gift_card(&card);
+            }
+        }
+    }
+    Ok(())
+}
+
 fn maybe_print_cli_art(cli: &Cli) {
     if !nozy::cli_art::should_print_art(cli.quiet, cli.json) {
         return;
@@ -5370,6 +5550,52 @@ fn maybe_print_cli_art(cli: &Cli) {
             command: ZsaCommand::Balance { json },
         } if *json => {}
         _ => nozy::cli_art::print_startup_logo(),
+    }
+}
+
+#[cfg(test)]
+mod gift_card_cli_tests {
+    use super::{Cli, Commands, GiftCardCommand};
+    use clap::Parser;
+
+    #[test]
+    fn gift_card_buy_parses_amount_and_label() {
+        let cli = Cli::try_parse_from([
+            "nozy",
+            "--json",
+            "gift-card",
+            "buy",
+            "--amount",
+            "0.01",
+            "--label",
+            "quest",
+        ])
+        .expect("gift-card buy should parse");
+        assert!(cli.json);
+        match cli.command {
+            Commands::GiftCard {
+                command: GiftCardCommand::Buy { amount, label, .. },
+            } => {
+                assert!((amount - 0.01).abs() < f64::EPSILON);
+                assert_eq!(label.as_deref(), Some("quest"));
+            }
+            _ => panic!("expected gift-card buy"),
+        }
+    }
+
+    #[test]
+    fn gift_card_redeem_parses_claim_code() {
+        let cli = Cli::try_parse_from(["nozy", "gift-card", "redeem", "--code", "NZGC-TEST"])
+            .expect("gift-card redeem should parse");
+        match cli.command {
+            Commands::GiftCard {
+                command: GiftCardCommand::Redeem { code, zebra_url },
+            } => {
+                assert_eq!(code, "NZGC-TEST");
+                assert!(zebra_url.is_none());
+            }
+            _ => panic!("expected gift-card redeem"),
+        }
     }
 }
 

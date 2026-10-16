@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 2.0.2 — 2026-10-16 — Sweet Chili
+
+Deposits show in Activity, a blank restore scans existing shielded history, the recovery-phrase quiz is required before send, and auto-lock is no longer reset by background polls. One seed can hold up to 21 accounts. Same food name as 2.0.0.
+
 ## 2.0.0 — 2026-09-30
 
 Service worker starts again (static WASM import). Popup shows NozyWallet versus a local node. Crosslink is coming soon on testnet.

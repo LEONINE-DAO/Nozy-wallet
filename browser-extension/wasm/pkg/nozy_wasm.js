@@ -267,9 +267,10 @@ export function nozy_version_display() {
  * @param {string} wallet_address
  * @param {number} block_height
  * @param {string} block_json
+ * @param {string} account_indices_json
  * @returns {any}
  */
-export function orchard_scan_tracker_apply_block(tracker_state_json, mnemonic_str, wallet_address, block_height, block_json) {
+export function orchard_scan_tracker_apply_block(tracker_state_json, mnemonic_str, wallet_address, block_height, block_json, account_indices_json) {
     const ptr0 = passStringToWasm0(tracker_state_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
     const ptr1 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
@@ -278,7 +279,9 @@ export function orchard_scan_tracker_apply_block(tracker_state_json, mnemonic_st
     const len2 = WASM_VECTOR_LEN;
     const ptr3 = passStringToWasm0(block_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len3 = WASM_VECTOR_LEN;
-    const ret = wasm.orchard_scan_tracker_apply_block(ptr0, len0, ptr1, len1, ptr2, len2, block_height, ptr3, len3);
+    const ptr4 = passStringToWasm0(account_indices_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len4 = WASM_VECTOR_LEN;
+    const ret = wasm.orchard_scan_tracker_apply_block(ptr0, len0, ptr1, len1, ptr2, len2, block_height, ptr3, len3, ptr4, len4);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }
