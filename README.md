@@ -4,7 +4,7 @@ Orchard-first Zcash wallet for **Zebrad**. This repository is the wallet and its
 
 You run [Zebra](https://github.com/ZcashFoundation/zebra) or [Zakura](https://zakura.com/) for JSON-RPC and the [Nozy Sync Engine](nozy-sync-engine/README.md) (or lightwalletd) for compact blocks. Keys stay on the device. `lwd.nozywallet.org` is public compact-sync only. `api.nozywallet.org` is a single operator companion, not a multi-user hosted wallet.
 
-**Latest release:** [v2.4.8 — Mango Habanero (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.8) · Desktop [Hot Lemon Pepper Sprinkles beta.8](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.8) · Extension [Sweet Chili 2.0.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.1) · Mobile [Lemon Pepper 1.0.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/mobile-v1.0.1).
+**Latest release:** [v2.4.8 — Mango Habanero (CLI)](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.8) · Desktop [Hot Lemon Pepper Sprinkles beta.8](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.8) · Extension [Sweet Chili 2.0.2](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.2) · Mobile [Lemon Pepper 1.0.1](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/mobile-v1.0.1).
 
 ## What it does
 

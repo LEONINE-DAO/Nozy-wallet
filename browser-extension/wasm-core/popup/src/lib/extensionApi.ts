@@ -10,6 +10,18 @@ type ApiResponse<T> = {
   error: { message: string } | null;
 };
 
+export type WalletAccount = {
+  index: number;
+  name: string;
+};
+
+export type WalletAccountList = {
+  accounts: WalletAccount[];
+  activeIndex: number;
+  activeAccount: WalletAccount;
+  address?: string | null;
+};
+
 export type WalletStatus = {
   exists: boolean;
   unlocked: boolean;
@@ -19,6 +31,11 @@ export type WalletStatus = {
   orchardBirthdayHeight: number | null;
   /** false = created in extension; true = restored; null/omitted = legacy vault. */
   restoredFromPhrase?: boolean | null;
+  accounts?: WalletAccount[];
+  activeAccount?: WalletAccount | null;
+  /** False only for a new wallet whose phrase quiz is not finished. */
+  seedBackupConfirmed?: boolean;
+  autoLockMs?: number;
 };
 
 export type TxStateEntry = {
@@ -74,6 +91,8 @@ export type WalletScanProgressResult = {
   elapsed?: number;
   /** Set when scan is waiting for session re-hydration after SW restart. */
   sessionWaitingSince?: number | null;
+  /** False after the background auto-lock fires. */
+  sessionUnlocked?: boolean;
 };
 
 export type SendEgressKind =
@@ -244,6 +263,13 @@ export const extensionApi = {
       method: "wallet_reveal_mnemonic",
       params: { password }
     }),
+  walletConfirmSeedBackup: (answers: Record<number, string>) =>
+    sendMessage<{ seedBackupConfirmed: boolean }>({
+      method: "wallet_confirm_seed_backup",
+      params: { answers }
+    }),
+  walletPendingBackupPhrase: () =>
+    sendMessage<{ mnemonic: string }>({ method: "wallet_pending_backup_phrase" }),
   walletReset: () => sendMessage<{ exists: boolean }>({ method: "wallet_reset" }),
   walletSetBirthdayHeight: (height: number) =>
     sendMessage<{ orchardBirthdayHeight: number }>({
@@ -257,6 +283,22 @@ export const extensionApi = {
     sendMessage<string>({
       method: "wallet_generate_address",
       params: { account, index }
+    }),
+  walletListAccounts: () => sendMessage<WalletAccountList>({ method: "wallet_list_accounts" }),
+  walletAddAccount: (name?: string) =>
+    sendMessage<WalletAccountList>({
+      method: "wallet_add_account",
+      params: { name }
+    }),
+  walletRenameAccount: (index: number, name: string) =>
+    sendMessage<WalletAccountList>({
+      method: "wallet_rename_account",
+      params: { index, name }
+    }),
+  walletSetActiveAccount: (index: number) =>
+    sendMessage<WalletAccountList>({
+      method: "wallet_set_active_account",
+      params: { index }
     }),
   walletSignMessage: (message: string) =>
     sendMessage<string>({

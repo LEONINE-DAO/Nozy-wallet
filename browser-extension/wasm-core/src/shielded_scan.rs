@@ -114,10 +114,29 @@ fn tx_actions(tx: &Value, pool: ShieldedPool) -> Option<&Vec<Value>> {
     }
 }
 
-fn note_to_json(note: &OrchardDecryptionResult, pool: ShieldedPool) -> Value {
+fn parse_account_indices(raw: &str) -> Vec<u32> {
+    let mut out = Vec::new();
+    if let Ok(values) = serde_json::from_str::<Vec<u64>>(raw) {
+        for value in values {
+            if value <= 20 {
+                let account = value as u32;
+                if !out.contains(&account) {
+                    out.push(account);
+                }
+            }
+        }
+    }
+    if !out.contains(&0) {
+        out.insert(0, 0);
+    }
+    out
+}
+
+fn note_to_json(note: &OrchardDecryptionResult, pool: ShieldedPool, account: u32) -> Value {
     let mut v = serde_json::to_value(note).unwrap_or(json!({}));
     if let Some(obj) = v.as_object_mut() {
         obj.insert("pool".to_string(), json!(pool.as_str()));
+        obj.insert("account".to_string(), json!(account));
         if pool == ShieldedPool::Ironwood {
             if let Some(w) = obj.get("orchard_incremental_witness_hex").cloned() {
                 obj.insert("ironwood_incremental_witness_hex".to_string(), w);
@@ -174,7 +193,7 @@ impl ScanDebug {
 fn apply_pool_actions(
     tracker: &mut OrchardWitnessTracker,
     wallet: &HDWallet,
-    wallet_address: &str,
+    accounts: &[u32],
     block_height: u32,
     txid: &str,
     actions: &[Value],
@@ -198,17 +217,18 @@ fn apply_pool_actions(
         let cmx_node = merkle_hash_from_cmx_bytes(&compact.cmx)?;
         tracker.append_cmx(cmx_node)?;
 
-        let decrypted = wallet
-            .decrypt_orchard_action_compact(
-                &compact,
-                wallet_address,
-                block_height,
-                txid,
-                nozy_pool(pool),
-            )
-            .map_err(|e| format!("{:?}", e))?;
-        let decrypted = match decrypted {
-            Some(note) => {
+        let mut decrypted: Option<(OrchardDecryptionResult, u32)> = None;
+        for account in accounts {
+            let hit = wallet
+                .decrypt_orchard_action_compact_for_account(
+                    &compact,
+                    *account,
+                    block_height,
+                    txid,
+                    nozy_pool(pool),
+                )
+                .map_err(|e| format!("{:?}", e))?;
+            if let Some(note) = hit {
                 match pool {
                     ShieldedPool::Orchard => {
                         debug.ow_decrypt_ok = debug.ow_decrypt_ok.saturating_add(1)
@@ -217,39 +237,40 @@ fn apply_pool_actions(
                         debug.iw_decrypt_ok = debug.iw_decrypt_ok.saturating_add(1)
                     }
                 }
-                Some(note)
+                decrypted = Some((note, *account));
+                break;
             }
-            None => {
-                let other = wallet
-                    .decrypt_orchard_action_compact(
-                        &compact,
-                        wallet_address,
-                        block_height,
-                        txid,
-                        nozy_pool(other_pool),
-                    )
-                    .map_err(|e| format!("{:?}", e))?;
-                if other.is_some() {
-                    match pool {
-                        ShieldedPool::Orchard => {
-                            debug.ow_other_domain = debug.ow_other_domain.saturating_add(1)
-                        }
-                        ShieldedPool::Ironwood => {
-                            debug.iw_other_domain = debug.iw_other_domain.saturating_add(1)
-                        }
+        }
+        if decrypted.is_none() {
+            let probe = accounts.first().copied().unwrap_or(0);
+            let other = wallet
+                .decrypt_orchard_action_compact_for_account(
+                    &compact,
+                    probe,
+                    block_height,
+                    txid,
+                    nozy_pool(other_pool),
+                )
+                .map_err(|e| format!("{:?}", e))?;
+            if other.is_some() {
+                match pool {
+                    ShieldedPool::Orchard => {
+                        debug.ow_other_domain = debug.ow_other_domain.saturating_add(1)
+                    }
+                    ShieldedPool::Ironwood => {
+                        debug.iw_other_domain = debug.iw_other_domain.saturating_add(1)
                     }
                 }
-                None
             }
-        };
-        if let Some(mut note) = decrypted {
+        }
+        if let Some((mut note, account)) = decrypted {
             tracker.register_discovered_note(note.nullifier)?;
             let wh = tracker
                 .serialized_witness_for_nullifier(&note.nullifier)?
                 .ok_or_else(|| "witness missing after register".to_string())?;
             note.orchard_incremental_witness_hex = Some(hex::encode(wh));
             note.orchard_witness_tip_height = Some(block_height);
-            discovered.push(note_to_json(&note, pool));
+            discovered.push(note_to_json(&note, pool, account));
         }
     }
     Ok(discovered)
@@ -259,12 +280,14 @@ fn apply_pool_actions(
 pub fn shielded_scan_tracker_apply_block_json(
     tracker_state_json: &str,
     mnemonic_str: &str,
-    wallet_address: &str,
+    _wallet_address: &str,
     block_height: u32,
     block_json: &str,
+    account_indices_json: &str,
 ) -> Result<String, String> {
     let mut trackers = TrackerPair::deserialize(tracker_state_json)?;
     let wallet = HDWallet::from_mnemonic(mnemonic_str).map_err(|e| e.to_string())?;
+    let accounts = parse_account_indices(account_indices_json);
     let block: Value =
         serde_json::from_str(block_json).map_err(|e| format!("block json: {}", e))?;
 
@@ -291,7 +314,7 @@ pub fn shielded_scan_tracker_apply_block_json(
                 discovered.extend(apply_pool_actions(
                     &mut trackers.orchard,
                     &wallet,
-                    wallet_address,
+                    &accounts,
                     block_height,
                     &txid,
                     actions,
@@ -306,7 +329,7 @@ pub fn shielded_scan_tracker_apply_block_json(
                 discovered.extend(apply_pool_actions(
                     &mut trackers.ironwood,
                     &wallet,
-                    wallet_address,
+                    &accounts,
                     block_height,
                     &txid,
                     actions,
@@ -372,6 +395,7 @@ pub fn orchard_scan_tracker_apply_block(
     wallet_address: &str,
     block_height: u32,
     block_json: &str,
+    account_indices_json: &str,
 ) -> Result<JsValue, JsError> {
     let s = shielded_scan_tracker_apply_block_json(
         tracker_state_json,
@@ -379,6 +403,7 @@ pub fn orchard_scan_tracker_apply_block(
         wallet_address,
         block_height,
         block_json,
+        account_indices_json,
     )
     .map_err(|e| JsError::new(&e))?;
     let v: Value = serde_json::from_str(&s).map_err(|e| JsError::new(&format!("json: {}", e)))?;

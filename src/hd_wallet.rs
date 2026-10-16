@@ -293,6 +293,20 @@ impl HDWallet {
         txid: &str,
         pool: ShieldedPool,
     ) -> NozyResult<Option<OrchardDecryptionResult>> {
+        // Keep the address parse so a bad UA still fails before trial decryption.
+        let _ = self.derive_incoming_viewing_key_for_address(address)?;
+        self.decrypt_orchard_action_compact_for_account(action, 0, block_height, txid, pool)
+    }
+
+    /// Trial-decrypt one compact action with ZIP-32 `account` (external and internal).
+    pub fn decrypt_orchard_action_compact_for_account(
+        &self,
+        action: &OrchardActionCompactData,
+        account: u32,
+        block_height: u32,
+        txid: &str,
+        pool: ShieldedPool,
+    ) -> NozyResult<Option<OrchardDecryptionResult>> {
         use orchard::{
             keys::PreparedIncomingViewingKey,
             note::ExtractedNoteCommitment,
@@ -326,7 +340,7 @@ impl HDWallet {
             orchard::keys::Scope::External,
             orchard::keys::Scope::Internal,
         ] {
-            let ivk = self.derive_incoming_viewing_key_for_address_scoped(address, scope)?;
+            let ivk = self.orchard_ivk_for_account(account, scope)?;
             let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
             let decrypted = match pool {
                 ShieldedPool::Orchard => {
@@ -488,20 +502,25 @@ impl HDWallet {
             ));
         }
 
-        let seed_bytes = self.mnemonic.to_seed("").to_vec();
-        let secure_seed = SecureSeed::new(seed_bytes);
+        self.orchard_ivk_for_account(0, scope)
+    }
 
-        let account_id = zip32::AccountId::try_from(0)
+    /// Orchard incoming viewing key for one ZIP-32 account.
+    pub fn orchard_ivk_for_account(
+        &self,
+        account: u32,
+        scope: Scope,
+    ) -> NozyResult<orchard::keys::IncomingViewingKey> {
+        let mut seed_bytes = self.mnemonic.to_seed("").to_vec();
+        let secure_seed = SecureSeed::new(seed_bytes.clone());
+        let account_id = AccountId::try_from(account)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {:?}", e)))?;
-
         let orchard_sk = SpendingKey::from_zip32_seed(secure_seed.as_bytes(), 133, account_id)
             .map_err(|e| {
                 NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e))
             })?;
-
-        let orchard_fvk = FullViewingKey::from(&orchard_sk);
-
-        Ok(orchard_fvk.to_ivk(scope))
+        seed_bytes.zeroize();
+        Ok(FullViewingKey::from(&orchard_sk).to_ivk(scope))
     }
 
     pub fn set_password(&mut self, password: &str) -> NozyResult<()> {
@@ -575,5 +594,22 @@ mod tests {
         let words = wallet.get_mnemonic();
         assert_eq!(words.split_whitespace().count(), 24);
         drop(wallet);
+    }
+
+    #[test]
+    fn orchard_accounts_on_one_seed_differ() {
+        let wallet = HDWallet::from_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("test mnemonic");
+        let first = wallet
+            .generate_orchard_address(0, 0, NetworkType::Main)
+            .expect("account 0");
+        let second = wallet
+            .generate_orchard_address(1, 0, NetworkType::Main)
+            .expect("account 1");
+        assert_ne!(first, second);
+        assert!(first.starts_with("u1"));
+        assert!(second.starts_with("u1"));
     }
 }

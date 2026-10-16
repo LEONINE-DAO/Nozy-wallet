@@ -33,12 +33,14 @@ const PAGE_TITLES: Partial<Record<PopupView, string>> = {
 export function FullWalletShell({
   view,
   address,
+  accountName,
   children,
   onNavigate,
   onLock
 }: {
   view: PopupView;
   address: string | null;
+  accountName?: string | null;
   children: ReactNode;
   onNavigate: (view: PopupView) => void;
   onLock: () => void;
@@ -165,7 +167,7 @@ export function FullWalletShell({
           </div>
           <div className="nw-keplr__profile">
             <div className="min-w-0 text-right">
-              <p className="text-[13px] font-semibold">Nozy Wallet</p>
+              <p className="text-[13px] font-semibold">{accountName || "Nozy Wallet"}</p>
               <p className="nw-mono truncate text-[11px]" style={{ color: "var(--nw-muted)" }}>
                 {shortAddr(address || "")}
               </p>

@@ -89,14 +89,22 @@ function wasmJsonValue(v) {
   return v;
 }
 
-function applyShieldedScanBlock(trackerJson, mnemonic, address, height, blockJson) {
+function applyShieldedScanBlock(
+  trackerJson,
+  mnemonic,
+  address,
+  height,
+  blockJson,
+  accountIndicesJson
+) {
   const out = wasmJsonValue(
     wasm.orchard_scan_tracker_apply_block(
       trackerJson,
       mnemonic,
       address,
       height,
-      blockJson
+      blockJson,
+      accountIndicesJson || "[0]"
     )
   );
   const nextTracker =
@@ -278,7 +286,8 @@ self.onmessage = async (event) => {
         mnemonic,
         address,
         Math.floor(height),
-        blockJson
+        blockJson,
+        String(params?.accountIndicesJson ?? "[0]")
       );
       self.postMessage({
         id,
@@ -316,7 +325,8 @@ self.onmessage = async (event) => {
             mnemonic,
             address,
             h,
-            blockJson
+            blockJson,
+            String(params?.accountIndicesJson ?? "[0]")
           );
           if (nextTracker) trackerState = nextTracker;
           if (out.notes?.length) {
@@ -394,7 +404,8 @@ self.onmessage = async (event) => {
             mnemonic,
             walletAddress,
             h,
-            blockJson
+            blockJson,
+            String(params?.accountIndicesJson ?? "[0]")
           );
           if (nextTracker) trackerState = nextTracker;
           if (out.notes?.length) {

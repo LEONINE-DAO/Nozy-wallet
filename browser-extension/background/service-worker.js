@@ -34,6 +34,13 @@ import {
   compactTreeState
 } from "./lwd-compact.js";
 import {
+  addAccount,
+  emptyAccountStore,
+  normalizeAccountStore,
+  renameAccount,
+  setActiveAccount
+} from "./wallet-accounts.js";
+import {
   feeBlockFromRpc,
   mandatoryOrchardFeeZats,
   selectNotesForSpend,
@@ -88,6 +95,7 @@ import {
 } from "./companion-api.js";
 
 const STORAGE_KEY = "nozy_wallet_state_v1";
+const ACCOUNTS_KEY = "nozy_wallet_accounts_v1";
 const RPC_CACHE_KEY = "nozy_zebra_rpc_cache_v1";
 const COMPANION_BASE_KEY = "nozy_companion_base_url";
 const STORAGE_LWD_URL = "nozy_lightwalletd_url";
@@ -117,6 +125,8 @@ const DEFAULT_AUTO_LOCK_MS = 15 * 60 * 1000;
  * software wallet keeps in process memory while running.
  */
 const SESSION_MNEMONIC_KEY = "nozy_session_mnemonic_v1";
+const SESSION_ACTIVITY_KEY = "nozy_session_activity_v1";
+const LOCK_ALARM = "nozy-auto-lock";
 
 function sessionStorageApi() {
   return typeof chrome !== "undefined" && chrome.storage && chrome.storage.session
@@ -175,8 +185,49 @@ function nowMs() {
 }
 
 function touchSession() {
-  session.lastActivityAt = nowMs();
+  const at = nowMs();
+  session.lastActivityAt = at;
+  const api = sessionStorageApi();
+  if (!api) return;
+  try {
+    api.set({ [SESSION_ACTIVITY_KEY]: at }, () => {});
+  } catch (_) {
+    /* session storage can be unavailable in tests */
+  }
 }
+
+async function loadActivityAt() {
+  const api = sessionStorageApi();
+  if (!api) return session.lastActivityAt || 0;
+  return new Promise((resolve) => {
+    api.get([SESSION_ACTIVITY_KEY], (v) => {
+      const n = Number(v?.[SESSION_ACTIVITY_KEY]);
+      resolve(Number.isFinite(n) && n > 0 ? n : 0);
+    });
+  });
+}
+
+function clearSessionActivity() {
+  session.lastActivityAt = 0;
+  const api = sessionStorageApi();
+  if (!api) return;
+  try {
+    api.remove([SESSION_ACTIVITY_KEY], () => {});
+  } catch (_) {
+    /* ignore */
+  }
+}
+
+/** Background polls must not count as the user still being at the keyboard. */
+const ACTIVITY_SKIP_METHODS = new Set([
+  "wallet_status",
+  "wallet_scan_progress",
+  "wallet_get_transactions",
+  "wallet_get_pending_approvals",
+  "rpc_get_status",
+  "companion_status",
+  "companion_check_confirmations"
+]);
 
 function isLikelyUnifiedOrchardAddress(value) {
   return typeof value === "string" && /^u1[0-9a-z]{20,}$/i.test(value);
@@ -595,7 +646,8 @@ function callWorker(method, params) {
           String(params?.mnemonic ?? ""),
           String(params?.address ?? ""),
           Number(params?.height ?? 0),
-          String(params?.blockJson ?? "")
+          String(params?.blockJson ?? ""),
+          String(params?.accountIndicesJson ?? "[0]")
         )
       );
     }
@@ -682,6 +734,7 @@ function parseFeeToZats(v) {
 }
 
 async function buildTxPreflight(tx) {
+  await assertSeedBackupConfirmed();
   const { recipientAddress, amount, memo } = parseTxForOrchardV5(tx);
   // Always priority ×4 — matches CLI / api-server / desktop.
   const fee = await estimateFeeZats(memo, true);
@@ -692,7 +745,8 @@ async function buildTxPreflight(tx) {
     rpcEndpoint: session.rpcEndpoint,
     amount,
     fee,
-    memo
+    memo,
+    accountIndicesJson: await accountIndicesJson()
   });
   if (!proving?.rawTxHex) {
     throw new Error("Transaction preflight did not return rawTxHex");
@@ -754,6 +808,7 @@ async function wipeDerivedWalletData() {
   }
   clearScanResumeForBackground();
   await storageRemove([SCAN_STATE_KEY, TX_STATE_KEY, CONNECTED_ORIGINS_KEY]);
+  await resetAccountStore();
 }
 
 /** Remove the Chrome vault so Welcome can restore the Desktop seed. */
@@ -763,6 +818,7 @@ async function walletReset() {
   session.mnemonic = null;
   session.address = null;
   clearSessionMnemonic();
+  clearSessionActivity();
   await storageRemove([STORAGE_KEY]);
   return { exists: false };
 }
@@ -1029,7 +1085,8 @@ async function speedUpTxById(id, opts = {}) {
     rpcEndpoint: session.rpcEndpoint,
     amount: tx.amount,
     fee: priorityFee,
-    memo: tx.memo || ""
+    memo: tx.memo || "",
+    accountIndicesJson: await accountIndicesJson()
   });
   if (!proving?.rawTxHex) {
     throw new Error("Speed-up proving did not return rawTxHex");
@@ -1061,6 +1118,55 @@ async function loadWalletState() {
 
 async function saveWalletState(state) {
   await storageSet({ [STORAGE_KEY]: state });
+}
+
+async function loadAccountStore() {
+  return normalizeAccountStore(await storageGet(ACCOUNTS_KEY));
+}
+
+async function saveAccountStore(store) {
+  const normalized = normalizeAccountStore(store);
+  await storageSet({ [ACCOUNTS_KEY]: normalized });
+  return normalized;
+}
+
+async function resetAccountStore() {
+  return saveAccountStore(emptyAccountStore());
+}
+
+function activeAccountOf(store) {
+  return (
+    store.accounts.find((account) => account.index === store.activeIndex) || store.accounts[0]
+  );
+}
+
+function accountListResult(store, address) {
+  return {
+    accounts: store.accounts,
+    activeIndex: store.activeIndex,
+    activeAccount: activeAccountOf(store),
+    address: address || null
+  };
+}
+
+async function accountIndicesJson() {
+  const store = await loadAccountStore();
+  return JSON.stringify(store.accounts.map((account) => account.index));
+}
+
+async function addressForActiveAccount(mnemonic) {
+  const store = await loadAccountStore();
+  return wasm.generate_address(mnemonic, store.activeIndex, 0);
+}
+
+async function persistActiveAddress(mnemonic) {
+  const address = await addressForActiveAccount(mnemonic);
+  session.address = address;
+  const state = await loadWalletState();
+  if (state && state.address !== address) {
+    await saveWalletState({ ...state, address });
+  }
+  return address;
 }
 
 async function loadRpcEndpointCache() {
@@ -1614,6 +1720,7 @@ async function walletCreate(password) {
     rpcEndpoint: node.rpcUrl || session.rpcEndpoint,
     orchardBirthdayHeight,
     restoredFromPhrase: false,
+    seedBackupConfirmed: false,
     syncMode: node.mode
   });
 
@@ -1645,8 +1752,9 @@ async function walletRestore(mnemonic, password, opts = {}) {
     if (Number.isFinite(bh) && bh >= 0) orchardBirthdayHeight = Math.floor(bh);
   }
   if (orchardBirthdayHeight === null) {
-    // This restore is its own wallet: birthday is now, not the original Desktop floor.
-    orchardBirthdayHeight = await tryGetChainTipForBirthday();
+    // A blank birthday must still find notes that already exist. Chain tip only
+    // sees new blocks and leaves a restored wallet looking empty.
+    orchardBirthdayHeight = await defaultRestoreBirthdayHeight();
   }
 
   await saveWalletState({
@@ -1656,6 +1764,7 @@ async function walletRestore(mnemonic, password, opts = {}) {
     rpcEndpoint: node.rpcUrl || session.rpcEndpoint,
     orchardBirthdayHeight,
     restoredFromPhrase: true,
+    seedBackupConfirmed: true,
     syncMode: node.mode
   });
 
@@ -1682,7 +1791,7 @@ async function walletUnlock(password) {
     password
   );
   const mnemonic = utf8Decode(decrypted);
-  const address = wasm.generate_address(mnemonic, 0, 0);
+  const address = await persistActiveAddress(mnemonic);
 
   session.unlocked = true;
   session.mnemonic = mnemonic;
@@ -1776,11 +1885,13 @@ async function walletLock() {
   session.address = null;
   clearScanResumeForBackground();
   clearSessionMnemonic();
+  clearSessionActivity();
   return true;
 }
 
 async function getWalletStatus() {
   const state = await loadWalletState();
+  const accountStore = await loadAccountStore();
   const bh = state?.orchardBirthdayHeight;
   const orchardBirthdayHeight =
     typeof bh === "number" && Number.isFinite(bh) && bh >= 0 ? Math.floor(bh) : null;
@@ -1789,10 +1900,55 @@ async function getWalletStatus() {
     unlocked: session.unlocked,
     address: session.address || state?.address || null,
     rpcEndpoint: session.rpcEndpoint,
+    accounts: accountStore.accounts,
+    activeAccount: activeAccountOf(accountStore),
     orchardBirthdayHeight,
     restoredFromPhrase:
-      typeof state?.restoredFromPhrase === "boolean" ? state.restoredFromPhrase : null
+      typeof state?.restoredFromPhrase === "boolean" ? state.restoredFromPhrase : null,
+    seedBackupConfirmed: state?.seedBackupConfirmed === false ? false : true,
+    autoLockMs: session.autoLockMs
   };
+}
+
+async function assertSeedBackupConfirmed() {
+  const state = await loadWalletState();
+  if (state?.seedBackupConfirmed === false) {
+    throw new Error("Confirm your recovery phrase backup before using the wallet.");
+  }
+}
+
+async function walletConfirmSeedBackup(answers) {
+  const state = await loadWalletState();
+  if (!state?.encryptedMnemonic) throw new Error("No wallet found.");
+  if (!session.unlocked || !session.mnemonic) throw new Error("Unlock wallet first.");
+  if (state.seedBackupConfirmed !== false) {
+    return { seedBackupConfirmed: true };
+  }
+  const words = String(session.mnemonic).trim().split(/\s+/).filter(Boolean);
+  const entries = answers && typeof answers === "object" ? Object.entries(answers) : [];
+  if (entries.length < 3) {
+    throw new Error("Confirm at least three words from your recovery phrase.");
+  }
+  for (const [pos, word] of entries) {
+    const index = Number(pos) - 1;
+    const expected = words[index];
+    const given = String(word ?? "").trim().toLowerCase();
+    if (!expected || given !== expected.toLowerCase()) {
+      throw new Error("One or more words don’t match. Check your written copy and try again.");
+    }
+  }
+  await saveWalletState({ ...state, seedBackupConfirmed: true });
+  return { seedBackupConfirmed: true };
+}
+
+async function walletPendingBackupPhrase() {
+  const state = await loadWalletState();
+  if (!state?.encryptedMnemonic) throw new Error("No wallet found.");
+  if (state.seedBackupConfirmed !== false) {
+    throw new Error("Recovery phrase backup is already confirmed.");
+  }
+  if (!session.unlocked || !session.mnemonic) throw new Error("Unlock wallet first.");
+  return { mnemonic: session.mnemonic };
 }
 
 async function getAccounts() {
@@ -1875,7 +2031,16 @@ async function ensureSessionInitialized(opts = {}) {
   session.rpcEndpoint = wallet.rpcEndpoint || session.rpcEndpoint;
   const policy = await loadSessionPolicy();
   session.autoLockMs = Number(policy.autoLockMs) || DEFAULT_AUTO_LOCK_MS;
-  if (!session.lastActivityAt) touchSession();
+  if (!session.lastActivityAt) {
+    session.lastActivityAt = await loadActivityAt();
+  }
+  if (
+    session.lastActivityAt &&
+    nowMs() - session.lastActivityAt >= session.autoLockMs
+  ) {
+    await walletLock();
+    return;
+  }
 
   // Auto-hydrate from session storage after a service-worker restart.
   // chrome.storage.session survives SW idle kills within the same browser session.
@@ -1885,13 +2050,25 @@ async function ensureSessionInitialized(opts = {}) {
       const sessionMnemonic = await loadSessionMnemonic();
       if (sessionMnemonic && typeof sessionMnemonic === "string") {
         await ensureWasm();
-        // Verify the mnemonic still matches this vault by deriving the address.
-        const derivedAddress = wasm.generate_address(sessionMnemonic, 0, 0);
-        if (derivedAddress === wallet.address || !wallet.address) {
+        // Account 0 still matches a vault that has not switched accounts yet.
+        const store = await loadAccountStore();
+        const derivedActive = wasm.generate_address(sessionMnemonic, store.activeIndex, 0);
+        const derivedAccount0 =
+          store.activeIndex === 0
+            ? derivedActive
+            : wasm.generate_address(sessionMnemonic, 0, 0);
+        if (
+          derivedActive === wallet.address ||
+          derivedAccount0 === wallet.address ||
+          !wallet.address
+        ) {
           session.unlocked = true;
           session.mnemonic = sessionMnemonic;
-          session.address = derivedAddress;
-          touchSession();
+          session.address = derivedActive;
+          if (!session.lastActivityAt) touchSession();
+          if (wallet.address !== derivedActive) {
+            await saveWalletState({ ...wallet, address: derivedActive });
+          }
         } else {
           // Address mismatch — vault was replaced; wipe the stale session key.
           clearSessionMnemonic();
@@ -2060,8 +2237,26 @@ async function resolveScanBirthday(ws, chainTip, scanState) {
   const tip = Number.isFinite(chainTip) && chainTip >= 0 ? Math.floor(chainTip) : 0;
   const bh = Number(ws?.orchardBirthdayHeight);
   const notes = Array.isArray(scanState?.discoveredNotes) ? scanState.discoveredNotes.length : 0;
-  const scanStart = Number(scanState?.startHeight);
-  const birthday = Number.isFinite(bh) && bh >= 0 ? Math.floor(bh) : tip;
+  let birthday = Number.isFinite(bh) && bh >= 0 ? Math.floor(bh) : tip;
+  // A restore that stored "now" as the birthday finishes sync with an empty balance.
+  // Rewind once to the shielded history floor so the phrase can see existing notes.
+  if (
+    ws?.restoredFromPhrase === true &&
+    tip > 0 &&
+    notes === 0 &&
+    birthdayLooksLikeChainTip(birthday, tip)
+  ) {
+    const floor = await defaultRestoreBirthdayHeight();
+    if (birthday <= floor + RESTORE_BIRTHDAY_NEAR_TIP) {
+      return { birthday: Math.min(tip, birthday), rewound: false };
+    }
+    const next = Math.min(tip, floor);
+    if (next < birthday) {
+      await saveWalletState({ ...ws, orchardBirthdayHeight: next });
+      birthday = next;
+      return { birthday, rewound: true };
+    }
+  }
   return { birthday: tip > 0 ? Math.min(tip, birthday) : birthday, rewound: false };
 }
 
@@ -2129,6 +2324,7 @@ async function walletVoteExportNotes() {
 
 async function walletVoteSignDelegation(requestJson) {
   if (!session.unlocked || !session.mnemonic) throw new Error("Unlock wallet first.");
+  await assertSeedBackupConfirmed();
   await ensureWasm();
   if (typeof wasm.sign_vote_delegation !== "function") {
     throw new Error("Reload the unpacked extension after rebuilding WASM (vote sign).");
@@ -2139,19 +2335,9 @@ async function walletVoteSignDelegation(requestJson) {
 setInterval(() => {
   if (!session.unlocked) return;
   if (!session.lastActivityAt) return;
-  // Keep wallet unlocked while a background Orchard scan is running (popup may be closed).
-  loadScanState()
-    .then((scan) => {
-      if (scan?.status === "scanning") return;
-      if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
-        walletLock();
-      }
-    })
-    .catch(() => {
-      if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
-        walletLock();
-      }
-    });
+  if (nowMs() - session.lastActivityAt >= session.autoLockMs) {
+    walletLock();
+  }
 }, 20_000);
 
 setInterval(() => {
@@ -2291,14 +2477,15 @@ function wasmJsonValue(v) {
   return v;
 }
 
-function applyShieldedScanBlock(trackerJson, mnemonic, address, height, blockJson) {
+function applyShieldedScanBlock(trackerJson, mnemonic, address, height, blockJson, accountIndicesJson) {
   const out = wasmJsonValue(
     wasm.orchard_scan_tracker_apply_block(
       trackerJson,
       mnemonic,
       address,
       height,
-      blockJson
+      blockJson,
+      accountIndicesJson || "[0]"
     )
   );
   const nextTracker =
@@ -2573,6 +2760,23 @@ async function scanTick() {
   }
   const state = await loadScanState();
   if (!state || (state.status !== "scanning" && state.status !== "watching")) return;
+  const noteCount = Array.isArray(state.discoveredNotes) ? state.discoveredNotes.length : 0;
+  if (noteCount === 0) {
+    const ws = await loadWalletState();
+    const tip = Number(state.endHeight ?? 0);
+    const bh = Number(ws?.orchardBirthdayHeight);
+    const floor = await defaultRestoreBirthdayHeight();
+    if (
+      ws?.restoredFromPhrase === true &&
+      Number.isFinite(tip) &&
+      tip > 64 &&
+      bh > floor + RESTORE_BIRTHDAY_NEAR_TIP &&
+      birthdayLooksLikeChainTip(bh, tip)
+    ) {
+      await startAutoBackgroundScan();
+      return;
+    }
+  }
 
   scanRunning = true;
   const tickStarted = Date.now();
@@ -2614,11 +2818,6 @@ async function scanTick() {
       state.scanError = null;
       state.updatedAt = nowMs();
       await saveScanState(state);
-    }
-    if (session.unlocked && state.status === "scanning") {
-      const remaining = Number(state.endHeight ?? 0) - Number(state.currentHeight ?? 0);
-      // A long catch-up should stay unlocked. A single new block must not reset auto-lock.
-      if (remaining > 2) touchSession();
     }
     if (!mnemonicForScan || !addressForScan) {
       // Session was not hydrated (browser was restarted and no session key).
@@ -2799,7 +2998,8 @@ async function scanTick() {
                 mnemonic: mnemonicForScan,
                 address: addressForScan,
                 height: h,
-                blockJson
+                blockJson,
+                accountIndicesJson: await accountIndicesJson()
               });
               out = applied?.out;
               nextTracker = applied?.nextTracker || null;
@@ -3181,7 +3381,12 @@ function stopBackgroundScan() {
 
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === SCAN_ALARM) scanTick();
+  if (alarm.name === LOCK_ALARM) {
+    ensureSessionInitialized().catch(() => undefined);
+  }
 });
+
+chrome.alarms.create(LOCK_ALARM, { periodInMinutes: 1 });
 
 chrome.runtime.onInstalled.addListener((details) => {
   if (details?.reason !== "update") return;
@@ -3230,7 +3435,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       if (!skipWasm) {
         await ensureWasm();
       }
-      touchSession();
+      if (!ACTIVITY_SKIP_METHODS.has(method)) touchSession();
 
       // Popup/UI control methods.
       switch (method) {
@@ -3244,6 +3449,12 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           return;
         case "wallet_reveal_mnemonic":
           sendResponse(ok(await walletRevealMnemonic(params.password)));
+          return;
+        case "wallet_confirm_seed_backup":
+          sendResponse(ok(await walletConfirmSeedBackup(params.answers)));
+          return;
+        case "wallet_pending_backup_phrase":
+          sendResponse(ok(await walletPendingBackupPhrase()));
           return;
         case "wallet_reset":
           sendResponse(ok(await walletReset()));
@@ -3583,6 +3794,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           sendResponse(ok({ txid: await retryBroadcastById(String(params.id ?? "")) }));
           return;
         case "wallet_speed_up":
+          await assertSeedBackupConfirmed();
           sendResponse(
             ok({
               txid: await speedUpTxById(String(params.id ?? ""), {
@@ -3595,12 +3807,40 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "companion_check_confirmations":
           sendResponse(ok(await companionCheckConfirmations(params.baseUrl)));
           return;
+        case "wallet_list_accounts": {
+          const store = await loadAccountStore();
+          sendResponse(ok(accountListResult(store, session.address)));
+          return;
+        }
+        case "wallet_add_account": {
+          if (!session.unlocked || !session.mnemonic) throw new Error("Unlock wallet first.");
+          const store = addAccount(await loadAccountStore(), params?.name);
+          await saveAccountStore(store);
+          const address = await persistActiveAddress(session.mnemonic);
+          sendResponse(ok(accountListResult(store, address)));
+          return;
+        }
+        case "wallet_rename_account": {
+          const store = renameAccount(await loadAccountStore(), params?.index, params?.name);
+          await saveAccountStore(store);
+          sendResponse(ok(accountListResult(store, session.address)));
+          return;
+        }
+        case "wallet_set_active_account": {
+          if (!session.unlocked || !session.mnemonic) throw new Error("Unlock wallet first.");
+          const store = setActiveAccount(await loadAccountStore(), params?.index);
+          await saveAccountStore(store);
+          const address = await persistActiveAddress(session.mnemonic);
+          sendResponse(ok(accountListResult(store, address)));
+          return;
+        }
         case "wallet_generate_address":
           if (!session.unlocked || !session.mnemonic) throw new Error("Wallet is locked");
           sendResponse(ok(wasm.generate_address(session.mnemonic, params.account ?? 0, params.index ?? 0)));
           return;
         case "wallet_sign_message":
           if (!session.unlocked || !session.mnemonic) throw new Error("Wallet is locked");
+          await assertSeedBackupConfirmed();
           sendResponse(ok(wasm.sign_message(session.mnemonic, params.message || "")));
           return;
         case "wallet_get_pending_approvals":
@@ -3630,12 +3870,14 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 if (approval.kind === "sign") {
                   const message = String(approval.payload?.message ?? "");
                   if (!message) throw new Error("Missing message for signing");
+                  await assertSeedBackupConfirmed();
                   const signature = wasm.sign_message(session.mnemonic, message);
                   resolver.sendResponse(ok(signature));
                   return;
                 }
 
                 if (approval.kind === "transaction") {
+                  await assertSeedBackupConfirmed();
                   const tx = approval.payload?.tx ?? {};
                   const createdAt = nowMs();
                   let proving = approval.payload?.preflight ?? null;
@@ -3981,7 +4223,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           })();
           const scanState = await loadScanState();
           if (!scanState) {
-            sendResponse(ok({ status: "idle" }));
+            sendResponse(ok({ status: "idle", sessionUnlocked: session.unlocked }));
           } else {
             const total = Math.max(1, scanState.endHeight - scanState.startHeight + 1);
             let done;
@@ -4017,7 +4259,8 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
               elapsed: scanState.finishedAt
                 ? scanState.finishedAt - scanState.startedAt
                 : nowMs() - scanState.startedAt,
-              sessionWaitingSince: scanState.sessionWaitingSince ?? null
+              sessionWaitingSince: scanState.sessionWaitingSince ?? null,
+              sessionUnlocked: session.unlocked
             }));
           }
           return;
@@ -4045,6 +4288,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
           if (!session.unlocked || !session.address) {
             throw new Error("Unlock wallet first.");
           }
+          await assertSeedBackupConfirmed();
           sendResponse(
             ok(
               await callWorker("prove_transaction", {
@@ -4053,6 +4297,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
                 walletAddress: session.address,
                 mnemonic: session.mnemonic,
                 rpcEndpoint: session.rpcEndpoint,
+                accountIndicesJson: await accountIndicesJson(),
                 // Ignore caller fee — ZIP-317 × 4 is required (same as CLI/API/desktop).
                 fee: await estimateFeeZats(String(params?.memo ?? ""), true)
               })
@@ -4166,6 +4411,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
         case "eth_sendTransaction":
         case "zcash_sendTransaction": {
           if (!session.unlocked) throw new Error("Unlock wallet first.");
+          await assertSeedBackupConfirmed();
           const origin = pageOrigin(sender, msg.origin);
           const txPayload = params?.tx || params?.[0] || params;
           let preflight = null;

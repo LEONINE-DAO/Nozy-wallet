@@ -665,6 +665,85 @@ pub struct BuiltOrchardTxResult {
     pub proof_generated: bool,
 }
 
+fn account_hint_from_note(value: &serde_json::Value) -> u32 {
+    value
+        .get("account")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(20) as u32
+}
+
+fn account_hints_from_spend_json(raw: &str) -> Vec<u32> {
+    match serde_json::from_str::<serde_json::Value>(raw) {
+        Ok(serde_json::Value::Array(rows)) => rows.iter().map(account_hint_from_note).collect(),
+        Ok(other) => vec![account_hint_from_note(&other)],
+        Err(_) => Vec::new(),
+    }
+}
+
+fn note_owned_by_fvk(
+    note: &nozy::hd_wallet::OrchardDecryptionResult,
+    fvk: &orchard::keys::FullViewingKey,
+) -> bool {
+    use orchard::note::{Note, NoteVersion, RandomSeed, Rho};
+    use orchard::value::NoteValue;
+    use orchard::Address as OrchardAddress;
+
+    let Ok(raw) = <[u8; 43]>::try_from(note.orchard_address_raw.as_slice()) else {
+        return false;
+    };
+    let Some(recipient) = OrchardAddress::from_raw_address_bytes(&raw).into_option() else {
+        return false;
+    };
+    let Some(rho) = Rho::from_bytes(&note.rho).into_option() else {
+        return false;
+    };
+    let Some(rseed) = RandomSeed::from_bytes(note.rseed, &rho).into_option() else {
+        return false;
+    };
+    let value = NoteValue::from_raw(note.value);
+    for version in [NoteVersion::V2, NoteVersion::V3] {
+        let Some(parsed) = Note::from_parts(recipient, value, rho, rseed, version).into_option()
+        else {
+            continue;
+        };
+        if parsed.nullifier(fvk).to_bytes() == note.nullifier {
+            return true;
+        }
+    }
+    false
+}
+
+fn spend_material_for_note(
+    seed: &[u8],
+    note: &nozy::hd_wallet::OrchardDecryptionResult,
+    hinted: u32,
+) -> Result<(orchard::keys::SpendingKey, orchard::keys::FullViewingKey), JsError> {
+    let hinted = hinted.min(20);
+    let mut order = Vec::with_capacity(21);
+    order.push(hinted);
+    for account in 0u32..=20 {
+        if account != hinted {
+            order.push(account);
+        }
+    }
+    for account in order {
+        let account_id = zip32::AccountId::try_from(account)
+            .map_err(|e| JsError::new(&format!("Invalid ZIP32 account id: {e}")))?;
+        let sk = orchard::keys::SpendingKey::from_zip32_seed(seed, 133, account_id)
+            .map_err(|e| JsError::new(&format!("Failed to derive Orchard spending key: {e:?}")))?;
+        let fvk = orchard::keys::FullViewingKey::from(&sk);
+        if note_owned_by_fvk(note, &fvk) {
+            return Ok((sk, fvk));
+        }
+    }
+    let account_id = zip32::AccountId::try_from(0u32)
+        .map_err(|e| JsError::new(&format!("Invalid ZIP32 account id: {e}")))?;
+    let sk = orchard::keys::SpendingKey::from_zip32_seed(seed, 133, account_id)
+        .map_err(|e| JsError::new(&format!("Failed to derive Orchard spending key: {e:?}")))?;
+    Ok((sk, orchard::keys::FullViewingKey::from(&sk)))
+}
+
 #[wasm_bindgen]
 pub fn build_orchard_v5_tx_from_note(
     mnemonic_str: &str,
@@ -907,15 +986,8 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Invalid mnemonic: {e}")))?;
 
     let seed_bytes = mnemonic.to_seed("").to_vec();
-    let account_id = zip32::AccountId::try_from(0)
-        .map_err(|e| JsError::new(&format!("Invalid ZIP32 account id: {e}")))?;
-
-    let spending_key = orchard::keys::SpendingKey::from_zip32_seed(&seed_bytes, 133, account_id)
-        .map_err(|e| JsError::new(&format!("Failed to derive Orchard spending key: {e:?}")))?;
-    let fvk = orchard::keys::FullViewingKey::from(&spending_key);
-
-    let spend_auth_key: SpendAuthorizingKey = SpendAuthorizingKey::from(&spending_key);
-    let orchard_saks = vec![spend_auth_key];
+    let account_hints = account_hints_from_spend_json(spend_note_json);
+    let mut orchard_saks: Vec<SpendAuthorizingKey> = Vec::with_capacity(spend_notes.len());
 
     let build_config = BuildConfig::Standard {
         sapling_anchor: None,
@@ -978,8 +1050,12 @@ pub fn build_orchard_v5_tx_from_note(
             JsError::new(&format!("Invalid spend note reconstruction at index {idx}"))
         })?;
 
+        let hinted = account_hints.get(idx).copied().unwrap_or(0);
+        let (spending_key, fvk) = spend_material_for_note(&seed_bytes, spend_note, hinted)?;
+        orchard_saks.push(SpendAuthorizingKey::from(&spending_key));
+
         builder
-            .add_orchard_spend::<core::convert::Infallible>(fvk.clone(), note, merkle_path)
+            .add_orchard_spend::<core::convert::Infallible>(fvk, note, merkle_path)
             .map_err(|e| {
                 JsError::new(&format!(
                     "Failed to add Orchard spend at index {idx}: {e:?}"

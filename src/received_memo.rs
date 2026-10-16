@@ -201,7 +201,8 @@ fn scan_ivks(wallet: &HDWallet) -> NozyResult<Vec<ScanIvk>> {
     let mut seed_bytes = wallet.get_mnemonic_object().to_seed("").to_vec();
     let secure_seed = SecureSeed::new(seed_bytes.clone());
     let mut ivks = Vec::new();
-    for account in [0u32, 1] {
+    // Same cap as the mobile and extension account list (indices 0 through 20).
+    for account in 0u32..=20 {
         let account_id = AccountId::try_from(account)
             .map_err(|e| NozyError::KeyDerivation(format!("Invalid account ID: {e:?}")))?;
         let sk =
