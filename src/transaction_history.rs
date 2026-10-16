@@ -338,10 +338,10 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
         use crate::notes::load_wallet_notes;
         use std::collections::HashSet;
 
-        let notes = load_wallet_notes().unwrap_or_default();
+        let wallet_notes = load_wallet_notes().unwrap_or_default();
         let mut by_txid: HashMap<String, Vec<NoteForHistory>> = HashMap::new();
 
-        for sn in &notes {
+        for sn in &wallet_notes {
             let Some(orchard_note) = sn.to_wallet_orchard_note() else {
                 continue;
             };
@@ -362,7 +362,7 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
             .map(|view| view.txid.clone())
             .collect();
 
-        for sn in &notes {
+        for sn in &wallet_notes {
             if !sn.spent {
                 continue;
             }
@@ -372,7 +372,7 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
             if known_sent.contains(spend_txid) {
                 continue;
             }
-            let change_same_tx: u64 = notes
+            let change_same_tx: u64 = wallet_notes
                 .iter()
                 .filter(|n| !n.spent && n.txid == spend_txid)
                 .map(|n| n.value)
@@ -411,7 +411,7 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
                 // Sent record already covers this tx (amount sent + fee); skip change duplicate.
                 continue;
             }
-            if is_change_output_tx(&txid, received_view.net_amount_zatoshis as u64, &notes) {
+            if outputs_are_change(&txid, &wallet_notes) {
                 received_view.transaction_type = TransactionType::Change;
             }
             views.push(received_view);
@@ -427,34 +427,26 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
     Ok(views)
 }
 
-/// True when incoming notes on `txid` are change from our own spend, not an external deposit.
+/// True when notes mined in `txid` are change from our own spend, not an external deposit.
+///
+/// A later, smaller deposit used to match "any earlier spent note is larger than this
+/// amount", so a 0.001 ZEC payment showed up as change after any normal send.
 #[cfg(feature = "native")]
-fn is_change_output_tx(txid: &str, received_zatoshis: u64, incoming: &[NoteForHistory]) -> bool {
-    use crate::notes::load_wallet_notes;
-
-    let all = load_wallet_notes().unwrap_or_default();
+fn outputs_are_change(txid: &str, all: &[crate::notes::SerializableOrchardNote]) -> bool {
     if all
         .iter()
-        .any(|n| n.spent && n.spent_in_txid.as_deref() == Some(txid))
+        .any(|note| note.spent && note.spent_in_txid.as_deref() == Some(txid) && note.txid != txid)
     {
         return true;
     }
-    let recv_block = incoming.first().map(|n| n.note.block_height).or_else(|| {
+    // Orchard/Ironwood change sets rho to the nullifier of the note we spent.
+    all.iter().filter(|note| note.txid == txid).any(|incoming| {
+        let Some(rho) = incoming.rho_bytes.as_deref() else {
+            return false;
+        };
         all.iter()
-            .find(|n| n.txid == txid && !n.spent)
-            .map(|n| n.block_height)
-    });
-    let Some(recv_block) = recv_block else {
-        return false;
-    };
-    // Heuristic for wallets that spent before `spent_in_txid` was persisted.
-    all.iter()
-        .any(|n| n.spent && n.value > received_zatoshis && recv_block >= n.block_height)
-}
-
-#[cfg(not(feature = "native"))]
-fn is_change_output_tx(_txid: &str, _received_zatoshis: u64, _incoming: &[NoteForHistory]) -> bool {
-    false
+            .any(|prior| prior.txid != txid && prior.nullifier_bytes.as_slice() == rho)
+    })
 }
 
 /// Lookup a history row by txid (sent record or received/change from notes).
@@ -508,18 +500,21 @@ pub async fn enrich_block_times_for_views(
 ) {
     let mut cache = HashMap::new();
     for view in views.iter_mut() {
-        if view.transaction_type != TransactionType::Received {
-            continue;
-        }
-        if view.block_time.is_some_and(is_plausible_block_time) {
+        let needs_block_time = !view.block_time.is_some_and(is_plausible_block_time);
+        let needs_created_at = !is_plausible_block_time(view.created_at);
+        if !needs_block_time && !needs_created_at {
             continue;
         }
         let Some(height) = view.block_height else {
             continue;
         };
         if let Some(t) = block_time_for_height(zebra_client, height, &mut cache).await {
-            view.block_time = Some(t);
-            view.created_at = t;
+            if needs_block_time {
+                view.block_time = Some(t);
+            }
+            if needs_created_at {
+                view.created_at = t;
+            }
         }
     }
 }
@@ -528,6 +523,11 @@ pub async fn enrich_block_times_for_views(
 pub fn transaction_view_to_history_json(view: &TransactionView) -> serde_json::Value {
     let amount_zatoshis = view.net_amount_zatoshis.unsigned_abs();
     let fee_zatoshis = view.fee_zatoshis.unwrap_or(0);
+    let created_at = if is_plausible_block_time(view.created_at) {
+        Some(view.created_at)
+    } else {
+        view.block_time.filter(|t| is_plausible_block_time(*t))
+    };
     let type_label = view.transaction_type.label();
     let status_label = match &view.status {
         TransactionStatus::Pending => "pending",
@@ -551,7 +551,7 @@ pub fn transaction_view_to_history_json(view: &TransactionView) -> serde_json::V
         "block_height": view.block_height,
         "confirmations": view.confirmations,
         "broadcast_at": view.block_time.and_then(optional_history_timestamp),
-        "created_at": optional_history_timestamp(view.created_at),
+        "created_at": created_at.and_then(optional_history_timestamp),
         "memo": view.memo,
         "is_change": view.transaction_type == TransactionType::Change,
     })
@@ -690,6 +690,95 @@ mod tests {
         let received_json = transaction_view_to_history_json(&received);
         assert_eq!(received_json["transaction_type"], "Received");
         assert_eq!(received_json["amount_zatoshis"], 250_000);
+    }
+
+    #[test]
+    fn test_history_json_shows_zip302_f5_memo_and_block_time() {
+        let mut raw = [0u8; 512];
+        raw[0] = 0xF5;
+        let text = b"checkout-1001";
+        raw[1..1 + text.len()].copy_from_slice(text);
+        let block_time = DateTime::from_timestamp(1_760_000_000, 0).expect("timestamp");
+        let received = TransactionView {
+            txid: "4ac20a8f6863b15186bf7e904b389803b0f23f5cffd46a3c8b87265a055724b5".to_string(),
+            transaction_type: TransactionType::Received,
+            net_amount_zatoshis: 100_000,
+            fee_zatoshis: None,
+            recipient_address: None,
+            my_addresses: vec!["u1test".to_string()],
+            block_height: Some(3_520_156),
+            block_time: Some(block_time),
+            confirmations: 12,
+            status: TransactionStatus::Confirmed,
+            memo: crate::received_memo::memo_note_bytes_to_history_string(&raw),
+            notes_involved: vec!["note1".to_string()],
+            created_at: DateTime::UNIX_EPOCH,
+        };
+        let json = transaction_view_to_history_json(&received);
+        assert_eq!(json["type"], "received");
+        assert_eq!(json["is_change"], false);
+        assert_eq!(json["memo"], "checkout-1001");
+        assert_eq!(json["created_at"], block_time.to_rfc3339());
+        assert_eq!(json["amount_zatoshis"], 100_000);
+    }
+
+    #[cfg(feature = "native")]
+    fn sample_note(
+        txid: &str,
+        value: u64,
+        height: u32,
+        spent_in: Option<&str>,
+        nullifier: u8,
+        rho: Option<u8>,
+    ) -> crate::notes::SerializableOrchardNote {
+        crate::notes::SerializableOrchardNote {
+            note_bytes: vec![nullifier; 32],
+            value,
+            address_bytes: vec![0; 43],
+            nullifier_bytes: vec![nullifier; 32],
+            block_height: height,
+            txid: txid.to_string(),
+            spent: spent_in.is_some(),
+            memo: Vec::new(),
+            orchard_incremental_witness_hex: None,
+            orchard_witness_tip_height: None,
+            ironwood_incremental_witness_hex: None,
+            ironwood_witness_tip_height: None,
+            rho_bytes: rho.map(|b| vec![b; 32]),
+            rseed_bytes: None,
+            spent_in_txid: spent_in.map(|s| s.to_string()),
+            pool: crate::shielded_pool::ShieldedPool::Orchard,
+        }
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn external_deposit_after_a_larger_spend_is_not_change() {
+        let payment = "4ac20a8f6863b15186bf7e904b389803b0f23f5cffd46a3c8b87265a055724b5";
+        let notes = vec![
+            sample_note("funding", 5_000_000, 3_500_000, Some("withdrawal"), 1, None),
+            sample_note(payment, 100_000, 3_520_156, None, 2, Some(9)),
+        ];
+        assert!(!outputs_are_change(payment, &notes));
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn change_output_of_our_spend_stays_change() {
+        let notes = vec![
+            sample_note("funding", 5_000_000, 3_500_000, Some("spendtx"), 1, None),
+            sample_note("spendtx", 4_800_000, 3_510_000, None, 3, Some(1)),
+        ];
+        assert!(outputs_are_change("spendtx", &notes));
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn received_note_marked_spent_in_its_own_txid_is_not_change() {
+        let payment = "paytx";
+        let mut incoming = sample_note(payment, 100_000, 3_520_156, Some(payment), 4, Some(8));
+        incoming.spent = true;
+        assert!(!outputs_are_change(payment, &[incoming]));
     }
 }
 

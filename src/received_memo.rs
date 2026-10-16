@@ -60,6 +60,24 @@ struct ScanIvk {
     internal_ivk: IncomingViewingKey,
 }
 
+/// Classic ZIP-302 text: lead byte `0xF5`, then UTF-8, then zero padding.
+///
+/// Wallets such as Zashi and Ywallet still send this. The pinned `zcash_protocol`
+/// parser treats `0xF5` as `Memo::Future`, which history used to render as null.
+fn zip302_f5_text(raw: &[u8]) -> Option<String> {
+    if raw.len() != 512 || raw.first() != Some(&0xF5) {
+        return None;
+    }
+    let body = &raw[1..];
+    let end = body
+        .iter()
+        .rposition(|b| *b != 0)
+        .map(|i| i + 1)
+        .unwrap_or(0);
+    let text = std::str::from_utf8(&body[..end]).ok()?;
+    nonempty_memo_text(text.to_string())
+}
+
 /// Bytes stored on a note: UTF-8 text, a single `0xF6` for a resolved empty memo,
 /// or the raw 512-byte ZIP-302 encoding for non-text memos.
 pub fn memo_plaintext_to_note_bytes(raw: &[u8]) -> Vec<u8> {
@@ -67,6 +85,12 @@ pub fn memo_plaintext_to_note_bytes(raw: &[u8]) -> Vec<u8> {
         return vec![0xF6];
     }
     if raw.len() == 512 {
+        if let Some(text) = zip302_f5_text(raw) {
+            return text.into_bytes();
+        }
+        if raw.first() == Some(&0xF5) && raw[1..].iter().all(|b| *b == 0) {
+            return vec![0xF6];
+        }
         return match Memo::from_bytes(raw) {
             Ok(Memo::Empty) => vec![0xF6],
             Ok(Memo::Text(text)) => {
@@ -100,6 +124,9 @@ pub fn memo_note_bytes_to_history_string(stored: &[u8]) -> Option<String> {
         return None;
     }
     if stored.len() == 512 {
+        if let Some(text) = zip302_f5_text(stored) {
+            return Some(text);
+        }
         return match Memo::from_bytes(stored).ok()? {
             Memo::Empty => None,
             Memo::Text(text) => nonempty_memo_text(String::from(text)),
@@ -376,7 +403,9 @@ fn apply_output_memo(
                 }
                 let nf_ok = row.nullifier_bytes.as_slice() == canonical.as_slice();
                 let rho_ok = row.rho_bytes.as_deref() == Some(rho.as_slice()) && row.value == value;
-                if nf_ok || rho_ok {
+                let cmx_ok =
+                    row.note_bytes.len() == 32 && row.note_bytes.as_slice() == cmx.as_slice();
+                if nf_ok || rho_ok || cmx_ok {
                     row.memo = memo.clone();
                     updated += 1;
                 }
@@ -384,6 +413,28 @@ fn apply_output_memo(
         }
     }
     updated
+}
+
+/// Txids that still need a full-transaction memo fetch, newest block first.
+///
+/// Oldest-first used to fill the [`MAX_BACKFILL_TXS`] cap with notes that never
+/// decrypted, so a new incoming payment never reached `getrawtransaction`.
+#[cfg(feature = "native")]
+fn unresolved_memo_txids(notes: &[SerializableOrchardNote]) -> Vec<String> {
+    let mut pending: Vec<(u32, String)> = Vec::new();
+    for note in notes {
+        if !note.memo.is_empty() {
+            continue;
+        }
+        if let Some(row) = pending.iter_mut().find(|(_, id)| id == &note.txid) {
+            row.0 = row.0.max(note.block_height);
+        } else {
+            pending.push((note.block_height, note.txid.clone()));
+        }
+    }
+    pending.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
+    pending.truncate(MAX_BACKFILL_TXS);
+    pending.into_iter().map(|(_, txid)| txid).collect()
 }
 
 /// Fill empty memos on `notes` by fetching each transaction and decrypting outputs.
@@ -396,16 +447,10 @@ pub async fn backfill_unresolved_memos(
     zebra: &ZebraClient,
     notes: &mut [SerializableOrchardNote],
 ) -> NozyResult<usize> {
-    let mut txids = Vec::new();
-    for note in notes.iter() {
-        if note.memo.is_empty() && !txids.iter().any(|id: &String| id == &note.txid) {
-            txids.push(note.txid.clone());
-        }
-    }
+    let txids = unresolved_memo_txids(notes);
     if txids.is_empty() {
         return Ok(0);
     }
-    txids.truncate(MAX_BACKFILL_TXS);
     let ivks = scan_ivks(wallet)?;
     let mut updated = 0usize;
     for txid in txids {
@@ -476,6 +521,7 @@ pub fn apply_raw_transaction_memos(
             row.nullifier_bytes.as_slice() == item.canonical_nullifier.as_slice()
                 || (row.rho_bytes.as_deref() == Some(item.rho.as_slice())
                     && row.value == item.value)
+                || (row.note_bytes.len() == 32 && row.note_bytes.as_slice() == item.cmx.as_slice())
         }) else {
             continue;
         };
@@ -492,16 +538,10 @@ pub async fn backfill_unresolved_memos_from_lwd(
     lwd_url: &str,
     notes: &mut [SerializableOrchardNote],
 ) -> NozyResult<usize> {
-    let mut txids = Vec::new();
-    for note in notes.iter() {
-        if note.memo.is_empty() && !txids.iter().any(|id: &String| id == &note.txid) {
-            txids.push(note.txid.clone());
-        }
-    }
+    let txids = unresolved_memo_txids(notes);
     if txids.is_empty() {
         return Ok(0);
     }
-    txids.truncate(MAX_BACKFILL_TXS);
     let mut client = zeaking::lwd::connect_lightwalletd(lwd_url.trim())
         .await
         .map_err(|e| NozyError::NetworkError(e.to_string()))?;
@@ -578,6 +618,33 @@ mod tests {
         raw[0] = 0xF6;
         let stored = memo_plaintext_to_note_bytes(&raw);
         assert_eq!(stored, vec![0xF6]);
+        assert!(memo_note_bytes_to_history_string(&stored).is_none());
+    }
+
+    #[test]
+    fn zip302_f5_text_memo_round_trips_to_history_string() {
+        let mut raw = [0u8; 512];
+        raw[0] = 0xF5;
+        let text = b"order-42";
+        raw[1..1 + text.len()].copy_from_slice(text);
+        assert_eq!(
+            memo_note_bytes_to_history_string(&raw).as_deref(),
+            Some("order-42")
+        );
+        let stored = memo_plaintext_to_note_bytes(&raw);
+        assert_eq!(
+            memo_note_bytes_to_history_string(&stored).as_deref(),
+            Some("order-42")
+        );
+    }
+
+    #[test]
+    fn zip302_f5_empty_memo_stays_null() {
+        let mut raw = [0u8; 512];
+        raw[0] = 0xF5;
+        let stored = memo_plaintext_to_note_bytes(&raw);
+        assert_eq!(stored, vec![0xF6]);
+        assert!(memo_note_bytes_to_history_string(&raw).is_none());
         assert!(memo_note_bytes_to_history_string(&stored).is_none());
     }
 
