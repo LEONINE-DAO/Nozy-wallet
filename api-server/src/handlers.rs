@@ -289,11 +289,29 @@ async fn backfill_history_memos(zebra: &nozy::ZebraClient) {
     };
     let Some((wallet, _)) = loaded else {
         if let Ok((wallet, _)) = load_wallet_with_password(None).await {
-            let _ = nozy::received_memo::backfill_and_save(&wallet, zebra).await;
+            finish_history_memo_backfill(&wallet, zebra).await;
         }
         return;
     };
-    let _ = nozy::received_memo::backfill_and_save(&wallet, zebra).await;
+    finish_history_memo_backfill(&wallet, zebra).await;
+}
+
+async fn finish_history_memo_backfill(wallet: &nozy::HDWallet, zebra: &nozy::ZebraClient) {
+    let updated = nozy::received_memo::backfill_and_save(&wallet, zebra)
+        .await
+        .unwrap_or(0);
+    let still_empty = nozy::load_wallet_notes()
+        .unwrap_or_default()
+        .iter()
+        .any(|note| note.memo.is_empty());
+    if updated == 0 && still_empty {
+        let url = nozy::resolve_lightwalletd_url();
+        let _ = tokio::time::timeout(
+            std::time::Duration::from_secs(8),
+            nozy::received_memo::backfill_and_save_from_lwd(&wallet, &url),
+        )
+        .await;
+    }
 }
 
 pub async fn check_wallet_exists() -> ResponseJson<WalletInfo> {
