@@ -322,6 +322,22 @@ impl TransactionView {
 
 /// Merge sent transaction records with received deposits from persisted `notes.json`.
 pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<TransactionView>> {
+    collect_wallet_transaction_views_inner(current_height, None)
+}
+
+/// Same as [`collect_wallet_transaction_views`], using `wallet` to tell an external
+/// deposit from an internal change output.
+pub fn collect_wallet_transaction_views_with_wallet(
+    current_height: u32,
+    wallet: &crate::hd_wallet::HDWallet,
+) -> NozyResult<Vec<TransactionView>> {
+    collect_wallet_transaction_views_inner(current_height, Some(wallet))
+}
+
+fn collect_wallet_transaction_views_inner(
+    current_height: u32,
+    wallet: Option<&crate::hd_wallet::HDWallet>,
+) -> NozyResult<Vec<TransactionView>> {
     use std::collections::HashMap;
 
     let _ = crate::wallet_profiles::migrate_orphaned_sent_transactions();
@@ -411,7 +427,7 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
                 // Sent record already covers this tx (amount sent + fee); skip change duplicate.
                 continue;
             }
-            if outputs_are_change(&txid, &wallet_notes) {
+            if outputs_are_change(&txid, &wallet_notes, wallet) {
                 received_view.transaction_type = TransactionType::Change;
             }
             views.push(received_view);
@@ -429,24 +445,39 @@ pub fn collect_wallet_transaction_views(current_height: u32) -> NozyResult<Vec<T
 
 /// True when notes mined in `txid` are change from our own spend, not an external deposit.
 ///
-/// A later, smaller deposit used to match "any earlier spent note is larger than this
-/// amount", so a 0.001 ZEC payment showed up as change after any normal send.
+/// A payment to our external receiver is a deposit even when its rho equals some older
+/// note's nullifier. Without the wallet, change is only a note this transaction spent.
 #[cfg(feature = "native")]
-fn outputs_are_change(txid: &str, all: &[crate::notes::SerializableOrchardNote]) -> bool {
-    if all
-        .iter()
-        .any(|note| note.spent && note.spent_in_txid.as_deref() == Some(txid) && note.txid != txid)
-    {
-        return true;
+fn outputs_are_change(
+    txid: &str,
+    all: &[crate::notes::SerializableOrchardNote],
+    wallet: Option<&crate::hd_wallet::HDWallet>,
+) -> bool {
+    let incoming: Vec<_> = all.iter().filter(|note| note.txid == txid).collect();
+    if let Some(wallet) = wallet {
+        if let Ok(scope) = crate::received_memo::ReceiverScopeIndex::from_wallet(wallet) {
+            let mut paid_external = false;
+            let mut paid_internal = false;
+            let mut unknown = false;
+            for note in &incoming {
+                match scope.is_change(&note.address_bytes) {
+                    Some(false) => paid_external = true,
+                    Some(true) => paid_internal = true,
+                    None => unknown = true,
+                }
+            }
+            // A checkout pays the unified address's external receiver.
+            if paid_external {
+                return false;
+            }
+            if paid_internal && !unknown {
+                return true;
+            }
+        }
     }
-    // Orchard/Ironwood change sets rho to the nullifier of the note we spent.
-    all.iter().filter(|note| note.txid == txid).any(|incoming| {
-        let Some(rho) = incoming.rho_bytes.as_deref() else {
-            return false;
-        };
-        all.iter()
-            .any(|prior| prior.txid != txid && prior.nullifier_bytes.as_slice() == rho)
-    })
+
+    all.iter()
+        .any(|note| note.spent && note.spent_in_txid.as_deref() == Some(txid) && note.txid != txid)
 }
 
 /// Lookup a history row by txid (sent record or received/change from notes).
@@ -759,7 +790,7 @@ mod tests {
             sample_note("funding", 5_000_000, 3_500_000, Some("withdrawal"), 1, None),
             sample_note(payment, 100_000, 3_520_156, None, 2, Some(9)),
         ];
-        assert!(!outputs_are_change(payment, &notes));
+        assert!(!outputs_are_change(payment, &notes, None));
     }
 
     #[cfg(feature = "native")]
@@ -769,7 +800,31 @@ mod tests {
             sample_note("funding", 5_000_000, 3_500_000, Some("spendtx"), 1, None),
             sample_note("spendtx", 4_800_000, 3_510_000, None, 3, Some(1)),
         ];
-        assert!(outputs_are_change("spendtx", &notes));
+        assert!(outputs_are_change("spendtx", &notes, None));
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn rho_match_to_a_note_spent_in_another_tx_is_not_change() {
+        let payment = "917c4734c9d42810814b47aae1c5eca274905b4eca829c851e78f44a24b94c2f";
+        let notes = vec![
+            sample_note("older", 5_000_000, 3_500_000, Some("older-spend"), 9, None),
+            sample_note(payment, 100_000, 3_520_380, None, 2, Some(9)),
+        ];
+        assert!(!outputs_are_change(payment, &notes, None));
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn rho_match_without_a_spend_in_this_tx_is_not_change() {
+        let payment = "917c4734c9d42810814b47aae1c5eca274905b4eca829c851e78f44a24b94c2f";
+        let mut prior = sample_note("older", 5_000_000, 3_500_000, None, 9, None);
+        prior.spent = true;
+        let notes = vec![
+            prior,
+            sample_note(payment, 100_000, 3_520_380, None, 2, Some(9)),
+        ];
+        assert!(!outputs_are_change(payment, &notes, None));
     }
 
     #[cfg(feature = "native")]
@@ -778,7 +833,50 @@ mod tests {
         let payment = "paytx";
         let mut incoming = sample_note(payment, 100_000, 3_520_156, Some(payment), 4, Some(8));
         incoming.spent = true;
-        assert!(!outputs_are_change(payment, &[incoming]));
+        assert!(!outputs_are_change(payment, &[incoming], None));
+    }
+
+    #[cfg(feature = "native")]
+    #[test]
+    fn external_receiver_stays_received_when_rho_matches_an_older_nullifier() {
+        use crate::hd_wallet::HDWallet;
+        use orchard::keys::{FullViewingKey, Scope, SpendingKey};
+        use zip32::AccountId;
+
+        let wallet = HDWallet::from_mnemonic(
+            "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about",
+        )
+        .expect("test mnemonic");
+        let account = AccountId::try_from(0).expect("account");
+        let seed = wallet.get_mnemonic_object().to_seed("");
+        let sk = SpendingKey::from_zip32_seed(&seed, 133, account).expect("orchard sk");
+        let fvk = FullViewingKey::from(&sk);
+        let external = fvk
+            .to_ivk(Scope::External)
+            .address_at(0u64)
+            .to_raw_address_bytes()
+            .to_vec();
+        let internal = fvk
+            .to_ivk(Scope::Internal)
+            .address_at(0u64)
+            .to_raw_address_bytes()
+            .to_vec();
+
+        let payment = "917c4734c9d42810814b47aae1c5eca274905b4eca829c851e78f44a24b94c2f";
+        let mut deposit = sample_note(payment, 100_000, 3_520_380, None, 2, Some(9));
+        deposit.address_bytes = external;
+        let mut change = sample_note(payment, 100_000, 3_520_380, None, 3, Some(9));
+        change.address_bytes = internal;
+        let prior = sample_note("older", 5_000_000, 3_500_000, None, 9, None);
+        let mut prior = prior;
+        prior.spent = true;
+
+        assert!(!outputs_are_change(
+            payment,
+            &[prior.clone(), deposit],
+            Some(&wallet)
+        ));
+        assert!(outputs_are_change(payment, &[prior, change], Some(&wallet)));
     }
 }
 

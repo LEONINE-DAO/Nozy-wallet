@@ -74,7 +74,14 @@ fn save_progress(progress: &OrchardCompactScanProgress) -> NozyResult<()> {
 }
 
 fn txid_hex(txid_bytes: &[u8]) -> String {
-    hex::encode(txid_bytes)
+    if txid_bytes.len() == 32 {
+        // lightwalletd stores the tx hash little-endian; wallets and Zebra display it reversed.
+        let mut rev = txid_bytes.to_vec();
+        rev.reverse();
+        hex::encode(rev)
+    } else {
+        hex::encode(txid_bytes)
+    }
 }
 
 fn fvk_for_account(wallet: &HDWallet, account: u32) -> NozyResult<FullViewingKey> {

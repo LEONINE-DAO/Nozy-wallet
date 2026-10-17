@@ -276,24 +276,27 @@ pub(crate) async fn load_wallet_with_password(
     Ok((wallet, storage))
 }
 
-async fn backfill_history_memos(zebra: &nozy::ZebraClient) {
-    let notes = nozy::load_wallet_notes().unwrap_or_default();
-    if !notes.iter().any(|note| note.memo.is_empty()) {
-        return;
-    }
-    let cached = cached_wallet_password();
-    let loaded = if let Some(password) = cached {
-        load_wallet_with_password(Some(password)).await.ok()
-    } else {
-        None
-    };
-    let Some((wallet, _)) = loaded else {
-        if let Ok((wallet, _)) = load_wallet_with_password(None).await {
-            finish_history_memo_backfill(&wallet, zebra).await;
+async fn unlocked_history_wallet() -> Option<nozy::HDWallet> {
+    if let Some(password) = cached_wallet_password() {
+        if let Ok((wallet, _)) = load_wallet_with_password(Some(password)).await {
+            return Some(wallet);
         }
-        return;
-    };
-    finish_history_memo_backfill(&wallet, zebra).await;
+    }
+    load_wallet_with_password(None)
+        .await
+        .ok()
+        .map(|(wallet, _)| wallet)
+}
+
+async fn backfill_history_memos(zebra: &nozy::ZebraClient) -> Option<nozy::HDWallet> {
+    let notes = nozy::load_wallet_notes().unwrap_or_default();
+    let wallet = unlocked_history_wallet().await;
+    if notes.iter().any(|note| note.memo.is_empty()) {
+        if let Some(wallet) = wallet.as_ref() {
+            finish_history_memo_backfill(wallet, zebra).await;
+        }
+    }
+    wallet
 }
 
 async fn finish_history_memo_backfill(wallet: &nozy::HDWallet, zebra: &nozy::ZebraClient) {
@@ -1163,10 +1166,17 @@ pub async fn get_transaction_history(
 
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);
-    backfill_history_memos(&zebra_client).await;
+    let wallet = backfill_history_memos(&zebra_client).await;
     let current_height = zebra_client.get_block_count().await.unwrap_or(0);
 
-    let views = collect_wallet_transaction_views(current_height).map_err(|e| {
+    let views = match wallet.as_ref() {
+        Some(wallet) => nozy::transaction_history::collect_wallet_transaction_views_with_wallet(
+            current_height,
+            wallet,
+        ),
+        None => collect_wallet_transaction_views(current_height),
+    }
+    .map_err(|e| {
         (
             StatusCode::INTERNAL_SERVER_ERROR,
             ResponseJson(serde_json::json!({
@@ -1229,10 +1239,17 @@ pub async fn get_transaction(
 
     let config = load_config();
     let zebra_client = ZebraClient::from_config(&config);
-    backfill_history_memos(&zebra_client).await;
+    let wallet = backfill_history_memos(&zebra_client).await;
     let current_height = zebra_client.get_block_count().await.unwrap_or(0);
 
-    if let Ok(views) = collect_wallet_transaction_views(current_height) {
+    let views = match wallet.as_ref() {
+        Some(wallet) => nozy::transaction_history::collect_wallet_transaction_views_with_wallet(
+            current_height,
+            wallet,
+        ),
+        None => collect_wallet_transaction_views(current_height),
+    };
+    if let Ok(views) = views {
         if let Some(view) = views.iter().find(|v| v.txid == txid) {
             return Ok(ResponseJson(transaction_view_to_history_json(view)));
         }
@@ -1679,7 +1696,12 @@ pub async fn web_read_state(
     let current_height = zebra_client.get_block_count().await.ok();
     let txs: Vec<serde_json::Value> = {
         let tip = current_height.unwrap_or(0);
-        nozy::transaction_history::collect_wallet_transaction_views(tip)
+        let views = if let Some(wallet) = unlocked_history_wallet().await {
+            nozy::transaction_history::collect_wallet_transaction_views_with_wallet(tip, &wallet)
+        } else {
+            nozy::transaction_history::collect_wallet_transaction_views(tip)
+        };
+        views
             .ok()
             .map(|views| {
                 views

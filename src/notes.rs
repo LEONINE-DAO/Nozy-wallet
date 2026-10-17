@@ -345,7 +345,7 @@ pub fn mark_wallet_notes_spent_from_spendables(
         let fvk = FullViewingKey::from(&sn.spending_key);
         let nf = sn.orchard_note.note.nullifier(&fvk).to_bytes();
 
-        if index.mark_note_spent_on_chain(&nf, &fvk) {
+        if index.mark_note_spent_on_chain(&nf, &fvk, broadcast_txid) {
             if let Some(txid) = broadcast_txid {
                 index.tag_spent_in_txid(&nf, txid);
             }
@@ -1411,7 +1411,7 @@ impl<'a> NoteScanner<'a> {
     ) -> NozyResult<()> {
         for (action_idx, action) in actions.iter().enumerate() {
             if action.nullifier.len() == 32 {
-                if note_index.mark_note_spent_on_chain(&action.nullifier, orchard_fvk) {
+                if note_index.mark_note_spent_on_chain(&action.nullifier, orchard_fvk, Some(txid)) {
                     spendable_notes.retain(|sn| {
                         sn.orchard_note.nullifier.to_bytes().as_slice() != action.nullifier
                     });
