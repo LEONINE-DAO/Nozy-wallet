@@ -60,6 +60,42 @@ struct ScanIvk {
     internal_ivk: IncomingViewingKey,
 }
 
+/// Incoming-viewing keys for accounts 0..=20, used to tell a deposit from change.
+pub(crate) struct ReceiverScopeIndex {
+    ivks: Vec<ScanIvk>,
+}
+
+impl ReceiverScopeIndex {
+    pub(crate) fn from_wallet(wallet: &HDWallet) -> NozyResult<Self> {
+        Ok(Self {
+            ivks: scan_ivks(wallet)?,
+        })
+    }
+
+    /// `Some(true)` when `address_bytes` is this wallet's internal (change) receiver.
+    /// `Some(false)` when it is an external receiver. `None` when it is not ours.
+    pub(crate) fn is_change(&self, address_bytes: &[u8]) -> Option<bool> {
+        let bytes: [u8; 43] = address_bytes.try_into().ok()?;
+        let addr = Address::from_raw_address_bytes(&bytes).into_option()?;
+        let diversifier = addr.diversifier();
+        if self
+            .ivks
+            .iter()
+            .any(|keys| keys.external_ivk.address(diversifier) == addr)
+        {
+            return Some(false);
+        }
+        if self
+            .ivks
+            .iter()
+            .any(|keys| keys.internal_ivk.address(diversifier) == addr)
+        {
+            return Some(true);
+        }
+        None
+    }
+}
+
 /// Classic ZIP-302 text: lead byte `0xF5`, then UTF-8, then zero padding.
 ///
 /// Wallets such as Zashi and Ywallet still send this. The pinned `zcash_protocol`

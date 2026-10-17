@@ -350,11 +350,15 @@ impl NoteIndex {
         &mut self,
         chain_nullifier: &[u8],
         fvk: &orchard::keys::FullViewingKey,
+        spent_in_txid: Option<&str>,
     ) -> bool {
         if chain_nullifier.len() != 32 {
             return false;
         }
         if self.mark_note_spent(chain_nullifier) {
+            if let Some(txid) = spent_in_txid {
+                let _ = self.tag_spent_in_txid(chain_nullifier, txid);
+            }
             return true;
         }
 
@@ -374,6 +378,9 @@ impl NoteIndex {
         if let Some(idx) = found_idx {
             if let Some(note) = self.notes.get_mut(idx) {
                 note.spent = true;
+                if let Some(txid) = spent_in_txid {
+                    note.spent_in_txid = Some(txid.to_string());
+                }
                 if let Some(canonical) = note.canonical_nullifier_bytes(fvk) {
                     let old = note.nullifier_bytes.clone();
                     if old != canonical.to_vec() {

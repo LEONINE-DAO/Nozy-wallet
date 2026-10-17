@@ -383,12 +383,21 @@ pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriEr
 
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url.clone());
-    if let Ok(wallet) = load_session_wallet(None).await {
-        let _ = nozy::received_memo::backfill_and_save(&wallet, &zebra_client).await;
+    let wallet = load_session_wallet(None).await.ok();
+    if let Some(wallet) = wallet.as_ref() {
+        let _ = nozy::received_memo::backfill_and_save(wallet, &zebra_client).await;
     }
     let current_height = config.last_scan_height.unwrap_or(0);
-    let mut views = collect_wallet_transaction_views(current_height)
-        .map_err(|e| TauriError::from(e.to_string()))?;
+    let mut views = match wallet.as_ref() {
+        Some(wallet) => {
+            nozy::transaction_history::collect_wallet_transaction_views_with_wallet(
+                current_height,
+                wallet,
+            )
+        }
+        None => collect_wallet_transaction_views(current_height),
+    }
+    .map_err(|e| TauriError::from(e.to_string()))?;
 
     enrich_block_times_for_views(&mut views, &zebra_client).await;
 
@@ -397,21 +406,28 @@ pub async fn get_transaction_history() -> Result<Vec<serde_json::Value>, TauriEr
 
 #[command]
 pub async fn get_transaction(txid: String) -> Result<serde_json::Value, TauriError> {
-    use nozy::transaction_history::{
-        transaction_view_for_txid, transaction_view_to_history_json, SentTransactionStorage,
-    };
+    use nozy::transaction_history::{transaction_view_to_history_json, SentTransactionStorage};
 
     let config = load_config();
     let zebra_client = ZebraClient::new(config.zebra_url.clone());
-    if let Ok(wallet) = load_session_wallet(None).await {
-        let _ = nozy::received_memo::backfill_and_save(&wallet, &zebra_client).await;
+    let wallet = load_session_wallet(None).await.ok();
+    if let Some(wallet) = wallet.as_ref() {
+        let _ = nozy::received_memo::backfill_and_save(wallet, &zebra_client).await;
     }
     let current_height = config.last_scan_height.unwrap_or(0);
 
-    if let Some(view) = transaction_view_for_txid(&txid, current_height)
-        .map_err(|e| TauriError::from(e.to_string()))?
-    {
-        return Ok(transaction_view_to_history_json(&view));
+    let views = match wallet.as_ref() {
+        Some(wallet) => {
+            nozy::transaction_history::collect_wallet_transaction_views_with_wallet(
+                current_height,
+                wallet,
+            )
+        }
+        None => nozy::transaction_history::collect_wallet_transaction_views(current_height),
+    }
+    .map_err(|e| TauriError::from(e.to_string()))?;
+    if let Some(view) = views.iter().find(|view| view.txid == txid) {
+        return Ok(transaction_view_to_history_json(view));
     }
 
     let tx_storage = SentTransactionStorage::new().map_err(|e| TauriError::from(e.to_string()))?;
