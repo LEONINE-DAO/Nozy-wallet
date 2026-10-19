@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NozyWallet",
-  "version": "2.0.2",
+  "version": "2.0.3",
   "minimum_chrome_version": "114",
   "description": "Shielded Zcash Orchard wallet. Keys stay on your device. Sync, send, receive, and Ironwood.",
   "icons": {
@@ -48,6 +48,9 @@
     "http://*/*",
     "https://*/*"
   ],
+  "externally_connectable": {
+    "matches": ["http://127.0.0.1/*", "http://localhost/*"]
+  },
   "content_security_policy": {
     "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'; frame-src 'self' https:"
   }

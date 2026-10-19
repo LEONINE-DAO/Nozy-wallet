@@ -265,22 +265,102 @@ export async function companionSaplingShield(baseUrl, body = {}) {
   return r.json();
 }
 
+const ZNS_MAINNET_URL = "https://light.zcash.me/zns-mainnet-test";
+const ZNS_TESTNET_URL = "https://light.zcash.me/zns-testnet";
+
+function normalizeZnsNameForIndexer(raw) {
+  let s = String(raw ?? "")
+    .trim()
+    .toLowerCase();
+  if (s.endsWith(".zcash")) s = s.slice(0, -".zcash".length);
+  else if (s.endsWith(".zec")) s = s.slice(0, -".zec".length);
+  return s;
+}
+
+/**
+ * Public ZNS indexer resolve (same endpoint desktop uses). Used when the local
+ * companion API is offline so the extension Send field still shows Valid/Invalid.
+ * @param {string} name
+ * @param {string} [network]
+ */
+async function resolveZnsNameViaIndexer(name, network = "mainnet") {
+  const normalized = normalizeZnsNameForIndexer(name);
+  if (!normalized) {
+    return { name: "", found: false, registration: null };
+  }
+  const url = String(network).toLowerCase() === "testnet" ? ZNS_TESTNET_URL : ZNS_MAINNET_URL;
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "resolve",
+      params: [normalized]
+    })
+  });
+  if (!res.ok) {
+    throw new Error(`ZNS indexer HTTP ${res.status}`);
+  }
+  const data = await res.json();
+  if (data?.error?.message) {
+    throw new Error(String(data.error.message));
+  }
+  const reg = data?.result;
+  if (!reg || typeof reg !== "object" || typeof reg.address !== "string") {
+    return { name: normalized, found: false, registration: null };
+  }
+  return {
+    name: typeof reg.name === "string" ? reg.name : normalized,
+    found: true,
+    registration: {
+      name: typeof reg.name === "string" ? reg.name : normalized,
+      address: reg.address,
+      txid: typeof reg.txid === "string" ? reg.txid : undefined,
+      height: typeof reg.height === "number" ? reg.height : undefined,
+      nonce: typeof reg.nonce === "number" ? reg.nonce : undefined,
+      last_action: typeof reg.last_action === "string" ? reg.last_action : undefined
+    }
+  };
+}
+
+function isCompanionNetworkError(err) {
+  const msg = String(err?.message ?? err ?? "");
+  return (
+    msg === "Failed to fetch" ||
+    /NetworkError|network failed|Load failed|ECONNREFUSED|ERR_CONNECTION/i.test(msg)
+  );
+}
+
 /**
  * Resolve a Zcash name via companion `/api/zns/resolve`.
+ * Falls back to the public ZNS indexer when the companion is unreachable.
  * @param {string} [baseUrl]
  * @param {{ name: string, network?: string }} body
  */
 export async function companionZnsResolve(baseUrl, body) {
-  const r = await companionFetch(baseUrl, "/api/zns/resolve", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: body.name,
-      network: body.network ?? "mainnet"
-    })
-  });
-  if (!r.ok) throw new Error(await readErrorBody(r));
-  return r.json();
+  const network = body.network ?? "mainnet";
+  try {
+    const r = await companionFetch(baseUrl, "/api/zns/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: body.name,
+        network
+      })
+    });
+    if (!r.ok) throw new Error(await readErrorBody(r));
+    return r.json();
+  } catch (e) {
+    if (!isCompanionNetworkError(e)) throw e;
+    try {
+      return await resolveZnsNameViaIndexer(body.name, network);
+    } catch (e2) {
+      throw new Error(
+        `Could not resolve Zcash name (companion offline at ${normalizeCompanionBase(baseUrl)} and indexer unreachable). ${String(e2?.message ?? e2)}`
+      );
+    }
+  }
 }
 
 /** @param {string} [baseUrl] @param {string} [env] */

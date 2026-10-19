@@ -2,6 +2,17 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 2.0.3 — 2026-10-18 — Sweet Chili
+
+### Added
+- Send recipient field shows **Valid address**, **Valid ZNS**, or **Invalid** for unified addresses and names (`nozywallet.zec` / `.zcash`).
+
+### Fixed
+- Zcash name resolve works when the local companion API is offline by falling back to the public ZNS indexer.
+
+### Changed
+- Removed the pre-NU7 **Faster inclusion (10× fee)** control and Network fee preview from Send. Sends use the standard fee; the review step still shows the fee amount.
+
 ## 2.0.2 — 2026-10-16 — Sweet Chili
 
 ### Fixed
