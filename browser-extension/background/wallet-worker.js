@@ -1,5 +1,8 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 import {
+  compactChainTip
+} from "./lwd-compact.js";
+import {
   feeBlockFromRpc,
   mandatoryOrchardFeeZats,
   rpcFallbackWithRequester,
@@ -18,6 +21,14 @@ async function ensureReady() {
     ready = initWasm();
   }
   await ready;
+}
+
+function isNozyPublicSyncUrl(url) {
+  try {
+    return new URL(url).hostname === "lwd.nozywallet.org";
+  } catch (_) {
+    return String(url || "").includes("lwd.nozywallet.org");
+  }
 }
 
 function randomTxidLike() {
@@ -131,6 +142,9 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
+      if (method === "getblockcount" && isNozyPublicSyncUrl(endpoint)) {
+        return compactChainTip();
+      }
       const resp = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -377,11 +391,33 @@ self.onmessage = async (event) => {
       // 1) Scan a recent window for decryptable Orchard notes.
       // 2) Fetch witness data with RPC method fallbacks across node variants.
       // 3) Build Orchard v5 transaction in WASM.
-      const feeBlock = await feeBlockFromRpc((method, rpcParams) =>
-        rpcRequest(endpoint, method, rpcParams)
-      );
+      const isPublicSync = isNozyPublicSyncUrl(endpoint);
+      let feeBlock = null;
+      if (isPublicSync) {
+        try {
+          const tip = await compactChainTip();
+          feeBlock = {
+            mainnet: true,
+            minedBlockHeight: (Number.isFinite(tip) && tip >= 0 ? Math.floor(tip) : 0) + 1
+          };
+        } catch (_) {
+          feeBlock = null;
+        }
+      } else {
+        try {
+          feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+            rpcRequest(endpoint, method, rpcParams)
+          );
+        } catch (_) {
+          feeBlock = null;
+        }
+      }
       const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
-      const endHeight = Number(await rpcRequest(endpoint, "getblockcount", []));
+      const endHeight = Number(
+        isPublicSync
+          ? await compactChainTip()
+          : await rpcRequest(endpoint, "getblockcount", [])
+      );
       const scanWindow = Number(params?.scanWindow ?? 200);
       const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
       const requiredValue = requestedAmount + requestedFee;
