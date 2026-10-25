@@ -33,8 +33,17 @@ export function orchardFeeFloorZats(mainnet, minedBlockHeight) {
  * Ask the node which ZIP 2009 fee block the next transaction is mined in.
  * `request(method, params)` returns the JSON-RPC result.
  */
-export async function feeBlockFromRpc(request) {
-  const tip = Number(await request("getblockcount", []));
+export async function feeBlockFromRpc(request, fallbackTip = null) {
+  let tip;
+  try {
+    tip = Number(await request("getblockcount", []));
+  } catch (err) {
+    if (fallbackTip != null && Number.isFinite(Number(fallbackTip))) {
+      tip = Number(fallbackTip);
+    } else {
+      throw err;
+    }
+  }
   let mainnet = true;
   try {
     const info = await request("getblockchaininfo", []);
