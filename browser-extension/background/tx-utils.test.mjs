@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  feeBlockFromRpc,
   mandatoryOrchardFeeZats,
   MANDATORY_ORCHARD_FEE_FALLBACK_ZATS,
   rpcFallbackWithRequester,
@@ -66,3 +67,24 @@ test("mandatoryOrchardFeeZats uses ZIP-317 ×4 from wasm and ignores a lower cal
   assert.equal(mandatoryOrchardFeeZats(wasm, ""), 40_000);
 });
 
+
+
+test("feeBlockFromRpc uses JSON-RPC getblockcount when available", async () => {
+  const req = async (method) => {
+    if (method === "getblockcount") return 3600000;
+    if (method === "getblockchaininfo") return { chain: "main" };
+    throw new Error("unexpected method " + method);
+  };
+  const res = await feeBlockFromRpc(req);
+  assert.equal(res.mainnet, true);
+  assert.equal(res.minedBlockHeight, 3600001);
+});
+
+test("feeBlockFromRpc falls back to fallbackTip when JSON-RPC getblockcount returns HTTP 415", async () => {
+  const req = async (method) => {
+    throw new Error("RPC getblockcount HTTP 415");
+  };
+  const res = await feeBlockFromRpc(req, 3595000);
+  assert.equal(res.mainnet, true);
+  assert.equal(res.minedBlockHeight, 3595001);
+});
