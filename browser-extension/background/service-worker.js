@@ -465,6 +465,9 @@ function _orchardAnchorHexFromRpc(tr) {
   const fromZebra =
     c?.finalRoot ?? c?.final_root ?? o?.finalRoot ?? o?.final_root ?? "";
   let hex = String(tr.anchor ?? tr.orchardTree?.anchor ?? fromZebra ?? "").trim();
+  if (!hex && typeof tr.orchard_tree === "string" && tr.orchard_tree.length >= 66 && tr.orchard_tree.startsWith("01")) {
+    hex = tr.orchard_tree.slice(2, 66);
+  }
   if (hex.startsWith("0x") || hex.startsWith("0X")) hex = hex.slice(2);
   return hex;
 }
@@ -507,6 +510,9 @@ function orchardWitnessFieldsFromNote(noteObj) {
 }
 
 async function _inlineRpcRequest(endpoint, method, params = []) {
+  if (method === "getblockcount" && isNozyPublicSyncUrl(endpoint)) {
+    return compactChainTip();
+  }
   const url = normalizeRpcEndpoint(endpoint);
   const resp = await fetch(url, {
     method: "POST",
@@ -532,9 +538,27 @@ async function _inlineProveTransaction(params) {
   if (!recipientAddress) throw new Error("Missing recipient address.");
 
   const endpoint = normalizeRpcEndpoint(rpcEndpoint);
-  const feeBlock = await feeBlockFromRpc((method, rpcParams) =>
-    _inlineRpcRequest(endpoint, method, rpcParams)
-  );
+  const isPublicSync = isNozyPublicSyncUrl(endpoint) || (await isPublicLwdOptedIn());
+  let feeBlock = null;
+  if (isPublicSync) {
+    try {
+      const tip = await compactChainTip();
+      feeBlock = {
+        mainnet: true,
+        minedBlockHeight: (Number.isFinite(tip) && tip >= 0 ? Math.floor(tip) : 0) + 1
+      };
+    } catch (_) {
+      feeBlock = null;
+    }
+  } else {
+    try {
+      feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+        _inlineRpcRequest(endpoint, method, rpcParams)
+      );
+    } catch (_) {
+      feeBlock = null;
+    }
+  }
   const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
   const requiredValue = requestedAmount + requestedFee;
   if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
@@ -560,15 +584,26 @@ async function _inlineProveTransaction(params) {
   }
 
   const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
-  const chainTip = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
+  let chainTip;
+  let orchardTree = null;
+  if (isPublicSync) {
+    chainTip = Number(await compactChainTip());
+    const heightStr = String(chainTip);
+    try {
+      orchardTree = await compactTreeState(heightStr);
+    } catch (_) {
+      orchardTree = await compactTreeState();
+    }
+  } else {
+    chainTip = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
+    const heightStr = String(chainTip);
+    const rpcReq = (at) => _inlineRpcRequest(endpoint, at.method, at.params ?? []);
+    orchardTree = await rpcFallbackWithRequester(rpcReq, [
+      { method: "z_getorchardtree", params: [heightStr] },
+      { method: "z_gettreestate", params: [heightStr] }
+    ]);
+  }
   const txBuildHeight = chainTip + 1;
-  const heightStr = String(chainTip);
-
-  const rpcReq = (at) => _inlineRpcRequest(endpoint, at.method, at.params ?? []);
-  const orchardTree = await rpcFallbackWithRequester(rpcReq, [
-    { method: "z_getorchardtree", params: [heightStr] },
-    { method: "z_gettreestate", params: [heightStr] }
-  ]);
   const anchorHex = _orchardAnchorHexFromRpc(orchardTree);
   if (!anchorHex || anchorHex.length < 64) throw new Error("RPC did not return a valid Orchard anchor.");
 
@@ -588,7 +623,13 @@ async function _inlineProveTransaction(params) {
       throw new Error("Invalid orchard_witness_tip_height on note.");
     }
     for (let h = tip + 1; h <= chainTip; h += 1) {
-      const block = await rpcGetBlockVerboseByHeight(endpoint, h);
+      let block;
+      if (isPublicSync) {
+        const compactList = await compactFetchBlocks(h, h);
+        block = compactList[0] || { height: h, tx: [] };
+      } else {
+        block = await rpcGetBlockVerboseByHeight(endpoint, h);
+      }
       witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
     }
     if (!wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex)) {
@@ -993,7 +1034,11 @@ async function refreshTxExpiryStates() {
   if (!session.rpcEndpoint) return;
   let chainTip;
   try {
-    chainTip = Number(await rpcCall("getblockcount", []));
+    if (isNozyPublicSyncUrl(session.rpcEndpoint) || (await isPublicLwdOptedIn())) {
+      chainTip = await compactChainTip();
+    } else {
+      chainTip = Number(await rpcCall("getblockcount", []));
+    }
   } catch (_) {
     return;
   }
@@ -2081,6 +2126,13 @@ async function ensureSessionInitialized(opts = {}) {
 }
 
 async function rpcCall(method, params = []) {
+  if (method === "getblockcount" && (isNozyPublicSyncUrl(session.rpcEndpoint) || (await isPublicLwdOptedIn()))) {
+    try {
+      return await compactChainTip();
+    } catch (_) {
+      /* fall through to rpc endpoint */
+    }
+  }
   let endpoint;
   try {
     endpoint = normalizeRpcEndpoint(session.rpcEndpoint);
@@ -2270,9 +2322,17 @@ async function estimateFeeZats(memo = "", _priority = true) {
   let feeBlock = null;
   try {
     if (session.rpcEndpoint) {
-      feeBlock = await feeBlockFromRpc((method, rpcParams) =>
-        rpcCall(method, rpcParams)
-      );
+      if (isNozyPublicSyncUrl(session.rpcEndpoint) || (await isPublicLwdOptedIn())) {
+        const tip = await compactChainTip();
+        feeBlock = {
+          mainnet: true,
+          minedBlockHeight: (Number.isFinite(tip) && tip >= 0 ? Math.floor(tip) : 0) + 1
+        };
+      } else {
+        feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+          rpcCall(method, rpcParams)
+        );
+      }
     }
   } catch (_) {
     feeBlock = null;
