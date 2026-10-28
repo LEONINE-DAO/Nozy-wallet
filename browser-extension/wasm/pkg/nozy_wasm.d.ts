@@ -47,6 +47,12 @@ export function get_zcash_chain_id(): string;
 
 export function nozy_version_display(): string;
 
+/**
+ * Merkle root of a lightwalletd / Zebra `finalState` commitment tree.
+ * The serialized frontier itself is not the anchor.
+ */
+export function orchard_anchor_hex_from_final_state(final_state_hex: string): string;
+
 export function orchard_scan_tracker_apply_block(tracker_state_json: string, mnemonic_str: string, wallet_address: string, block_height: number, block_json: string, account_indices_json: string): any;
 
 export function orchard_scan_tracker_new(final_state_hex: string): string;
@@ -89,6 +95,7 @@ export interface InitOutput {
     readonly get_nu5_activation_height: () => number;
     readonly get_zcash_chain_id: () => [number, number];
     readonly nozy_version_display: () => [number, number];
+    readonly orchard_anchor_hex_from_final_state: (a: number, b: number) => [number, number, number, number];
     readonly orchard_witness_matches_anchor_hex: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly pilot_expiry_delta_blocks: () => number;
     readonly prove_orchard_transaction_dummy: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number];
@@ -97,12 +104,12 @@ export interface InitOutput {
     readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
+    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly decrypt_memos_from_raw_tx: (a: number, b: number, c: number, d: number) => [number, number, number];
     readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
     readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
     readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly rustsecp256k1_v0_10_0_context_create: (a: number) => number;
     readonly rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;
     readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;

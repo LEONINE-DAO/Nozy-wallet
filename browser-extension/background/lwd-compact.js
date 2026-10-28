@@ -50,6 +50,46 @@ export async function compactTreeState(height) {
 }
 
 /**
+ * Broadcast a raw transaction through lightwalletd `SendTransaction`.
+ * The compact HTTP host proxies this; it is not Zebra `sendrawtransaction`.
+ * @param {string} rawTxHex
+ * @returns {Promise<{ success?: boolean, txid?: string }>}
+ */
+export async function compactSubmitRawTx(rawTxHex) {
+  const clean = String(rawTxHex || "")
+    .trim()
+    .replace(/^0x/i, "");
+  if (!clean || clean.length % 2 !== 0) {
+    throw new Error("raw transaction hex is invalid");
+  }
+  const bases = preferredCompactBase
+    ? [preferredCompactBase, ...PUBLIC_COMPACT_HTTP_BASES.filter((b) => b !== preferredCompactBase)]
+    : PUBLIC_COMPACT_HTTP_BASES;
+  let lastErr = null;
+  for (const base of bases) {
+    const url = `${base.replace(/\/$/, "")}/submit`;
+    try {
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        cache: "no-store",
+        body: JSON.stringify({ raw_tx_hex: clean })
+      });
+      if (!resp.ok) {
+        lastErr = new Error(`Compact submit HTTP ${resp.status} from ${base}`);
+        continue;
+      }
+      const body = await resp.json();
+      preferredCompactBase = base;
+      return body && typeof body === "object" ? body : { success: true };
+    } catch (e) {
+      lastErr = e instanceof Error ? e : new Error(String(e));
+    }
+  }
+  throw lastErr || new Error("Compact submit unreachable");
+}
+
+/**
  * @param {number} start inclusive
  * @param {number} end inclusive
  * @returns {Promise<object[]>} slim scan blocks

@@ -262,6 +262,33 @@ export function nozy_version_display() {
 }
 
 /**
+ * Merkle root of a lightwalletd / Zebra `finalState` commitment tree.
+ * The serialized frontier itself is not the anchor.
+ * @param {string} final_state_hex
+ * @returns {string}
+ */
+export function orchard_anchor_hex_from_final_state(final_state_hex) {
+    let deferred3_0;
+    let deferred3_1;
+    try {
+        const ptr0 = passStringToWasm0(final_state_hex, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ret = wasm.orchard_anchor_hex_from_final_state(ptr0, len0);
+        var ptr2 = ret[0];
+        var len2 = ret[1];
+        if (ret[3]) {
+            ptr2 = 0; len2 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred3_0 = ptr2;
+        deferred3_1 = len2;
+        return getStringFromWasm0(ptr2, len2);
+    } finally {
+        wasm.__wbindgen_free(deferred3_0, deferred3_1, 1);
+    }
+}
+
+/**
  * @param {string} tracker_state_json
  * @param {string} mnemonic_str
  * @param {string} wallet_address
