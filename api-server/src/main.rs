@@ -352,6 +352,10 @@ async fn main() -> anyhow::Result<()> {
             get(lwd_handlers::lwd_compact_blocks),
         )
         .route(
+            "/api/lwd/compact/submit",
+            post(lwd_handlers::lwd_compact_submit),
+        )
+        .route(
             "/api/lwd/sync/compact",
             post(lwd_handlers::lwd_sync_compact),
         )

@@ -1,5 +1,16 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 import {
+  compactChainTip,
+  compactFetchBlocks,
+  compactTreeState
+} from "./lwd-compact.js";
+import {
+  advanceWitnessOverRange,
+  anchorHexFromCompactTreestate,
+  compactBlocksByHeight,
+  isNozyPublicSyncUrl
+} from "./public-sync-send.js";
+import {
   feeBlockFromRpc,
   mandatoryOrchardFeeZats,
   rpcFallbackWithRequester,
@@ -64,11 +75,15 @@ async function initShieldedTrackerState(endpoint, startHeight) {
   let orchardFinal = "";
   let ironwoodFinal = "";
   if (startHeight > 0) {
-    const ts = await rpcFallback(endpoint, [
-      { method: "z_gettreestate", params: [String(startHeight - 1)] }
-    ]);
-    orchardFinal = poolFinalStateFromTreestate(ts, "orchard");
-    ironwoodFinal = poolFinalStateFromTreestate(ts, "ironwood");
+    const ts = isNozyPublicSyncUrl(endpoint)
+      ? await compactTreeState(startHeight - 1)
+      : await rpcFallback(endpoint, [
+          { method: "z_gettreestate", params: [String(startHeight - 1)] }
+        ]);
+    orchardFinal =
+      poolFinalStateFromTreestate(ts, "orchard") || String(ts?.orchard_tree ?? "").trim();
+    ironwoodFinal =
+      poolFinalStateFromTreestate(ts, "ironwood") || String(ts?.ironwood_tree ?? "").trim();
   }
   if (typeof wasm.shielded_scan_tracker_new === "function") {
     return wasm.shielded_scan_tracker_new(orchardFinal, ironwoodFinal);
@@ -131,6 +146,9 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
+      if (method === "getblockcount" && isNozyPublicSyncUrl(endpoint)) {
+        return compactChainTip();
+      }
       const resp = await fetch(endpoint, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -221,6 +239,16 @@ function orchardAnchorHexFromRpc(tr) {
 }
 
 async function fetchOrchardAnchor(rpcEndpoint, targetHeight) {
+  if (isNozyPublicSyncUrl(rpcEndpoint)) {
+    const ts = await compactTreeState(String(targetHeight));
+    const anchorHex = anchorHexFromCompactTreestate(ts, (finalState) =>
+      wasm.orchard_anchor_hex_from_final_state(finalState)
+    );
+    if (!anchorHex || anchorHex.length < 64) {
+      throw new Error("Public sync did not return a valid Orchard anchor.");
+    }
+    return anchorHex;
+  }
   const h = String(targetHeight);
   const orchardTree = await rpcFallback(rpcEndpoint, [
     { method: "z_getorchardtree", params: [h] },
@@ -248,9 +276,19 @@ async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetH
   if (!Number.isFinite(tip) || tip < 0) {
     throw new Error("Invalid orchard_witness_tip_height on note.");
   }
-  for (let h = tip + 1; h <= targetHeight; h += 1) {
-    const block = await rpcGetBlockVerboseByHeight(rpcEndpoint, h);
-    witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
+  if (isNozyPublicSyncUrl(rpcEndpoint)) {
+    witnessHex = await advanceWitnessOverRange(
+      (hex, blockJson) => wasm.advance_orchard_witness_hex(hex, blockJson),
+      witnessHex,
+      tip,
+      targetHeight,
+      compactFetchBlocks
+    );
+  } else {
+    for (let h = tip + 1; h <= targetHeight; h += 1) {
+      const block = await rpcGetBlockVerboseByHeight(rpcEndpoint, h);
+      witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
+    }
   }
   const ok = wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex);
   if (!ok) {
@@ -393,10 +431,15 @@ self.onmessage = async (event) => {
       let scannedValue = 0;
 
       let trackerState = await initShieldedTrackerState(endpoint, startHeight);
+      const publicBlocks = isNozyPublicSyncUrl(endpoint)
+        ? await compactBlocksByHeight(compactFetchBlocks, startHeight, endHeight)
+        : null;
 
       for (let h = startHeight; h <= endHeight; h += 1) {
         try {
-          const block = await rpcGetBlockVerboseByHeight(endpoint, h);
+          const block = publicBlocks
+            ? publicBlocks.get(h) || { height: h, tx: [] }
+            : await rpcGetBlockVerboseByHeight(endpoint, h);
           if (!block) continue;
           const blockJson = JSON.stringify(block);
           const { out, nextTracker } = applyShieldedScanBlock(

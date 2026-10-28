@@ -150,6 +150,20 @@ pub fn advance_orchard_witness_hex(witness_hex: &str, block_json: &str) -> Resul
     Ok(hex::encode(bytes))
 }
 
+/// Merkle root of a lightwalletd / Zebra `finalState` commitment tree.
+/// The serialized frontier itself is not the anchor.
+#[wasm_bindgen]
+pub fn orchard_anchor_hex_from_final_state(final_state_hex: &str) -> Result<String, JsError> {
+    let s = final_state_hex.trim().trim_start_matches("0x");
+    if s.is_empty() {
+        return Err(JsError::new("empty finalState"));
+    }
+    let bytes = hex::decode(s).map_err(|e| JsError::new(&format!("finalState hex: {e}")))?;
+    let tree = crate::orchard_tree_codec::orchard_commitment_tree_from_final_state(&bytes)
+        .map_err(|e| JsError::new(&e))?;
+    Ok(hex::encode(tree.root().to_bytes()))
+}
+
 #[wasm_bindgen]
 pub fn orchard_witness_matches_anchor_hex(
     witness_hex: &str,

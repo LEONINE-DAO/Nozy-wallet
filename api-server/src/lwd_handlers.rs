@@ -1,7 +1,8 @@
 //! lightwalletd endpoints for Chrome/Edge extensions and web UI (`zeaking::lwd`).
 
-use axum::{extract::Query, http::StatusCode, response::Json as ResponseJson};
+use axum::{extract::Query, http::StatusCode, response::Json as ResponseJson, Json};
 use serde::Deserialize;
+use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -275,6 +276,7 @@ pub async fn lwd_compact_treestate(
             .await
             .map_err(zeaking_err_response)?
     };
+    let orchard_anchor = orchard_anchor_hex(&ts.orchard_tree);
     Ok(ResponseJson(serde_json::json!({
         "network": ts.network,
         "height": ts.height,
@@ -282,10 +284,73 @@ pub async fn lwd_compact_treestate(
         "time": ts.time,
         "sapling_tree": ts.sapling_tree,
         "orchard_tree": ts.orchard_tree,
+        "anchor": orchard_anchor,
         // WASM tracker expects getblock-style finalState hex when present.
-        "orchard": { "commitments": { "finalState": ts.orchard_tree } },
+        // `finalRoot` is the Merkle anchor, not the frontier blob.
+        "orchard": { "commitments": {
+            "finalState": ts.orchard_tree,
+            "finalRoot": orchard_anchor,
+        } },
         "ironwood": { "commitments": { "finalState": ts.orchard_tree } },
     })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct LwdCompactSubmitBody {
+    pub raw_tx_hex: String,
+}
+
+/// POST `/api/lwd/compact/submit` — lightwalletd `SendTransaction` for a raw tx.
+/// No wallet keys. Clients must not be able to retarget the gRPC backend.
+pub async fn lwd_compact_submit(
+    Json(body): Json<LwdCompactSubmitBody>,
+) -> Result<ResponseJson<serde_json::Value>, (StatusCode, ResponseJson<serde_json::Value>)> {
+    let hex_str = body.raw_tx_hex.trim().trim_start_matches("0x");
+    if hex_str.is_empty()
+        || hex_str.len() % 2 != 0
+        || !hex_str.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err(error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            "raw_tx_hex must be non-empty hex",
+            "LWD_INVALID",
+        ));
+    }
+    let raw = hex::decode(hex_str).map_err(|e| {
+        error_response_with_code(
+            StatusCode::BAD_REQUEST,
+            format!("raw_tx_hex: {e}"),
+            "LWD_INVALID",
+        )
+    })?;
+    let url =
+        std::env::var("LIGHTWALLETD_GRPC").unwrap_or_else(|_| "http://127.0.0.1:9067".to_string());
+    let mut client = zeaking::lwd::connect_lightwalletd(&url)
+        .await
+        .map_err(zeaking_err_response)?;
+    zeaking::lwd::send_transaction(&mut client, raw.clone())
+        .await
+        .map_err(zeaking_err_response)?;
+    Ok(ResponseJson(serde_json::json!({
+        "success": true,
+        "txid": zcash_txid_hex(&raw),
+    })))
+}
+
+fn orchard_anchor_hex(tree_hex: &str) -> Option<String> {
+    let trimmed = tree_hex.trim().trim_start_matches("0x");
+    if trimmed.is_empty() {
+        return None;
+    }
+    let bytes = hex::decode(trimmed).ok()?;
+    let tree = nozy::orchard_tree_codec::orchard_commitment_tree_from_final_state(&bytes).ok()?;
+    Some(hex::encode(tree.root().to_bytes()))
+}
+
+fn zcash_txid_hex(raw: &[u8]) -> String {
+    let first = Sha256::digest(raw);
+    let second = Sha256::digest(first);
+    hex::encode(second.iter().rev().copied().collect::<Vec<u8>>())
 }
 
 /// GET `/api/lwd/compact/blocks?start=&end=` — stream decode to scan JSON (no SQLite, no keys).
