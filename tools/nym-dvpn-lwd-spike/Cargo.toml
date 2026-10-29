@@ -48,6 +48,11 @@ pin-project = "1"
 
 [patch.crates-io]
 libcrux-psq = { path = "vendor/libcrux-psq" }
+# Nym develop still enables rustls on tungstenite 0.20 and reqwest 0.11 via
+# tendermint-rpc 0.40.4. These patches move those edges onto rustls 0.23.46.
+tungstenite = { path = "../nym-rustls-patch/tungstenite" }
+tokio-tungstenite = { path = "../nym-rustls-patch/tokio-tungstenite" }
+tendermint-rpc = { path = "../nym-rustls-patch/tendermint-rpc" }
 
 # Override nym-kkt from git develop so we can use libcrux-chacha20poly1305 0.0.8 (GHSA-hc3c-63hc-2r9f).
 [patch."https://github.com/nymtech/nym.git"]
