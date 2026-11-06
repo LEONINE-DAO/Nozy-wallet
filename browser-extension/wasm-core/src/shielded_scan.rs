@@ -4,7 +4,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use wasm_bindgen::prelude::*;
 
-use nozy::hd_wallet::{HDWallet, OrchardActionCompactData, OrchardDecryptionResult};
+use nozy::hd_wallet::{HDWallet, OrchardActionCompactData, OrchardDecryptionResult, OrchardTrialKeys};
 
 use crate::orchard_witness_local::{merkle_hash_from_cmx_bytes, OrchardWitnessTracker};
 
@@ -190,10 +190,25 @@ impl ScanDebug {
     }
 }
 
+fn trial_keys_for_accounts(
+    wallet: &HDWallet,
+    account_indices_json: &str,
+) -> Result<Vec<(u32, OrchardTrialKeys)>, String> {
+    let accounts = parse_account_indices(account_indices_json);
+    let mut keys = Vec::with_capacity(accounts.len());
+    for account in accounts {
+        let trial = wallet
+            .orchard_trial_keys(account)
+            .map_err(|e| format!("{:?}", e))?;
+        keys.push((account, trial));
+    }
+    Ok(keys)
+}
+
 fn apply_pool_actions(
     tracker: &mut OrchardWitnessTracker,
     wallet: &HDWallet,
-    accounts: &[u32],
+    account_keys: &[(u32, OrchardTrialKeys)],
     block_height: u32,
     txid: &str,
     actions: &[Value],
@@ -218,10 +233,11 @@ fn apply_pool_actions(
         tracker.append_cmx(cmx_node)?;
 
         let mut decrypted: Option<(OrchardDecryptionResult, u32)> = None;
-        for account in accounts {
+        for (account, keys) in account_keys {
             let hit = wallet
-                .decrypt_orchard_action_compact_for_account(
+                .decrypt_compact_with_keys(
                     &compact,
+                    keys,
                     *account,
                     block_height,
                     txid,
@@ -242,23 +258,25 @@ fn apply_pool_actions(
             }
         }
         if decrypted.is_none() {
-            let probe = accounts.first().copied().unwrap_or(0);
-            let other = wallet
-                .decrypt_orchard_action_compact_for_account(
-                    &compact,
-                    probe,
-                    block_height,
-                    txid,
-                    nozy_pool(other_pool),
-                )
-                .map_err(|e| format!("{:?}", e))?;
-            if other.is_some() {
-                match pool {
-                    ShieldedPool::Orchard => {
-                        debug.ow_other_domain = debug.ow_other_domain.saturating_add(1)
-                    }
-                    ShieldedPool::Ironwood => {
-                        debug.iw_other_domain = debug.iw_other_domain.saturating_add(1)
+            if let Some((probe, keys)) = account_keys.first() {
+                let other = wallet
+                    .decrypt_compact_with_keys(
+                        &compact,
+                        keys,
+                        *probe,
+                        block_height,
+                        txid,
+                        nozy_pool(other_pool),
+                    )
+                    .map_err(|e| format!("{:?}", e))?;
+                if other.is_some() {
+                    match pool {
+                        ShieldedPool::Orchard => {
+                            debug.ow_other_domain = debug.ow_other_domain.saturating_add(1)
+                        }
+                        ShieldedPool::Ironwood => {
+                            debug.iw_other_domain = debug.iw_other_domain.saturating_add(1)
+                        }
                     }
                 }
             }
@@ -287,7 +305,7 @@ pub fn shielded_scan_tracker_apply_block_json(
 ) -> Result<String, String> {
     let mut trackers = TrackerPair::deserialize(tracker_state_json)?;
     let wallet = HDWallet::from_mnemonic(mnemonic_str).map_err(|e| e.to_string())?;
-    let accounts = parse_account_indices(account_indices_json);
+    let account_keys = trial_keys_for_accounts(&wallet, account_indices_json)?;
     let block: Value =
         serde_json::from_str(block_json).map_err(|e| format!("block json: {}", e))?;
 
@@ -314,7 +332,7 @@ pub fn shielded_scan_tracker_apply_block_json(
                 discovered.extend(apply_pool_actions(
                     &mut trackers.orchard,
                     &wallet,
-                    &accounts,
+                    &account_keys,
                     block_height,
                     &txid,
                     actions,
@@ -329,7 +347,7 @@ pub fn shielded_scan_tracker_apply_block_json(
                 discovered.extend(apply_pool_actions(
                     &mut trackers.ironwood,
                     &wallet,
-                    &accounts,
+                    &account_keys,
                     block_height,
                     &txid,
                     actions,
@@ -348,6 +366,98 @@ pub fn shielded_scan_tracker_apply_block_json(
         "scanDebug": scan_debug.to_json(),
     });
     serde_json::to_string(&out).map_err(|e| e.to_string())
+}
+
+/// Apply many blocks with one mnemonic derivation and one viewing-key derivation.
+pub fn shielded_scan_tracker_apply_blocks_json(
+    tracker_state_json: &str,
+    mnemonic_str: &str,
+    _wallet_address: &str,
+    blocks_json: &str,
+    account_indices_json: &str,
+) -> Result<String, String> {
+    let mut trackers = TrackerPair::deserialize(tracker_state_json)?;
+    let wallet = HDWallet::from_mnemonic(mnemonic_str).map_err(|e| e.to_string())?;
+    let account_keys = trial_keys_for_accounts(&wallet, account_indices_json)?;
+    let blocks: Vec<Value> =
+        serde_json::from_str(blocks_json).map_err(|e| format!("blocks json: {}", e))?;
+    let mut discovered: Vec<Value> = Vec::new();
+    let mut scan_debug = ScanDebug::default();
+    for block in &blocks {
+        let height = block
+            .get("height")
+            .and_then(|v| v.as_u64())
+            .ok_or_else(|| "block.height missing".to_string())? as u32;
+        let tx_array = block
+            .get("tx")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| "block.tx missing".to_string())?;
+        for tx in tx_array {
+            if tx.as_str().is_some() {
+                continue;
+            }
+            let txid = tx
+                .get("txid")
+                .and_then(|v| v.as_str())
+                .unwrap_or("00")
+                .to_string();
+            if let Some(actions) = tx_actions(tx, ShieldedPool::Orchard) {
+                if !actions.is_empty() {
+                    discovered.extend(apply_pool_actions(
+                        &mut trackers.orchard,
+                        &wallet,
+                        &account_keys,
+                        height,
+                        &txid,
+                        actions,
+                        ShieldedPool::Orchard,
+                        &mut scan_debug,
+                    )?);
+                }
+            }
+            if let Some(actions) = tx_actions(tx, ShieldedPool::Ironwood) {
+                if !actions.is_empty() {
+                    discovered.extend(apply_pool_actions(
+                        &mut trackers.ironwood,
+                        &wallet,
+                        &account_keys,
+                        height,
+                        &txid,
+                        actions,
+                        ShieldedPool::Ironwood,
+                        &mut scan_debug,
+                    )?);
+                }
+            }
+        }
+    }
+    let out = json!({
+        "tracker_state": trackers.serialize_json()?,
+        "notes": discovered,
+        "scanDebug": scan_debug.to_json(),
+    });
+    serde_json::to_string(&out).map_err(|e| e.to_string())
+}
+
+#[wasm_bindgen]
+pub fn orchard_scan_tracker_apply_blocks(
+    tracker_state_json: &str,
+    mnemonic_str: &str,
+    wallet_address: &str,
+    blocks_json: &str,
+    account_indices_json: &str,
+) -> Result<JsValue, JsError> {
+    let s = shielded_scan_tracker_apply_blocks_json(
+        tracker_state_json,
+        mnemonic_str,
+        wallet_address,
+        blocks_json,
+        account_indices_json,
+    )
+    .map_err(|e| JsError::new(&e))?;
+    let v: Value = serde_json::from_str(&s).map_err(|e| JsError::new(&format!("json: {}", e)))?;
+    v.serialize(&serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true))
+        .map_err(|e| JsError::new(&format!("{}", e)))
 }
 
 #[wasm_bindgen]

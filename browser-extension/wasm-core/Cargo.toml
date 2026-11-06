@@ -26,7 +26,7 @@ argon2 = "0.5"
 bip39 = "2.1"
 # Aligned to root nozy / NU6.3 Ironwood librustzcash pins.
 orchard = { version = "0.15.0-pre.1", default-features = false, features = ["circuit", "std"] }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_protocol = { path = "../../third_party/zcash_protocol" }
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_note_encryption = "0.4.1"
 zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", default-features = false, features = ["std", "circuits"] }
@@ -41,10 +41,13 @@ incrementalmerkletree = { version = "0.8.2", default-features = false, features 
 [patch.crates-io]
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_primitives = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
-zcash_protocol = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+zcash_protocol = { path = "../../third_party/zcash_protocol" }
 zcash_transparent = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_keys = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 pczt = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
+
+[patch."https://github.com/zcash/librustzcash"]
+zcash_protocol = { path = "../../third_party/zcash_protocol" }
 
 [profile.release]
 opt-level = "s"

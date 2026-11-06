@@ -6415,7 +6415,6 @@ dependencies = [
 [[package]]
 name = "zcash_protocol"
 version = "0.10.0-pre.0"
-source = "git+https://github.com/zcash/librustzcash?rev=4d9a68dc80508e7644aa99e1b4add7c831057bba#4d9a68dc80508e7644aa99e1b4add7c831057bba"
 dependencies = [
  "corez",
  "document-features",
