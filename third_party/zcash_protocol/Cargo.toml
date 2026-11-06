@@ -1,0 +1,32 @@
+# Vendored from librustzcash 4d9a68dc (Ironwood pin) so NU7 can be stamped
+# without bumping the rest of the Zcash stack. ZIP 259: branch 0x77190AD9,
+# mainnet activation 3_543_405. The upstream pin still maps Nu7 to 0xffffffff.
+[package]
+name = "zcash_protocol"
+description = "Zcash protocol network constants and value types."
+version = "0.10.0-pre.0"
+authors = [
+    "Jack Grigg <jack@electriccoin.co>",
+    "Kris Nuttycombe <kris@nutty.land>",
+]
+homepage = "https://github.com/zcash/librustzcash"
+repository = "https://github.com/zcash/librustzcash"
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+edition = "2024"
+rust-version = "1.85.1"
+categories = ["cryptography::cryptocurrencies"]
+keywords = ["zcash"]
+publish = false
+
+[dependencies]
+memuse = { version = "0.2", optional = true }
+document-features = { version = "0.2", optional = true }
+zcash_encoding = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba", default-features = false }
+corez = { version = "0.1.1", default-features = false, features = ["alloc"] }
+hex = { version = "0.4", default-features = false, features = ["alloc"] }
+
+[features]
+default = ["std"]
+std = ["document-features", "dep:memuse"]
+local-consensus = []

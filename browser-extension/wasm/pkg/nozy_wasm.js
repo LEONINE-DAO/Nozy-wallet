@@ -57,6 +57,36 @@ export function build_orchard_v5_tx_from_note(mnemonic_str, recipient_address, a
 }
 
 /**
+ * Nullifier the spend builder puts on chain. Scan used to store the action nullifier,
+ * which is the note that funded this output, not this note.
+ * @param {string} mnemonic_str
+ * @param {string} note_json
+ * @returns {string}
+ */
+export function canonical_nullifier_hex(mnemonic_str, note_json) {
+    let deferred4_0;
+    let deferred4_1;
+    try {
+        const ptr0 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len0 = WASM_VECTOR_LEN;
+        const ptr1 = passStringToWasm0(note_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+        const len1 = WASM_VECTOR_LEN;
+        const ret = wasm.canonical_nullifier_hex(ptr0, len0, ptr1, len1);
+        var ptr3 = ret[0];
+        var len3 = ret[1];
+        if (ret[3]) {
+            ptr3 = 0; len3 = 0;
+            throw takeFromExternrefTable0(ret[2]);
+        }
+        deferred4_0 = ptr3;
+        deferred4_1 = len3;
+        return getStringFromWasm0(ptr3, len3);
+    } finally {
+        wasm.__wbindgen_free(deferred4_0, deferred4_1, 1);
+    }
+}
+
+/**
  * @param {string} password
  * @returns {any}
  */
@@ -130,35 +160,55 @@ export function encrypt_for_storage(data, password) {
 }
 
 /**
- * ZIP-317 ×4 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
+ * ZIP-317 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
  *
- * Callers that know the chain tip should use [`estimate_orchard_send_fee_zats_at`].
+ * `priority` selects the 10× inclusion fee. Callers that know the chain tip should use
+ * [`estimate_orchard_send_fee_zats_at`] or [`estimate_orchard_send_fee_zats_quoted`].
  * @param {string} memo
- * @param {boolean} _priority
+ * @param {boolean} priority
  * @returns {bigint}
  */
-export function estimate_orchard_send_fee_zats(memo, _priority) {
+export function estimate_orchard_send_fee_zats(memo, priority) {
     const ptr0 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.estimate_orchard_send_fee_zats(ptr0, len0, _priority);
+    const ret = wasm.estimate_orchard_send_fee_zats(ptr0, len0, priority);
     return BigInt.asUintN(64, ret);
 }
 
 /**
- * ZIP-317 ×4 fee for the block the transaction is mined in.
+ * ZIP-317 fee for the block the transaction is mined in.
  *
- * `mined_block_height` is chain tip + 1. Mainnet stays at 5,000 zats/action until
- * height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000 at every height.
+ * `mined_block_height` is chain tip + 1. Without a node quote, mainnet stays at 5,000
+ * zats/action until height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000
+ * at every height. `priority` selects the 10× inclusion fee.
  * @param {string} memo
- * @param {boolean} _priority
+ * @param {boolean} priority
  * @param {boolean} mainnet
  * @param {number} mined_block_height
  * @returns {bigint}
  */
-export function estimate_orchard_send_fee_zats_at(memo, _priority, mainnet, mined_block_height) {
+export function estimate_orchard_send_fee_zats_at(memo, priority, mainnet, mined_block_height) {
     const ptr0 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len0 = WASM_VECTOR_LEN;
-    const ret = wasm.estimate_orchard_send_fee_zats_at(ptr0, len0, _priority, mainnet, mined_block_height);
+    const ret = wasm.estimate_orchard_send_fee_zats_at(ptr0, len0, priority, mainnet, mined_block_height);
+    return BigInt.asUintN(64, ret);
+}
+
+/**
+ * Same as [`estimate_orchard_send_fee_zats_at`], plus the `getstandardfee` marginal fee.
+ *
+ * `marginal_fee` is zatoshis per logical action. `0` keeps the local height schedule.
+ * @param {string} memo
+ * @param {boolean} priority
+ * @param {boolean} mainnet
+ * @param {number} mined_block_height
+ * @param {bigint} marginal_fee
+ * @returns {bigint}
+ */
+export function estimate_orchard_send_fee_zats_quoted(memo, priority, mainnet, mined_block_height, marginal_fee) {
+    const ptr0 = passStringToWasm0(memo, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
+    const len0 = WASM_VECTOR_LEN;
+    const ret = wasm.estimate_orchard_send_fee_zats_quoted(ptr0, len0, priority, mainnet, mined_block_height, marginal_fee);
     return BigInt.asUintN(64, ret);
 }
 
