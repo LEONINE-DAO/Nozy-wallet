@@ -1,7 +1,12 @@
-# Ironwood (NU6.3) pre-release transaction-building support is gated behind
-# this unstable cfg in zcash/librustzcash.
+# Ironwood (NU6.3) transaction building is gated behind nu6.3.
+# NU7 (ZIP 259, branch 0x77190AD9) is gated behind nu7 in the same pin.
 [build]
-rustflags = ["--cfg", "zcash_unstable=\"nu6.3\""]
+rustflags = [
+    "--cfg",
+    "zcash_unstable=\"nu6.3\"",
+    "--cfg",
+    "zcash_unstable=\"nu7\"",
+]
 
 # Windows debug builds often overflow the default stack when hitting Orchard/notes paths
 # (e.g. `nozy health` / `balance --json`). Raise the PE stack reserve for MSVC links.
@@ -9,6 +14,16 @@ rustflags = ["--cfg", "zcash_unstable=\"nu6.3\""]
 rustflags = [
     "--cfg",
     "zcash_unstable=\"nu6.3\"",
+    "--cfg",
+    "zcash_unstable=\"nu7\"",
     "-C",
     "link-arg=/STACK:16777216",
+]
+
+[target.wasm32-unknown-unknown]
+rustflags = [
+    "--cfg",
+    "zcash_unstable=\"nu6.3\"",
+    "--cfg",
+    "zcash_unstable=\"nu7\"",
 ]

@@ -5,6 +5,12 @@ export function advance_orchard_witness_hex(witness_hex: string, block_json: str
 
 export function build_orchard_v5_tx_from_note(mnemonic_str: string, recipient_address: string, amount_zatoshis: bigint, fee_zatoshis: bigint, memo: string, spend_note_json: string, witness_json: string): any;
 
+/**
+ * Nullifier the spend builder puts on chain. Scan used to store the action nullifier,
+ * which is the note that funded this output, not this note.
+ */
+export function canonical_nullifier_hex(mnemonic_str: string, note_json: string): string;
+
 export function create_wallet(password: string): any;
 
 export function decrypt_from_storage(encrypted: Uint8Array, password: string): Uint8Array;
@@ -20,19 +26,28 @@ export function decrypt_memos_from_raw_tx(mnemonic: string, raw_tx_hex: string):
 export function encrypt_for_storage(data: Uint8Array, password: string): Uint8Array;
 
 /**
- * ZIP-317 ×4 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
+ * ZIP-317 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
  *
- * Callers that know the chain tip should use [`estimate_orchard_send_fee_zats_at`].
+ * `priority` selects the 10× inclusion fee. Callers that know the chain tip should use
+ * [`estimate_orchard_send_fee_zats_at`] or [`estimate_orchard_send_fee_zats_quoted`].
  */
-export function estimate_orchard_send_fee_zats(memo: string, _priority: boolean): bigint;
+export function estimate_orchard_send_fee_zats(memo: string, priority: boolean): bigint;
 
 /**
- * ZIP-317 ×4 fee for the block the transaction is mined in.
+ * ZIP-317 fee for the block the transaction is mined in.
  *
- * `mined_block_height` is chain tip + 1. Mainnet stays at 5,000 zats/action until
- * height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000 at every height.
+ * `mined_block_height` is chain tip + 1. Without a node quote, mainnet stays at 5,000
+ * zats/action until height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000
+ * at every height. `priority` selects the 10× inclusion fee.
  */
-export function estimate_orchard_send_fee_zats_at(memo: string, _priority: boolean, mainnet: boolean, mined_block_height: number): bigint;
+export function estimate_orchard_send_fee_zats_at(memo: string, priority: boolean, mainnet: boolean, mined_block_height: number): bigint;
+
+/**
+ * Same as [`estimate_orchard_send_fee_zats_at`], plus the `getstandardfee` marginal fee.
+ *
+ * `marginal_fee` is zatoshis per logical action. `0` keeps the local height schedule.
+ */
+export function estimate_orchard_send_fee_zats_quoted(memo: string, priority: boolean, mainnet: boolean, mined_block_height: number, marginal_fee: bigint): bigint;
 
 /**
  * Build `nozy-vote-notes-v1` JSON from scanned Ironwood notes (cached witnesses).
@@ -84,36 +99,38 @@ export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembl
 
 export interface InitOutput {
     readonly memory: WebAssembly.Memory;
+    readonly canonical_nullifier_hex: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly advance_orchard_witness_hex: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
-    readonly create_wallet: (a: number, b: number) => [number, number, number];
-    readonly decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly estimate_orchard_send_fee_zats: (a: number, b: number, c: number) => bigint;
-    readonly estimate_orchard_send_fee_zats_at: (a: number, b: number, c: number, d: number, e: number) => bigint;
-    readonly generate_address: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly get_nu5_activation_height: () => number;
-    readonly get_zcash_chain_id: () => [number, number];
-    readonly nozy_version_display: () => [number, number];
     readonly orchard_anchor_hex_from_final_state: (a: number, b: number) => [number, number, number, number];
     readonly orchard_witness_matches_anchor_hex: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly pilot_expiry_delta_blocks: () => number;
+    readonly create_wallet: (a: number, b: number) => [number, number, number];
+    readonly restore_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly generate_address: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly get_zcash_chain_id: () => [number, number];
+    readonly get_nu5_activation_height: () => number;
+    readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
     readonly prove_orchard_transaction_dummy: (a: number, b: number, c: bigint, d: number, e: number) => [number, number, number];
     readonly prove_orchard_transaction_spend_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
-    readonly restore_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly scan_orchard_actions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => [number, number, number];
-    readonly sign_message: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly unlock_wallet: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
-    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly decrypt_memos_from_raw_tx: (a: number, b: number, c: number, d: number) => [number, number, number];
-    readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+    readonly build_orchard_v5_tx_from_note: (a: number, b: number, c: number, d: number, e: bigint, f: bigint, g: number, h: number, i: number, j: number, k: number, l: number) => [number, number, number];
+    readonly estimate_orchard_send_fee_zats: (a: number, b: number, c: number) => bigint;
+    readonly estimate_orchard_send_fee_zats_at: (a: number, b: number, c: number, d: number, e: number) => bigint;
+    readonly estimate_orchard_send_fee_zats_quoted: (a: number, b: number, c: number, d: number, e: number, f: bigint) => bigint;
+    readonly pilot_expiry_delta_blocks: () => number;
+    readonly nozy_version_display: () => [number, number];
+    readonly encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
     readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];
+    readonly decrypt_memos_from_raw_tx: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly sign_vote_delegation: (a: number, b: number, c: number, d: number) => [number, number, number, number];
+    readonly export_ironwood_vote_notes_json: (a: number, b: number, c: number, d: number, e: number, f: number) => [number, number, number, number];
     readonly rustsecp256k1_v0_10_0_context_create: (a: number) => number;
     readonly rustsecp256k1_v0_10_0_context_destroy: (a: number) => void;
-    readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;
     readonly rustsecp256k1_v0_10_0_default_illegal_callback_fn: (a: number, b: number) => void;
+    readonly rustsecp256k1_v0_10_0_default_error_callback_fn: (a: number, b: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
     readonly __wbindgen_exn_store: (a: number) => void;

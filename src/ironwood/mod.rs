@@ -60,6 +60,8 @@ pub const NU6_3_MAINNET_ACTIVATION_TARGET: &str = "2026-07-28";
 /// Mainnet Ironwood / NU6.3 activation height (ecosystem PSA).
 /// Used when `zcash_protocol` has not yet pinned `NetworkUpgrade::Nu6_3`.
 pub const NU6_3_MAINNET_ACTIVATION_HEIGHT: u32 = 3_428_143;
+/// ZIP 259 mainnet NU7 activation height. Branch id `0x77190AD9`.
+pub const NU7_MAINNET_ACTIVATION_HEIGHT: u32 = 3_543_405;
 
 /// Mainnet consensus params with PSA NU6.3 height filled in.
 ///
@@ -76,6 +78,8 @@ impl Parameters for IronwoodAwareMainNetwork {
     fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
         match nu {
             NetworkUpgrade::Nu6_3 => Some(BlockHeight::from_u32(NU6_3_MAINNET_ACTIVATION_HEIGHT)),
+            #[cfg(zcash_unstable = "nu7")]
+            NetworkUpgrade::Nu7 => Some(BlockHeight::from_u32(NU7_MAINNET_ACTIVATION_HEIGHT)),
             other => MAIN_NETWORK.activation_height(other),
         }
     }
@@ -127,6 +131,22 @@ mod tests {
         );
         // Upstream MainNetwork still lacks Nu6_3 — this is why we need the overlay.
         assert!(!MAIN_NETWORK.is_nu_active(NetworkUpgrade::Nu6_3, h));
+    }
+
+    #[cfg(zcash_unstable = "nu7")]
+    #[test]
+    fn ironwood_aware_mainnet_stamps_nu7_branch_after_zip259() {
+        let h = BlockHeight::from_u32(NU7_MAINNET_ACTIVATION_HEIGHT);
+        assert_eq!(
+            BranchId::for_height(&IronwoodAwareMainNetwork, h),
+            BranchId::Nu7
+        );
+        assert_eq!(u32::from(BranchId::Nu7), 0x7719_0ad9);
+        let before = BlockHeight::from_u32(NU7_MAINNET_ACTIVATION_HEIGHT - 1);
+        assert_eq!(
+            BranchId::for_height(&IronwoodAwareMainNetwork, before),
+            BranchId::Nu6_3
+        );
     }
 }
 

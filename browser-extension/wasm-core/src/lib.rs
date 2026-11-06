@@ -7,6 +7,31 @@ mod orchard_witness_local;
 mod shielded_scan;
 mod vote;
 
+use zcash_protocol::consensus::{
+    BlockHeight, MainNetwork, NetworkType, NetworkUpgrade, Parameters,
+};
+
+/// Upstream `MainNetwork` omits NU6.3, so an Ironwood spend returns
+/// `IronwoodBuilderNotAvailable` once the chain is past activation.
+#[derive(Clone, Copy, Debug)]
+struct IronwoodAwareMainNetwork;
+
+impl Parameters for IronwoodAwareMainNetwork {
+    fn network_type(&self) -> NetworkType {
+        NetworkType::Main
+    }
+
+    fn activation_height(&self, nu: NetworkUpgrade) -> Option<BlockHeight> {
+        match nu {
+            NetworkUpgrade::Nu6_3 => Some(BlockHeight::from_u32(3_428_143)),
+            // ZIP 259. Without this, spends after height 3_543_405 stay on NU6.3.
+            #[cfg(zcash_unstable = "nu7")]
+            NetworkUpgrade::Nu7 => Some(BlockHeight::from_u32(3_543_405)),
+            other => MainNetwork.activation_height(other),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct OrchardActionInput {
     pub nullifier: Vec<u8>,
@@ -49,6 +74,84 @@ struct OrchardWitnessAuthPath {
     anchor: String,
     position: u32,
     auth_path: Vec<String>,
+}
+
+fn spend_notes_are_ironwood(spend_note_json: &str) -> Result<bool, JsError> {
+    let value: serde_json::Value = serde_json::from_str(spend_note_json)
+        .map_err(|e| JsError::new(&format!("Invalid spend_note_json: {e}")))?;
+    let notes: Vec<&serde_json::Value> = match &value {
+        serde_json::Value::Array(items) => items.iter().collect(),
+        other => vec![other],
+    };
+    if notes.is_empty() {
+        return Ok(false);
+    }
+    let ironwood = notes.iter().filter(|n| {
+        n.get("pool").and_then(|p| p.as_str()) == Some("ironwood")
+    }).count();
+    if ironwood != 0 && ironwood != notes.len() {
+        return Err(JsError::new("Cannot mix Orchard and Ironwood notes in one send"));
+    }
+    Ok(ironwood == notes.len())
+}
+
+/// Nullifier the spend builder puts on chain. Scan used to store the action nullifier,
+/// which is the note that funded this output, not this note.
+#[wasm_bindgen]
+pub fn canonical_nullifier_hex(mnemonic_str: &str, note_json: &str) -> Result<String, JsError> {
+    use bip39::Mnemonic;
+    use nozy::hd_wallet::OrchardDecryptionResult;
+    use orchard::keys::{FullViewingKey, SpendingKey};
+    use orchard::note::{Note, NoteVersion, RandomSeed, Rho};
+    use orchard::value::NoteValue;
+    use orchard::Address as OrchardAddress;
+
+    let value: serde_json::Value = serde_json::from_str(note_json)
+        .map_err(|e| JsError::new(&format!("Invalid note json: {e}")))?;
+    let ironwood = value.get("pool").and_then(|p| p.as_str()) == Some("ironwood");
+    let account = value
+        .get("account")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0)
+        .min(20) as u32;
+    let note: OrchardDecryptionResult = serde_json::from_value(value)
+        .map_err(|e| JsError::new(&format!("Invalid note: {e}")))?;
+    let raw = <[u8; 43]>::try_from(note.orchard_address_raw.as_slice())
+        .map_err(|_| JsError::new("Invalid note address length"))?;
+    let recipient = OrchardAddress::from_raw_address_bytes(&raw)
+        .into_option()
+        .ok_or_else(|| JsError::new("Invalid note address"))?;
+    let rho = Rho::from_bytes(&note.rho)
+        .into_option()
+        .ok_or_else(|| JsError::new("Invalid note rho"))?;
+    let rseed = RandomSeed::from_bytes(note.rseed, &rho)
+        .into_option()
+        .ok_or_else(|| JsError::new("Invalid note seed"))?;
+    let version = if ironwood {
+        NoteVersion::V3
+    } else {
+        NoteVersion::V2
+    };
+    let parsed = Note::from_parts(
+        recipient,
+        NoteValue::from_raw(note.value),
+        rho,
+        rseed,
+        version,
+    )
+    .into_option()
+    .ok_or_else(|| JsError::new("Could not rebuild note"))?;
+    let mnemonic: Mnemonic = mnemonic_str
+        .parse()
+        .map_err(|e| JsError::new(&format!("Invalid mnemonic: {e}")))?;
+    let mut seed = mnemonic.to_seed("").to_vec();
+    let account_id = zip32::AccountId::try_from(account)
+        .map_err(|e| JsError::new(&format!("Invalid account: {e}")))?;
+    let sk = SpendingKey::from_zip32_seed(&seed, 133, account_id)
+        .map_err(|e| JsError::new(&format!("Spending key: {e:?}")))?;
+    seed.fill(0);
+    let fvk = FullViewingKey::from(&sk);
+    Ok(hex::encode(parsed.nullifier(&fvk).to_bytes()))
 }
 
 /// Parse witness inputs used by the extension spend flow.
@@ -781,11 +884,7 @@ pub fn build_orchard_v5_tx_from_note(
     use zcash_address::unified::{Address as UnifiedAddress, Container, Encoding, Receiver};
     use zcash_primitives::transaction::builder::{BuildConfig, Builder as TxBuilder};
     use zcash_primitives::transaction::fees::{transparent::InputSize, FeeRule};
-    use zcash_protocol::{
-        consensus::{BlockHeight, MainNetwork},
-        memo::MemoBytes,
-        value::Zatoshis,
-    };
+    use zcash_protocol::{consensus::BlockHeight, memo::MemoBytes, value::Zatoshis};
     use zcash_transparent::builder::TransparentSigningSet;
 
     // Dummy Sapling provers. Since this builder config omits Sapling entirely,
@@ -898,10 +997,9 @@ pub fn build_orchard_v5_tx_from_note(
         return Err(JsError::new("Spend notes and witnesses length mismatch"));
     }
 
-    // Mandatory NozyWallet fee: ZIP-317 ×4 of the ZIP 2009 schedule (same as CLI/API/desktop).
-    // Callers may still pass a legacy 10_000; clamp up so extension cannot underpay.
-    // `fee_block_height` is the block the tx is mined in (tip + 1). `fee_mainnet` defaults
-    // to true because this builder targets MainNetwork.
+    // Inclusion fee: ZIP-317 ×10. Marginal fee is `getstandardfee` when the witness
+    // carries `marginal_fee`; otherwise the local ZIP 317 / ZIP 2009 schedule.
+    // Callers may still pass a lower fee; clamp up so the extension cannot underpay.
     let memo_opt: Option<&[u8]> = if memo.is_empty() {
         None
     } else {
@@ -916,18 +1014,21 @@ pub fn build_orchard_v5_tx_from_note(
         .get("fee_mainnet")
         .and_then(|v| v.as_bool())
         .unwrap_or(true);
-    let fee_block = if mined_block_height == 0 {
-        nozy::FeeBlock::mainnet_before_zip2009()
-    } else {
-        nozy::FeeBlock {
-            mainnet: fee_mainnet,
-            height: mined_block_height,
-        }
-    };
+    let marginal_fee = witnesses[0]
+        .get("marginal_fee")
+        .and_then(|v| v.as_u64())
+        .unwrap_or(0);
+    let pay_for_inclusion = witnesses[0]
+        .get("pay_for_inclusion")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true);
+    let fee_block = wasm_fee_block(fee_mainnet, mined_block_height, marginal_fee);
     let spends = spend_notes.len() as u32;
     let total_input_preview: u64 = spend_notes.iter().map(|n| n.value).sum();
     let mut fee_zatoshis = fee_zatoshis.max(nozy::estimate_orchard_send_fee_zatoshis(
-        memo_opt, true, fee_block,
+        memo_opt,
+        pay_for_inclusion,
+        fee_block,
     ));
     let mut has_change = total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
     let mut outputs = if has_change { 2u32 } else { 1 };
@@ -939,7 +1040,7 @@ pub fn build_orchard_v5_tx_from_note(
             memo_len: memo_opt.map(|m| m.len()).unwrap_or(0),
         }
     };
-    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true, fee_block));
+    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, pay_for_inclusion, fee_block));
     has_change = total_input_preview > amount_zatoshis.saturating_add(fee_zatoshis);
     outputs = if has_change { 2 } else { 1 };
     shape = if spends <= 1 {
@@ -950,7 +1051,7 @@ pub fn build_orchard_v5_tx_from_note(
             memo_len: memo_opt.map(|m| m.len()).unwrap_or(0),
         }
     };
-    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, true, fee_block));
+    fee_zatoshis = fee_zatoshis.max(nozy::fee_zatoshis(&shape, pay_for_inclusion, fee_block));
 
     let target_height_u32 = witnesses[0]
         .get("target_height")
@@ -994,6 +1095,12 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("witness json: {e}")))?;
     let (anchor, _) = parse_orchard_witness_for_spend(&first_witness_str)?;
     let anchor_bytes: [u8; 32] = anchor.to_bytes();
+    let ironwood_spend = spend_notes_are_ironwood(spend_note_json)?;
+    let note_version = if ironwood_spend {
+        NoteVersion::V3
+    } else {
+        NoteVersion::V2
+    };
 
     let mnemonic: Mnemonic = mnemonic_str
         .parse()
@@ -1003,13 +1110,21 @@ pub fn build_orchard_v5_tx_from_note(
     let account_hints = account_hints_from_spend_json(spend_note_json);
     let mut orchard_saks: Vec<SpendAuthorizingKey> = Vec::with_capacity(spend_notes.len());
 
-    let build_config = BuildConfig::Standard {
-        sapling_anchor: None,
-        orchard_anchor: Some(anchor),
-        ironwood_anchor: None,
+    let build_config = if ironwood_spend {
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: None,
+            ironwood_anchor: Some(anchor),
+        }
+    } else {
+        BuildConfig::Standard {
+            sapling_anchor: None,
+            orchard_anchor: Some(anchor),
+            ironwood_anchor: None,
+        }
     };
 
-    let tx_builder = TxBuilder::new(MainNetwork, target_height_bh, build_config);
+    let tx_builder = TxBuilder::new(IronwoodAwareMainNetwork, target_height_bh, build_config);
     let transparent_signing_set = TransparentSigningSet::new();
     let sapling_extsks: &[sapling::zip32::ExtendedSpendingKey] = &[];
 
@@ -1057,7 +1172,7 @@ pub fn build_orchard_v5_tx_from_note(
             note_value,
             rho,
             rseed,
-            NoteVersion::V2,
+            note_version,
         )
         .into_option()
         .ok_or_else(|| {
@@ -1068,13 +1183,16 @@ pub fn build_orchard_v5_tx_from_note(
         let (spending_key, fvk) = spend_material_for_note(&seed_bytes, spend_note, hinted)?;
         orchard_saks.push(SpendAuthorizingKey::from(&spending_key));
 
-        builder
-            .add_orchard_spend::<core::convert::Infallible>(fvk, note, merkle_path)
-            .map_err(|e| {
-                JsError::new(&format!(
-                    "Failed to add Orchard spend at index {idx}: {e:?}"
-                ))
-            })?;
+        let added = if ironwood_spend {
+            builder.add_ironwood_spend::<core::convert::Infallible>(fvk, note, merkle_path)
+        } else {
+            builder.add_orchard_spend::<core::convert::Infallible>(fvk, note, merkle_path)
+        };
+        added.map_err(|e| {
+            JsError::new(&format!(
+                "Failed to add shielded spend at index {idx}: {e:?}"
+            ))
+        })?;
 
         total_input_value = total_input_value.saturating_add(spend_note.value);
     }
@@ -1091,27 +1209,43 @@ pub fn build_orchard_v5_tx_from_note(
     let memo_bytes = MemoBytes::from_bytes(memo.as_bytes())
         .map_err(|e| JsError::new(&format!("Invalid memo: {e}")))?;
 
-    builder
-        .add_orchard_output::<core::convert::Infallible>(
+    let output_result = if ironwood_spend {
+        builder.add_ironwood_output::<core::convert::Infallible>(
             None,
             recipient_orchard_address,
             recipient_value,
-            memo_bytes,
+            memo_bytes.clone(),
         )
-        .map_err(|e| JsError::new(&format!("Failed to add Orchard output: {e:?}")))?;
+    } else {
+        builder.add_orchard_output::<core::convert::Infallible>(
+            None,
+            recipient_orchard_address,
+            recipient_value,
+            memo_bytes.clone(),
+        )
+    };
+    output_result.map_err(|e| JsError::new(&format!("Failed to add shielded output: {e:?}")))?;
 
     let change_amount = total_input_value.saturating_sub(total_required);
     if change_amount > 0 {
         let change_zats =
             Zatoshis::from_u64(change_amount).map_err(|_| JsError::new("Invalid change amount"))?;
-        builder
-            .add_orchard_output::<core::convert::Infallible>(
+        let change_result = if ironwood_spend {
+            builder.add_ironwood_output::<core::convert::Infallible>(
                 None,
                 note_recipient,
                 change_zats,
                 MemoBytes::empty(),
             )
-            .map_err(|e| JsError::new(&format!("Failed to add change Orchard output: {e:?}")))?;
+        } else {
+            builder.add_orchard_output::<core::convert::Infallible>(
+                None,
+                note_recipient,
+                change_zats,
+                MemoBytes::empty(),
+            )
+        };
+        change_result.map_err(|e| JsError::new(&format!("Failed to add change output: {e:?}")))?;
     }
 
     let rng = OsRng;
@@ -1151,39 +1285,75 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }
 
-/// ZIP-317 ×4 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
-///
-/// Callers that know the chain tip should use [`estimate_orchard_send_fee_zats_at`].
-#[wasm_bindgen]
-pub fn estimate_orchard_send_fee_zats(memo: &str, _priority: bool) -> u64 {
-    estimate_orchard_send_fee_zats_at(memo, _priority, true, 0)
-}
-
-/// ZIP-317 ×4 fee for the block the transaction is mined in.
-///
-/// `mined_block_height` is chain tip + 1. Mainnet stays at 5,000 zats/action until
-/// height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000 at every height.
-#[wasm_bindgen]
-pub fn estimate_orchard_send_fee_zats_at(
-    memo: &str,
-    _priority: bool,
-    mainnet: bool,
-    mined_block_height: u32,
-) -> u64 {
-    let memo_opt: Option<&[u8]> = if memo.is_empty() {
-        None
-    } else {
-        Some(memo.as_bytes())
-    };
-    let block = if mainnet && mined_block_height == 0 {
+fn wasm_fee_block(mainnet: bool, mined_block_height: u32, _marginal_fee: u64) -> nozy::FeeBlock {
+    if mainnet && mined_block_height == 0 {
         nozy::FeeBlock::mainnet_before_zip2009()
     } else {
         nozy::FeeBlock {
             mainnet,
             height: mined_block_height,
         }
+    }
+}
+
+fn estimate_orchard_send_fee_zats_inner(
+    memo: &str,
+    priority: bool,
+    mainnet: bool,
+    mined_block_height: u32,
+    marginal_fee: u64,
+) -> u64 {
+    let memo_opt: Option<&[u8]> = if memo.is_empty() {
+        None
+    } else {
+        Some(memo.as_bytes())
     };
-    nozy::estimate_orchard_send_fee_zatoshis(memo_opt, true, block)
+    let block = wasm_fee_block(mainnet, mined_block_height, marginal_fee);
+    nozy::estimate_orchard_send_fee_zatoshis(memo_opt, priority, block)
+}
+
+/// ZIP-317 fee in zatoshis using the pre-ZIP-2009 mainnet marginal fee.
+///
+/// `priority` selects the 10× inclusion fee. Callers that know the chain tip should use
+/// [`estimate_orchard_send_fee_zats_at`] or [`estimate_orchard_send_fee_zats_quoted`].
+#[wasm_bindgen]
+pub fn estimate_orchard_send_fee_zats(memo: &str, priority: bool) -> u64 {
+    estimate_orchard_send_fee_zats_at(memo, priority, true, 0)
+}
+
+/// ZIP-317 fee for the block the transaction is mined in.
+///
+/// `mined_block_height` is chain tip + 1. Without a node quote, mainnet stays at 5,000
+/// zats/action until height 3,590,000, then ZIP 2009's 1,000. Test networks use 1,000
+/// at every height. `priority` selects the 10× inclusion fee.
+#[wasm_bindgen]
+pub fn estimate_orchard_send_fee_zats_at(
+    memo: &str,
+    priority: bool,
+    mainnet: bool,
+    mined_block_height: u32,
+) -> u64 {
+    estimate_orchard_send_fee_zats_inner(memo, priority, mainnet, mined_block_height, 0)
+}
+
+/// Same as [`estimate_orchard_send_fee_zats_at`], plus the `getstandardfee` marginal fee.
+///
+/// `marginal_fee` is zatoshis per logical action. `0` keeps the local height schedule.
+#[wasm_bindgen]
+pub fn estimate_orchard_send_fee_zats_quoted(
+    memo: &str,
+    priority: bool,
+    mainnet: bool,
+    mined_block_height: u32,
+    marginal_fee: u64,
+) -> u64 {
+    estimate_orchard_send_fee_zats_inner(
+        memo,
+        priority,
+        mainnet,
+        mined_block_height,
+        marginal_fee,
+    )
 }
 
 #[wasm_bindgen]
