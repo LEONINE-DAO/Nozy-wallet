@@ -74,6 +74,10 @@ Longer material lives under [`docs/`](docs/README.md), grouped the way a maintai
 
 Shielded-send rules: [`ZEBRAD_SHIELDED_SEND_LIMIT.md`](ZEBRAD_SHIELDED_SEND_LIMIT.md). Roadmap: [`ENHANCEMENT_ROADMAP.md`](ENHANCEMENT_ROADMAP.md).
 
+## NEAR Hackathon 2026
+
+NozyWallet is the existing shielded Zcash wallet. The hackathon slice is a separate NEAR agent in [`hackathon/near-agent-cap`](hackathon/near-agent-cap/README.md): account `nozy-agent.near`, a function-call key scoped to Rhea `lst.rhealab.near`, and a local 5 NEAR stake cap. From that directory, `npm test` is the offline check and `npm run gui` opens the desk at http://127.0.0.1:4173.
+
 ## Contributing
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md). Open an issue before large protocol, security, or sync changes. Areas that need people: [where to help](docs/development/where-to-help.md).
