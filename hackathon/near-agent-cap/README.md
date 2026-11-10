@@ -4,7 +4,7 @@ A NEAR agent can stake and quote on Rhea. The human Zcash seed stays in Nozy and
 
 NozyWallet is an existing shielded Zcash wallet (Orchard / Ironwood). That wallet is baseline from before this hackathon. The work in this directory is the NEAR slice: a second account, a function-call key, and a local spending cap. Judges review this directory.
 
-Built for NEAR HACKATHON. Tracks this slice fits: `security`, `agents`. The desk also requests a NEAR AI Cloud gateway attestation. Intel DCAP verification is not run here, so this README does not claim the `privacy` track.
+Built for NEAR HACKATHON. Tracks this slice fits: `security`, `agents`, and `privacy`. Privacy here is the NEAR AI Cloud gateway quote. The desk verifies that quote with Intel DCAP, then checks the nonce and signer inside the verified quote, the RTMR3 event log, and the MRCONFIGID of `app_compose`. The accepted TCB status is `UpToDate`. A quote that fails any of those checks stays unverified. The desk does not check NVIDIA GPU evidence or container image signatures.
 
 ## Problem
 
@@ -34,7 +34,7 @@ npm run gui
 | On the desk, ask `Swap 1 NEAR to RHEA` | An unsigned dry quote. Deposit type stays `ORIGIN_CHAIN`. No deposit address is created. |
 | On the desk, ask to swap shielded ZEC | Refusal before any quote. Shielded ZEC stays in Nozy. See [Zcash forum 57497](https://forum.zcashcommunity.com/t/my-experience-exiting-shielded-zec-from-zodl-to-near-intents-589k-usdt-still-held-50-days-despite-a-written-compliance-clearance/57497). |
 | On the desk, ask `Private RHEA quote` | Refusal unless `NEAR_INTENTS_JWT` is set on this computer. No session is stored here. |
-| `GET http://127.0.0.1:4173/api/tee` with `NEAR_AI_API_KEY` in `.env` | Nonce checks and an Intel quote. `verified` is false. The check named Intel DCAP verification says it was not run. |
+| `GET http://127.0.0.1:4173/api/tee` with `NEAR_AI_API_KEY` in `.env` | Intel DCAP status `UpToDate`, debug mode off, the nonce and signer bound in the quote, the configuration measurement, and RTMR3. `verified` is true only when every one of those checks passes. |
 | `GET /api/tee` with no key | `NEAR AI is not connected on this machine.` |
 
 The same cap is available from the command line. These commands print unsigned testnet transactions. They do not sign or broadcast. The default signer is `nozy-agent.testnet` and the receiver is `lst.ref-dev.testnet`.
@@ -76,6 +76,7 @@ Earlier testnet practice, still on chain and not the desk signer: `nozy-agent.te
 - NEAR RPC `https://rpc.mainnet.fastnear.com` reads account and token balances.
 - 1Click `https://1click.chaindefuser.com/v0/quote` prices NEAR, USDC, USDT, and RHEA. A missing partner JWT uses the public fee. Confidential quotes need `NEAR_INTENTS_JWT`.
 - NEAR AI Cloud `https://cloud-api.near.ai/v1/attestation/report` and `https://cloud-api.near.ai/v1/chat/completions`. The model host is allowlisted to `cloud-api.near.ai`. A model may propose a stake. The policy still decides. Model id used by the ask path: `zai-org/GLM-5.1-FP8`.
+- `@phala/dcap-qvl` verifies the Intel TDX quote and reads the measurements from that verified quote. Collateral comes from the library's default PCCS.
 
 The Zcash wallet, companion, and extension outside this directory are the pre-hackathon product. The extension Rhea page mirrors the same public balances. It does not add a second signer.
 

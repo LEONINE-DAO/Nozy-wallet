@@ -335,9 +335,9 @@ async function refreshTee() {
     teeChecks.innerHTML = "";
     return;
   }
-  teeStatus.textContent = data.evidence
-    ? "Gateway evidence matches this request. Intel DCAP verification is not run here, so this is not a Verified mark."
-    : "The gateway report did not match this request.";
+  teeStatus.textContent = data.verified
+    ? "Intel DCAP verified this gateway quote for this request."
+    : "This gateway quote is not verified.";
   teeChecks.innerHTML = factRows((data.checks ?? []).map((check) => [
     check.name,
     check.ok ? (check.detail || "Passed") : (check.detail || "Not passed"),

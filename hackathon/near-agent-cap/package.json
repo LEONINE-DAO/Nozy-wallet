@@ -15,6 +15,7 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@phala/dcap-qvl": "^0.7.1",
     "@rhea-finance/rnear-sdk": "^0.1.1"
   }
 }
