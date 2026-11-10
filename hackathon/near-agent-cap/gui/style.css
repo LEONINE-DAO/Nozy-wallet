@@ -1,0 +1,140 @@
+:root {
+  color-scheme: dark;
+  --bg: #020b07;
+  --card: #07140f;
+  --line: rgba(57, 255, 20, 0.28);
+  --text: #e7ffe8;
+  --muted: #8fbfa4;
+  --allow: #39ff14;
+  --refuse: #fb7185;
+  --draft: #fbbf24;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+main {
+  width: min(1100px, calc(100% - 32px));
+  margin: 0 auto;
+  padding: 28px 0 48px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+header p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 16px;
+}
+
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 22px 0;
+}
+
+.status span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 8px 12px;
+  color: var(--allow);
+  font-size: 14px;
+}
+
+.layout {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 18px;
+}
+
+button {
+  display: block;
+  width: 100%;
+  margin: 0 0 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--card);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+  text-align: left;
+  cursor: pointer;
+}
+
+button:hover, button:focus-visible {
+  border-color: var(--allow);
+  outline: none;
+}
+
+button.play {
+  background: #102416;
+  color: var(--allow);
+  font-weight: 650;
+}
+
+.stage {
+  min-height: 460px;
+  padding: 22px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: var(--card);
+}
+
+.verdict {
+  margin: 0;
+  font-size: 42px;
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.verdict.allow { color: var(--allow); }
+.verdict.refuse { color: var(--refuse); }
+.verdict.draft { color: var(--draft); }
+
+.reason {
+  margin: 14px 0 0;
+  font-size: 18px;
+}
+
+pre {
+  margin: 18px 0 0;
+  padding: 16px;
+  overflow: auto;
+  border-radius: 12px;
+  background: #030806;
+  color: #d7ffe4;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.log {
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.log li {
+  padding: 8px 0;
+  border-top: 1px solid rgba(143, 191, 164, 0.2);
+  color: var(--muted);
+  font-size: 14px;
+}
+
+@media (max-width: 800px) {
+  .layout { grid-template-columns: 1fr; }
+}
