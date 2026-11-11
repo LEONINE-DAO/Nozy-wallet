@@ -65,7 +65,9 @@
     "image-size": "2.0.3",
     "deepmerge": "4.1.2",
     "baseline-browser-mapping": ">=2.11.0",
-    "decode-uri-component": ">=0.5.0",
+    "decode-uri-component": ">=0.5.1",
+    "glob@10": "14.0.5",
+    "minimatch@9": "11.0.5",
     "braces": "$braces",
     "node-forge": "$node-forge",
     "sprintf-js": "$sprintf-js"

@@ -17,5 +17,8 @@
   "dependencies": {
     "@phala/dcap-qvl": "^0.7.1",
     "@rhea-finance/rnear-sdk": "^0.1.1"
+  },
+  "overrides": {
+    "elliptic": "npm:@mapped/elliptic@6.6.10"
   }
 }
