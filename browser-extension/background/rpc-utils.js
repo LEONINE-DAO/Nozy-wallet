@@ -74,6 +74,96 @@ export async function parseJsonRpcResponse(resp, endpoint, method) {
 }
 
 /**
+ * Compact-sync hosts speak gRPC. JSON-RPC `getblockcount` against them is HTTP 415.
+ * @param {string} endpoint
+ * @returns {boolean}
+ */
+export function isLightwalletdEndpoint(endpoint) {
+  try {
+    const host = new URL(normalizeRpcEndpoint(endpoint)).hostname.toLowerCase();
+    return host === "lwd.nozywallet.org" || host === "zec.rocks";
+  } catch {
+    return /lwd\.nozywallet\.org|zec\.rocks/i.test(String(endpoint ?? ""));
+  }
+}
+
+/**
+ * Something is listening, and it is not Zebrad JSON-RPC.
+ * Windows often has a non-Zebra service on port 8232 that answers 415.
+ * @param {number} status
+ * @returns {boolean}
+ */
+export function rpcStatusShouldFailover(status) {
+  return status === 404 || status === 405 || status === 415 || status === 501;
+}
+
+/**
+ * @param {number} [timeoutMs]
+ * @returns {AbortSignal | undefined}
+ */
+function rpcTimeoutSignal(timeoutMs) {
+  const ms = Number(timeoutMs);
+  if (!Number.isFinite(ms) || ms <= 0) return undefined;
+  return AbortSignal.timeout(ms);
+}
+
+/**
+ * What the Send screen should show when getblockcount cannot build a transaction.
+ * @param {string} method
+ * @param {number} status
+ * @param {string} endpoint
+ * @returns {string}
+ */
+export function rpcHttpFailureMessage(method, status, endpoint) {
+  if (status === 415 || isLightwalletdEndpoint(endpoint)) {
+    return (
+      `Sending needs a local Zebrad or Zakura node. ${endpoint} answered HTTP ${status} for ${method}. ` +
+      `Lightwalletd, including lwd.nozywallet.org, is compact sync and answers 415 to JSON-RPC. ` +
+      `Public sync can scan. To send, start a node (Crosslink on Windows is usually http://127.0.0.1:18232, Zebrad uses port 8232) and use Find node in Settings.`
+    );
+  }
+  return `RPC ${method} HTTP ${status}`;
+}
+
+/**
+ * Zebrad and zcashd want `Content-Type: application/json` with no charset.
+ * Chrome appends `;charset=UTF-8` when the body is a string, and strict nodes answer HTTP 415.
+ * A byte body keeps the header exact. A 415 is retried as `text/plain` (Zebra rewrites that)
+ * and then with no content type (Zebra inserts `application/json`).
+ * A gRPC 415 (lightwalletd) is returned immediately.
+ *
+ * @param {string} url
+ * @param {string} method
+ * @param {unknown[]} [params]
+ * @param {number} [timeoutMs]
+ * @returns {Promise<Response>}
+ */
+export async function postZebradRpc(url, method, params = [], timeoutMs) {
+  const body = new TextEncoder().encode(
+    JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
+  );
+  /** @type {Array<string | null>} */
+  const contentTypes = ["application/json", "text/plain", null];
+  let last;
+  for (const contentType of contentTypes) {
+    /** @type {Record<string, string>} */
+    const headers = { Accept: "application/json" };
+    if (contentType) headers["Content-Type"] = contentType;
+    const resp = await fetch(url, {
+      method: "POST",
+      headers,
+      body,
+      signal: rpcTimeoutSignal(timeoutMs)
+    });
+    last = resp;
+    if (resp.status !== 415) return resp;
+    const announced = resp.headers.get("content-type") || "";
+    if (/grpc/i.test(announced)) return resp;
+  }
+  return last;
+}
+
+/**
  * @param {string} endpoint
  * @param {number} [timeoutMs=4000]
  * @returns {Promise<boolean>}
@@ -85,19 +175,10 @@ export async function probeZebradRpcEndpoint(endpoint, timeoutMs = 4000) {
   } catch {
     return false;
   }
+  if (isLightwalletdEndpoint(url)) return false;
   const ms = Math.max(500, Number(timeoutMs) || 4000);
   try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "getblockcount",
-        params: []
-      }),
-      signal: AbortSignal.timeout(ms)
-    });
+    const resp = await postZebradRpc(url, "getblockcount", [], ms);
     if (!resp.ok) return false;
     const result = await parseJsonRpcResponse(resp, url, "getblockcount");
     return typeof result === "number" || typeof result === "string";
@@ -196,13 +277,19 @@ export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
       })
       .filter(Boolean)
   );
-  try {
-    const current = normalizeRpcEndpoint(currentEndpoint);
-    if (!skip.has(current)) candidates.push(current);
-  } catch {
-    // ignore invalid current endpoint
-  }
-  candidates.push(...extra);
+  const pushCandidate = (value) => {
+    let normalized = "";
+    try {
+      normalized = normalizeRpcEndpoint(value);
+    } catch {
+      return;
+    }
+    if (!normalized || skip.has(normalized) || isLightwalletdEndpoint(normalized)) return;
+    if (candidates.includes(normalized)) return;
+    candidates.push(normalized);
+  };
+  pushCandidate(currentEndpoint);
+  for (const candidate of extra) pushCandidate(candidate);
 
   // Local Zebrad / Crosslink JSON-RPC. On this Windows Crosslink GUI setup the
   // node listens on 18232 (8232 is often taken). Prefer the live Crosslink port.
@@ -233,20 +320,10 @@ export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
  * @param {unknown[]} params
  */
 async function jsonRpcPostOnce(endpointUrl, method, params = []) {
-  const resp = await fetch(endpointUrl, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
-  });
-  if (!resp.ok) throw new Error(`RPC ${method} HTTP ${resp.status}`);
-  const body = await resp.json();
-  if (body?.error) {
-    const e = new Error(body.error.message || `RPC ${method} error`);
-    if (typeof body.error.code === "number") e.jsonRpcCode = body.error.code;
-    e.jsonRpcMethod = method;
-    throw e;
-  }
-  return body?.result ?? null;
+  const url = normalizeRpcEndpoint(endpointUrl);
+  const resp = await postZebradRpc(url, method, params);
+  if (!resp.ok) throw new Error(rpcHttpFailureMessage(method, resp.status, url));
+  return parseJsonRpcResponse(resp, url, method);
 }
 
 /**
