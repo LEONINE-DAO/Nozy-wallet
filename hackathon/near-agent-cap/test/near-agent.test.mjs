@@ -98,6 +98,26 @@ test("a dry swap quote uses the 1Click response", async () => {
   assert.equal(result.egress, "clearnet");
 });
 
+test("a known stake does not ask NEAR AI", async () => {
+  let called = false;
+  const result = await ask({ text: "Stake 1 NEAR" }, {
+    apiKey: "test-key",
+    fetchImpl: async (url) => {
+      if (String(url).includes("chat/completions")) called = true;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ result: { amount: "1" } }),
+      };
+    },
+  });
+  assert.equal(called, false);
+  assert.equal(result.ok, true);
+  assert.equal(result.model, false);
+  assert.equal(result.tx.receiverId, "lst.rhealab.near");
+  assert.equal(result.tx.signerId, "nozy-agent.near");
+});
+
 test("a model stake proposal still has to pass the cap", async () => {
   const seen = [];
   const fetchImpl = async (url, options) => {
@@ -118,7 +138,7 @@ test("a model stake proposal still has to pass the cap", async () => {
       }),
     };
   };
-  const result = await ask({ text: "stake 10" }, { apiKey: "test-key", fetchImpl });
+  const result = await ask({ text: "allocate 10 for the pool" }, { apiKey: "test-key", fetchImpl });
   assert.equal(seen[0], "https://cloud-api.near.ai/v1/chat/completions");
   assert.equal(result.model, true);
   assert.equal(result.ok, false);
@@ -139,6 +159,114 @@ test("the model host is allowlisted to NEAR AI Cloud", async () => {
   assert.equal(called, false);
   assert.equal(result.ok, false);
   assert.match(result.reason, /cloud-api\.near\.ai/);
+});
+
+test("the NEAR agent hires another agent through an unsigned Intents quote", () => {
+  const result = propose({ text: "hire worker.near for compute 1 NEAR" });
+  assert.equal(result.ok, true);
+  assert.equal(result.agent, "near");
+  assert.equal(result.signer, null);
+  assert.equal(result.purpose, "compute");
+  assert.equal(result.payee, "worker.near");
+  assert.equal(result.swap.dry, true);
+  assert.equal(result.swap.recipient, "worker.near");
+  assert.equal(result.swap.refundTo, "nozy-agent.near");
+  assert.equal(result.swap.originAsset, "nep141:wrap.near");
+  assert.equal(result.tx, undefined);
+});
+
+test("hiring a stranger is refused", () => {
+  const result = propose({ text: "hire stranger.near for data 1" });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /stranger/);
+});
+
+test("a hire does not send shielded ZEC through NEAR Intents", () => {
+  const result = propose({ text: "hire worker.near for compute with shielded zec" });
+  assert.equal(result.ok, false);
+  assert.match(result.reason, /Shielded ZEC/);
+});
+
+test("the NEAR agent accepts the lower price and still does not sign", () => {
+  const result = propose({
+    text: "negotiate data with worker.near offer 2 counter 1",
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.role, "negotiate");
+  assert.equal(result.signer, null);
+  assert.equal(result.swap.amount, "1000000000000000000000000");
+  assert.equal(result.swap.recipient, "worker.near");
+});
+
+test("a higher counter waits for confirmation", () => {
+  const result = propose({ text: "negotiate api with worker.near offer 1 counter 2" });
+  assert.equal(result.ok, false);
+  assert.equal(result.needsConfirm, true);
+});
+
+test("the NEAR agent can earn without signing", () => {
+  const result = propose({ text: "earn 2 NEAR for api" });
+  assert.equal(result.ok, true);
+  assert.equal(result.role, "earn");
+  assert.equal(result.signer, null);
+  assert.equal(result.invoice.payTo, "nozy-agent.near");
+  assert.equal(result.invoice.agentMaySign, false);
+});
+
+test("the Zcash agent earns on a shielded invoice", () => {
+  const result = propose({ text: "earn 0.02 shielded zec for data" });
+  assert.equal(result.ok, true);
+  assert.equal(result.agent, "zcash");
+  assert.equal(result.rail, "zcash");
+  assert.equal(result.invoice.asset, "ZEC");
+  assert.equal(result.invoice.agentMaySign, false);
+  assert.equal(result.swap, undefined);
+});
+
+test("a shielded spend waits for FROST and does not use NEAR Intents", () => {
+  const waiting = propose({ text: "spend 0.01 shielded zec" });
+  assert.equal(waiting.ok, false);
+  assert.equal(waiting.agent, "zcash");
+  assert.equal(waiting.needsConfirm, true);
+  assert.equal(waiting.frost.agentHoldsShare, false);
+  assert.equal(waiting.frost.threshold, 2);
+
+  const confirmed = propose({ text: "spend 0.01 shielded zec", confirmed: true });
+  assert.equal(confirmed.ok, true);
+  assert.equal(confirmed.broadcast, false);
+  assert.equal(confirmed.rail, "zcash");
+  assert.equal(confirmed.swap, undefined);
+
+  const throughNear = propose({ text: "spend 0.01 shielded zec to worker.near" });
+  assert.equal(throughNear.ok, false);
+  assert.match(throughNear.reason, /NEAR Intents/);
+});
+
+test("a confirmed hire asks Intents and does not sign", async () => {
+  let body = null;
+  const result = await ask(
+    { text: "hire worker.near for compute 1", confirmed: true, live: true },
+    {
+      fetchImpl: async (url, options) => {
+        if (String(url).includes("1click")) {
+          body = JSON.parse(options.body);
+          return {
+            ok: true,
+            json: async () => ({
+              quote: { amountInFormatted: "1", amountOutFormatted: "3.50", depositAddress: "quoted.near" },
+            }),
+          };
+        }
+        return { ok: true, json: async () => ({ result: { amount: "1" } }) };
+      },
+    },
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.unsigned, true);
+  assert.equal(body.recipient, "worker.near");
+  assert.equal(body.refundTo, "nozy-agent.near");
+  assert.equal(body.dry, false);
+  assert.equal(result.quote.depositAddress, "quoted.near");
 });
 
 test("a missing NEAR AI key does not invent a model answer", async () => {

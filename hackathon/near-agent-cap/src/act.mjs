@@ -1,4 +1,11 @@
-import { RNEAR_CONTRACTS, decimalToYocto, evaluateSwap, evaluateTransaction } from "./policy.mjs";
+import {
+  RNEAR_CONTRACTS,
+  decimalToYocto,
+  evaluateHire,
+  evaluateNegotiation,
+  evaluateSwap,
+  evaluateTransaction,
+} from "./policy.mjs";
 
 export const AGENT_ACCOUNTS = {
   testnet: "nozy-agent.testnet",
@@ -141,6 +148,61 @@ export function act(input) {
       ok: true,
       unsigned: true,
       account: AGENT_ACCOUNTS.mainnet,
+      from: decision.from,
+      to: decision.to,
+      swap: decision.request,
+    };
+  }
+
+  if (kind === "earn") {
+    const zec = amount || "1";
+    if (!/^\d+(\.\d+)?$/.test(zec) || Number(zec) <= 0) {
+      return { ok: false, reason: "amount must be a positive decimal" };
+    }
+    const purpose = String(input.purpose ?? "").trim().toLowerCase();
+    if (!["api", "compute", "data"].includes(purpose)) {
+      return { ok: false, reason: "hire purpose must be api, compute, or data" };
+    }
+    return {
+      ok: true,
+      unsigned: true,
+      signer: null,
+      role: "earn",
+      purpose,
+      invoice: {
+        asset: "NEAR",
+        amount: zec,
+        payTo: AGENT_ACCOUNTS.mainnet,
+        agentMaySign: false,
+      },
+    };
+  }
+
+  if (kind === "hire" || kind === "negotiate") {
+    const fields = {
+      purpose: input.purpose,
+      payee: input.to,
+      amount: amount || "1",
+      offer: input.offer,
+      counter: input.counter,
+      to: input.assetOut,
+      cap: CAP,
+      confirmed,
+      live: Boolean(input.live),
+      accountId: AGENT_ACCOUNTS.mainnet,
+      deadline: input.deadline,
+    };
+    const decision = kind === "negotiate" ? evaluateNegotiation(fields) : evaluateHire(fields);
+    if (!decision.ok) {
+      return { ok: false, reason: decision.reason, needsConfirm: Boolean(decision.needsConfirm) };
+    }
+    return {
+      ok: true,
+      unsigned: true,
+      signer: null,
+      role: decision.role,
+      purpose: decision.purpose,
+      payee: decision.payee,
       from: decision.from,
       to: decision.to,
       swap: decision.request,

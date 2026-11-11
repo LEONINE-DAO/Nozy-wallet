@@ -149,6 +149,49 @@ async function submit(body, confirmed) {
 
 function show(data, body) {
   result.className = "result";
+  if (data.role === "earn" && data.invoice) {
+    const zcash = data.invoice.asset === "ZEC";
+    result.classList.add("draft");
+    result.innerHTML = `
+      <p class="result-kicker">Earn</p>
+      <h2>${zcash ? "Shielded invoice" : "NEAR invoice"}</h2>
+      <p class="quiet">${zcash
+        ? "The Zcash agent can be paid on a shielded invoice. It cannot sign this, and the payment does not go through NEAR Intents."
+        : "Pay nozy-agent.near in NEAR. This desk has not signed anything."}</p>
+      ${facts([
+        ["Amount", `${data.invoice.amount} ${data.invoice.asset}`],
+        ["Purpose", data.invoice.purpose || data.purpose || ""],
+        ["Pay to", data.invoice.payTo || "human Nozy wallet"],
+        ["Agent may sign", "No"],
+      ].filter((row) => row[1]))}
+    `;
+    reveal();
+    return;
+  }
+  if (data.frost) {
+    result.classList.add(data.ok ? "allowed" : "refused");
+    const confirm = data.needsConfirm
+      ? `<div class="confirm"><button type="button" id="confirm">Confirm the shielded spend</button><span class="quiet">A spoken yes is not enough. Two FROST signers still have to authorize it. This desk holds no spend share.</span></div>`
+      : "";
+    result.innerHTML = `
+      <p class="result-kicker">${data.ok ? "Ready" : "Waiting"}</p>
+      <h2>${escapeHtml(data.reason ?? "Shielded FROST spend")}</h2>
+      <p class="quiet">${data.broadcast ? "Broadcast was requested." : "Nothing was broadcast."}</p>
+      ${facts([
+        ["Rail", data.rail || "zcash"],
+        ["Threshold", String(data.frost.threshold ?? 2)],
+        ["Agent holds a spend share", data.frost.agentHoldsShare ? "Yes" : "No"],
+        ["Amount", data.amount ? `${data.amount} ZEC` : ""],
+      ].filter((row) => row[1]))}
+      ${confirm}
+    `;
+    const confirmButton = document.querySelector("#confirm");
+    if (confirmButton) {
+      confirmButton.addEventListener("click", () => submit(pending, true));
+    }
+    reveal();
+    return;
+  }
   if (data.invoice) {
     result.classList.add("draft");
     result.innerHTML = `
@@ -181,6 +224,8 @@ function show(data, body) {
       ${facts([
         ["Out", data.quote.amountOut || "Waiting on solvers"],
         ["In", data.quote.amountIn || body?.amount || ""],
+        ["Payee", data.payee || ""],
+        ["Purpose", data.purpose || ""],
         ["Account", data.account || "nozy-agent.near"],
         ["Confidentiality", data.confidentiality && data.confidentiality !== "public" ? data.confidentiality : ""],
       ].filter((row) => row[1]))}
@@ -419,8 +464,36 @@ shieldButton.addEventListener("click", () => {
 });
 
 function reveal() {
+  showView("ask");
   result.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
+
+const walletPlanes = document.querySelector("#wallet-planes");
+const views = ["desk", "wallets", "ask", "privacy", "shield"];
+
+function showView(name) {
+  const view = views.includes(name) ? name : "desk";
+  document.querySelectorAll(".view").forEach((panel) => {
+    const on = panel.dataset.view === view;
+    panel.hidden = !on;
+    panel.classList.toggle("is-on", on);
+  });
+  document.querySelectorAll(".rail button").forEach((button) => {
+    button.setAttribute("aria-current", button.dataset.view === view ? "page" : "false");
+  });
+  const slot = document.querySelector(view === "wallets" ? "#slot-wallets" : "#slot-desk");
+  if (walletPlanes && slot && (view === "desk" || view === "wallets")) {
+    slot.append(walletPlanes);
+    walletPlanes.classList.toggle("deep", view === "desk");
+  }
+  if (location.hash !== `#${view}`) history.replaceState(null, "", `#${view}`);
+}
+
+document.querySelectorAll(".rail button").forEach((button) => {
+  button.addEventListener("click", () => showView(button.dataset.view));
+});
+window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
+showView(location.hash.slice(1) || "desk");
 
 function facts(rows) {
   const items = rows

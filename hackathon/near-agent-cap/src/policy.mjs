@@ -173,6 +173,8 @@ export function evaluateSwap(input) {
 
   const account = String(input.accountId ?? "").trim();
   if (!account) return fail("mainnet account is required");
+  const recipient = resolveRecipient(account, input.recipient);
+  if (!recipient.ok) return recipient;
 
   const request = {
     dry: !input.live,
@@ -182,7 +184,7 @@ export function evaluateSwap(input) {
     depositType: "ORIGIN_CHAIN",
     destinationAsset: to.assetId,
     amount: amount.base.toString(),
-    recipient: account,
+    recipient: recipient.account,
     recipientType: "INTENTS",
     refundTo: account,
     refundType: "ORIGIN_CHAIN",
@@ -243,6 +245,83 @@ export function evaluateTransaction(tx, options = {}) {
     if (!result.ok) return result;
   }
   return { ok: true };
+}
+
+const HIRE_PURPOSES = new Set(["api", "compute", "data"]);
+const NEAR_ACCOUNT = /^[a-z0-9][a-z0-9\-_]{0,62}[a-z0-9]\.near$/;
+const REFUSED_PAYEES = new Set([
+  "stranger.near",
+  "human.near",
+  "nozy-agent.near",
+  "nozy-agent.testnet",
+]);
+
+function resolveRecipient(payer, recipient) {
+  if (recipient == null || recipient === "") return { ok: true, account: payer };
+  const account = String(recipient).trim().toLowerCase();
+  if (!NEAR_ACCOUNT.test(account) || REFUSED_PAYEES.has(account) || account === payer) {
+    return fail("agent cannot pay a stranger");
+  }
+  return { ok: true, account };
+}
+
+/**
+ * NEAR agent pays another agent for API, compute, or data.
+ * The quote is unsigned. Refund stays with the payer. Shielded ZEC is refused.
+ */
+export function evaluateHire(input) {
+  const purpose = String(input.purpose ?? "").trim().toLowerCase();
+  if (!HIRE_PURPOSES.has(purpose)) {
+    return fail("hire purpose must be api, compute, or data");
+  }
+  const payee = String(input.payee ?? "").trim().toLowerCase();
+  if (!NEAR_ACCOUNT.test(payee) || REFUSED_PAYEES.has(payee)) {
+    return fail("agent cannot pay a stranger");
+  }
+  const described = `${input.asset ?? ""} ${input.from ?? ""} ${input.to ?? ""} ${payee}`;
+  if (ZEC_SWAP.test(described) || input.agent === "zcash") {
+    return fail("Shielded ZEC does not go through NEAR Intents.");
+  }
+  const swap = evaluateSwap({
+    from: "NEAR",
+    to: input.to && input.to !== "NEAR" ? input.to : "USDC",
+    amount: input.amount ?? "1",
+    cap: input.cap ?? "5",
+    confirmed: input.confirmed,
+    live: input.live,
+    accountId: input.accountId ?? "nozy-agent.near",
+    recipient: input.payee,
+    deadline: input.deadline,
+    confidentiality: "public",
+  });
+  if (!swap.ok) return swap;
+  return {
+    ok: true,
+    role: input.role ?? "hire",
+    purpose,
+    payee: swap.request.recipient,
+    from: swap.from,
+    to: swap.to,
+    request: swap.request,
+  };
+}
+
+/** Accept the lower NEAR price. A higher counter waits for the confirm card. */
+export function evaluateNegotiation(input) {
+  const offer = amountToBase(input.offer, 24);
+  if (!offer.ok) return fail(offer.reason);
+  const counter = amountToBase(input.counter, 24);
+  if (!counter.ok) return fail(counter.reason);
+  if (offer.base === 0n || counter.base === 0n) return fail("amount must be greater than zero");
+  if (counter.base > offer.base && !input.confirmed) {
+    return { ok: false, reason: "the counter is above the offer", needsConfirm: true };
+  }
+  const accepted = counter.base <= offer.base ? input.counter : input.offer;
+  return evaluateHire({
+    ...input,
+    amount: accepted,
+    role: "negotiate",
+  });
 }
 
 function parseArgs(args) {

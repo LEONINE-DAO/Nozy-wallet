@@ -20,17 +20,19 @@ npm test
 npm run gui
 ```
 
-`npm test` runs 41 offline checks. No network and no key.
+`npm test` runs 54 offline checks. No network and no key.
 
 `npm run gui` serves the desk at http://127.0.0.1:4173. The page reads public balances for `nozy-agent.near` from `https://rpc.mainnet.fastnear.com`. Stake, swap, and shield actions stay unsigned until a person confirms, and this window does not broadcast them.
 
 | Do this | See this |
 | --- | --- |
-| `npm test` | 41 checks pass. |
-| `npm run gui`, then open http://127.0.0.1:4173 | Two cards. Zcash transparent receive is `t1YVKP6WGcvdJYb1XHehkfLYWXvBCt3BcZG`. NEAR signer is `nozy-agent.near`, with NEAR, rNEAR, and RHEA balances. Stake contract is `lst.rhealab.near`. |
+| `npm test` | 54 checks pass. |
+| `npm run gui`, then open http://127.0.0.1:4173 | Desk, Wallets, Ask, Privacy, and Shield. Zcash transparent receive is `t1YVKP6WGcvdJYb1XHehkfLYWXvBCt3BcZG`. NEAR signer is `nozy-agent.near`, with NEAR, rNEAR, and RHEA balances. Stake contract is `lst.rhealab.near`. |
 | On the desk, ask `Stake 1 NEAR` | An unsigned proposal under the 5 NEAR cap. The function-call key is the only signer this page will use. |
 | On the desk, ask `Stake 10 NEAR` | The proposal waits for the confirmation card. |
 | On the desk, ask `Pay a stranger` | Refusal. No transfer is built. |
+| On the desk, ask `hire worker.near for compute 1 NEAR` | An unsigned dry Intents quote paid to that account. Nothing is signed or deposited. |
+| On the desk, ask `spend 0.01 shielded zec` | The Zcash desk waits for confirmation. It holds no spend share and does not broadcast. |
 | On the desk, ask `Swap 1 NEAR to RHEA` | An unsigned dry quote. Deposit type stays `ORIGIN_CHAIN`. No deposit address is created. |
 | On the desk, ask to swap shielded ZEC | Refusal before any quote. Shielded ZEC stays in Nozy. See [Zcash forum 57497](https://forum.zcashcommunity.com/t/my-experience-exiting-shielded-zec-from-zodl-to-near-intents-589k-usdt-still-held-50-days-despite-a-written-compliance-clearance/57497). |
 | On the desk, ask `Private RHEA quote` | Refusal unless `NEAR_INTENTS_JWT` is set on this computer. No session is stored here. |
@@ -82,4 +84,4 @@ The Zcash wallet, companion, and extension outside this directory are the pre-ha
 
 ## AI tools
 
-Cursor, using Grok, drafted the policy, the desk, the attestation checks, and this README. The human author reviews the account, the recording, and the submission.
+Cursor, using Grok, drafted the policy, the desk, the attestation checks, the hire and earn proposals, and this README. The human author reviews the account, the recording, and the submission.
