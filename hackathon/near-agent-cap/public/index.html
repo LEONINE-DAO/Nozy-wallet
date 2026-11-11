@@ -4,126 +4,178 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Nozy Agent</title>
-  <link rel="stylesheet" href="/styles.css?v=11" />
+  <link rel="stylesheet" href="/styles.css?v=12" />
 </head>
 <body>
-  <main class="desk">
-    <header class="top">
-      <div>
+  <div class="shell">
+    <nav class="rail" aria-label="Desk sections">
+      <div class="brand">
         <p class="eyebrow">This computer</p>
-        <h1>Agent desk</h1>
+        <strong>Agent desk</strong>
+        <span class="pill">mainnet</span>
       </div>
-      <span class="pill">mainnet</span>
-    </header>
+      <button type="button" data-view="desk" aria-current="page">Desk</button>
+      <button type="button" data-view="wallets">Wallets</button>
+      <button type="button" data-view="ask">Ask</button>
+      <button type="button" data-view="privacy">Privacy</button>
+      <button type="button" data-view="shield">Shield</button>
+    </nav>
 
-    <section class="status" aria-label="Agent status">
-      <div>
-        <span class="label">Human wallet</span>
-        <strong id="human-state">Checking</strong>
-      </div>
-      <div>
-        <span class="label">Signer</span>
-        <strong id="signer">nozy-agent.near</strong>
-      </div>
-      <div>
-        <span class="label">Cap</span>
-        <strong>5 NEAR</strong>
-      </div>
-      <div>
-        <span class="label">Agent key</span>
-        <strong>rNEAR contract only</strong>
-      </div>
-      <div>
-        <span class="label">Nym</span>
-        <strong id="nym-state">Required off-box</strong>
-      </div>
-    </section>
-    <p class="nym-note">These buttons stay on this computer. A signed transaction leaves only through Nym, so the endpoint sees a Nym exit instead of this network’s IP.</p>
-
-    <section class="wallets" aria-label="Agent wallets">
-      <article class="wallet" id="zcash-card">
-        <div class="wallet-head">
-          <p class="label">Zcash agent</p>
-          <h2>Transparent receive</h2>
+    <main class="stage">
+      <section class="view is-on" data-view="desk">
+        <header class="top">
+          <div>
+            <p class="eyebrow">Overview</p>
+            <h1>Agent desk</h1>
+          </div>
+        </header>
+        <section class="status" aria-label="Agent status">
+          <div>
+            <span class="label">Human wallet</span>
+            <strong id="human-state">Checking</strong>
+          </div>
+          <div>
+            <span class="label">Signer</span>
+            <strong id="signer">nozy-agent.near</strong>
+          </div>
+          <div>
+            <span class="label">Cap</span>
+            <strong>5 NEAR</strong>
+          </div>
+          <div>
+            <span class="label">Agent key</span>
+            <strong>rNEAR contract only</strong>
+          </div>
+          <div>
+            <span class="label">Nym</span>
+            <strong id="nym-state">Required off-box</strong>
+          </div>
+        </section>
+        <p class="nym-note">These buttons stay on this computer. A signed transaction leaves only through Nym, so the endpoint sees a Nym exit instead of this network’s IP.</p>
+        <div id="slot-desk">
+          <section class="wallets deep" id="wallet-planes" aria-label="Agent wallets">
+            <article class="wallet" id="zcash-card">
+              <div class="wallet-head">
+                <p class="label">Zcash agent</p>
+                <h2>Transparent receive</h2>
+              </div>
+              <div class="addr-row">
+                <code class="addr" id="zcash-address" title="">Looking for the key file</code>
+                <button type="button" class="copy" id="copy-zcash" disabled>Copy</button>
+              </div>
+              <dl class="facts" id="zcash-facts"></dl>
+              <p class="quiet dest" id="zcash-destination">Shielded notes land in the open Nozy wallet.</p>
+            </article>
+            <article class="wallet" id="near-card">
+              <div class="wallet-head">
+                <p class="label">NEAR agent</p>
+                <h2 id="near-account">nozy-agent.near</h2>
+              </div>
+              <div class="addr-row">
+                <code class="addr" id="near-address" title="nozy-agent.near">nozy-agent.near</code>
+                <button type="button" class="copy" id="copy-near">Copy</button>
+              </div>
+              <dl class="facts" id="near-facts"></dl>
+              <p class="quiet">
+                <a class="market" href="https://app.rhea.finance/#near|token.rhealab.near" target="_blank" rel="noopener noreferrer">RHEA market</a>
+                <span>Full-access key stays off this page.</span>
+              </p>
+            </article>
+          </section>
         </div>
-        <div class="addr-row">
-          <code class="addr" id="zcash-address" title="">Looking for the key file</code>
-          <button type="button" class="copy" id="copy-zcash" disabled>Copy</button>
+        <form id="unlock-form" class="unlock">
+          <input id="wallet-password" type="password" autocomplete="off" spellcheck="false" placeholder="New wallet password" />
+          <button type="submit" id="unlock-button">Unlock</button>
+          <button type="button" id="create-wallet">Create a new wallet</button>
+          <button type="button" id="lock-button" hidden>Lock</button>
+        </form>
+        <p class="quiet" id="wallet-detail">The NEAR signer stays nozy-agent.near. The human wallet pays invoices.</p>
+      </section>
+
+      <section class="view" data-view="wallets" hidden>
+        <header class="top">
+          <div>
+            <p class="eyebrow">Wallets</p>
+            <h1>Two wallets</h1>
+          </div>
+        </header>
+        <p class="nym-note">The Zcash card receives. The NEAR card stakes. They stay the same height.</p>
+        <div id="slot-wallets"></div>
+      </section>
+
+      <section class="view" data-view="ask" hidden>
+        <header class="top">
+          <div>
+            <p class="eyebrow">Ask</p>
+            <h1>Ask the agent</h1>
+          </div>
+        </header>
+        <div class="work">
+          <section class="ask">
+            <label for="request">Ask the agent</label>
+            <form id="ask-form">
+              <input id="request" name="request" type="text" autocomplete="off" placeholder="Stake 1 NEAR" value="Stake 1 NEAR" />
+              <button type="submit">Ask</button>
+            </form>
+            <div class="chips">
+              <button type="button" data-kind="stake" data-amount="1">Stake 1 NEAR</button>
+              <button type="button" data-kind="stake" data-amount="1" data-network="mainnet">Stake on Rhea mainnet</button>
+              <button type="button" data-kind="swap" data-amount="1" data-from="NEAR" data-to="USDC">Swap 1 NEAR to USDC</button>
+              <button type="button" data-kind="swap" data-amount="1" data-from="NEAR" data-to="RHEA">Swap 1 NEAR to RHEA</button>
+              <button type="button" data-kind="swap" data-amount="1" data-from="NEAR" data-to="RHEA" data-confidentiality="basic">Private RHEA quote</button>
+              <button type="button" data-kind="unstake_all" data-network="mainnet">Unstake all on Rhea</button>
+              <button type="button" data-kind="withdraw_all" data-network="mainnet">Withdraw all on Rhea</button>
+              <button type="button" data-kind="pay" data-amount="1" data-to="stranger.near">Pay a stranger</button>
+              <button type="button" data-kind="invoice" data-amount="0.01">Draft an invoice</button>
+            </div>
+          </section>
+          <section id="result" class="result empty" aria-live="polite">
+            <p class="result-kicker">Waiting</p>
+            <h2>Ask the agent to stake, pay, or draft an invoice.</h2>
+            <p class="quiet">The agent proposes. This window does not sign or broadcast.</p>
+          </section>
         </div>
-        <dl class="facts" id="zcash-facts"></dl>
-        <p class="quiet dest" id="zcash-destination">Shielded notes land in the open Nozy wallet.</p>
-      </article>
-      <article class="wallet" id="near-card">
-        <div class="wallet-head">
-          <p class="label">NEAR agent</p>
-          <h2 id="near-account">nozy-agent.near</h2>
+      </section>
+
+      <section class="view" data-view="privacy" hidden>
+        <header class="top">
+          <div>
+            <p class="eyebrow">Privacy</p>
+            <h1>Shielded notes stay in Nozy</h1>
+          </div>
+        </header>
+        <section class="privacy" aria-label="Privacy">
+          <ul>
+            <li>The human seed and Ironwood notes are not sent to NEAR Intents or Rhea.</li>
+            <li>Rhea stake, unstake, and withdraw use the function-call key on lst.rhealab.near.</li>
+            <li>A private RHEA quote asks 1Click for basic confidentiality. That route needs a user session this desk does not store, so no deposit is created.</li>
+          </ul>
+          <div id="tee-panel" class="tee">
+            <p class="label">NEAR AI Cloud</p>
+            <p id="tee-status">Checking the gateway attestation.</p>
+            <dl class="facts" id="tee-checks"></dl>
+          </div>
+        </section>
+      </section>
+
+      <section class="view" data-view="shield" hidden>
+        <header class="top">
+          <div>
+            <p class="eyebrow">Shield</p>
+            <h1>Shield into Nozy</h1>
+          </div>
+        </header>
+        <div class="panel shield-panel">
+          <div class="shield-bar">
+            <p class="live" id="shield-live" aria-live="polite">The shield waits for a confirm card.</p>
+            <button type="button" id="shield-button" disabled>Shield into Nozy</button>
+          </div>
+          <p class="quiet">The transparent coin stays put until this confirm card is pressed.</p>
         </div>
-        <div class="addr-row">
-          <code class="addr" id="near-address" title="nozy-agent.near">nozy-agent.near</code>
-          <button type="button" class="copy" id="copy-near">Copy</button>
-        </div>
-        <dl class="facts" id="near-facts"></dl>
-        <p class="quiet">
-          <a class="market" href="https://app.rhea.finance/#near|token.rhealab.near" target="_blank" rel="noopener noreferrer">RHEA market</a>
-          <span>Full-access key stays off this page.</span>
-        </p>
-      </article>
-    </section>
-    <section class="privacy" aria-label="Privacy">
-      <p class="label">Privacy</p>
-      <h2>Shielded notes stay in Nozy</h2>
-      <ul>
-        <li>The human seed and Ironwood notes are not sent to NEAR Intents or Rhea.</li>
-        <li>Rhea stake, unstake, and withdraw use the function-call key on lst.rhealab.near.</li>
-        <li>A private RHEA quote asks 1Click for basic confidentiality. That route needs a user session this desk does not store, so no deposit is created.</li>
-      </ul>
-      <div id="tee-panel" class="tee">
-        <p class="label">NEAR AI Cloud</p>
-        <p id="tee-status">Checking the gateway attestation.</p>
-        <dl class="facts" id="tee-checks"></dl>
-      </div>
-    </section>
+      </section>
+    </main>
+  </div>
 
-    <div class="shield-bar">
-      <p class="live" id="shield-live" aria-live="polite">The shield waits for a confirm card.</p>
-      <button type="button" id="shield-button" disabled>Shield into Nozy</button>
-    </div>
-
-    <form id="unlock-form" class="unlock">
-      <input id="wallet-password" type="password" autocomplete="off" spellcheck="false" placeholder="New wallet password" />
-      <button type="submit" id="unlock-button">Unlock</button>
-      <button type="button" id="create-wallet">Create a new wallet</button>
-      <button type="button" id="lock-button" hidden>Lock</button>
-    </form>
-    <p class="quiet" id="wallet-detail">The NEAR signer stays nozy-agent.near. The human wallet pays invoices.</p>
-
-    <div class="work">
-    <section class="ask">
-      <label for="request">Ask the agent</label>
-      <form id="ask-form">
-        <input id="request" name="request" type="text" autocomplete="off" placeholder="Stake 1 NEAR" value="Stake 1 NEAR" />
-        <button type="submit">Ask</button>
-      </form>
-      <div class="chips">
-        <button type="button" data-kind="stake" data-amount="1">Stake 1 NEAR</button>
-        <button type="button" data-kind="stake" data-amount="1" data-network="mainnet">Stake on Rhea mainnet</button>
-        <button type="button" data-kind="swap" data-amount="1" data-from="NEAR" data-to="USDC">Swap 1 NEAR to USDC</button>
-        <button type="button" data-kind="swap" data-amount="1" data-from="NEAR" data-to="RHEA">Swap 1 NEAR to RHEA</button>
-        <button type="button" data-kind="swap" data-amount="1" data-from="NEAR" data-to="RHEA" data-confidentiality="basic">Private RHEA quote</button>
-        <button type="button" data-kind="unstake_all" data-network="mainnet">Unstake all on Rhea</button>
-        <button type="button" data-kind="withdraw_all" data-network="mainnet">Withdraw all on Rhea</button>
-        <button type="button" data-kind="pay" data-amount="1" data-to="stranger.near">Pay a stranger</button>
-        <button type="button" data-kind="invoice" data-amount="0.01">Draft an invoice</button>
-      </div>
-    </section>
-
-    <section id="result" class="result empty" aria-live="polite">
-      <p class="result-kicker">Waiting</p>
-      <h2>Ask the agent to stake, pay, or draft an invoice.</h2>
-      <p class="quiet">The agent proposes. This window does not sign or broadcast.</p>
-    </section>
-    </div>
-  </main>
-  <script src="/app.js?v=21"></script>
+  <script src="/app.js?v=23"></script>
 </body>
 </html>
