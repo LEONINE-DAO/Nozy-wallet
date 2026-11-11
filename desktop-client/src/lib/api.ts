@@ -17,7 +17,6 @@ import {
   SendEgressSnapshot,
   NymDvpnSyncStatus,
   NymDvpnSyncProbeResult,
-  SendEgressSnapshot,
   SetZebraUrlRequest,
   SetThemeRequest,
   ProvingStatusResponse,
