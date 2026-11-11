@@ -38,6 +38,11 @@ interface SettingsState {
   setAccountLabel: (accountId: string, label: string) => void;
   setActiveAccountId: (accountId: string) => void;
 
+  /** Settings page consumes this once, then clears it. */
+  pendingSettingsSection: string | null;
+  requestSettingsSection: (section: string) => void;
+  clearPendingSettingsSection: () => void;
+
   // Setters
   setShowNavigationLabels: (show: boolean) => void;
   setHideBalance: (hide: boolean) => void;
@@ -78,6 +83,9 @@ export const useSettingsStore = create<SettingsState>()(
           accountLabels: { ...s.accountLabels, [accountId]: label.trim() || s.accountLabels[accountId] || accountId },
         })),
       setActiveAccountId: (accountId) => set({ activeAccountId: accountId }),
+      pendingSettingsSection: null,
+      requestSettingsSection: (section) => set({ pendingSettingsSection: section }),
+      clearPendingSettingsSection: () => set({ pendingSettingsSection: null }),
 
       // Setters
       setShowNavigationLabels: (show) => set({ showNavigationLabels: show }),

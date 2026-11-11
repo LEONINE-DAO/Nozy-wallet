@@ -1,8 +1,8 @@
-import { ShieldCheck, Bolt, LockPassword } from "@solar-icons/react";
+import { BoltIcon, LockPasswordIcon, ShieldCheckIcon } from "@solar-icons/react/linear";
 
 const features = [
   {
-    icon: ShieldCheck,
+    icon: ShieldCheckIcon,
     title: "Shielded by default",
     description:
       "Orchard and Ironwood only. Transparent sends are blocked — privacy is the product, not a toggle.",
@@ -14,7 +14,7 @@ const features = [
     href: "https://leonine-dao.github.io/Nozy-wallet/book/features/absolute-privacy.html",
   },
   {
-    icon: Bolt,
+    icon: BoltIcon,
     title: "Built for Zebrad",
     description:
       "Designed for the modern Zcash stack — local witnesses, lightwalletd sync, operator-grade tooling.",
@@ -26,7 +26,7 @@ const features = [
     href: "https://leonine-dao.github.io/Nozy-wallet/book/features/performance.html",
   },
   {
-    icon: LockPassword,
+    icon: LockPasswordIcon,
     title: "Your keys",
     description:
       "Self-custodial everywhere. Seed and keys stay on devices you control — never on our servers.",
