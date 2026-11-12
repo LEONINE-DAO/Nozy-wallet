@@ -5,11 +5,14 @@
 //! keeps its own [`KeyPackage`] from distributed key generation. A threshold
 //! of 1 is rejected.
 //!
-//! The randomizer `alpha` and the sighash come from the PCZT the device
-//! parses itself. The coordinator does not choose them. A shielded broadcast
-//! leaves this process only after the signature verifies and a person has
-//! confirmed. This module does not build the Orchard bundle and does not open
-//! a network connection.
+//! Round 1 comes first. The coordinator derives `alpha` from those commitments
+//! with [`RandomizedParams::new_from_commitments`]. The Orchard proof is built
+//! outside this module with that `alpha`, and only then does a device parse the
+//! PCZT. The sighash is the ZIP-244 digest from the PCZT signer role. The
+//! PCZT's `rk` must be the verifying key of that `alpha`. A shielded broadcast
+//! leaves this process only after the raw transaction's sighash and `rk` match
+//! the signature and a person has confirmed. This module does not build the
+//! Orchard bundle and does not open a network connection.
 //!
 //! Member backups use the version-1 `zkfrost` string (draft ZIP, zcash/zips#1432).
 //! Restoring one against a unified full viewing key waits on ZIP 2005
@@ -20,15 +23,17 @@ use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 
 use bech32_11::{Bech32m, Hrp};
-#[allow(deprecated)]
-use frost_rerandomized::sign;
 use rand::{CryptoRng, RngCore};
 use reddsa::frost::redpallas::{self as frost};
+use zcash_primitives::transaction::sighash::{signature_hash, SignableInput};
+use zcash_primitives::transaction::txid::TxIdDigester;
+use zcash_primitives::transaction::Transaction;
+use zcash_protocol::consensus::BranchId;
 use zeroize::Zeroize;
 
 use frost::keys::dkg::{part1, part2, part3, round1, round2};
 use frost::keys::{EvenY, KeyPackage, PublicKeyPackage};
-use frost::rerandomized::{RandomizedParams, Randomizer};
+use frost::rerandomized::RandomizedParams;
 use frost::{Identifier, SigningPackage};
 
 use crate::{NozyError, NozyResult};
@@ -69,11 +74,66 @@ impl SpendPolicy {
     }
 }
 
-/// What the device read from the PCZT. The coordinator does not fill this in.
+/// Sighash and randomizer a device read from a PCZT.
+///
+/// The only constructor is [`PcztSpendAuth::from_pczt`]. The sighash is the
+/// ZIP-244 digest. `alpha` is the randomizer whose verifying key equals the
+/// PCZT spend `rk`. The pinned `pczt` crate keeps the `alpha` field private, so
+/// the device checks that public `rk`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PcztSpendAuth {
-    pub sighash: [u8; 32],
-    pub alpha: [u8; 32],
+    sighash: [u8; 32],
+    alpha: [u8; 32],
+    rk: [u8; 32],
+}
+
+impl PcztSpendAuth {
+    pub fn sighash(&self) -> &[u8; 32] {
+        &self.sighash
+    }
+
+    pub fn alpha(&self) -> &[u8; 32] {
+        &self.alpha
+    }
+
+    pub fn rk(&self) -> &[u8; 32] {
+        &self.rk
+    }
+
+    /// Read one Orchard spend from `bytes` and bind it to `randomized`.
+    pub fn from_pczt(bytes: &[u8], randomized: &RandomizedParams) -> NozyResult<Self> {
+        let parsed = pczt::Pczt::parse(bytes)
+            .map_err(|err| NozyError::InvalidInput(format!("PCZT bytes were rejected: {err:?}")))?;
+        let rk = verifying_key_bytes(randomized.randomized_verifying_key())?;
+        let matched = parsed
+            .orchard()
+            .actions()
+            .iter()
+            .any(|action| action.spend().rk() == &rk);
+        if !matched {
+            return Err(NozyError::InvalidOperation(
+                "PCZT Orchard rk is not the key derived from the round-1 commitments.".into(),
+            ));
+        }
+        let signer = pczt::roles::signer::Signer::new(parsed).map_err(|err| {
+            NozyError::InvalidOperation(format!("PCZT sighash was rejected: {err:?}"))
+        })?;
+        Ok(Self {
+            sighash: signer.shielded_sighash(),
+            alpha: randomizer_bytes(randomized.randomizer())?,
+            rk,
+        })
+    }
+
+    /// Test stand-in for a PCZT that was built with `randomized` after round 1.
+    #[cfg(test)]
+    fn from_bound(sighash: [u8; 32], randomized: &RandomizedParams) -> NozyResult<Self> {
+        Ok(Self {
+            sighash,
+            alpha: randomizer_bytes(randomized.randomizer())?,
+            rk: verifying_key_bytes(randomized.randomized_verifying_key())?,
+        })
+    }
 }
 
 /// Public description of the group. No share and no `sk`.
@@ -154,11 +214,31 @@ impl AgentCoordinator {
         Ok(SigningPackage::new(commitments, &spend.sighash))
     }
 
+    /// Derive `alpha` from the round-1 commitments. The seed is not a spend share.
+    /// The Orchard proof is built with this `alpha` before round 2.
+    pub fn bind_randomizer<R: RngCore + CryptoRng>(
+        &self,
+        commitments: &BTreeMap<Identifier, frost::round1::SigningCommitments>,
+        rng: &mut R,
+    ) -> NozyResult<(RandomizedParams, Vec<u8>)> {
+        let public = self.group_public.as_ref().ok_or_else(|| {
+            NozyError::InvalidOperation("FROST coordinator has no group public key yet.".into())
+        })?;
+        if commitments.len() < self.policy.min_signers as usize {
+            return Err(NozyError::InvalidOperation(
+                "FROST signing needs at least the threshold number of commitments.".into(),
+            ));
+        }
+        RandomizedParams::new_from_commitments(public.verifying_key(), commitments, rng)
+            .map_err(cryptographic)
+    }
+
     pub fn aggregate(
         &self,
         signing_package: &SigningPackage,
         shares: &HashMap<Identifier, frost::round2::SignatureShare>,
         spend: &PcztSpendAuth,
+        randomizer_seed: &[u8],
     ) -> NozyResult<[u8; 64]> {
         if signing_package.message() != spend.sighash.as_slice() {
             return Err(NozyError::InvalidOperation(
@@ -173,8 +253,18 @@ impl AgentCoordinator {
         let public = self.group_public.as_ref().ok_or_else(|| {
             NozyError::InvalidOperation("FROST coordinator has no group public key yet.".into())
         })?;
+        let randomized = RandomizedParams::regenerate_from_seed_and_commitments(
+            public.verifying_key(),
+            randomizer_seed,
+            signing_package.signing_commitments(),
+        )
+        .map_err(cryptographic)?;
+        if randomizer_bytes(randomized.randomizer())? != spend.alpha {
+            return Err(NozyError::InvalidOperation(
+                "FROST randomizer seed does not match the PCZT.".into(),
+            ));
+        }
         let share_map: BTreeMap<_, _> = shares.iter().map(|(id, share)| (*id, *share)).collect();
-        let randomized = randomized_params(public, &spend.alpha)?;
         let signature =
             frost::rerandomized::aggregate(signing_package, &share_map, public, &randomized)
                 .map_err(cryptographic)?;
@@ -258,27 +348,46 @@ pub fn sign_share(
     nonces: &frost::round1::SigningNonces,
     key: &KeyPackage,
     spend: &PcztSpendAuth,
+    randomizer_seed: &[u8],
 ) -> NozyResult<frost::round2::SignatureShare> {
     if signing_package.message() != spend.sighash.as_slice() {
         return Err(NozyError::InvalidOperation(
             "FROST signer refuses a sighash that is not the one from the PCZT.".into(),
         ));
     }
-    let randomizer = Randomizer::deserialize(&spend.alpha).map_err(cryptographic)?;
-    #[allow(deprecated)]
-    sign(signing_package, nonces, key, randomizer).map_err(cryptographic)
+    let randomized = RandomizedParams::regenerate_from_seed_and_commitments(
+        key.verifying_key(),
+        randomizer_seed,
+        signing_package.signing_commitments(),
+    )
+    .map_err(cryptographic)?;
+    if randomizer_bytes(randomized.randomizer())? != spend.alpha {
+        return Err(NozyError::InvalidOperation(
+            "FROST randomizer seed does not match the PCZT.".into(),
+        ));
+    }
+    frost::rerandomized::sign_with_randomizer_seed(signing_package, nonces, key, randomizer_seed)
+        .map_err(cryptographic)
 }
 
 fn cryptographic(err: impl fmt::Display) -> NozyError {
     NozyError::Cryptographic(err.to_string())
 }
 
-fn randomized_params(public: &PublicKeyPackage, alpha: &[u8; 32]) -> NozyResult<RandomizedParams> {
-    let randomizer = Randomizer::deserialize(alpha).map_err(cryptographic)?;
-    Ok(RandomizedParams::from_randomizer(
-        public.verifying_key(),
-        randomizer,
-    ))
+fn randomizer_bytes(randomizer: &frost::rerandomized::Randomizer) -> NozyResult<[u8; 32]> {
+    let serialized = randomizer.serialize();
+    serialized
+        .as_slice()
+        .try_into()
+        .map_err(|_| NozyError::Cryptographic("FROST randomizer was not 32 bytes.".into()))
+}
+
+fn verifying_key_bytes(key: &frost::VerifyingKey) -> NozyResult<[u8; 32]> {
+    let serialized = key.serialize().map_err(cryptographic)?;
+    serialized
+        .as_slice()
+        .try_into()
+        .map_err(|_| NozyError::Cryptographic("FROST verifying key was not 32 bytes.".into()))
 }
 
 fn signature_bytes(signature: &frost::Signature) -> NozyResult<[u8; 64]> {
@@ -365,7 +474,107 @@ where
             "FROST broadcast expects a Zcash v5 or v6 transaction.".into(),
         ));
     }
+    let (sighash, rks) = shielded_sighash_and_rks(&request.raw_transaction)?;
+    if sighash != request.auth.sighash {
+        return Err(NozyError::InvalidOperation(
+            "FROST broadcast refuses raw bytes whose sighash is not the signed one.".into(),
+        ));
+    }
+    if !rks.iter().any(|rk| rk == &request.auth.verifying_key) {
+        return Err(NozyError::InvalidOperation(
+            "FROST broadcast refuses raw bytes whose rk is not the signed key.".into(),
+        ));
+    }
     broadcaster(&request.raw_transaction)
+}
+
+/// Authorization stripped down to the effects ZIP 244 hashes.
+///
+/// A raw transaction does not carry the previous transparent output values, so
+/// this context is only used when the transaction has no transparent inputs.
+#[derive(Debug)]
+struct SighashTransparent;
+
+impl zcash_transparent::bundle::Authorization for SighashTransparent {
+    type ScriptSig = ();
+}
+
+impl zcash_transparent::sighash::TransparentAuthorizingContext for SighashTransparent {
+    fn input_amounts(&self) -> Vec<zcash_protocol::value::Zatoshis> {
+        Vec::new()
+    }
+
+    fn input_scriptpubkeys(&self) -> Vec<zcash_transparent::address::Script> {
+        Vec::new()
+    }
+}
+
+#[derive(Debug)]
+struct SighashEffects;
+
+impl zcash_primitives::transaction::Authorization for SighashEffects {
+    type TransparentAuth = SighashTransparent;
+    type SaplingAuth = sapling::bundle::Authorized;
+    type OrchardAuth = orchard::bundle::Authorized;
+}
+
+struct DropTransparent;
+
+impl zcash_transparent::bundle::MapAuth<zcash_transparent::bundle::Authorized, SighashTransparent>
+    for DropTransparent
+{
+    fn map_script_sig(&self, _script: zcash_transparent::address::Script) -> () {}
+
+    fn map_authorization(
+        &self,
+        _auth: zcash_transparent::bundle::Authorized,
+    ) -> SighashTransparent {
+        SighashTransparent
+    }
+}
+
+fn shielded_sighash_and_rks(raw: &[u8]) -> NozyResult<([u8; 32], Vec<[u8; 32]>)> {
+    let tx = [BranchId::Nu6, BranchId::Nu6_1, BranchId::Nu5]
+        .into_iter()
+        .find_map(|branch| Transaction::read(raw, branch).ok())
+        .ok_or_else(|| {
+            NozyError::InvalidOperation("FROST broadcast could not parse the transaction.".into())
+        })?;
+    let version = tx.version();
+    if version != zcash_primitives::transaction::TxVersion::V5
+        && version != zcash_primitives::transaction::TxVersion::V6
+    {
+        return Err(NozyError::InvalidOperation(
+            "FROST broadcast expects a Zcash v5 or v6 transaction.".into(),
+        ));
+    }
+    if tx
+        .transparent_bundle()
+        .is_some_and(|bundle| !bundle.vin.is_empty())
+    {
+        return Err(NozyError::InvalidOperation(
+            "FROST broadcast cannot recompute a sighash for transparent inputs from the raw bytes."
+                .into(),
+        ));
+    }
+    let mut rks = Vec::new();
+    if let Some(bundle) = tx.orchard_bundle() {
+        for action in bundle.actions().iter() {
+            rks.push(action.rk().clone().into());
+        }
+    }
+    if let Some(bundle) = tx.ironwood_bundle() {
+        for action in bundle.actions().iter() {
+            rks.push(action.rk().clone().into());
+        }
+    }
+    let data: zcash_primitives::transaction::TransactionData<SighashEffects> =
+        tx.into_data().map_authorization(DropTransparent, (), ());
+    let txid_parts = data.digest(TxIdDigester);
+    let sighash = signature_hash(&data, &SignableInput::Shielded, &txid_parts);
+    let mut sighash_bytes = [0u8; 32];
+    sighash_bytes.copy_from_slice(sighash.as_ref());
+    Ok((sighash_bytes, rks))
 }
 
 fn is_shielded_tx_header(raw: &[u8]) -> bool {
@@ -584,13 +793,6 @@ mod tests {
     use super::*;
     use rand::thread_rng;
 
-    fn spend_of(sighash: [u8; 32]) -> PcztSpendAuth {
-        PcztSpendAuth {
-            sighash,
-            alpha: [9u8; 32],
-        }
-    }
-
     #[test]
     fn a_single_share_cannot_open_a_session() {
         let err = SpendPolicy::open(1, 3).expect_err("1-of-n must be refused");
@@ -618,7 +820,6 @@ mod tests {
         assert_eq!(descriptor.derivation, DERIVATION_ZIP2005_USE_QSK);
         assert_eq!(descriptor.ak[31] & 0x80, 0);
 
-        let spend = spend_of([7u8; 32]);
         let mut nonces = HashMap::new();
         let mut commitments = BTreeMap::new();
         for index in 1..=policy.min_signers {
@@ -628,25 +829,32 @@ mod tests {
             nonces.insert(id, (nonce, key));
             commitments.insert(id, commitment);
         }
+        let (randomized, seed) = agent
+            .bind_randomizer(&commitments, &mut rng)
+            .expect("alpha from commitments");
+        let spend = PcztSpendAuth::from_bound([7u8; 32], &randomized).expect("bound spend");
         let signing_package = agent.signing_package(commitments, &spend).expect("package");
         let mut shares = HashMap::new();
         for (id, (nonce, key)) in &nonces {
-            let share = sign_share(&signing_package, nonce, key, &spend).expect("share");
+            let share = sign_share(&signing_package, nonce, key, &spend, &seed).expect("share");
             shares.insert(*id, share);
         }
         let signature = agent
-            .aggregate(&signing_package, &shares, &spend)
+            .aggregate(&signing_package, &shares, &spend, &seed)
             .expect("aggregate");
         assert_eq!(signature.len(), 64);
+        assert_eq!(
+            spend.alpha(),
+            &randomizer_bytes(randomized.randomizer()).unwrap()
+        );
     }
 
-    fn authorized_spend(sighash: [u8; 32]) -> (AgentCoordinator, ShieldedSpendAuth, PcztSpendAuth) {
+    fn authorized_spend(sighash: [u8; 32]) -> (AgentCoordinator, ShieldedSpendAuth) {
         let mut rng = thread_rng();
         let policy = SpendPolicy::open(2, 3).expect("2-of-3");
         let (mut keys, group_public) = distributed_keygen(policy, &mut rng).expect("dkg");
         let mut agent = AgentCoordinator::new(policy);
         agent.set_group_public(group_public).expect("even ak");
-        let spend = spend_of(sighash);
         let mut nonces = HashMap::new();
         let mut commitments = BTreeMap::new();
         for index in 1..=policy.min_signers {
@@ -656,26 +864,28 @@ mod tests {
             nonces.insert(id, (nonce, key));
             commitments.insert(id, commitment);
         }
+        let (randomized, seed) = agent
+            .bind_randomizer(&commitments, &mut rng)
+            .expect("alpha from commitments");
+        let spend = PcztSpendAuth::from_bound(sighash, &randomized).expect("bound spend");
         let signing_package = agent.signing_package(commitments, &spend).expect("package");
         let mut shares = HashMap::new();
         for (id, (nonce, key)) in &nonces {
-            let share = sign_share(&signing_package, nonce, key, &spend).expect("share");
+            let share = sign_share(&signing_package, nonce, key, &spend, &seed).expect("share");
             shares.insert(*id, share);
         }
         let signature = agent
-            .aggregate(&signing_package, &shares, &spend)
+            .aggregate(&signing_package, &shares, &spend, &seed)
             .expect("aggregate");
-        let public = agent.group_public().expect("public");
-        let randomized = randomized_params(public, &spend.alpha).expect("alpha");
         let auth =
             ShieldedSpendAuth::from_pczt(sighash, signature, &randomized).expect("spend auth");
-        (agent, auth, spend)
+        (agent, auth)
     }
 
     #[test]
     fn a_shielded_spend_is_broadcast_only_after_frost_and_confirmation() {
         let sighash = [9u8; 32];
-        let (agent, auth, _) = authorized_spend(sighash);
+        let (agent, auth) = authorized_spend(sighash);
         assert!(!agent.holds_spend_share());
         let mut raw = vec![0x06, 0x00, 0x00, 0x80];
         raw.extend_from_slice(&sighash);
@@ -711,22 +921,51 @@ mod tests {
         assert!(rejected.is_err());
         assert_eq!(calls, 0);
 
-        let submitted = broadcast_shielded_spend(
+        let unbound = broadcast_shielded_spend(
             ShieldedBroadcast {
                 auth,
-                raw_transaction: raw.clone(),
+                raw_transaction: raw,
                 confirmed: true,
             },
-            |bytes| {
+            |_| {
                 calls += 1;
-                assert_eq!(bytes, raw.as_slice());
                 Ok("submitted".into())
             },
-        )
-        .expect("broadcaster");
-        assert_eq!(submitted, "submitted");
-        assert_eq!(calls, 1);
+        );
+        assert!(unbound.is_err());
+        assert_eq!(calls, 0);
         assert!(!agent.holds_spend_share());
+    }
+
+    #[test]
+    fn a_device_refuses_a_pczt_that_does_not_carry_the_bound_rk() {
+        let mut rng = thread_rng();
+        let policy = SpendPolicy::open(2, 3).expect("2-of-3");
+        let (keys, group_public) = distributed_keygen(policy, &mut rng).expect("dkg");
+        let mut agent = AgentCoordinator::new(policy);
+        agent.set_group_public(group_public).expect("even ak");
+        let mut commitments = BTreeMap::new();
+        for index in 1..=policy.min_signers {
+            let id = identifier(index).expect("id");
+            let (_, commitment) = commit(keys.get(&id).expect("key"), &mut rng);
+            commitments.insert(id, commitment);
+        }
+        let (randomized, _) = agent
+            .bind_randomizer(&commitments, &mut rng)
+            .expect("alpha");
+        assert!(PcztSpendAuth::from_pczt(b"not a pczt", &randomized).is_err());
+
+        let creator = pczt::roles::creator::Creator::new(
+            u32::from(zcash_protocol::consensus::BranchId::Nu6),
+            0,
+            133,
+            [0u8; 32],
+            [0u8; 32],
+        )
+        .expect("creator");
+        let bytes = creator.build().serialize().expect("pczt bytes");
+        let err = PcztSpendAuth::from_pczt(&bytes, &randomized).expect_err("no matching rk");
+        assert!(err.to_string().contains("rk"));
     }
 
     #[test]
