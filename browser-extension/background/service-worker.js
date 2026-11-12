@@ -31,6 +31,7 @@ import {
 import {
   compactChainTip,
   compactFetchBlocks,
+  compactSubmitRawTx,
   compactTreeState
 } from "./lwd-compact.js";
 import {
@@ -40,6 +41,13 @@ import {
   renameAccount,
   setActiveAccount
 } from "./wallet-accounts.js";
+import {
+  advanceWitnessOverRange,
+  anchorHexFromCompactTreestate,
+  feeBlockFromChainTip,
+  mainnetFromNetworkName,
+  zcashTxidFromRawHex
+} from "./public-sync-send.js";
 import {
   feeBlockFromRpc,
   mandatoryOrchardFeeZats,
@@ -507,6 +515,9 @@ function orchardWitnessFieldsFromNote(noteObj) {
 }
 
 async function _inlineRpcRequest(endpoint, method, params = []) {
+  if (method === "getblockcount" && isNozyPublicSyncUrl(endpoint)) {
+    return compactChainTip();
+  }
   const url = normalizeRpcEndpoint(endpoint);
   const resp = await fetch(url, {
     method: "POST",
@@ -532,10 +543,11 @@ async function _inlineProveTransaction(params) {
   if (!recipientAddress) throw new Error("Missing recipient address.");
 
   const endpoint = normalizeRpcEndpoint(rpcEndpoint);
-  const feeBlock = await feeBlockFromRpc((method, rpcParams) =>
+  const publicSync = isNozyPublicSyncUrl(endpoint);
+  let feeBlock = await feeBlockFromRpc((method, rpcParams) =>
     _inlineRpcRequest(endpoint, method, rpcParams)
   );
-  const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
+  let requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
   const requiredValue = requestedAmount + requestedFee;
   if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
     throw new Error(`Invalid amount/fee (amount=${requestedAmount}, fee=${requestedFee}).`);
@@ -560,17 +572,37 @@ async function _inlineProveTransaction(params) {
   }
 
   const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
-  const chainTip = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
+  let chainTip;
+  let anchorHex;
+  if (publicSync) {
+    chainTip = Number(await compactChainTip());
+    const ts = await compactTreeState(String(chainTip));
+    const mainnet = mainnetFromNetworkName(ts?.network);
+    if (feeBlock.mainnet !== mainnet) {
+      feeBlock = feeBlockFromChainTip(chainTip, mainnet);
+      requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
+    }
+    anchorHex = anchorHexFromCompactTreestate(ts, (finalState) =>
+      wasm.orchard_anchor_hex_from_final_state(finalState)
+    );
+  } else {
+    chainTip = Number(await _inlineRpcRequest(endpoint, "getblockcount", []));
+    const heightStr = String(chainTip);
+    const rpcReq = (at) => _inlineRpcRequest(endpoint, at.method, at.params ?? []);
+    const orchardTree = await rpcFallbackWithRequester(rpcReq, [
+      { method: "z_getorchardtree", params: [heightStr] },
+      { method: "z_gettreestate", params: [heightStr] }
+    ]);
+    anchorHex = _orchardAnchorHexFromRpc(orchardTree);
+  }
   const txBuildHeight = chainTip + 1;
-  const heightStr = String(chainTip);
-
-  const rpcReq = (at) => _inlineRpcRequest(endpoint, at.method, at.params ?? []);
-  const orchardTree = await rpcFallbackWithRequester(rpcReq, [
-    { method: "z_getorchardtree", params: [heightStr] },
-    { method: "z_gettreestate", params: [heightStr] }
-  ]);
-  const anchorHex = _orchardAnchorHexFromRpc(orchardTree);
-  if (!anchorHex || anchorHex.length < 64) throw new Error("RPC did not return a valid Orchard anchor.");
+  if (!anchorHex || anchorHex.length < 64) {
+    throw new Error(
+      publicSync
+        ? "Public sync did not return a valid Orchard anchor."
+        : "RPC did not return a valid Orchard anchor."
+    );
+  }
 
   const selectedWitnesses = [];
   for (const noteSel of selected) {
@@ -587,9 +619,19 @@ async function _inlineProveTransaction(params) {
     if (!Number.isFinite(tip) || tip < 0) {
       throw new Error("Invalid orchard_witness_tip_height on note.");
     }
-    for (let h = tip + 1; h <= chainTip; h += 1) {
-      const block = await rpcGetBlockVerboseByHeight(endpoint, h);
-      witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
+    if (publicSync) {
+      witnessHex = await advanceWitnessOverRange(
+        (hex, blockJson) => wasm.advance_orchard_witness_hex(hex, blockJson),
+        witnessHex,
+        tip,
+        chainTip,
+        compactFetchBlocks
+      );
+    } else {
+      for (let h = tip + 1; h <= chainTip; h += 1) {
+        const block = await rpcGetBlockVerboseByHeight(endpoint, h);
+        witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
+      }
     }
     if (!wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex)) {
       throw new Error("Orchard witness does not match anchor at tip (rescan or wait for sync).");
@@ -1223,12 +1265,29 @@ function companionErrorMessage(err) {
  * as desktop/CLI. Local/LAN RPC may fall back to Chrome JSON-RPC if the companion is down.
  */
 async function broadcastRawHex(hex, opts = {}) {
+  const publicSync =
+    isNozyPublicSyncUrl(session.rpcEndpoint) || (await isPublicLwdOptedIn());
+  let publicSubmitError = null;
+  if (publicSync) {
+    try {
+      const submitted = await compactSubmitRawTx(hex);
+      const txid = resolveTxidFromBroadcast(
+        submitted,
+        submitted?.txid || (await zcashTxidFromRawHex(hex))
+      );
+      if (txid && /^[0-9a-f]{64}$/i.test(String(txid))) return String(txid);
+      publicSubmitError = new Error("Compact submit returned no txid");
+    } catch (e) {
+      publicSubmitError = e instanceof Error ? e : new Error(String(e));
+    }
+  }
   const companionBase = await loadCompanionBaseUrl();
   const local = isLocalRpcEndpoint(session.rpcEndpoint);
   try {
     const result = await companionBroadcastRaw(companionBase, {
       raw_transaction_hex: hex,
-      zebra_url: session.rpcEndpoint
+      // lightwalletd is not JSON-RPC. Let the companion use its own Zebrad.
+      zebra_url: publicSync ? undefined : session.rpcEndpoint
     });
     const txid = resolveTxidFromBroadcast(result, result?.txid ?? "");
     if (!txid) {
@@ -1238,8 +1297,9 @@ async function broadcastRawHex(hex, opts = {}) {
   } catch (e) {
     const msg = companionErrorMessage(e);
     if (!local) {
+      const submitNote = publicSubmitError ? ` ${publicSubmitError.message}` : "";
       throw new Error(
-        `Remote send must go through the companion API (same Nym mixnet path as desktop/CLI). ${msg}`
+        `Remote send must go through the companion API (same Nym mixnet path as desktop/CLI). ${msg}${submitNote}`
       );
     }
   }
@@ -2086,6 +2146,12 @@ async function rpcCall(method, params = []) {
     endpoint = normalizeRpcEndpoint(session.rpcEndpoint);
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
+  }
+  if (
+    method === "getblockcount" &&
+    (isNozyPublicSyncUrl(endpoint) || (await isPublicLwdOptedIn()))
+  ) {
+    return compactChainTip();
   }
   let resp;
   const rpcBody = JSON.stringify({

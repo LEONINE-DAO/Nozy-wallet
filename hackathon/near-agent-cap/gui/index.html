@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Nozy Agent cap</title>
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Nozy Agent</h1>
+      <p>Testnet stake cap. The shielded wallet is not loaded. Nothing on this screen is signed.</p>
+    </header>
+    <div class="status">
+      <span>Human wallet not loaded</span>
+      <span>Signer nozy-agent.testnet</span>
+      <span>Cap 5 NEAR</span>
+      <span>Agent key calls lst.ref-dev.testnet only</span>
+    </div>
+    <div class="layout">
+      <section>
+        <button class="play" id="play" type="button">Play all</button>
+        <button type="button" data-beat="stake1">Stake 1 NEAR</button>
+        <button type="button" data-beat="stake10">Stake 10 NEAR</button>
+        <button type="button" data-beat="confirm">Confirm 10 NEAR</button>
+        <button type="button" data-beat="stranger">Pay stranger.near</button>
+        <button type="button" data-beat="invoice">Draft 0.01 ZEC invoice</button>
+      </section>
+      <section class="stage" aria-live="polite">
+        <h2 class="verdict" id="verdict">Ready</h2>
+        <p class="reason" id="reason">Choose an action. The result stays on this machine.</p>
+        <pre id="detail"></pre>
+        <ol class="log" id="log"></ol>
+      </section>
+    </div>
+  </main>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

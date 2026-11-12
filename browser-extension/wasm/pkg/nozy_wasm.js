@@ -312,7 +312,8 @@ export function nozy_version_display() {
 }
 
 /**
- * Root of a Zebra `finalState` commitment tree. This is the anchor the scan was built from.
+ * Merkle root of a lightwalletd / Zebra `finalState` commitment tree.
+ * The serialized frontier itself is not the anchor.
  * @param {string} final_state_hex
  * @returns {string}
  */
@@ -358,32 +359,6 @@ export function orchard_scan_tracker_apply_block(tracker_state_json, mnemonic_st
     const ptr4 = passStringToWasm0(account_indices_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
     const len4 = WASM_VECTOR_LEN;
     const ret = wasm.orchard_scan_tracker_apply_block(ptr0, len0, ptr1, len1, ptr2, len2, block_height, ptr3, len3, ptr4, len4);
-    if (ret[2]) {
-        throw takeFromExternrefTable0(ret[1]);
-    }
-    return takeFromExternrefTable0(ret[0]);
-}
-
-/**
- * @param {string} tracker_state_json
- * @param {string} mnemonic_str
- * @param {string} wallet_address
- * @param {string} blocks_json
- * @param {string} account_indices_json
- * @returns {any}
- */
-export function orchard_scan_tracker_apply_blocks(tracker_state_json, mnemonic_str, wallet_address, blocks_json, account_indices_json) {
-    const ptr0 = passStringToWasm0(tracker_state_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len0 = WASM_VECTOR_LEN;
-    const ptr1 = passStringToWasm0(mnemonic_str, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len1 = WASM_VECTOR_LEN;
-    const ptr2 = passStringToWasm0(wallet_address, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len2 = WASM_VECTOR_LEN;
-    const ptr3 = passStringToWasm0(blocks_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len3 = WASM_VECTOR_LEN;
-    const ptr4 = passStringToWasm0(account_indices_json, wasm.__wbindgen_malloc, wasm.__wbindgen_realloc);
-    const len4 = WASM_VECTOR_LEN;
-    const ret = wasm.orchard_scan_tracker_apply_blocks(ptr0, len0, ptr1, len1, ptr2, len2, ptr3, len3, ptr4, len4);
     if (ret[2]) {
         throw takeFromExternrefTable0(ret[1]);
     }

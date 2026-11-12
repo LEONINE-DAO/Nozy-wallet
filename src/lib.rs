@@ -3,6 +3,8 @@
 // ============================================================
 pub mod error;
 pub mod fee_policy;
+#[cfg(feature = "native")]
+pub mod frost_spend;
 pub mod groth16_prover_simple;
 pub mod hd_wallet;
 pub mod input_validation;

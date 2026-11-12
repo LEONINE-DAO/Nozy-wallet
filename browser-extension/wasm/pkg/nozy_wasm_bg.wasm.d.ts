@@ -23,7 +23,6 @@ export const pilot_expiry_delta_blocks: () => number;
 export const nozy_version_display: () => [number, number];
 export const encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-export const orchard_scan_tracker_apply_blocks: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
 export const orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
 export const shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
 export const orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];

@@ -1,0 +1,24 @@
+{
+  "name": "near-agent-cap",
+  "private": true,
+  "type": "module",
+  "description": "NEAR agent desk for the NEAR Hackathon. nozy-agent.near stakes to Rhea under a local cap. The shielded Nozy seed is not the signer.",
+  "scripts": {
+    "test": "node --test test/policy.test.mjs test/act.test.mjs test/companion.test.mjs test/near-agent.test.mjs test/wallets.test.mjs test/tee.test.mjs",
+    "gui": "node src/server.mjs",
+    "propose": "node src/propose.mjs",
+    "pay": "node src/pay.mjs",
+    "invoice": "node src/invoice.mjs",
+    "demo": "node src/demo.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@phala/dcap-qvl": "^0.7.1",
+    "@rhea-finance/rnear-sdk": "^0.1.1"
+  },
+  "overrides": {
+    "elliptic": "npm:@mapped/elliptic@6.6.10"
+  }
+}

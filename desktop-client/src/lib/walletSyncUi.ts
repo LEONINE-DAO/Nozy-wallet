@@ -1,6 +1,5 @@
 import toast from "react-hot-toast";
 import { formatErrorForDisplay } from "../utils/errors";
-import { walletApi } from "./api";
 import { useWalletStore } from "../store/walletStore";
 import {
   describeSyncStatus,

@@ -164,10 +164,13 @@ function HeaderItem({
           : "text-gray-100 bg-gray-800 border-gray-600 hover:bg-primary/20 hover:border-primary/50"
       )}
     >
-      {React.cloneElement(icon as React.ReactElement, {
-        size: 20,
-        weight: "Bold",
-      })}
+      {React.cloneElement(
+        icon as React.ReactElement<{ size?: number; weight?: string }>,
+        {
+          size: 20,
+          weight: "Bold",
+        }
+      )}
       {showLabel && <span>{label}</span>}
     </button>
   );

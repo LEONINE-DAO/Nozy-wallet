@@ -32,8 +32,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -65,8 +73,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -96,8 +112,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -127,8 +151,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -158,8 +190,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -190,8 +230,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -219,8 +267,16 @@ jobs:
 
       - name: Install protobuf compiler
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
+          set -euo pipefail
+          version=21.12
+          archive="protoc-${version}-linux-x86_64.zip"
+          dest="${RUNNER_TEMP}/protoc"
+          mkdir -p "$dest"
+          curl -fsSL -o "${RUNNER_TEMP}/${archive}" \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${version}/${archive}"
+          unzip -q -o "${RUNNER_TEMP}/${archive}" -d "$dest"
+          echo "${dest}/bin" >> "$GITHUB_PATH"
+          "${dest}/bin/protoc" --version
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

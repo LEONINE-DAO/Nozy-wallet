@@ -18,9 +18,10 @@ name = "nym-smolmix-broadcast-spike"
 path = "src/main.rs"
 
 [dependencies]
-# Pin per Max (#57000/27): crates.io 1.21.5. Crate renamed smolmix → nym-smolmix.
-nym-smolmix = "1.21.5"
-nym-bin-common = { version = "1.21.5", features = ["basic_tracing"] }
+# Pin 1.21.6 exactly. A caret requirement also selects 1.22.x, and that mix
+# does not compile. The extra nym crates below are the same pin.
+nym-smolmix = "=1.21.6"
+nym-bin-common = { version = "=1.21.6", features = ["basic_tracing"] }
 
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "time", "io-util", "net"] }
 tokio-rustls = "0.26"
@@ -40,6 +41,84 @@ url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
-# E0716 workaround: use 0.0.10 vendor (same as lwd-mixnet-proxy 1.21.5 rebuild).
+
+# Exact pins. Caret ^1.21.6 also matches 1.22.x, and that mix does not compile.
+nym-api-requests = { version = "=1.21.6", default-features = false }
+nym-bandwidth-controller = { version = "=1.21.6", default-features = false }
+nym-bandwidth-fetcher = { version = "=1.21.6", default-features = false }
+nym-client-core = { version = "=1.21.6", default-features = false }
+nym-client-core-config-types = { version = "=1.21.6", default-features = false }
+nym-client-core-gateways-storage = { version = "=1.21.6", default-features = false }
+nym-client-core-surb-storage = { version = "=1.21.6", default-features = false }
+nym-coconut-dkg-common = { version = "=1.21.6", default-features = false }
+nym-common = { version = "=1.21.6", default-features = false }
+nym-compact-ecash = { version = "=1.21.6", default-features = false }
+nym-config = { version = "=1.21.6", default-features = false }
+nym-contracts-common = { version = "=1.21.6", default-features = false }
+nym-credential-storage = { version = "=1.21.6", default-features = false }
+nym-credentials = { version = "=1.21.6", default-features = false }
+nym-credentials-interface = { version = "=1.21.6", default-features = false }
+nym-crypto = { version = "=1.21.6", default-features = false }
+nym-ecash-contract-common = { version = "=1.21.6", default-features = false }
+nym-ecash-signer-check-types = { version = "=1.21.6", default-features = false }
+nym-ecash-time = { version = "=1.21.6", default-features = false }
+nym-exit-policy = { version = "=1.21.6", default-features = false }
+nym-gateway-client = { version = "=1.21.6", default-features = false }
+nym-gateway-requests = { version = "=1.21.6", default-features = false }
+nym-group-contract-common = { version = "=1.21.6", default-features = false }
+nym-http-api-client = { version = "=1.21.6", default-features = false }
+nym-http-api-client-macro = { version = "=1.21.6", default-features = false }
+nym-http-api-common = { version = "=1.21.6", default-features = false }
+nym-id = { version = "=1.21.6", default-features = false }
+nym-ip-packet-requests = { version = "=1.21.6", default-features = false }
+nym-kkt-ciphersuite = { version = "=1.21.6", default-features = false }
+nym-lp-data = { version = "=1.21.6", default-features = false }
+nym-metrics = { version = "=1.21.6", default-features = false }
+nym-mixnet-client = { version = "=1.21.6", default-features = false }
+nym-mixnet-contract-common = { version = "=1.21.6", default-features = false }
+nym-multisig-contract-common = { version = "=1.21.6", default-features = false }
+nym-network-defaults = { version = "=1.21.6", default-features = false }
+nym-network-monitors-contract-common = { version = "=1.21.6", default-features = false }
+nym-node-families-contract-common = { version = "=1.21.6", default-features = false }
+nym-node-requests = { version = "=1.21.6", default-features = false }
+nym-noise = { version = "=1.21.6", default-features = false }
+nym-noise-keys = { version = "=1.21.6", default-features = false }
+nym-nonexhaustive-delayqueue = { version = "=1.21.6", default-features = false }
+nym-ordered-buffer = { version = "=1.21.6", default-features = false }
+nym-outfox = { version = "=1.21.6", default-features = false }
+nym-pemstore = { version = "=1.21.6", default-features = false }
+nym-performance-contract-common = { version = "=1.21.6", default-features = false }
+nym-sdk = { version = "=1.21.6", default-features = false }
+nym-serde-helpers = { version = "=1.21.6", default-features = false }
+nym-service-provider-requests-common = { version = "=1.21.6", default-features = false }
+nym-service-providers-common = { version = "=1.21.6", default-features = false }
+nym-socks5-client-core = { version = "=1.21.6", default-features = false }
+nym-socks5-proxy-helpers = { version = "=1.21.6", default-features = false }
+nym-socks5-requests = { version = "=1.21.6", default-features = false }
+nym-sphinx = { version = "=1.21.6", default-features = false }
+nym-sphinx-acknowledgements = { version = "=1.21.6", default-features = false }
+nym-sphinx-addressing = { version = "=1.21.6", default-features = false }
+nym-sphinx-anonymous-replies = { version = "=1.21.6", default-features = false }
+nym-sphinx-chunking = { version = "=1.21.6", default-features = false }
+nym-sphinx-cover = { version = "=1.21.6", default-features = false }
+nym-sphinx-forwarding = { version = "=1.21.6", default-features = false }
+nym-sphinx-framing = { version = "=1.21.6", default-features = false }
+nym-sphinx-params = { version = "=1.21.6", default-features = false }
+nym-sphinx-routing = { version = "=1.21.6", default-features = false }
+nym-sphinx-types = { version = "=1.21.6", default-features = false }
+nym-sqlx-pool-guard = { version = "=1.21.6", default-features = false }
+nym-statistics-common = { version = "=1.21.6", default-features = false }
+nym-task = { version = "=1.21.6", default-features = false }
+nym-ticketbooks-merkle = { version = "=1.21.6", default-features = false }
+nym-topology = { version = "=1.21.6", default-features = false }
+nym-upgrade-mode-check = { version = "=1.21.6", default-features = false }
+nym-validator-client = { version = "=1.21.6", default-features = false }
+nym-vesting-contract-common = { version = "=1.21.6", default-features = false }
+nym-wasm-utils = { version = "=1.21.6", default-features = false }
+nym-wireguard-types = { version = "=1.21.6", default-features = false }
+# Nym 1.21.6 still enables rustls on tungstenite 0.20 and reqwest 0.11 via
+# tendermint-rpc 0.40.4. These patches move those edges onto rustls 0.23.46.
 [patch.crates-io]
-libcrux-psq = { path = "../lwd-mixnet-proxy/vendor/libcrux-psq" }
+tungstenite = { path = "../nym-rustls-patch/tungstenite" }
+tokio-tungstenite = { path = "../nym-rustls-patch/tokio-tungstenite" }
+tendermint-rpc = { path = "../nym-rustls-patch/tendermint-rpc" }

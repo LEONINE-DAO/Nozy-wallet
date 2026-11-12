@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AltArrowDown } from "@solar-icons/react";
+import { AltArrowDownIcon } from "@solar-icons/react/linear";
 
 const FAQItem = ({
   question,
@@ -18,7 +18,7 @@ const FAQItem = ({
       className="w-full flex items-center justify-between py-5 text-left gap-4"
     >
       <span className="font-display text-lg font-semibold text-[#f5f0e6]">{question}</span>
-      <AltArrowDown
+      <AltArrowDownIcon
         className={`text-[#c8ccd4] shrink-0 transition-transform duration-300 ${
           isOpen ? "rotate-180" : ""
         }`}

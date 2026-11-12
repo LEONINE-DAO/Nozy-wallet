@@ -253,7 +253,8 @@ pub fn advance_orchard_witness_hex(witness_hex: &str, block_json: &str) -> Resul
     Ok(hex::encode(bytes))
 }
 
-/// Root of a Zebra `finalState` commitment tree. This is the anchor the scan was built from.
+/// Merkle root of a lightwalletd / Zebra `finalState` commitment tree.
+/// The serialized frontier itself is not the anchor.
 #[wasm_bindgen]
 pub fn orchard_anchor_hex_from_final_state(final_state_hex: &str) -> Result<String, JsError> {
     let s = final_state_hex.trim().trim_start_matches("0x");
@@ -1284,17 +1285,15 @@ pub fn build_orchard_v5_tx_from_note(
         .map_err(|e| JsError::new(&format!("Serialization failed: {e}")))
 }
 
-fn wasm_fee_block(mainnet: bool, mined_block_height: u32, marginal_fee: u64) -> nozy::FeeBlock {
-    let block = if mainnet && mined_block_height == 0 {
+fn wasm_fee_block(mainnet: bool, mined_block_height: u32, _marginal_fee: u64) -> nozy::FeeBlock {
+    if mainnet && mined_block_height == 0 {
         nozy::FeeBlock::mainnet_before_zip2009()
     } else {
         nozy::FeeBlock {
             mainnet,
             height: mined_block_height,
-            marginal_override: None,
         }
-    };
-    block.with_node_marginal((marginal_fee > 0).then_some(marginal_fee))
+    }
 }
 
 fn estimate_orchard_send_fee_zats_inner(

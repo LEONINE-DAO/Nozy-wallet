@@ -63,13 +63,12 @@ export function get_zcash_chain_id(): string;
 export function nozy_version_display(): string;
 
 /**
- * Root of a Zebra `finalState` commitment tree. This is the anchor the scan was built from.
+ * Merkle root of a lightwalletd / Zebra `finalState` commitment tree.
+ * The serialized frontier itself is not the anchor.
  */
 export function orchard_anchor_hex_from_final_state(final_state_hex: string): string;
 
 export function orchard_scan_tracker_apply_block(tracker_state_json: string, mnemonic_str: string, wallet_address: string, block_height: number, block_json: string, account_indices_json: string): any;
-
-export function orchard_scan_tracker_apply_blocks(tracker_state_json: string, mnemonic_str: string, wallet_address: string, blocks_json: string, account_indices_json: string): any;
 
 export function orchard_scan_tracker_new(final_state_hex: string): string;
 
@@ -122,7 +121,6 @@ export interface InitOutput {
     readonly nozy_version_display: () => [number, number];
     readonly encrypt_for_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly decrypt_from_storage: (a: number, b: number, c: number, d: number) => [number, number, number, number];
-    readonly orchard_scan_tracker_apply_blocks: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number) => [number, number, number];
     readonly orchard_scan_tracker_new: (a: number, b: number) => [number, number, number, number];
     readonly shielded_scan_tracker_new: (a: number, b: number, c: number, d: number) => [number, number, number, number];
     readonly orchard_scan_tracker_apply_block: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number, j: number, k: number) => [number, number, number];

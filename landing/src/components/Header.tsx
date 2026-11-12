@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { HamburgerMenu, CloseSquare } from "@solar-icons/react";
+import { CloseSquareIcon, HamburgerMenuIcon } from "@solar-icons/react/linear";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import BrandLogo from "./BrandLogo";
 
@@ -94,7 +94,7 @@ const Header = () => {
           onClick={toggleMenu}
           aria-label="Toggle menu"
         >
-          {isMenuOpen ? <CloseSquare size={24} /> : <HamburgerMenu size={24} />}
+          {isMenuOpen ? <CloseSquareIcon size={24} /> : <HamburgerMenuIcon size={24} />}
         </button>
       </div>
 

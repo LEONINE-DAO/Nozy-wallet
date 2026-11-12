@@ -1,11 +1,11 @@
 import {
-  ShieldCheck,
-  Bolt,
-  LockPassword,
-  ShieldKeyholeMinimalistic,
-  Download,
-  QuestionCircle,
-} from "@solar-icons/react";
+  BoltIcon,
+  DownloadIcon,
+  LockPasswordIcon,
+  QuestionCircleIcon,
+  ShieldCheckIcon,
+  ShieldKeyholeMinimalisticIcon,
+} from "@solar-icons/react/linear";
 import { PATHS, REPO_RELEASES } from "../lib/links";
 import { DESKTOP_RELEASE } from "../lib/downloads";
 import type { ComponentType, SVGProps } from "react";
@@ -32,7 +32,7 @@ const statusStyles: Record<Status, string> = {
 
 const surfaces: Surface[] = [
   {
-    icon: Bolt,
+    icon: BoltIcon,
     title: "CLI Lite",
     tagline: "Production shielded ZEC on your own Zebrad + lightwalletd.",
     status: "live",
@@ -46,7 +46,7 @@ const surfaces: Surface[] = [
     secondary: { label: "Latest release", href: REPO_RELEASES },
   },
   {
-    icon: LockPassword,
+    icon: LockPasswordIcon,
     title: "Desktop",
     tagline: "Native wallet UI — sync, send, history, settings. No in-app browser.",
     status: "live",
@@ -60,7 +60,7 @@ const surfaces: Surface[] = [
     secondary: { label: "Release notes", href: DESKTOP_RELEASE },
   },
   {
-    icon: ShieldCheck,
+    icon: ShieldCheckIcon,
     title: "Browser extension",
     tagline: "Shielded ZEC in Chrome, Brave, and Edge — for sites and dApps.",
     status: "live",
@@ -74,7 +74,7 @@ const surfaces: Surface[] = [
     secondary: { label: "Install docs", href: PATHS.extension },
   },
   {
-    icon: ShieldKeyholeMinimalistic,
+    icon: ShieldKeyholeMinimalisticIcon,
     title: "Web companion",
     tagline: "Optional dashboard against your local API — keys stay yours.",
     status: "preview",
@@ -88,7 +88,7 @@ const surfaces: Surface[] = [
     secondary: { label: "Roadmap", href: PATHS.enhancementRoadmap },
   },
   {
-    icon: Download,
+    icon: DownloadIcon,
     title: "Mobile",
     tagline: "Phone companion — wallet on device, sync via your API.",
     status: "soon",
@@ -102,7 +102,7 @@ const surfaces: Surface[] = [
     secondary: { label: "Mobile repo", href: PATHS.mobile },
   },
   {
-    icon: QuestionCircle,
+    icon: QuestionCircleIcon,
     title: "Companion API",
     tagline: "Localhost HTTP bridge for extension, web, and automation — same Rust core as CLI.",
     status: "live",
