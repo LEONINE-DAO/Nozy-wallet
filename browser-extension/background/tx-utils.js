@@ -4,13 +4,13 @@ export const ZIP317_MARGINAL_FEE_ZATS = 5_000;
 export const ZIP2009_MARGINAL_FEE_ZATS = 1_000;
 /** Mainnet block the transaction is mined in, from which ZIP 2009 applies. */
 export const ZIP2009_MAINNET_ACTIVATION_HEIGHT = 3_590_000;
-/** Nozy multiplies the active conventional fee by this on every send. */
-export const PRIORITY_MULTIPLIER = 4;
+/** Inclusion boost on top of the ZIP-317 conventional fee. */
+export const PRIORITY_MULTIPLIER = 10;
 /** ZIP-317 grace actions. A normal send bills at least this many. */
 export const GRACE_ACTIONS = 2;
 
-/** Pre-ZIP-2009 empty-memo floor (5,000 × 2 × 4). Used when the chain tip is unknown. */
-export const MANDATORY_ORCHARD_FEE_FALLBACK_ZATS = 40_000;
+/** Pre-ZIP-2009 empty-memo inclusion floor (5,000 × 2 × 10). Used when the chain tip is unknown. */
+export const MANDATORY_ORCHARD_FEE_FALLBACK_ZATS = 100_000;
 
 /**
  * Marginal fee for a transaction mined in `minedBlockHeight` (chain tip + 1).
@@ -24,13 +24,19 @@ export function marginalFeeForMinedBlock(mainnet, minedBlockHeight) {
   return ZIP317_MARGINAL_FEE_ZATS;
 }
 
-/** Empty-memo ZIP-317 ×4 floor for the active marginal fee. */
-export function orchardFeeFloorZats(mainnet, minedBlockHeight) {
-  return marginalFeeForMinedBlock(mainnet, minedBlockHeight) * GRACE_ACTIONS * PRIORITY_MULTIPLIER;
+/** Empty-memo inclusion floor for the active marginal fee. */
+export function orchardFeeFloorZats(mainnet, minedBlockHeight, marginalFee) {
+  const quoted = Number(marginalFee);
+  const marginal =
+    Number.isFinite(quoted) && quoted > 0
+      ? Math.floor(quoted)
+      : marginalFeeForMinedBlock(mainnet, minedBlockHeight);
+  return marginal * GRACE_ACTIONS * PRIORITY_MULTIPLIER;
 }
 
 /**
- * Ask the node which ZIP 2009 fee block the next transaction is mined in.
+ * Ask the node which fee block the next transaction is mined in, and the
+ * `getstandardfee` marginal fee when that RPC exists.
  * `request(method, params)` returns the JSON-RPC result.
  */
 export async function feeBlockFromRpc(request) {
@@ -43,46 +49,103 @@ export async function feeBlockFromRpc(request) {
   } catch (_) {
     // A missing chain name stays on mainnet so the wallet cannot underpay.
   }
+  let marginalFee = null;
+  try {
+    const quote = await request("getstandardfee", []);
+    const fee = Number(quote?.standard_fee);
+    if (Number.isFinite(fee) && fee > 0) marginalFee = Math.floor(fee);
+  } catch (_) {
+    // Older nodes keep the local ZIP 317 / ZIP 2009 schedule.
+  }
   const minedBlockHeight = (Number.isFinite(tip) && tip >= 0 ? Math.floor(tip) : 0) + 1;
-  return { mainnet, minedBlockHeight };
+  return { mainnet, minedBlockHeight, marginalFee };
+}
+
+function memoUtf8Length(memo) {
+  const text = String(memo || "");
+  if (typeof TextEncoder !== "undefined") return new TextEncoder().encode(text).length;
+  return text.length;
 }
 
 /**
- * ZIP-317 × 4 of the active ZIP 2009 schedule.
- * `feeBlock` is `{ mainnet, minedBlockHeight }` from `feeBlockFromRpc`.
- * Without a rebuilt WASM that exports `estimate_orchard_send_fee_zats_at`, this
- * stays on the pre-2009 floor so it matches the prove-path clamp.
+ * ZIP-317 fee for one shielded spend with change.
+ * `priority` selects the 10× inclusion fee. A positive `marginalFee` is `getstandardfee`.
  */
-export function mandatoryOrchardFeeZats(wasm, memo = "", feeBlock = null) {
+/**
+ * Extension Send uses the standard ZIP-317 fee unless the caller explicitly
+ * opts into 10× inclusion (`priority: true`). That 10× path waits for NU7.
+ */
+export function payForInclusionRequested(params) {
+  return params?.priority === true;
+}
+
+export function zatsToZecString(zats) {
+  const n = Number(zats);
+  if (!Number.isFinite(n) || n < 0) return "0.00000000";
+  return (n / 1e8).toFixed(8);
+}
+
+export function insufficientFundsMessage(amountZats, feeZats, haveZats) {
+  const amount = Math.max(0, Math.floor(Number(amountZats) || 0));
+  const fee = Math.max(0, Math.floor(Number(feeZats) || 0));
+  const have = Math.max(0, Math.floor(Number(haveZats) || 0));
+  const need = amount + fee;
+  return (
+    `Insufficient funds. This send needs ${zatsToZecString(need)} ZEC ` +
+    `(${zatsToZecString(amount)} + ${zatsToZecString(fee)} fee) but this wallet has ` +
+    `${zatsToZecString(have)} ZEC spendable. Lower the amount so the network fee still fits.`
+  );
+}
+
+export function orchardSendFeeZats(memo, feeBlock, priority = true) {
+  const chunks = memoUtf8Length(memo) === 0 ? 0 : Math.ceil(memoUtf8Length(memo) / 512);
+  const logical = GRACE_ACTIONS + Math.max(0, chunks - 2);
+  const billable = Math.max(logical, GRACE_ACTIONS);
+  const quoted = Number(feeBlock?.marginalFee);
+  const marginal =
+    Number.isFinite(quoted) && quoted > 0
+      ? Math.floor(quoted)
+      : marginalFeeForMinedBlock(feeBlock?.mainnet !== false, feeBlock?.minedBlockHeight);
+  return marginal * billable * (priority ? PRIORITY_MULTIPLIER : 1);
+}
+
+/**
+ * ZIP-317 fee for `feeBlock` from `feeBlockFromRpc`.
+ * Uses the WASM quote export when this build has it, otherwise the same formula in JS
+ * so a node `getstandardfee` quote is not ignored by an older WASM schedule.
+ */
+export function mandatoryOrchardFeeZats(wasm, memo = "", feeBlock = null, priority = true) {
   const memoStr = String(memo || "");
-  if (
-    feeBlock &&
-    typeof wasm?.estimate_orchard_send_fee_zats_at === "function"
-  ) {
+  const payForInclusion = priority !== false;
+  const marginalFee = Number(feeBlock?.marginalFee) > 0 ? Math.floor(Number(feeBlock.marginalFee)) : 0;
+  if (feeBlock && typeof wasm?.estimate_orchard_send_fee_zats_quoted === "function") {
     try {
       const fee = Number(
-        wasm.estimate_orchard_send_fee_zats_at(
+        wasm.estimate_orchard_send_fee_zats_quoted(
           memoStr,
-          true,
+          payForInclusion,
           !!feeBlock.mainnet,
-          Number(feeBlock.minedBlockHeight) || 0
+          Number(feeBlock.minedBlockHeight) || 0,
+          marginalFee
         )
       );
       if (Number.isFinite(fee) && fee > 0) return Math.floor(fee);
     } catch (_) {
-      // Fall through to the legacy export.
+      // Fall through to the JS formula, which still honors the node quote.
     }
   }
+  if (feeBlock) {
+    return orchardSendFeeZats(memoStr, feeBlock, payForInclusion);
+  }
   try {
-    const fee = Number(wasm?.estimate_orchard_send_fee_zats?.(memoStr, true));
+    const fee = Number(wasm?.estimate_orchard_send_fee_zats?.(memoStr, payForInclusion));
     if (Number.isFinite(fee) && fee > 0) return Math.floor(fee);
   } catch (_) {
     // Fall through to the known empty-memo floor.
   }
-  if (feeBlock && typeof wasm?.estimate_orchard_send_fee_zats_at === "function") {
-    return orchardFeeFloorZats(!!feeBlock.mainnet, feeBlock.minedBlockHeight);
-  }
-  return MANDATORY_ORCHARD_FEE_FALLBACK_ZATS;
+  return payForInclusion
+    ? MANDATORY_ORCHARD_FEE_FALLBACK_ZATS
+    : Math.floor(MANDATORY_ORCHARD_FEE_FALLBACK_ZATS / PRIORITY_MULTIPLIER);
 }
 
 export function selectNotesForSpend(notes, requiredValue) {

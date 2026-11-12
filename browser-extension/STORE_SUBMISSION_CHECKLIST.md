@@ -5,7 +5,7 @@
 **Store update prepared:** **2.0.3 (Sweet Chili)** — same product name. Upload `nozy-extension-chromium-2.0.3.zip` from [extension-v2.0.3](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.3).  
 **GitHub Release:** [extension-v2.0.3](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.3)
 
-**Version:** align with `browser-extension/manifest.json` (currently **2.0.3**).  
+**Version:** align with `browser-extension/manifest.json` (currently **2.0.4**).  
 **Prior listing (superseded):** `pnlmnkallkmelflckjkmohemibfahoce` — do not use for new installs.
 
 ## Pre-submit

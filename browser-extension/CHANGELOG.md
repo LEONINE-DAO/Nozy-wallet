@@ -2,6 +2,15 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 2.0.4 — 2026-11-12 — Sweet Chili
+
+### Fixed
+- Shielded send no longer calls JSON-RPC `getblockcount` on a compact-sync host. That request returns HTTP 415, so the spend now uses Zebrad and rebuilds a missing Orchard witness from the note's block before proving.
+
+### Changed
+- Orchard trial decryption derives each account's viewing keys once per scan batch.
+- Send uses the standard ZIP-317 fee unless the caller explicitly asks for 10× inclusion.
+
 ## 2.0.3 — 2026-10-18 — Sweet Chili
 
 ### Added

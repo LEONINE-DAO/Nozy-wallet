@@ -1,5 +1,9 @@
 # Browser extension releases (Chrome & Edge)
 
+## 2.0.4 — 2026-11-12 — Sweet Chili
+
+Shielded send uses Zebrad for the chain tip and rebuilds a missing Orchard witness from the note's block. Same food name as 2.0.0.
+
 ## 2.0.3 — 2026-10-18 — Sweet Chili
 
 Send shows Valid address / Valid ZNS / Invalid for recipients. ZNS resolve falls back to the public indexer if the companion is down. Pre-NU7 10× faster-inclusion UI removed; standard fee only. Same food name as 2.0.0.
