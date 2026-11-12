@@ -24,9 +24,12 @@ import {
   isWslStyleHost,
   normalizeRpcEndpoint,
   parseJsonRpcResponse,
+  postZebradRpc,
   probeZebradRpcEndpoint,
   rpcGetBlockVerboseByHeight,
-  rpcNetworkErrorMessage
+  rpcHttpFailureMessage,
+  rpcNetworkErrorMessage,
+  rpcStatusShouldFailover
 } from "./rpc-utils.js";
 import {
   compactChainTip,
@@ -519,13 +522,42 @@ async function _inlineRpcRequest(endpoint, method, params = []) {
     return compactChainTip();
   }
   const url = normalizeRpcEndpoint(endpoint);
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
-  });
-  if (!resp.ok) throw new Error(`RPC ${method} HTTP ${resp.status}`);
+  const resp = await postZebradRpc(url, method, params);
+  if (!resp.ok) throw new Error(rpcHttpFailureMessage(method, resp.status, url));
   return parseJsonRpcResponse(resp, url, method);
+}
+
+/**
+ * Spend needs Zebrad JSON-RPC. A saved lightwalletd URL or a non-Zebra process
+ * on port 8232 answers getblockcount with HTTP 415. Switch to a live local node
+ * (18232, then 8232) when the saved URL cannot answer.
+ * @param {string} endpoint
+ * @returns {Promise<string>}
+ */
+async function ensureJsonRpcForSpend(endpoint) {
+  const url = normalizeRpcEndpoint(endpoint);
+  if (isNozyPublicSyncUrl(url)) return url;
+  if (await probeZebradRpcEndpoint(url, 2500)) return url;
+  const found = await findReachableRpcEndpoint(url, {
+    extraCandidates: await loadRpcEndpointCache(),
+    companionBase: await loadCompanionBaseUrl(),
+    skipEndpoints: [url]
+  });
+  if (found) {
+    session.rpcEndpoint = found;
+    await rememberRpcEndpoint(found);
+    const existing = (await loadWalletState()) || {};
+    await saveWalletState({ ...existing, rpcEndpoint: found });
+    return found;
+  }
+  let status = 0;
+  try {
+    const resp = await postZebradRpc(url, "getblockcount", [], 2500);
+    status = resp.status;
+  } catch (err) {
+    throw new Error(rpcNetworkErrorMessage(url, err));
+  }
+  throw new Error(rpcHttpFailureMessage("getblockcount", status || 415, url));
 }
 
 async function _inlineProveTransaction(params) {
@@ -542,7 +574,10 @@ async function _inlineProveTransaction(params) {
   if (!walletAddress) throw new Error("Missing wallet address.");
   if (!recipientAddress) throw new Error("Missing recipient address.");
 
-  const endpoint = normalizeRpcEndpoint(rpcEndpoint);
+  let endpoint = normalizeRpcEndpoint(rpcEndpoint);
+  if (!isNozyPublicSyncUrl(endpoint)) {
+    endpoint = await ensureJsonRpcForSpend(endpoint);
+  }
   const publicSync = isNozyPublicSyncUrl(endpoint);
   let feeBlock = await feeBlockFromRpc((method, rpcParams) =>
     _inlineRpcRequest(endpoint, method, rpcParams)
@@ -2154,22 +2189,15 @@ async function rpcCall(method, params = []) {
     return compactChainTip();
   }
   let resp;
-  const rpcBody = JSON.stringify({
-    jsonrpc: "2.0",
-    id: 1,
-    method,
-    params
-  });
+  let networkErr = null;
   try {
-    resp = await fetch(endpoint, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: rpcBody,
-      signal: AbortSignal.timeout(2500)
-    });
+    resp = await postZebradRpc(endpoint, method, params, 2500);
   } catch (err) {
-    // Auto-recover from common local RPC port mismatch (8232 vs 18232).
-    // Skip the endpoint that just failed so a dead :8232 is not probed twice.
+    networkErr = err;
+    resp = null;
+  }
+  // A 415 (or a closed port) means this URL is not Zebrad. Try 18232, then 8232.
+  if (!resp || rpcStatusShouldFailover(resp.status)) {
     const fallbackEndpoint = await findReachableRpcEndpoint(endpoint, {
       extraCandidates: await loadRpcEndpointCache(),
       companionBase: await loadCompanionBaseUrl(),
@@ -2180,14 +2208,10 @@ async function rpcCall(method, params = []) {
       await rememberRpcEndpoint(fallbackEndpoint);
       const existing = (await loadWalletState()) || {};
       await saveWalletState({ ...existing, rpcEndpoint: session.rpcEndpoint });
-      resp = await fetch(fallbackEndpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: rpcBody,
-        signal: AbortSignal.timeout(2500)
-      });
-    } else {
-      throw new Error(rpcNetworkErrorMessage(endpoint, err));
+      endpoint = fallbackEndpoint;
+      resp = await postZebradRpc(endpoint, method, params, 2500);
+    } else if (!resp) {
+      throw new Error(rpcNetworkErrorMessage(endpoint, networkErr));
     }
   }
   if (resp.status === 401 || resp.status === 403) {
@@ -2196,7 +2220,7 @@ async function rpcCall(method, params = []) {
         `For Zebra, set enable_cookie_auth=false in zebrad.toml for local JSON-RPC, or run a small proxy that adds the expected credentials.`
     );
   }
-  if (!resp.ok) throw new Error(`RPC HTTP ${resp.status}`);
+  if (!resp.ok) throw new Error(rpcHttpFailureMessage(method, resp.status, endpoint));
   try {
     const result = await parseJsonRpcResponse(resp, endpoint, method);
     try {

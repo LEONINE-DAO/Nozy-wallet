@@ -19,8 +19,11 @@ import {
 import {
   findReachableRpcEndpoint,
   normalizeRpcEndpoint,
+  postZebradRpc,
   rpcGetBlockVerboseByHeight,
-  rpcNetworkErrorMessage
+  rpcHttpFailureMessage,
+  rpcNetworkErrorMessage,
+  rpcStatusShouldFailover
 } from "./rpc-utils.js";
 
 let ready;
@@ -149,21 +152,24 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
       if (method === "getblockcount" && isNozyPublicSyncUrl(endpoint)) {
         return compactChainTip();
       }
-      const resp = await fetch(endpoint, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method,
-          params
-        })
-      });
+      const resp = await postZebradRpc(endpoint, method, params, 8000);
       if (resp.status === 401 || resp.status === 403) {
         throw new Error(
           `RPC ${method} returned HTTP ${resp.status} (authentication required). ` +
             `For Zebra local dev, disable cookie auth or use a credentialed proxy.`
         );
+      }
+      if (rpcStatusShouldFailover(resp.status)) {
+        const fallbackEndpoint = await findReachableRpcEndpoint(endpoint, {
+          skipEndpoints: [endpoint]
+        });
+        if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
+          endpoint = fallbackEndpoint;
+          continue;
+        }
+        const giveUp = new Error(rpcHttpFailureMessage(method, resp.status, endpoint));
+        giveUp.rpcGiveUp = true;
+        throw giveUp;
       }
       if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
       const body = await resp.json();
@@ -176,6 +182,9 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
       return body?.result ?? null;
     } catch (err) {
       const msg = String(err?.message ?? err ?? "");
+      if (err?.rpcGiveUp) {
+        throw err;
+      }
       if (msg === "Failed to fetch" || /NetworkError|network failed|Load failed/i.test(msg)) {
         const fallbackEndpoint = await findReachableRpcEndpoint(endpoint);
         if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
