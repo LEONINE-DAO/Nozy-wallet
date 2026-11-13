@@ -65,7 +65,8 @@ export async function parseJsonRpcResponse(resp, endpoint, method) {
     );
   }
   if (body?.error) {
-    const e = new Error(body.error.message || `RPC ${method} error`);
+    const rpcMessage = body.error.message || `RPC ${method} error`;
+    const e = new Error(rpcMessage);
     if (typeof body.error.code === "number") e.jsonRpcCode = body.error.code;
     e.jsonRpcMethod = method;
     throw e;
@@ -163,11 +164,140 @@ export async function postZebradRpc(url, method, params = [], timeoutMs) {
   return last;
 }
 
+async function postJsonRpcOnce(url, method, params, timeoutMs) {
+  return postZebradRpc(url, method, params, timeoutMs);
+}
+
+/** Last JSON-RPC URL that actually returned a result, so later calls skip a dead port. */
+let preferredRpcEndpoint = null;
+
+/** Force the next RPC calls to start at this URL. Spend must not reuse a shorter chain. */
+export function pinRpcEndpoint(endpoint) {
+  preferredRpcEndpoint = normalizeRpcEndpoint(endpoint);
+}
+
 /**
  * @param {string} endpoint
- * @param {number} [timeoutMs=4000]
- * @returns {Promise<boolean>}
+ * @param {string} method
+ * @param {unknown[]} [params]
+ * @param {{ timeoutMs?: number, extraCandidates?: string[] }} [opts]
+ * @returns {Promise<{ result: unknown, endpoint: string }>}
  */
+export async function rpcCallJson(endpoint, method, params = [], opts = {}) {
+  let requested = "";
+  try {
+    requested = normalizeRpcEndpoint(endpoint);
+  } catch (e) {
+    if (!preferredRpcEndpoint) throw e instanceof Error ? e : new Error(String(e));
+  }
+
+  /** @type {string[]} */
+  const candidates = [];
+  const push = (u) => {
+    if (!u || isLightwalletdEndpoint(u) || candidates.includes(u)) return;
+    candidates.push(u);
+  };
+  if (opts.exact !== true) push(preferredRpcEndpoint);
+  push(requested);
+
+  let lastErr = null;
+  let sawNetwork = false;
+  let expanded = false;
+  for (let i = 0; i < candidates.length; i += 1) {
+    const url = candidates[i];
+    let resp;
+    try {
+      resp = await postJsonRpcOnce(url, method, params, opts.timeoutMs);
+    } catch (err) {
+      sawNetwork = true;
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      if (url === preferredRpcEndpoint) preferredRpcEndpoint = null;
+    }
+    if (!resp) {
+      if (opts.exact === true) continue;
+      if (!expanded) {
+        expanded = true;
+        const found = await findReachableRpcEndpoint(requested || "http://127.0.0.1:18232", {
+          extraCandidates: opts.extraCandidates,
+          skipEndpoints: candidates
+        });
+        push(found);
+      }
+      continue;
+    }
+    if (resp.status === 401 || resp.status === 403) {
+      throw new Error(
+        `RPC ${method} returned HTTP ${resp.status} (authentication required). ` +
+          `For Zebra local dev, set enable_cookie_auth=false.`
+      );
+    }
+    if (rpcStatusShouldFailover(resp.status)) {
+      lastErr = new Error(rpcHttpFailureMessage(method, resp.status, url));
+      if (url === preferredRpcEndpoint) preferredRpcEndpoint = null;
+      if (opts.exact === true) continue;
+      if (!expanded) {
+        expanded = true;
+        const found = await findReachableRpcEndpoint(requested || "http://127.0.0.1:18232", {
+          extraCandidates: opts.extraCandidates,
+          skipEndpoints: candidates
+        });
+        push(found);
+      }
+      continue;
+    }
+    if (!resp.ok) throw new Error(`RPC ${method} HTTP ${resp.status}`);
+    try {
+      const result = await parseJsonRpcResponse(resp, url, method);
+      preferredRpcEndpoint = url;
+      return { result, endpoint: url };
+    } catch (parseErr) {
+      const msg = String(parseErr?.message ?? parseErr);
+      if (!/web page|not JSON|DOCTYPE/i.test(msg)) throw parseErr;
+      lastErr = parseErr instanceof Error ? parseErr : new Error(msg);
+      if (url === preferredRpcEndpoint) preferredRpcEndpoint = null;
+      if (opts.exact === true) continue;
+      if (!expanded) {
+        expanded = true;
+        const found = await findReachableRpcEndpoint(requested || "http://127.0.0.1:18232", {
+          extraCandidates: opts.extraCandidates,
+          skipEndpoints: candidates
+        });
+        push(found);
+      }
+    }
+  }
+
+  if (isLightwalletdEndpoint(requested)) {
+    throw new Error(
+      `RPC ${method} cannot use ${requested}. That host is compact sync, not Zebrad JSON-RPC. ` +
+        `Start a local node (port 18232 or 8232), then use Find node in Settings to send.`
+    );
+  }
+  const networkMessage = sawNetwork && lastErr
+    ? rpcNetworkErrorMessage(requested || String(endpoint), lastErr)
+    : (lastErr instanceof Error ? lastErr.message : `RPC ${method} failed`);
+  if (sawNetwork && lastErr) {
+    throw new Error(networkMessage);
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(`RPC ${method} failed`);
+}
+
+/**
+ * Block height from one exact URL. Does not fail over to another port.
+ * @param {string} endpoint
+ * @param {number} [timeoutMs]
+ * @returns {Promise<number>}
+ */
+export async function rpcBlockCountAt(endpoint, timeoutMs = 2500) {
+  const url = normalizeRpcEndpoint(endpoint);
+  const resp = await postJsonRpcOnce(url, "getblockcount", [], timeoutMs);
+  if (!resp.ok) throw new Error(`RPC getblockcount HTTP ${resp.status}`);
+  const result = await parseJsonRpcResponse(resp, url, "getblockcount");
+  const n = typeof result === "number" ? result : Number(result);
+  if (!Number.isFinite(n) || n < 0) throw new Error("getblockcount was not a height");
+  return Math.floor(n);
+}
+
 export async function probeZebradRpcEndpoint(endpoint, timeoutMs = 4000) {
   let url;
   try {
@@ -178,7 +308,7 @@ export async function probeZebradRpcEndpoint(endpoint, timeoutMs = 4000) {
   if (isLightwalletdEndpoint(url)) return false;
   const ms = Math.max(500, Number(timeoutMs) || 4000);
   try {
-    const resp = await postZebradRpc(url, "getblockcount", [], ms);
+    const resp = await postJsonRpcOnce(url, "getblockcount", [], ms);
     if (!resp.ok) return false;
     const result = await parseJsonRpcResponse(resp, url, "getblockcount");
     return typeof result === "number" || typeof result === "string";
@@ -320,10 +450,8 @@ export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
  * @param {unknown[]} params
  */
 async function jsonRpcPostOnce(endpointUrl, method, params = []) {
-  const url = normalizeRpcEndpoint(endpointUrl);
-  const resp = await postZebradRpc(url, method, params);
-  if (!resp.ok) throw new Error(rpcHttpFailureMessage(method, resp.status, url));
-  return parseJsonRpcResponse(resp, url, method);
+  const called = await rpcCallJson(endpointUrl, method, params, { exact: true });
+  return called.result;
 }
 
 /**

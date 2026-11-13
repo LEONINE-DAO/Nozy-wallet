@@ -20,6 +20,13 @@ use zcash_address::unified::{Address as UnifiedAddress, Encoding, Receiver};
 use zcash_protocol::consensus::NetworkType;
 use zip32::AccountId;
 
+/// Viewing keys for one ZIP-32 account. Derive once per scan batch, not once per action.
+pub struct OrchardTrialKeys {
+    pub external: orchard::keys::IncomingViewingKey,
+    pub internal: orchard::keys::IncomingViewingKey,
+    pub fvk: FullViewingKey,
+}
+
 /// HD wallet holding BIP-39 mnemonic + BIP-32 master key.
 ///
 /// **L05:** `Drop` zeroizes the mnemonic (bip39 `zeroize` feature) and best-effort
@@ -307,12 +314,8 @@ impl HDWallet {
         txid: &str,
         pool: ShieldedPool,
     ) -> NozyResult<Option<OrchardDecryptionResult>> {
-        use orchard::{
-            keys::PreparedIncomingViewingKey,
-            note::ExtractedNoteCommitment,
-            note_encryption::{CompactAction, IronwoodDomain, OrchardDomain},
-        };
-        use zcash_note_encryption::{try_compact_note_decryption, EphemeralKeyBytes};
+        use orchard::{note::ExtractedNoteCommitment, note_encryption::CompactAction};
+        use zcash_note_encryption::EphemeralKeyBytes;
 
         let nullifier = orchard::note::Nullifier::from_bytes(&action.nullifier)
             .into_option()
@@ -335,21 +338,84 @@ impl HDWallet {
 
         let compact_action =
             CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
+        let keys = self.orchard_trial_keys(account)?;
+        self.decrypt_compact_action_with_keys(
+            action,
+            &compact_action,
+            &keys,
+            account,
+            block_height,
+            txid,
+            pool,
+        )
+    }
 
-        for scope in [
-            orchard::keys::Scope::External,
-            orchard::keys::Scope::Internal,
-        ] {
-            let ivk = self.orchard_ivk_for_account(account, scope)?;
-            let prepared_ivk = PreparedIncomingViewingKey::new(&ivk);
+    /// Trial-decrypt one compact action with keys already derived for this account.
+    pub fn decrypt_compact_with_keys(
+        &self,
+        action: &OrchardActionCompactData,
+        keys: &OrchardTrialKeys,
+        account: u32,
+        block_height: u32,
+        txid: &str,
+        pool: ShieldedPool,
+    ) -> NozyResult<Option<OrchardDecryptionResult>> {
+        use orchard::note::ExtractedNoteCommitment;
+        use orchard::note_encryption::CompactAction;
+        use zcash_note_encryption::EphemeralKeyBytes;
+
+        if action.encrypted_note.len() < 52 {
+            return Err(NozyError::InvalidOperation(
+                "Encrypted note too short for CompactAction".to_string(),
+            ));
+        }
+        let nullifier = orchard::note::Nullifier::from_bytes(&action.nullifier)
+            .into_option()
+            .ok_or_else(|| NozyError::InvalidOperation("Invalid nullifier bytes".to_string()))?;
+        let cmx = ExtractedNoteCommitment::from_bytes(&action.cmx)
+            .into_option()
+            .ok_or_else(|| NozyError::InvalidOperation("Invalid cmx bytes".to_string()))?;
+        let ephemeral_key = EphemeralKeyBytes::from(action.ephemeral_key);
+        let mut compact_enc_ciphertext = [0u8; 52];
+        compact_enc_ciphertext.copy_from_slice(&action.encrypted_note[..52]);
+        let compact_action =
+            CompactAction::from_parts(nullifier, cmx, ephemeral_key, compact_enc_ciphertext);
+        self.decrypt_compact_action_with_keys(
+            action,
+            &compact_action,
+            keys,
+            account,
+            block_height,
+            txid,
+            pool,
+        )
+    }
+
+    /// Trial-decrypt with keys already derived for this account.
+    pub fn decrypt_compact_action_with_keys(
+        &self,
+        action: &OrchardActionCompactData,
+        compact_action: &orchard::note_encryption::CompactAction,
+        keys: &OrchardTrialKeys,
+        _account: u32,
+        block_height: u32,
+        txid: &str,
+        pool: ShieldedPool,
+    ) -> NozyResult<Option<OrchardDecryptionResult>> {
+        use orchard::keys::PreparedIncomingViewingKey;
+        use orchard::note_encryption::{IronwoodDomain, OrchardDomain};
+        use zcash_note_encryption::try_compact_note_decryption;
+
+        for ivk in [&keys.external, &keys.internal] {
+            let prepared_ivk = PreparedIncomingViewingKey::new(ivk);
             let decrypted = match pool {
                 ShieldedPool::Orchard => {
                     let domain = OrchardDomain::for_compact_action(&compact_action);
-                    try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+                    try_compact_note_decryption(&domain, &prepared_ivk, compact_action)
                 }
                 ShieldedPool::Ironwood => {
                     let domain = IronwoodDomain::for_compact_action(&compact_action);
-                    try_compact_note_decryption(&domain, &prepared_ivk, &compact_action)
+                    try_compact_note_decryption(&domain, &prepared_ivk, compact_action)
                 }
             };
             if let Some((note, note_address)) = decrypted {
@@ -372,7 +438,7 @@ impl HDWallet {
                     rho: note.rho().to_bytes(),
                     rseed: *note.rseed().as_bytes(),
                     orchard_address_raw: note_address.to_raw_address_bytes().to_vec(),
-                    nullifier: action.nullifier,
+                    nullifier: note.nullifier(&keys.fvk).to_bytes(),
                     block_height,
                     txid: txid.to_string(),
                     orchard_incremental_witness_hex: None,
@@ -505,12 +571,8 @@ impl HDWallet {
         self.orchard_ivk_for_account(0, scope)
     }
 
-    /// Orchard incoming viewing key for one ZIP-32 account.
-    pub fn orchard_ivk_for_account(
-        &self,
-        account: u32,
-        scope: Scope,
-    ) -> NozyResult<orchard::keys::IncomingViewingKey> {
+    /// Both Orchard scopes from one ZIP-32 derivation. Trial decryption must reuse this.
+    pub fn orchard_trial_keys(&self, account: u32) -> NozyResult<OrchardTrialKeys> {
         let mut seed_bytes = self.mnemonic.to_seed("").to_vec();
         let secure_seed = SecureSeed::new(seed_bytes.clone());
         let account_id = AccountId::try_from(account)
@@ -520,7 +582,26 @@ impl HDWallet {
                 NozyError::KeyDerivation(format!("Failed to derive Orchard spending key: {:?}", e))
             })?;
         seed_bytes.zeroize();
-        Ok(FullViewingKey::from(&orchard_sk).to_ivk(scope))
+        let fvk = FullViewingKey::from(&orchard_sk);
+        Ok(OrchardTrialKeys {
+            external: fvk.to_ivk(Scope::External),
+            internal: fvk.to_ivk(Scope::Internal),
+            fvk,
+        })
+    }
+
+    /// Orchard incoming viewing key for one ZIP-32 account.
+    pub fn orchard_ivk_for_account(
+        &self,
+        account: u32,
+        scope: Scope,
+    ) -> NozyResult<orchard::keys::IncomingViewingKey> {
+        let keys = self.orchard_trial_keys(account)?;
+        Ok(if scope == Scope::External {
+            keys.external
+        } else {
+            keys.internal
+        })
     }
 
     pub fn set_password(&mut self, password: &str) -> NozyResult<()> {

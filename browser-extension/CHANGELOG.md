@@ -2,6 +2,26 @@
 
 All notable changes to the Nozy browser extension are tracked here.
 
+## 2.0.4 — 2026-11-12 — Sweet Chili
+
+### Fixed
+- Shielded send no longer calls JSON-RPC `getblockcount` on a compact-sync host. That request returns HTTP 415, so the spend now uses Zebrad and rebuilds a missing Orchard witness from the note's block before proving.
+
+### Changed
+- Orchard trial decryption derives each account's viewing keys once per scan batch.
+- Send uses the standard ZIP-317 fee unless the caller explicitly asks for 10× inclusion.
+
+## 2.0.3 — 2026-10-18 — Sweet Chili
+
+### Added
+- Send recipient field shows **Valid address**, **Valid ZNS**, or **Invalid** for unified addresses and names (`nozywallet.zec` / `.zcash`).
+
+### Fixed
+- Zcash name resolve works when the local companion API is offline by falling back to the public ZNS indexer.
+
+### Changed
+- Removed the pre-NU7 **Faster inclusion (10× fee)** control and Network fee preview from Send. Sends use the standard fee; the review step still shows the fee amount.
+
 ## 2.0.2 — 2026-10-16 — Sweet Chili
 
 ### Fixed

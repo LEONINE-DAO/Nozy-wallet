@@ -48,6 +48,64 @@ export function isLikelyZnsName(raw: string): boolean {
   return NAME_RE.test(normalizeZnsNameInput(trimmed));
 }
 
+/** Sync shape of the recipient field (before any ZNS network lookup). */
+export type RecipientInputKind =
+  | { kind: "empty" }
+  | { kind: "valid_address"; address: string }
+  | { kind: "likely_name"; name: string; display: string }
+  | { kind: "invalid"; message: string };
+
+/**
+ * Classify what the user typed so the send form can show Valid / Invalid
+ * without waiting for Review. ZNS registration is checked asynchronously.
+ */
+export function classifyRecipientInput(
+  raw: string,
+  network: ZnsNetwork = "mainnet"
+): RecipientInputKind {
+  const trimmed = raw.trim();
+  if (!trimmed) return { kind: "empty" };
+
+  if (isUnifiedZcashAddress(trimmed)) {
+    const address = normalizeUnifiedAddress(trimmed);
+    if (network === "testnet" && !address.startsWith("utest1")) {
+      return {
+        kind: "invalid",
+        message:
+          "Invalid for this wallet: testnet recipients must use utest1… addresses."
+      };
+    }
+    if (network === "mainnet" && !address.startsWith("u1")) {
+      return {
+        kind: "invalid",
+        message:
+          "Invalid for this wallet: mainnet recipients must use u1… addresses."
+      };
+    }
+    return { kind: "valid_address", address };
+  }
+
+  const compact = normalizeUnifiedAddress(trimmed);
+  if (compact.startsWith("u1") || compact.startsWith("utest1")) {
+    return {
+      kind: "invalid",
+      message:
+        "Incomplete or invalid unified address. Paste the full u1… / utest1… address."
+    };
+  }
+
+  if (isLikelyZnsName(trimmed)) {
+    const name = normalizeZnsNameInput(trimmed);
+    return { kind: "likely_name", name, display: trimmed };
+  }
+
+  return {
+    kind: "invalid",
+    message:
+      "Invalid recipient. Use a unified address (u1…) or a Zcash name (e.g. nozywallet.zec)."
+  };
+}
+
 export type ResolveRecipientResult =
   | { kind: "address"; address: string }
   | { kind: "name"; name: string; registration: ZnsRegistration }

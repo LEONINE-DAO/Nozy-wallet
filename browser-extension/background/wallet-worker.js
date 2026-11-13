@@ -1,29 +1,17 @@
 import initWasm, * as wasm from "../wasm/pkg/nozy_wasm.js";
 import {
-  compactChainTip,
-  compactFetchBlocks,
-  compactTreeState
-} from "./lwd-compact.js";
-import {
-  advanceWitnessOverRange,
-  anchorHexFromCompactTreestate,
-  compactBlocksByHeight,
-  isNozyPublicSyncUrl
-} from "./public-sync-send.js";
-import {
   feeBlockFromRpc,
+  insufficientFundsMessage,
   mandatoryOrchardFeeZats,
-  rpcFallbackWithRequester,
-  selectNotesForSpend
+  payForInclusionRequested,
+  rpcFallbackWithRequester
 } from "./tx-utils.js";
+import { notePool, resolveSpendWitness, selectNotesSamePool } from "./witness-spend.js";
 import {
-  findReachableRpcEndpoint,
   normalizeRpcEndpoint,
-  postZebradRpc,
+  rpcCallJson,
   rpcGetBlockVerboseByHeight,
-  rpcHttpFailureMessage,
-  rpcNetworkErrorMessage,
-  rpcStatusShouldFailover
+  rpcNetworkErrorMessage
 } from "./rpc-utils.js";
 
 let ready;
@@ -78,15 +66,11 @@ async function initShieldedTrackerState(endpoint, startHeight) {
   let orchardFinal = "";
   let ironwoodFinal = "";
   if (startHeight > 0) {
-    const ts = isNozyPublicSyncUrl(endpoint)
-      ? await compactTreeState(startHeight - 1)
-      : await rpcFallback(endpoint, [
-          { method: "z_gettreestate", params: [String(startHeight - 1)] }
-        ]);
-    orchardFinal =
-      poolFinalStateFromTreestate(ts, "orchard") || String(ts?.orchard_tree ?? "").trim();
-    ironwoodFinal =
-      poolFinalStateFromTreestate(ts, "ironwood") || String(ts?.ironwood_tree ?? "").trim();
+    const ts = await rpcFallback(endpoint, [
+      { method: "z_gettreestate", params: [String(startHeight - 1)] }
+    ]);
+    orchardFinal = poolFinalStateFromTreestate(ts, "orchard");
+    ironwoodFinal = poolFinalStateFromTreestate(ts, "ironwood");
   }
   if (typeof wasm.shielded_scan_tracker_new === "function") {
     return wasm.shielded_scan_tracker_new(orchardFinal, ironwoodFinal);
@@ -149,56 +133,21 @@ async function rpcRequest(rpcEndpoint, method, params = [], opts = {}) {
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     try {
-      if (method === "getblockcount" && isNozyPublicSyncUrl(endpoint)) {
-        return compactChainTip();
-      }
-      const resp = await postZebradRpc(endpoint, method, params, 8000);
-      if (resp.status === 401 || resp.status === 403) {
-        throw new Error(
-          `RPC ${method} returned HTTP ${resp.status} (authentication required). ` +
-            `For Zebra local dev, disable cookie auth or use a credentialed proxy.`
-        );
-      }
-      if (rpcStatusShouldFailover(resp.status)) {
-        const fallbackEndpoint = await findReachableRpcEndpoint(endpoint, {
-          skipEndpoints: [endpoint]
-        });
-        if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
-          endpoint = fallbackEndpoint;
-          continue;
-        }
-        const giveUp = new Error(rpcHttpFailureMessage(method, resp.status, endpoint));
-        giveUp.rpcGiveUp = true;
-        throw giveUp;
-      }
-      if (!resp.ok) throw new Error(`RPC ${method} failed: ${resp.status}`);
-      const body = await resp.json();
-      if (body?.error) {
-        const e = new Error(`RPC ${method} error: ${body.error.message ?? JSON.stringify(body.error)}`);
-        if (typeof body.error.code === "number") e.jsonRpcCode = body.error.code;
-        e.jsonRpcMethod = method;
-        throw e;
-      }
-      return body?.result ?? null;
+      const called = await rpcCallJson(endpoint, method, params);
+      if (called.endpoint) endpoint = called.endpoint;
+      return called.result;
     } catch (err) {
       const msg = String(err?.message ?? err ?? "");
-      if (err?.rpcGiveUp) {
-        throw err;
-      }
       if (msg === "Failed to fetch" || /NetworkError|network failed|Load failed/i.test(msg)) {
-        const fallbackEndpoint = await findReachableRpcEndpoint(endpoint);
-        if (fallbackEndpoint && fallbackEndpoint !== endpoint) {
-          endpoint = fallbackEndpoint;
-          // Retry immediately on the discovered reachable endpoint.
-          continue;
-        }
         lastErr = new Error(rpcNetworkErrorMessage(endpoint, err));
       } else {
         lastErr = err instanceof Error ? err : new Error(String(err));
       }
-      if (attempt < retries) {
+      if (attempt < retries && !/HTTP 415|cannot use /.test(String(lastErr?.message ?? ""))) {
         await new Promise((r) => setTimeout(r, baseDelayMs * 2 ** attempt));
+        continue;
       }
+      break;
     }
   }
   throw lastErr || new Error(`RPC ${method} failed`);
@@ -237,78 +186,18 @@ function extractActionsFromBlockJson(block) {
   return actions;
 }
 
-function orchardAnchorHexFromRpc(tr) {
-  if (!tr || typeof tr !== "object") return "";
-  const o = tr.orchard;
-  const c = o?.commitments ?? o;
-  const fromZebra = c?.finalRoot ?? c?.final_root ?? o?.finalRoot ?? o?.final_root ?? "";
-  let hex = String(tr.anchor ?? tr.orchardTree?.anchor ?? fromZebra ?? "").trim();
-  if (hex.startsWith("0x") || hex.startsWith("0X")) hex = hex.slice(2);
-  return hex;
-}
-
-async function fetchOrchardAnchor(rpcEndpoint, targetHeight) {
-  if (isNozyPublicSyncUrl(rpcEndpoint)) {
-    const ts = await compactTreeState(String(targetHeight));
-    const anchorHex = anchorHexFromCompactTreestate(ts, (finalState) =>
-      wasm.orchard_anchor_hex_from_final_state(finalState)
-    );
-    if (!anchorHex || anchorHex.length < 64) {
-      throw new Error("Public sync did not return a valid Orchard anchor.");
-    }
-    return anchorHex;
-  }
-  const h = String(targetHeight);
-  const orchardTree = await rpcFallback(rpcEndpoint, [
-    { method: "z_getorchardtree", params: [h] },
-    { method: "z_gettreestate", params: [h] }
-  ]);
-  const anchorHex = orchardAnchorHexFromRpc(orchardTree);
-  if (!anchorHex || anchorHex.length < 64) {
-    throw new Error("RPC did not return a valid Orchard anchor.");
-  }
-  return anchorHex;
-}
-
-/**
- * Zebrad-safe Orchard witness: advance incremental witness from scan tip to chain tip, verify anchor.
- * Uses only local witness tracking plus treestate/anchor checks.
- */
-async function fetchWitnessForNote(rpcEndpoint, selectedNote, anchorHex, targetHeight) {
-  let witnessHex = selectedNote?.note?.orchard_incremental_witness_hex;
-  const tip = Number(selectedNote?.note?.orchard_witness_tip_height ?? selectedNote?.height ?? 0);
-  if (!witnessHex || typeof witnessHex !== "string") {
-    throw new Error(
-      "This note has no orchard_incremental_witness_hex. Rescan blocks using the updated extension (Orchard witness tracker), or sync with desktop NozyWallet."
-    );
-  }
-  if (!Number.isFinite(tip) || tip < 0) {
-    throw new Error("Invalid orchard_witness_tip_height on note.");
-  }
-  if (isNozyPublicSyncUrl(rpcEndpoint)) {
-    witnessHex = await advanceWitnessOverRange(
-      (hex, blockJson) => wasm.advance_orchard_witness_hex(hex, blockJson),
-      witnessHex,
-      tip,
-      targetHeight,
-      compactFetchBlocks
-    );
-  } else {
-    for (let h = tip + 1; h <= targetHeight; h += 1) {
-      const block = await rpcGetBlockVerboseByHeight(rpcEndpoint, h);
-      witnessHex = wasm.advance_orchard_witness_hex(witnessHex, JSON.stringify(block));
-    }
-  }
-  const ok = wasm.orchard_witness_matches_anchor_hex(witnessHex, anchorHex);
-  if (!ok) {
-    throw new Error(
-      "Orchard witness root does not match node anchor at tip (rescan or wait for sync)."
-    );
-  }
+function candidateFromDiscovered(raw) {
+  if (!raw || typeof raw !== "object" || raw.spent) return null;
+  const note = raw.note && typeof raw.note === "object" ? raw.note : raw;
+  const value = Number(raw.value ?? note?.value ?? 0);
+  if (!Number.isFinite(value) || value <= 0) return null;
+  const height = Number(raw.height ?? note?.block_height ?? 0);
   return {
-    incremental_witness_hex: witnessHex,
-    anchor_hex: anchorHex,
-    target_height: targetHeight
+    note,
+    height,
+    txid: String(raw.txid ?? note?.txid ?? ""),
+    value,
+    pool: notePool(note)
   };
 }
 
@@ -420,106 +309,126 @@ self.onmessage = async (event) => {
         throw e instanceof Error ? e : new Error(String(e));
       }
 
-      // Approach:
-      // 1) Scan a recent window for decryptable Orchard notes.
-      // 2) Fetch witness data with RPC method fallbacks across node variants.
-      // 3) Build Orchard v5 transaction in WASM.
+      // Spend notes the background scan already witnessed. A short RPC rescan is
+      // only the fallback when that scan has not recorded any notes yet.
       const feeBlock = await feeBlockFromRpc((method, rpcParams) =>
         rpcRequest(endpoint, method, rpcParams)
       );
-      const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock);
+      const payForInclusion = payForInclusionRequested(params);
+      const requestedFee = mandatoryOrchardFeeZats(wasm, memo, feeBlock, payForInclusion);
       const endHeight = Number(await rpcRequest(endpoint, "getblockcount", []));
-      const scanWindow = Number(params?.scanWindow ?? 200);
-      const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
       const requiredValue = requestedAmount + requestedFee;
       if (!Number.isFinite(requiredValue) || requiredValue <= 0) {
         throw new Error(`Invalid amount/fee (amount=${requestedAmount}, fee=${requestedFee}).`);
       }
 
-      const candidates = [];
-      let scannedValue = 0;
+      const passedNotes = Array.isArray(params?.discoveredNotes) ? params.discoveredNotes : [];
+      let candidates = passedNotes.map(candidateFromDiscovered).filter(Boolean);
+      let scannedValue = candidates.reduce((acc, n) => acc + n.value, 0);
+      let trackerState = params?.trackerState ?? "";
+      let scanHeight = Number(params?.scanHeight);
 
-      let trackerState = await initShieldedTrackerState(endpoint, startHeight);
-      const publicBlocks = isNozyPublicSyncUrl(endpoint)
-        ? await compactBlocksByHeight(compactFetchBlocks, startHeight, endHeight)
-        : null;
-
-      for (let h = startHeight; h <= endHeight; h += 1) {
-        try {
-          const block = publicBlocks
-            ? publicBlocks.get(h) || { height: h, tx: [] }
-            : await rpcGetBlockVerboseByHeight(endpoint, h);
-          if (!block) continue;
-          const blockJson = JSON.stringify(block);
-          const { out, nextTracker } = applyShieldedScanBlock(
-            trackerState,
-            mnemonic,
-            walletAddress,
-            h,
-            blockJson,
-            String(params?.accountIndicesJson ?? "[0]")
-          );
-          if (nextTracker) trackerState = nextTracker;
-          if (out.notes?.length) {
-            const txid = block?.hash || `h${h}`;
-            for (const n of out.notes) {
-              const v = Number(n?.value ?? 0);
-              if (Number.isFinite(v) && v > 0) {
-                scannedValue += v;
-                candidates.push({
-                  note: n,
-                  height: h,
-                  txid,
-                  value: v,
-                  pool: n?.pool === "ironwood" ? "ironwood" : "orchard"
-                });
+      if (candidates.length === 0) {
+        const scanWindow = Number(params?.scanWindow ?? 200);
+        const startHeight = Math.max(0, endHeight - Math.max(10, scanWindow));
+        trackerState = await initShieldedTrackerState(endpoint, startHeight);
+        scanHeight = endHeight;
+        candidates = [];
+        scannedValue = 0;
+        for (let h = startHeight; h <= endHeight; h += 1) {
+          try {
+            const block = await rpcGetBlockVerboseByHeight(endpoint, h);
+            if (!block) continue;
+            const blockJson = JSON.stringify(block);
+            const { out, nextTracker } = applyShieldedScanBlock(
+              trackerState,
+              mnemonic,
+              walletAddress,
+              h,
+              blockJson,
+              String(params?.accountIndicesJson ?? "[0]")
+            );
+            if (nextTracker) trackerState = nextTracker;
+            if (out.notes?.length) {
+              const txid = block?.hash || `h${h}`;
+              for (const n of out.notes) {
+                const v = Number(n?.value ?? 0);
+                if (Number.isFinite(v) && v > 0) {
+                  scannedValue += v;
+                  candidates.push({
+                    note: n,
+                    height: h,
+                    txid,
+                    value: v,
+                    pool: notePool(n)
+                  });
+                }
               }
             }
+          } catch (_) {
+            // Continue scanning even if one block fails.
           }
-        } catch (_) {
-          // Continue scanning even if one block fails.
+        }
+        if (candidates.length === 0) {
+          throw new Error(`No spendable shielded notes in blocks ${startHeight}..${endHeight}.`);
         }
       }
 
-      if (candidates.length === 0) {
-        throw new Error(
-          `No spendable Orchard notes in blocks ${startHeight}..${endHeight}.`
-        );
-      }
-
-      const selected = selectNotesForSpend(candidates, requiredValue);
+      const selected = selectNotesSamePool(candidates, requiredValue);
       if (selected.length === 0) {
         throw new Error(
-          `Insufficient funds for amount+fee (${requiredValue}). Scanned spendable value: ${scannedValue}.`
+          insufficientFundsMessage(requestedAmount, requestedFee, scannedValue)
         );
       }
-      const selectedNote = selected[0].note;
       const selectedHeight = selected[0].height;
       const selectedTxid = selected[0].txid;
       const spendValue = selected.reduce((acc, n) => acc + n.value, 0);
       const spendAmount = requestedAmount;
-      const targetHeight = endHeight;
-      const sharedAnchor = await fetchOrchardAnchor(endpoint, targetHeight);
+      const txBuildHeight = endHeight + 1;
+      const tsCache = new Map();
+      const fetchTreestate = async (h) => {
+        const key = Math.floor(Number(h));
+        if (tsCache.has(key)) return tsCache.get(key);
+        let ts;
+        try {
+          ts = await rpcRequest(endpoint, "z_gettreestate", [String(key)]);
+        } catch (err) {
+          const msg = String(err?.message ?? err);
+          const missing = err?.jsonRpcCode === -32601 || /method not found/i.test(msg);
+          if (!missing) throw err;
+          ts = await rpcRequest(endpoint, "z_getorchardtree", [String(key)]);
+        }
+        tsCache.set(key, ts);
+        return ts;
+      };
       const selectedWitnesses = [];
       for (const noteSel of selected) {
-        const witness = await fetchWitnessForNote(
-          endpoint,
-          noteSel,
-          sharedAnchor,
-          targetHeight
-        );
+        const resolved = await resolveSpendWitness({
+          wasm,
+          note: noteSel.note,
+          noteHeight: noteSel.height,
+          trackerState,
+          scanHeight,
+          chainTip: endHeight,
+          fetchBlock: (h) => rpcGetBlockVerboseByHeight(endpoint, h),
+          fetchTreestate
+        });
         selectedWitnesses.push({
-          ...witness,
+          incremental_witness_hex: resolved.witnessHex,
+          anchor_hex: resolved.anchorHex,
+          target_height: txBuildHeight,
           fee_block_height: feeBlock.minedBlockHeight,
-          fee_mainnet: feeBlock.mainnet
+          fee_mainnet: feeBlock.mainnet,
+          marginal_fee: feeBlock.marginalFee || 0,
+          pay_for_inclusion: payForInclusion
         });
       }
 
       const provingResult = wasm.build_orchard_v5_tx_from_note(
         mnemonic,
         recipientAddress,
-        spendAmount,
-        requestedFee,
+        BigInt(spendAmount),
+        BigInt(requestedFee),
         memo,
         JSON.stringify(selected.map((s) => s.note)),
         JSON.stringify(selectedWitnesses)

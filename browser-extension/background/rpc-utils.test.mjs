@@ -13,7 +13,7 @@ test.afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-test("lightwalletd host is not Zebrad JSON-RPC", () => {
+test("lightwalletd host is not treated as Zebrad JSON-RPC", () => {
   assert.equal(isLightwalletdEndpoint("https://lwd.nozywallet.org:443"), true);
   assert.equal(isLightwalletdEndpoint("lwd.nozywallet.org"), true);
   assert.equal(isLightwalletdEndpoint("https://zec.rocks"), true);

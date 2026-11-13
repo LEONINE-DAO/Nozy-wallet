@@ -49,6 +49,7 @@ import {
 } from "./lib/scanFormat";
 import { useUiStore } from "./store/uiStore";
 import {
+  classifyRecipientInput,
   isLikelyZnsName,
   isUnifiedZcashAddress,
   normalizeUnifiedAddress,
@@ -592,14 +593,19 @@ function CrosslinkComingSoon() {
   );
 }
 
+type RecipientLookup =
+  | { input: string; status: "resolving" }
+  | { input: string; status: "resolved"; name: string; address: string }
+  | { input: string; status: "unresolved"; name: string }
+  | { input: string; status: "error"; message: string };
+
 function SendView() {
   const { currency: fiatCode, rate: zecFiat } = useZecFiatPrice();
   const [status, setStatus] = useState<string>("");
   const [recipient, setRecipient] = useState("");
   const [resolvedName, setResolvedName] = useState<string | null>(null);
+  const [recipientLookup, setRecipientLookup] = useState<RecipientLookup | null>(null);
   const [amount, setAmount] = useState("");
-  const [feeZats, setFeeZats] = useState("40000");
-  const [coreVersion, setCoreVersion] = useState<string>("");
   const [memo, setMemo] = useState("");
   const [rawTxHex, setRawTxHex] = useState<string | null>(null);
   const [preflight, setPreflight] = useState<{
@@ -612,15 +618,126 @@ function SendView() {
   } | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const recipientClass = classifyRecipientInput(recipient, "mainnet");
+  const liveLookup =
+    recipientLookup && recipientLookup.input === recipient.trim() ? recipientLookup : null;
+
   useEffect(() => {
-    extensionApi
-      .walletEstimateSendFee({ memo: memo || undefined })
-      .then((r) => {
-        setFeeZats(String(r.fee));
-        setCoreVersion(r.core_version);
-      })
-      .catch(() => undefined);
-  }, [memo]);
+    const chromeStorage = (globalThis as { chrome?: { storage?: { session?: {
+      get: (key: string) => Promise<Record<string, { uri?: string } | undefined>>;
+      remove: (key: string) => Promise<void>;
+    } } } }).chrome?.storage?.session;
+    if (!chromeStorage) return;
+    let cancelled = false;
+    chromeStorage.get("nozyPendingPayment").then((raw) => {
+      const uri = raw?.nozyPendingPayment?.uri;
+      if (cancelled || typeof uri !== "string" || !/^zcash:/i.test(uri)) return;
+      void chromeStorage.remove("nozyPendingPayment");
+      try {
+        const parsed = tryParsePaymentInput(uri);
+        if (!parsed) return;
+        setRecipient(parsed.address);
+        if (parsed.amountZec) setAmount(sanitizeZecAmountInput(parsed.amountZec));
+        if (parsed.memo) setMemo(parsed.memo);
+        setResolvedName(parsed.label || parsed.message || null);
+        setStatus("Loaded shielded payment request (ZIP-321)");
+      } catch (err) {
+        setStatus((err as Error).message);
+      }
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  /** Live Valid / Invalid under the recipient field (UA shape + ZNS lookup). */
+  useEffect(() => {
+    const trimmed = recipient.trim();
+    const classified = classifyRecipientInput(trimmed, "mainnet");
+    if (classified.kind !== "likely_name") {
+      setRecipientLookup(null);
+      return;
+    }
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        setRecipientLookup((prev) =>
+          prev?.input === trimmed && prev.status === "resolved"
+            ? prev
+            : { input: trimmed, status: "resolving" }
+        );
+        try {
+          const prefs = await getCompanionPrefs();
+          const result = await resolveSendRecipient(
+            trimmed,
+            async (name, network) => {
+              const res = await extensionApi.companionZnsResolve({
+                name,
+                network,
+                baseUrl: prefs.baseUrl
+              });
+              if (!res.found || !res.registration?.address) return null;
+              return res.registration as ZnsRegistration;
+            },
+            "mainnet"
+          );
+          if (cancelled) return;
+          if (result.kind === "name") {
+            setResolvedName(result.name);
+            setRecipientLookup({
+              input: trimmed,
+              status: "resolved",
+              name: result.name,
+              address: result.registration.address
+            });
+            return;
+          }
+          if (result.kind === "unresolved") {
+            setResolvedName(null);
+            setRecipientLookup({
+              input: trimmed,
+              status: "unresolved",
+              name: result.name
+            });
+            return;
+          }
+          if (result.kind === "address") {
+            setResolvedName(null);
+            setRecipientLookup({
+              input: trimmed,
+              status: "resolved",
+              name: classified.name,
+              address: result.address
+            });
+            return;
+          }
+          setResolvedName(null);
+          setRecipientLookup({
+            input: trimmed,
+            status: "error",
+            message: result.message
+          });
+        } catch (e) {
+          if (cancelled) return;
+          setResolvedName(null);
+          const raw = (e as Error).message || "Could not check Zcash name.";
+          const message =
+            raw === "Failed to fetch" || /NetworkError|network failed|Load failed/i.test(raw)
+              ? "Could not check Zcash name (network). Reload the extension and try again."
+              : raw;
+          setRecipientLookup({
+            input: trimmed,
+            status: "error",
+            message
+          });
+        }
+      })();
+    }, 450);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [recipient]);
 
   async function resolveRecipientToAddress(): Promise<string | undefined> {
     const trimmed = recipient.trim();
@@ -669,10 +786,12 @@ function SendView() {
       const requestedAmount = zats ? Number(zats) : 0;
       if (requestedAmount <= 0) throw new Error("Enter an amount in ZEC");
       const to = await resolveRecipientToAddress();
+      // Standard fee only until NU7 priority / faster-inclusion ships in the store build.
       const result = await extensionApi.walletProveTransaction({
         to,
         amount: requestedAmount,
-        memo: memo || undefined
+        memo: memo || undefined,
+        priority: false
       });
       setRawTxHex(result.rawTxHex || null);
       setPreflight({
@@ -730,8 +849,17 @@ function SendView() {
 
       <Input
         label="Recipient"
-        placeholder="u1…, Zcash name, or zcash:… ZIP-321 URI"
+        placeholder="u1…, nozywallet.zec, or zcash:… URI"
         value={recipient}
+        error={
+          recipientClass.kind === "invalid"
+            ? recipientClass.message
+            : liveLookup?.status === "unresolved"
+              ? `No Zcash name registered for “${liveLookup.name}”.`
+              : liveLookup?.status === "error"
+                ? liveLookup.message
+                : null
+        }
         onChange={(e) => {
           const raw = e.target.value;
           try {
@@ -741,6 +869,7 @@ function SendView() {
               if (parsed.amountZec) setAmount(sanitizeZecAmountInput(parsed.amountZec));
               if (parsed.memo) setMemo(parsed.memo);
               setResolvedName(parsed.label || parsed.message || null);
+              setRecipientLookup(null);
               setStatus("Loaded shielded payment request (ZIP-321)");
               return;
             }
@@ -750,12 +879,24 @@ function SendView() {
           }
           setRecipient(raw);
           setResolvedName(null);
+          setRecipientLookup(null);
         }}
       />
-      {resolvedName ? (
-        <Hint style={{ color: "var(--nw-success)" }}>Resolved {resolvedName}</Hint>
-      ) : (
-        <Hint>Leave blank to send to your own address.</Hint>
+      {recipientClass.kind === "empty" && (
+        <Hint>Leave blank to send to your own address. Names may use .zec / .zcash.</Hint>
+      )}
+      {recipientClass.kind === "valid_address" && (
+        <Hint style={{ color: "var(--nw-success)" }}>
+          Valid address{resolvedName ? ` · ${resolvedName}` : ""}
+        </Hint>
+      )}
+      {recipientClass.kind === "likely_name" && liveLookup?.status === "resolving" && (
+        <Hint>Checking Zcash name…</Hint>
+      )}
+      {recipientClass.kind === "likely_name" && liveLookup?.status === "resolved" && (
+        <Hint style={{ color: "var(--nw-success)" }}>
+          Valid ZNS · {liveLookup.name} → {liveLookup.address.slice(0, 16)}…
+        </Hint>
       )}
 
       <Input
@@ -767,22 +908,6 @@ function SendView() {
         onChange={(e) => setAmount(sanitizeZecAmountInput(e.target.value))}
       />
       {amountFiat && <Hint>≈ {amountFiat}</Hint>}
-
-      <div>
-        <span className="nw-label">Network fee</span>
-        <Hint className="mb-1.5">
-          ZIP-317 × 4 is required on every Nozy send
-          {coreVersion ? ` · ${coreVersion}` : ""}.
-        </Hint>
-        <StatRow
-          label="Fee"
-          value={
-            feeZats
-              ? `${feeZats} zats · ${(Number(feeZats) / 1e8).toFixed(8)} ZEC`
-              : "Estimating…"
-          }
-        />
-      </div>
 
       <Textarea
         label="Memo (optional, max 512 bytes)"
@@ -811,7 +936,7 @@ function SendView() {
             />
             <StatRow
               label="Fee"
-              value={`${preflight.fee} zats · ${(preflight.fee / 1e8).toFixed(8)} ZEC (ZIP-317 × 4)`}
+              value={`${preflight.fee} zats · ${(preflight.fee / 1e8).toFixed(8)} ZEC`}
             />
             <StatRow
               label="Input notes"
