@@ -75,7 +75,7 @@ export async function parseJsonRpcResponse(resp, endpoint, method) {
 }
 
 /**
- * Compact-sync hosts speak gRPC / compact HTTP. JSON-RPC `getblockcount` against them is HTTP 415.
+ * Compact-sync hosts speak gRPC. JSON-RPC `getblockcount` against them is HTTP 415.
  * @param {string} endpoint
  * @returns {boolean}
  */
@@ -89,7 +89,7 @@ export function isLightwalletdEndpoint(endpoint) {
 }
 
 /**
- * These statuses mean "something is listening, but it is not Zebrad JSON-RPC".
+ * Something is listening, and it is not Zebrad JSON-RPC.
  * Windows often has a non-Zebra service on port 8232 that answers 415.
  * @param {number} status
  * @returns {boolean}
@@ -109,33 +109,63 @@ function rpcTimeoutSignal(timeoutMs) {
 }
 
 /**
- * Zebrad and zcashd require `Content-Type: application/json` with no charset.
- * Chrome appends `;charset=UTF-8` when the body is a string, and those nodes answer HTTP 415.
- * A byte body keeps the header exact. A 415 is retried once as `text/plain` for nodes that want that.
+ * What the Send screen should show when getblockcount cannot build a transaction.
+ * @param {string} method
+ * @param {number} status
+ * @param {string} endpoint
+ * @returns {string}
+ */
+export function rpcHttpFailureMessage(method, status, endpoint) {
+  if (status === 415 || isLightwalletdEndpoint(endpoint)) {
+    return (
+      `Sending needs a local Zebrad or Zakura node. ${endpoint} answered HTTP ${status} for ${method}. ` +
+      `Lightwalletd, including lwd.nozywallet.org, is compact sync and answers 415 to JSON-RPC. ` +
+      `Public sync can scan. To send, start a node (Crosslink on Windows is usually http://127.0.0.1:18232, Zebrad uses port 8232) and use Find node in Settings.`
+    );
+  }
+  return `RPC ${method} HTTP ${status}`;
+}
+
+/**
+ * Zebrad and zcashd want `Content-Type: application/json` with no charset.
+ * Chrome appends `;charset=UTF-8` when the body is a string, and strict nodes answer HTTP 415.
+ * A byte body keeps the header exact. A 415 is retried as `text/plain` (Zebra rewrites that)
+ * and then with no content type (Zebra inserts `application/json`).
+ * A gRPC 415 (lightwalletd) is returned immediately.
  *
  * @param {string} url
  * @param {string} method
- * @param {unknown[]} params
+ * @param {unknown[]} [params]
  * @param {number} [timeoutMs]
  * @returns {Promise<Response>}
  */
-async function postJsonRpcOnce(url, method, params, timeoutMs) {
+export async function postZebradRpc(url, method, params = [], timeoutMs) {
   const body = new TextEncoder().encode(
     JSON.stringify({ jsonrpc: "2.0", id: 1, method, params })
   );
-  const send = (contentType) =>
-    fetch(url, {
+  /** @type {Array<string | null>} */
+  const contentTypes = ["application/json", "text/plain", null];
+  let last;
+  for (const contentType of contentTypes) {
+    /** @type {Record<string, string>} */
+    const headers = { Accept: "application/json" };
+    if (contentType) headers["Content-Type"] = contentType;
+    const resp = await fetch(url, {
       method: "POST",
-      headers: {
-        "Content-Type": contentType,
-        Accept: "application/json"
-      },
+      headers,
       body,
       signal: rpcTimeoutSignal(timeoutMs)
     });
-  const resp = await send("application/json");
-  if (resp.status !== 415) return resp;
-  return send("text/plain");
+    last = resp;
+    if (resp.status !== 415) return resp;
+    const announced = resp.headers.get("content-type") || "";
+    if (/grpc/i.test(announced)) return resp;
+  }
+  return last;
+}
+
+async function postJsonRpcOnce(url, method, params, timeoutMs) {
+  return postZebradRpc(url, method, params, timeoutMs);
 }
 
 /** Last JSON-RPC URL that actually returned a result, so later calls skip a dead port. */
@@ -202,7 +232,7 @@ export async function rpcCallJson(endpoint, method, params = [], opts = {}) {
       );
     }
     if (rpcStatusShouldFailover(resp.status)) {
-      lastErr = new Error(`RPC ${method} HTTP ${resp.status}`);
+      lastErr = new Error(rpcHttpFailureMessage(method, resp.status, url));
       if (url === preferredRpcEndpoint) preferredRpcEndpoint = null;
       if (opts.exact === true) continue;
       if (!expanded) {
@@ -252,11 +282,6 @@ export async function rpcCallJson(endpoint, method, params = [], opts = {}) {
   throw lastErr instanceof Error ? lastErr : new Error(`RPC ${method} failed`);
 }
 
-/**
- * @param {string} endpoint
- * @param {number} [timeoutMs=4000]
- * @returns {Promise<boolean>}
- */
 /**
  * Block height from one exact URL. Does not fail over to another port.
  * @param {string} endpoint
@@ -382,13 +407,19 @@ export async function findReachableRpcEndpoint(currentEndpoint, opts = {}) {
       })
       .filter(Boolean)
   );
-  try {
-    const current = normalizeRpcEndpoint(currentEndpoint);
-    if (!skip.has(current)) candidates.push(current);
-  } catch {
-    // ignore invalid current endpoint
-  }
-  candidates.push(...extra);
+  const pushCandidate = (value) => {
+    let normalized = "";
+    try {
+      normalized = normalizeRpcEndpoint(value);
+    } catch {
+      return;
+    }
+    if (!normalized || skip.has(normalized) || isLightwalletdEndpoint(normalized)) return;
+    if (candidates.includes(normalized)) return;
+    candidates.push(normalized);
+  };
+  pushCandidate(currentEndpoint);
+  for (const candidate of extra) pushCandidate(candidate);
 
   // Local Zebrad / Crosslink JSON-RPC. On this Windows Crosslink GUI setup the
   // node listens on 18232 (8232 is often taken). Prefer the live Crosslink port.

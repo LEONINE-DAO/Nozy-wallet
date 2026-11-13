@@ -2306,6 +2306,12 @@ async function rpcCall(method, params = []) {
   } catch (e) {
     throw e instanceof Error ? e : new Error(String(e));
   }
+  if (
+    method === "getblockcount" &&
+    (isNozyPublicSyncUrl(endpoint) || (await isPublicLwdOptedIn()))
+  ) {
+    return compactChainTip();
+  }
   const called = await rpcCallJson(endpoint, method, params, {
     timeoutMs: 8000,
     extraCandidates: await loadRpcEndpointCache()
