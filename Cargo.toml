@@ -93,7 +93,7 @@ cosmrs = { version = "0.22", optional = true }
 tendermint = { version = "0.40", optional = true }
 
 # Groth16 zkSNARK libraries
-groth16 = { version = "0.1", optional = true }
+groth16 = { version = "0.2", optional = true }
 ark-groth16 = { version = "0.3", optional = true }
 ark-ff = { version = "0.3", optional = true }
 ark-ec = { version = "0.3", optional = true }
