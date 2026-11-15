@@ -44,7 +44,7 @@
     "rimraf": "^6.1.2",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.70.1",
-    "vite": "^8.3.5"
+    "vite": "^8.3.8"
   },
   "optionalDependencies": {
     "@emnapi/core": "1.11.3",
