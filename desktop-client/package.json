@@ -48,7 +48,7 @@
     "tailwindcss": "^4.3.3",
     "typescript": "^5.2.2",
     "vite": "^6.4.5",
-    "zustand": "^5.0.15"
+    "zustand": "^5.1.0"
   },
   "optionalDependencies": {
     "@emnapi/core": "1.11.3",
