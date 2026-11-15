@@ -52,7 +52,7 @@ zcash_protocol = { path = "third_party/zcash_protocol" }
 zcash_address = { git = "https://github.com/zcash/librustzcash", rev = "4d9a68dc80508e7644aa99e1b4add7c831057bba" }
 zcash_note_encryption = "0.4.1"
 # zcash_primitives 0.28 dropped its zip32 re-export; depend on the standalone crate.
-zip32 = "0.2.1"
+zip32 = "0.3.0"
 
 # Serialization for Zcash types
 ark-serialize = "0.4"
