@@ -22,11 +22,11 @@ Release page: [latest release](https://github.com/LEONINE-DAO/Nozy-wallet/releas
 
 Current tags called out from the project page:
 
-- CLI [v2.4.8 — Mango Habanero](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.8)
-- Desktop [Hot Lemon Pepper Sprinkles beta.7](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.7)
-- Extension Sweet Chili 0.1.26 (source; not a store listing)
+- CLI and companion API [v2.4.9 — Mango Habanero](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/v2.4.9)
+- Desktop [Hot Lemon Pepper Sprinkles beta.9](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/desktop-v1.0.0-beta.9)
+- Extension [Sweet Chili 2.0.4](https://github.com/LEONINE-DAO/Nozy-wallet/releases/tag/extension-v2.0.4)
 
-Release CI attaches CLI (`nozy-*`) and localhost companion API (`nozywallet-api-*`). Desktop ships under `desktop-v*` tags. iOS and Android are not on the App Store or Google Play. See the [enhancement roadmap](../../ENHANCEMENT_ROADMAP.md).
+Release CI attaches **Mango Habanero** CLI (`nozy-*`) and **Mango Habanero** companion API (`nozywallet-api-*`). **Hot Lemon Pepper Sprinkles** desktop ships under `desktop-v*` tags. iOS and Android are not on the App Store or Google Play. See the [enhancement roadmap](../../ENHANCEMENT_ROADMAP.md).
 
 ## CLI from source
 

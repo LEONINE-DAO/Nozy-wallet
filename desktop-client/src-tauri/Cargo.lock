@@ -3613,7 +3613,7 @@ checksum = "549e471b99ccaf2f89101bec68f4d244457d5a95a9c3d0672e9564124397741d"
 
 [[package]]
 name = "nozy"
-version = "2.4.8"
+version = "2.4.9"
 dependencies = [
  "aes-gcm",
  "argon2",
@@ -3677,7 +3677,7 @@ dependencies = [
 
 [[package]]
 name = "nozywallet-desktop"
-version = "1.0.0-beta.8"
+version = "1.0.0-beta.9"
 dependencies = [
  "base64 0.23.1",
  "directories",

@@ -273,10 +273,19 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          name: ${{ github.ref_name }} — Mango Habanero (CLI and companion API)
           body: |
-            ## NozyWallet ${{ github.ref_name }} Release
+            ## Mango Habanero — CLI and companion API (${{ github.ref_name }})
 
-            **Production-ready download:** **CLI** (`nozy`). Companion API binaries (`nozywallet-api-*`) are also attached for **same-machine** extension / local-app use (default `http://127.0.0.1:3000`) — not a public hosted API. See [`browser-extension/COMPANION.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/COMPANION.md) and [`api-server/SEED_POLICY.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/api-server/SEED_POLICY.md). Desktop and extension remain separate tracks until promoted.
+            Shielded spends after mainnet NU7 (ZIP 259, block 3,543,405) use consensus branch `0x77190AD9`. Builds before this release stamped those transactions as NU6.3, and nodes reject them.
+
+            | Surface | Label |
+            |---------|--------|
+            | CLI (`nozy`) | **Mango Habanero** |
+            | Companion API (`nozywallet-api-*`) | **Mango Habanero** |
+            | Desktop | **Hot Lemon Pepper Sprinkles**, published on the `desktop-v*` release |
+
+            **CLI — Mango Habanero** is the production download. **Companion API — Mango Habanero** binaries are for same-machine use (default `http://127.0.0.1:3000`), not a public hosted API. See [`browser-extension/COMPANION.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/browser-extension/COMPANION.md) and [`api-server/SEED_POLICY.md`](https://github.com/LEONINE-DAO/Nozy-wallet/blob/master/api-server/SEED_POLICY.md). **Desktop — Hot Lemon Pepper Sprinkles** ships on its own release.
 
             ### CLI one-click links (`/releases/latest/download/...`)
 
@@ -287,14 +296,14 @@ jobs:
             | macOS Apple Silicon | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-arm` |
             | macOS Intel | `https://github.com/LEONINE-DAO/Nozy-wallet/releases/latest/download/nozy-macos-intel` |
 
-            ### CLI downloads
+            ### CLI downloads — Mango Habanero
 
             - **Windows (x86_64):** `nozy-windows.exe`
             - **Linux (x86_64):** `nozy-linux`
             - **macOS Intel:** `nozy-macos-intel`
             - **macOS Apple Silicon (M1/M2/M3):** `nozy-macos-arm`
 
-            ### Companion API (localhost)
+            ### Companion API — Mango Habanero (localhost)
 
             - **Windows:** `nozywallet-api-windows.exe`
             - **Linux:** `nozywallet-api-linux`
