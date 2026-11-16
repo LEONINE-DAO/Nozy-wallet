@@ -21,7 +21,7 @@ zeaking = { path = "../../zeaking", features = ["lightwalletd"] }
 # Vote SDK (`zcash_voting`) cannot link into this binary: rusqlite 0.37 vs zeaking 0.39
 # both `links = "sqlite3"`. Desktop shells out to the `nozy-vote` helper binary instead.
 directories = "5"
-base64 = "0.22"
+base64 = "0.23"
 
 [build-dependencies]
 tauri-build = { version = "2.6.3", features = [] }
