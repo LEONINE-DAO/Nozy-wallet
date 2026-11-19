@@ -6,11 +6,11 @@ use nozy::cli_helpers::{
 };
 use nozy::local_analytics::LocalAnalytics;
 use nozy::safe_display::display_mnemonic_safe;
+use nozy::{load_config, save_config};
 use nozy::{
     AddressBook, HDWallet, NozyError, NozyResult, WalletStorage, ZebraBlockParser,
     ZebraBlockSource, ZebraClient,
 };
-use nozy::{load_config, save_config};
 use zcash_address::unified::Encoding;
 use zcash_protocol::consensus::NetworkType;
 use zeaking::Zeaking;
@@ -613,7 +613,9 @@ pub enum IronwoodCommand {
         )]
         skip_broadcast_hygiene: bool,
     },
-    #[command(about = "Split one Orchard note into canonical ZIP 318 denominations (send-to-self)")]
+    #[command(
+        about = "Split one Orchard note into canonical ZIP 318 denominations (send-to-self)"
+    )]
     Split {
         #[arg(
             long,
@@ -661,7 +663,9 @@ pub enum GiftCardCommand {
         #[arg(long, help = "Gift card id")]
         id: String,
     },
-    #[command(about = "Sweep a claim code into this wallet. The network fee comes out of the card")]
+    #[command(
+        about = "Sweep a claim code into this wallet. The network fee comes out of the card"
+    )]
     Redeem {
         #[arg(long, help = "Claim code (NZGC-…)")]
         code: String,
@@ -1830,7 +1834,7 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 NetworkType::Main
             };
             let out_path = PathBuf::from(out.unwrap_or_else(|| "vote-notes.json".into()));
-            use nozy::{ZebraClient, export_ironwood_vote_notes_at_snapshot, load_config};
+            use nozy::{export_ironwood_vote_notes_at_snapshot, load_config, ZebraClient};
             let config = load_config();
             let zebra = ZebraClient::from_config(&config);
             let snapshot = if let Some(height) = snapshot_height {
@@ -3488,8 +3492,8 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
         Commands::ZkCosmwasm { command } => {
             use nozy::zk_cosmwasm_claim::{
-                LCD_URL_ENV, assess_track_status, build_claim_draft, build_claim_draft_from_wallet,
-                load_vote_export,
+                assess_track_status, build_claim_draft, build_claim_draft_from_wallet,
+                load_vote_export, LCD_URL_ENV,
             };
             use std::path::PathBuf;
 
@@ -4386,18 +4390,18 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
         },
 
         Commands::Ironwood { command } => {
-            use nozy::ZebraClient;
             use nozy::ironwood::{
-                IronwoodWalletStatus, MigrationReadinessState, display_ironwood_status,
-                execute_orchard_migration, execute_orchard_migration_broadcast,
-                execute_orchard_note_split, fetch_pool_balances, is_ironwood_active,
-                nu6_3_activation_height, plan_orchard_migration_at,
-                plan_orchard_note_split_outputs, refresh_orchard_migration_schedule_at,
-                save_orchard_migration_plan_at,
+                display_ironwood_status, execute_orchard_migration,
+                execute_orchard_migration_broadcast, execute_orchard_note_split,
+                fetch_pool_balances, is_ironwood_active, nu6_3_activation_height,
+                plan_orchard_migration_at, plan_orchard_note_split_outputs,
+                refresh_orchard_migration_schedule_at, save_orchard_migration_plan_at,
+                IronwoodWalletStatus, MigrationReadinessState,
             };
             use nozy::load_wallet_notes;
             use nozy::max_serialized_witness_lag_blocks;
             use nozy::shielded_pool::ShieldedPool;
+            use nozy::ZebraClient;
 
             let zebra_client = ZebraClient::from_config(&config);
             let chain_tip = zebra_client.get_block_count().await.unwrap_or(0);
@@ -5146,12 +5150,13 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
         Commands::Crosslink { command } => {
             use nozy::crosslink::{
-                StakingAction, block_finality, bond_info, build_crosslink_client, ctaz_to_zat,
-                display_bond, display_doctor, display_finality, display_payout_claim,
-                display_positions, display_roster, display_status, display_wallet,
-                fetch_doctor_report, fetch_guardian_snapshot, fetch_payout_claim, finality_tip,
+                block_finality, bond_info, build_crosslink_client, ctaz_to_zat, display_bond,
+                display_doctor, display_finality, display_payout_claim, display_positions,
+                display_roster, display_status, display_wallet, fetch_doctor_report,
+                fetch_guardian_snapshot, fetch_payout_claim, finality_tip,
                 normalize_finalizer_address, print_feature_net_banner, roster, staking_action,
                 staking_day_at, staking_positions, tx_finality, wallet_sync_status, wallet_ufvk,
+                StakingAction,
             };
             use std::io::{self, Write};
 
@@ -5468,9 +5473,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
         }
 
         Commands::Nu61 => {
-            use nozy::ZebraClient;
             use nozy::load_config;
             use nozy::nu6_1_check;
+            use nozy::ZebraClient;
 
             println!("🔍 Checking NU 6.1 (Network Upgrade 6.1) Compatibility");
             println!();
