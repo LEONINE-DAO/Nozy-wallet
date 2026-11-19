@@ -1,0 +1,1281 @@
+use ff::{Field, PrimeField};
+use pasta_curves::arithmetic::{CurveAffine, CurveExt};
+use pasta_curves::group::{Curve, Group, GroupEncoding};
+use pasta_curves::pallas;
+use rand::RngCore;
+use subtle::CtOption;
+
+use orchard::builder::{Builder, BundleType};
+use orchard::bundle::{BundleVersion, TxVersion as OrchardTxVersion};
+use orchard::keys::FullViewingKey;
+use orchard::note::{NoteVersion, RandomSeed, Rho};
+use orchard::pczt::Zip32Derivation;
+use orchard::value::NoteValue;
+use orchard::Address;
+use voting_circuits::delegation::synthetic_padding_note_parts;
+use zcash_keys::address::UnifiedAddress;
+use zcash_primitives::transaction::builder::PcztParts;
+use zcash_primitives::transaction::TxVersion;
+use zcash_protocol::consensus::{
+    BlockHeight, BranchId, Network as ConsensusNetwork, NetworkConstants, Parameters,
+};
+use zip32::Scope;
+
+use crate::governance::{self, BUNDLE_NOTE_SLOTS};
+use crate::shielded_protocol::VotingShieldedProtocol;
+use crate::types::{
+    validate_notes, validate_round_params, GovernancePczt, Network as VotingNetwork, NoteInfo,
+    VotingError, VotingRoundParams,
+};
+
+const DELEGATION_ACTION_FIXED_FIELD_COUNT: usize = 5;
+const MAX_PCZT_LAYOUT_ATTEMPTS: usize = 32;
+
+/// Orchard key diversification personalization for DiversifyHash^Orchard.
+const ORCHARD_GD_PERSONALIZATION: &str = "z.cash:Orchard-gd";
+
+fn pczt_actions_for_protocol(
+    pczt: &pczt::Pczt,
+    bundle_version: BundleVersion,
+) -> Result<&[pczt::orchard::Action], VotingError> {
+    if bundle_version == BundleVersion::ironwood_v3() {
+        Ok(pczt.ironwood().actions())
+    } else {
+        Err(VotingError::InvalidInput {
+            message: "zcash voting only supports Ironwood PCZT actions".to_string(),
+        })
+    }
+}
+
+fn signed_pczt_actions(
+    pczt: &pczt::Pczt,
+) -> Result<(&[pczt::orchard::Action], &'static str), VotingError> {
+    let orchard_actions = pczt.orchard().actions();
+
+    let ironwood_actions = pczt.ironwood().actions();
+    match (!orchard_actions.is_empty(), !ironwood_actions.is_empty()) {
+        (false, true) => Ok((ironwood_actions, "Ironwood")),
+        (true, _) => Err(VotingError::InvalidInput {
+            message: "signed PCZT contains Orchard actions; zcash voting only supports Ironwood"
+                .to_string(),
+        }),
+        (false, false) => Err(VotingError::InvalidInput {
+            message: "signed PCZT contains no Ironwood actions".to_string(),
+        }),
+    }
+}
+
+/// Extract the affine x-coordinate bytes from a non-identity Pallas point.
+fn point_x_bytes(point: &pallas::Point) -> Result<[u8; 32], VotingError> {
+    point
+        .to_affine()
+        .coordinates()
+        .map(|coords| coords.x().to_repr())
+        .into_option()
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: "point is identity; x-coordinate unavailable".to_string(),
+        })
+}
+
+/// Derive (g_d_x, pk_d_x) from a 43-byte Orchard raw address.
+///
+/// - g_d_x: x-coordinate of DiversifyHash(d)
+/// - pk_d_x: x-coordinate of the diversified transmission key pk_d
+pub fn derive_hotkey_x_coords_from_raw_address(
+    hotkey_raw_address: &[u8; 43],
+) -> Result<([u8; 32], [u8; 32]), VotingError> {
+    let diversifier: [u8; 11] = hotkey_raw_address[..11]
+        .try_into()
+        .expect("slice length is fixed to 11");
+    let pk_d_bytes: [u8; 32] = hotkey_raw_address[11..]
+        .try_into()
+        .expect("slice length is fixed to 32");
+
+    let pk_d_point: pallas::Point = pallas::Point::from_bytes(&pk_d_bytes)
+        .into_option()
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: "hotkey_raw_address contains invalid pk_d point encoding".to_string(),
+        })?;
+    let pk_d_x: [u8; 32] = point_x_bytes(&pk_d_point)?;
+
+    // Orchard spec: if DiversifyHash(d) returns identity, use DiversifyHash([]) fallback.
+    let hasher = pallas::Point::hash_to_curve(ORCHARD_GD_PERSONALIZATION);
+    let mut g_d_point = hasher(&diversifier);
+    if bool::from(g_d_point.is_identity()) {
+        g_d_point = hasher(&[]);
+    }
+    let g_d_x: [u8; 32] = point_x_bytes(&g_d_point)?;
+
+    Ok((g_d_x, pk_d_x))
+}
+
+/// Generate a random valid Rho (retries until the random bytes are a valid Pallas field element).
+fn random_rho(rng: &mut impl RngCore) -> Rho {
+    loop {
+        let mut rho_bytes = [0u8; 32];
+        rng.fill_bytes(&mut rho_bytes);
+        let r: CtOption<Rho> = Rho::from_bytes(&rho_bytes);
+        if r.is_some().into() {
+            return r.expect("is_some checked above");
+        }
+    }
+}
+
+/// Generate a random valid RandomSeed for a given Rho.
+fn random_rseed(rng: &mut impl RngCore, rho: &Rho) -> (RandomSeed, [u8; 32]) {
+    loop {
+        let mut rseed_bytes = [0u8; 32];
+        rng.fill_bytes(&mut rseed_bytes);
+        let rs: CtOption<RandomSeed> = RandomSeed::from_bytes(rseed_bytes, rho);
+        if rs.is_some().into() {
+            return (rs.expect("is_some checked above"), rseed_bytes);
+        }
+    }
+}
+
+/// Sample the synthetic padding-note secrets used to fill delegation's fixed
+/// five-note circuit arity.
+pub(crate) fn sample_padded_note_secrets(
+    notes_len: usize,
+) -> Result<Vec<(Vec<u8>, Vec<u8>)>, VotingError> {
+    if notes_len == 0 || notes_len > BUNDLE_NOTE_SLOTS {
+        return Err(VotingError::InvalidInput {
+            message: format!("expected 1-{BUNDLE_NOTE_SLOTS} notes, got {notes_len}"),
+        });
+    }
+
+    let mut rng = rand::thread_rng();
+    let mut padded_note_secrets = Vec::with_capacity(BUNDLE_NOTE_SLOTS - notes_len);
+    for _ in notes_len..BUNDLE_NOTE_SLOTS {
+        let rho = random_rho(&mut rng);
+        let (_rseed, rseed_bytes) = random_rseed(&mut rng, &rho);
+        let rho_bytes: [u8; 32] = rho.to_bytes();
+        padded_note_secrets.push((rho_bytes.to_vec(), rseed_bytes.to_vec()));
+    }
+    Ok(padded_note_secrets)
+}
+
+/// Construct an Orchard note at the given address with the given value and Rho.
+fn make_note(
+    addr: Address,
+    value: NoteValue,
+    rho: Rho,
+    rng: &mut impl RngCore,
+    version: NoteVersion,
+) -> Result<(orchard::Note, [u8; 32]), VotingError> {
+    let (rseed, rseed_bytes) = random_rseed(rng, &rho);
+    let note = orchard::Note::from_parts(addr, value, rho, rseed, version);
+    if !bool::from(note.is_some()) {
+        return Err(VotingError::Internal {
+            message: "failed to construct note".to_string(),
+        });
+    }
+    Ok((note.expect("is_some checked above"), rseed_bytes))
+}
+
+/// Construct a 1-zatoshi governance note for the selected shielded protocol.
+///
+/// The signed note uses value 1 so Keystone renders a non-zero governance action.
+fn make_dummy_note(
+    addr: Address,
+    rho: Rho,
+    rng: &mut impl RngCore,
+    protocol: VotingShieldedProtocol,
+) -> Result<(orchard::Note, [u8; 32]), VotingError> {
+    make_note(
+        addr,
+        NoteValue::from_raw(1),
+        rho,
+        rng,
+        protocol.note_version(),
+    )
+}
+
+/// Canonical delegate action payload encoding for external signing.
+///
+/// Field order:
+/// nf_signed || rk || cmx_new || van_comm || governance nullifier slots ||
+/// vote_round_id.
+///
+/// TODO: This format might change when we standardize what the cosmos chain expects.
+fn encode_delegation_action_bytes(
+    nf_signed: &[u8; 32],
+    rk: &[u8; 32],
+    cmx_new: &[u8; 32],
+    van_comm: &[u8],
+    gov_nullifiers: &[Vec<u8>],
+    vote_round_id: &[u8; 32],
+) -> Result<Vec<u8>, VotingError> {
+    crate::types::validate_32_bytes(van_comm, "van_comm")?;
+    if gov_nullifiers.len() != BUNDLE_NOTE_SLOTS {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "gov_nullifiers must have exactly {BUNDLE_NOTE_SLOTS} entries, got {}",
+                gov_nullifiers.len()
+            ),
+        });
+    }
+
+    let mut out =
+        Vec::with_capacity(32 * (BUNDLE_NOTE_SLOTS + DELEGATION_ACTION_FIXED_FIELD_COUNT));
+    out.extend_from_slice(nf_signed);
+    out.extend_from_slice(rk);
+    out.extend_from_slice(cmx_new);
+    out.extend_from_slice(van_comm);
+    for (i, gn) in gov_nullifiers.iter().enumerate() {
+        crate::types::validate_32_bytes(gn, &format!("gov_nullifiers[{}]", i))?;
+        out.extend_from_slice(gn);
+    }
+    out.extend_from_slice(vote_round_id);
+    Ok(out)
+}
+
+fn consensus_network_for_voting_network(network: VotingNetwork) -> ConsensusNetwork {
+    match network {
+        VotingNetwork::Mainnet => ConsensusNetwork::MainNetwork,
+        VotingNetwork::Testnet | VotingNetwork::Regtest => ConsensusNetwork::TestNetwork,
+    }
+}
+
+fn validate_consensus_branch_id(
+    network: VotingNetwork,
+    snapshot_height: u64,
+    consensus_branch_id: u32,
+) -> Result<BranchId, VotingError> {
+    let branch_id =
+        BranchId::try_from(consensus_branch_id).map_err(|e| VotingError::InvalidInput {
+            message: format!(
+                "invalid consensus_branch_id 0x{:08X}: {}",
+                consensus_branch_id, e
+            ),
+        })?;
+    let expected = crate::lwd::branch_id_for_height(network, snapshot_height)?;
+    if consensus_branch_id != expected {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "consensus_branch_id 0x{consensus_branch_id:08X} does not match snapshot height {snapshot_height} branch id 0x{expected:08X}",
+            ),
+        });
+    }
+    Ok(branch_id)
+}
+
+/// Build a governance-specific PCZT for Keystone signing.
+///
+/// Constructs a PCZT whose real governance action belongs to the selected
+/// shielded protocol (spend of signed note with constrained rho -> output to
+/// hotkey). The Builder generates alpha/rk internally, and the PCZT's ZIP-244
+/// sighash is computed by Keystone when it runs the Signer role.
+///
+/// Parameters:
+/// - `notes`: input notes for governance nullifier derivation, up to
+///   [`BUNDLE_NOTE_SLOTS`].
+/// - `params`: voting round parameters (round ID, snapshot height, etc.)
+/// - `network`: network that owns the persisted voting round snapshot.
+/// - `fvk_bytes`: 96-byte orchard FullViewingKey (ak[32] || nk[32] || rivk[32])
+/// - `hotkey_raw_address`: 43-byte hotkey raw orchard address
+/// - `consensus_branch_id`: network consensus branch ID active at the snapshot height.
+/// - `coin_type`: BIP-44 coin type (133 for mainnet, 1 for testnet/regtest)
+/// - `seed_fingerprint`: 32-byte ZIP-32 seed fingerprint (Keystone needs this to
+///   identify which seed to derive the spending key from)
+/// - `account_index`: ZIP-32 account index (typically 0)
+pub(crate) fn build_governance_pczt(
+    notes: &[NoteInfo],
+    params: &VotingRoundParams,
+    network: VotingNetwork,
+    fvk_bytes: &[u8],
+    hotkey_raw_address: &[u8],
+    consensus_branch_id: u32,
+    coin_type: u32,
+    seed_fingerprint: &[u8; 32],
+    account_index: u32,
+    round_name: &str,
+    padded_note_secrets: &[(Vec<u8>, Vec<u8>)],
+) -> Result<GovernancePczt, VotingError> {
+    validate_notes(notes)?;
+    validate_round_params(params)?;
+    let branch_id =
+        validate_consensus_branch_id(network, params.snapshot_height, consensus_branch_id)?;
+    let expected_coin_type = network.network_type().coin_type();
+    if coin_type != expected_coin_type {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "coin_type {coin_type} does not match voting network {:?} coin type {expected_coin_type}",
+                network
+            ),
+        });
+    }
+
+    // Parse FVK from 96 bytes: ak[32] || nk[32] || rivk[32]
+    let fvk_96: [u8; 96] = fvk_bytes
+        .try_into()
+        .map_err(|_| VotingError::InvalidInput {
+            message: format!("fvk_bytes must be 96 bytes, got {}", fvk_bytes.len()),
+        })?;
+    let fvk = FullViewingKey::from_bytes(&fvk_96).ok_or_else(|| VotingError::InvalidInput {
+        message: "fvk_bytes is not a valid orchard FullViewingKey".to_string(),
+    })?;
+    let nk_bytes = &fvk_bytes[32..64];
+
+    // Parse hotkey raw address (43 bytes: 11-byte diversifier + 32-byte pk_d)
+    let addr_43: [u8; 43] =
+        hotkey_raw_address
+            .try_into()
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!(
+                    "hotkey_raw_address must be 43 bytes, got {}",
+                    hotkey_raw_address.len()
+                ),
+            })?;
+    let hotkey_addr: Address = Address::from_raw_address_bytes(&addr_43)
+        .into_option()
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: "hotkey_raw_address is not a valid orchard address".to_string(),
+        })?;
+
+    // Derive hotkey x-coordinates for VAN
+    let (derived_g_d_new_x, derived_pk_d_new_x) =
+        derive_hotkey_x_coords_from_raw_address(&addr_43)?;
+
+    // Convert vote_round_id from hex string to 32 bytes
+    let vote_round_id_bytes =
+        hex::decode(&params.vote_round_id).map_err(|e| VotingError::InvalidInput {
+            message: format!("vote_round_id is not valid hex: {}", e),
+        })?;
+    crate::types::validate_32_bytes(&vote_round_id_bytes, "vote_round_id (decoded hex)")?;
+    let vri_32: [u8; 32] = vote_round_id_bytes
+        .try_into()
+        .expect("validated as 32 bytes above");
+
+    let mut rng = rand::thread_rng();
+    let shielded_protocol = VotingShieldedProtocol::for_branch_id(branch_id)?;
+    let bundle_version = shielded_protocol.bundle_version();
+
+    // --- Compute governance nullifiers ---
+    let dom = governance::compute_nullifier_domain(&vri_32)?;
+    let mut gov_nullifiers: Vec<Vec<u8>> = Vec::with_capacity(BUNDLE_NOTE_SLOTS);
+    for note in notes {
+        let gov_null = governance::derive_gov_nullifier(nk_bytes, &dom, &note.nullifier)?;
+        gov_nullifiers.push(gov_null);
+    }
+
+    // Padded-note derivation from write-once secrets. These must match the
+    // delegation circuit builder's synthetic padding slots.
+    let mut padded_cmx: Vec<Vec<u8>> = Vec::new();
+    let mut dummy_nullifiers: Vec<Vec<u8>> = Vec::new();
+    let mut normalized_padded_note_secrets: Vec<(Vec<u8>, Vec<u8>)> = Vec::new();
+    let n_real = notes.len();
+    let expected_padded_count = BUNDLE_NOTE_SLOTS.saturating_sub(n_real);
+    if padded_note_secrets.len() != expected_padded_count {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "padded_note_secrets count ({}) must match expected padded note count ({expected_padded_count})",
+                padded_note_secrets.len()
+            ),
+        });
+    }
+    for (i_pad, (rho_bytes, rseed_bytes)) in padded_note_secrets.iter().enumerate() {
+        let i = n_real + i_pad;
+        let rho_arr: [u8; 32] =
+            rho_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| VotingError::InvalidInput {
+                    message: format!("padded_note_secrets[{i_pad}].rho must be 32 bytes"),
+                })?;
+        let rho =
+            Rho::from_bytes(&rho_arr)
+                .into_option()
+                .ok_or_else(|| VotingError::InvalidInput {
+                    message: format!("padded_note_secrets[{i_pad}].rho is not a valid Rho"),
+                })?;
+        let rseed_arr: [u8; 32] =
+            rseed_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| VotingError::InvalidInput {
+                    message: format!("padded_note_secrets[{i_pad}].rseed must be 32 bytes"),
+                })?;
+        let rseed = RandomSeed::from_bytes(rseed_arr, &rho)
+            .into_option()
+            .ok_or_else(|| VotingError::InvalidInput {
+                message: format!(
+                    "padded_note_secrets[{i_pad}].rseed is not valid for the stored rho"
+                ),
+            })?;
+        let parts = synthetic_padding_note_parts(&fvk, i, rho, rseed).map_err(|e| {
+            VotingError::Internal {
+                message: format!("synthetic padding slot {i}: {e}"),
+            }
+        })?;
+        let gov_null = governance::derive_gov_nullifier(nk_bytes, &dom, &parts.nullifier)?;
+        padded_cmx.push(parts.cmx.to_vec());
+        gov_nullifiers.push(gov_null);
+        dummy_nullifiers.push(parts.nullifier.to_vec());
+        normalized_padded_note_secrets.push((rho_arr.to_vec(), rseed_arr.to_vec()));
+    }
+
+    // Per-bundle weight
+    let total_weight: u64 = notes
+        .iter()
+        .try_fold(0u64, |acc, n| acc.checked_add(n.value))
+        .ok_or_else(|| VotingError::InvalidInput {
+            message: "total note weight overflows u64".to_string(),
+        })?;
+
+    // Sample van_comm_rand
+    let van_comm_rand_fp = pallas::Base::random(&mut rng);
+    let van_comm_rand: [u8; 32] = van_comm_rand_fp.to_repr();
+
+    // Compute VAN
+    let van = governance::construct_van(
+        &derived_g_d_new_x,
+        &derived_pk_d_new_x,
+        total_weight,
+        &vri_32,
+        &van_comm_rand,
+    )?;
+
+    // Collect all circuit note-slot commitments.
+    let mut all_cmx: Vec<Vec<u8>> = Vec::with_capacity(BUNDLE_NOTE_SLOTS);
+    for note in notes {
+        all_cmx.push(note.commitment.clone());
+    }
+    all_cmx.extend(padded_cmx.iter().cloned());
+    if all_cmx.len() != BUNDLE_NOTE_SLOTS {
+        return Err(VotingError::Internal {
+            message: format!(
+                "expected {BUNDLE_NOTE_SLOTS} cmx values, got {}",
+                all_cmx.len()
+            ),
+        });
+    }
+
+    // Compute constrained rho
+    let rho_signed = governance::compute_rho_binding(
+        &all_cmx[0],
+        &all_cmx[1],
+        &all_cmx[2],
+        &all_cmx[3],
+        &all_cmx[4],
+        &van,
+        &vri_32,
+    )?;
+
+    // --- Build signed note (§1.3.4.2) ---
+    let rho_signed_32: [u8; 32] = rho_signed
+        .clone()
+        .try_into()
+        .expect("rho_signed is 32 bytes from compute_rho_binding");
+    let rho_for_note: Rho = Rho::from_bytes(&rho_signed_32)
+        .into_option()
+        .ok_or_else(|| VotingError::Internal {
+            message: "rho_signed is not a valid Pallas field element for Rho".to_string(),
+        })?;
+    let sender_address = fvk.address_at(0u32, Scope::External);
+    let (signed_note, rseed_signed_bytes) =
+        make_dummy_note(sender_address, rho_for_note, &mut rng, shielded_protocol)?;
+
+    // Add output to hotkey address. The circuit commits to a zero-value output
+    // note for cmx_new, so Phase 1 must use the same value and rseed.
+    let memo = {
+        let memo_str = crate::delegate::display_memo(round_name, total_weight);
+        let mut buf = [0u8; 512];
+        let bytes = memo_str.as_bytes();
+        let len = bytes.len().min(512);
+        buf[..len].copy_from_slice(&bytes[..len]);
+        buf
+    };
+    // --- Serialize to full PCZT ---
+    // Use Creator::build_from_parts to construct the PCZT with the selected
+    // Orchard or Ironwood bundle, matching the wallet transaction builder path.
+    let consensus_network = consensus_network_for_voting_network(network);
+    let hotkey_user_address = UnifiedAddress::from_receivers(Some(hotkey_addr.clone()), None, None)
+        .expect("an Orchard receiver forms a valid Unified Address")
+        .encode(&consensus_network);
+
+    for _ in 0..MAX_PCZT_LAYOUT_ATTEMPTS {
+        // TX1 is V6-only and is never proved or broadcast, so its unused anchor
+        // and spend witness remain deferred instead of being fabricated.
+        let mut builder = Builder::new_with_anchor_deferred(
+            BundleType::UNPADDED,
+            bundle_version,
+            bundle_version.default_flags(),
+            OrchardTxVersion::V6,
+        )
+        .expect("Ironwood V3 in a V6 transaction supports anchor deferral");
+
+        // Add the governance signed note as a spend.
+        builder
+            .add_spend_unwitnessed(fvk.clone(), signed_note.clone())
+            .map_err(|e| VotingError::Internal {
+                message: format!("Builder::add_spend_unwitnessed failed: {:?}", e),
+            })?;
+
+        builder
+            .add_output(None, hotkey_addr.clone(), NoteValue::ZERO, memo)
+            .map_err(|e| VotingError::Internal {
+                message: format!("Builder::add_output failed: {:?}", e),
+            })?;
+
+        // The unpadded profile pairs the single spend and output in one action.
+        // Keep the metadata check below as a defensive layout assertion.
+        let (mut pczt_bundle, bundle_meta) =
+            builder
+                .build_for_pczt(&mut rng)
+                .map_err(|e| VotingError::Internal {
+                    message: format!("Builder::build_for_pczt failed: {:?}", e),
+                })?;
+
+        // Extract data from the real governance action (may be shuffled by Builder)
+        let spend_idx = bundle_meta
+            .spend_action_index(0)
+            .ok_or_else(|| VotingError::Internal {
+                message: "BundleMetadata missing spend action index".to_string(),
+            })?;
+        let output_idx =
+            bundle_meta
+                .output_action_index(0)
+                .ok_or_else(|| VotingError::Internal {
+                    message: "BundleMetadata missing output action index".to_string(),
+                })?;
+
+        if spend_idx != output_idx {
+            continue;
+        }
+
+        let action_index = spend_idx;
+        let governance_action = &pczt_bundle.actions()[action_index];
+        let nf_signed_bytes: [u8; 32] = governance_action.spend().nullifier().to_bytes();
+        let rk_bytes: [u8; 32] = governance_action.spend().rk().into();
+        let alpha = governance_action
+            .spend()
+            .alpha()
+            .ok_or_else(|| VotingError::Internal {
+                message: "PCZT spend missing alpha".to_string(),
+            })?;
+        let alpha_bytes: [u8; 32] = alpha.to_repr();
+        let rseed_signed_from_pczt =
+            governance_action
+                .spend()
+                .rseed()
+                .ok_or_else(|| VotingError::Internal {
+                    message: "PCZT spend missing rseed".to_string(),
+                })?;
+        // Verify rseed consistency between our note and the PCZT
+        if rseed_signed_from_pczt.as_bytes() != &rseed_signed_bytes {
+            return Err(VotingError::Internal {
+                message: "rseed mismatch between note and PCZT".to_string(),
+            });
+        }
+
+        let cmx_new_bytes: [u8; 32] = governance_action.output().cmx().to_bytes();
+        let rseed_output =
+            governance_action
+                .output()
+                .rseed()
+                .ok_or_else(|| VotingError::Internal {
+                    message: "PCZT output missing rseed".to_string(),
+                })?;
+        let rseed_output_bytes: [u8; 32] = *rseed_output.as_bytes();
+
+        // --- Updater role: set zip32_derivation so Keystone can derive the spending key ---
+        // Orchard ZIP-32 derivation path: m / 32' / coin_type' / account'
+        let zip32_deriv = Zip32Derivation::parse(
+            *seed_fingerprint,
+            vec![
+                32 | (1 << 31),            // purpose: hardened(32)
+                coin_type | (1 << 31),     // coin_type
+                account_index | (1 << 31), // account
+            ],
+        )
+        .map_err(|e| VotingError::Internal {
+            message: format!("Zip32Derivation::parse failed: {:?}", e),
+        })?;
+        pczt_bundle
+            .update_with(|mut updater| {
+                updater.update_action_with(action_index, |mut action_updater| {
+                    action_updater.set_spend_zip32_derivation(zip32_deriv);
+                    action_updater.set_output_user_address(hotkey_user_address.clone());
+                    Ok(())
+                })
+            })
+            .map_err(|e| VotingError::Internal {
+                message: format!("PCZT updater failed: {:?}", e),
+            })?;
+
+        let ironwood_bundle = Some(pczt_bundle);
+        let orchard_bundle = None;
+
+        let parts = PcztParts {
+            params: consensus_network,
+            version: TxVersion::suggested_for_branch(branch_id),
+            consensus_branch_id: branch_id,
+            // Keystone's determine_lock_time returns global.lock_time() for shielded-only PCZTs
+            // (no transparent inputs). Without a lock_time, it returns None → error.
+            lock_time: 0,
+            expiry_height: BlockHeight::from_u32(0), // no expiry (never broadcast)
+            transparent: None,
+            sapling: None,
+            orchard: orchard_bundle,
+            ironwood: ironwood_bundle,
+        };
+        let pczt = pczt::roles::creator::Creator::build_from_parts(parts).ok_or_else(|| {
+            VotingError::Internal {
+                message: "Creator::build_from_parts returned None (incompatible tx version)"
+                    .to_string(),
+            }
+        })?;
+
+        // Run IO Finalizer so the Signer (Keystone) can compute the sighash.
+        let pczt = pczt::roles::io_finalizer::IoFinalizer::new(pczt)
+            .finalize_io()
+            .map_err(|e| VotingError::Internal {
+                message: format!("IoFinalizer::finalize_io failed: {:?}", e),
+            })?;
+
+        let pczt_bytes = pczt.serialize().map_err(|e| VotingError::Internal {
+            message: format!("PCZT serialization failed: {:?}", e),
+        })?;
+        let parsed_pczt = pczt::Pczt::parse(&pczt_bytes).map_err(|e| VotingError::Internal {
+            message: format!("Failed to parse returned PCZT: {:?}", e),
+        })?;
+        let indexed_actions = pczt_actions_for_protocol(&parsed_pczt, bundle_version)?;
+        let indexed_action =
+            indexed_actions
+                .get(action_index)
+                .ok_or_else(|| VotingError::Internal {
+                    message: format!(
+                        "GovernancePczt action_index {} is out of bounds for {} {} actions",
+                        action_index,
+                        indexed_actions.len(),
+                        shielded_protocol.name()
+                    ),
+                })?;
+        if *indexed_action.spend().nullifier() != nf_signed_bytes
+            || indexed_action.output().cmx().as_ref() != Some(&cmx_new_bytes)
+        {
+            return Err(VotingError::Internal {
+                message: "GovernancePczt action_index does not point to paired governance action"
+                    .to_string(),
+            });
+        }
+
+        // --- Extract ZIP-244 sighash ---
+        // This is the sighash that Keystone signs; the non-Keystone path also uses it.
+        let pczt_sighash = extract_pczt_sighash(&pczt_bytes)?;
+        let tx1_effects = crate::tx1::encode_tx1_effects(indexed_actions)?;
+
+        // --- Encode canonical action bytes for cosmos chain ---
+        let action_bytes = encode_delegation_action_bytes(
+            &nf_signed_bytes,
+            &rk_bytes,
+            &cmx_new_bytes,
+            &van,
+            &gov_nullifiers,
+            &vri_32,
+        )?;
+
+        return Ok(GovernancePczt {
+            pczt_bytes,
+            rk: rk_bytes.to_vec(),
+            alpha: alpha_bytes.to_vec(),
+            nf_signed: nf_signed_bytes.to_vec(),
+            cmx_new: cmx_new_bytes.to_vec(),
+            gov_nullifiers,
+            van,
+            van_comm_rand: van_comm_rand.to_vec(),
+            dummy_nullifiers,
+            rho_signed,
+            padded_cmx,
+            rseed_signed: rseed_signed_bytes.to_vec(),
+            rseed_output: rseed_output_bytes.to_vec(),
+            action_bytes,
+            action_index,
+            padded_note_secrets: normalized_padded_note_secrets,
+            pczt_sighash: pczt_sighash.to_vec(),
+            tx1_effects,
+        });
+    }
+
+    Err(VotingError::Internal {
+        message: format!(
+            "failed to build paired governance PCZT layout after {} attempts",
+            MAX_PCZT_LAYOUT_ATTEMPTS
+        ),
+    })
+}
+
+/// Extract the ZIP-244 shielded sighash from finalized PCZT bytes.
+///
+/// Creates a Signer from the PCZT to compute the v5 signature hash, then
+/// returns it. This is the sighash that Keystone signs internally.
+pub fn extract_pczt_sighash(pczt_bytes: &[u8]) -> Result<[u8; 32], VotingError> {
+    let pczt = pczt::Pczt::parse(pczt_bytes).map_err(|e| VotingError::Internal {
+        message: format!("Failed to parse PCZT: {:?}", e),
+    })?;
+    let signer = pczt::roles::signer::Signer::new(pczt).map_err(|e| VotingError::Internal {
+        message: format!("Failed to create Signer from PCZT: {:?}", e),
+    })?;
+    Ok(signer.shielded_sighash())
+}
+
+/// Extract the spend_auth_sig from a signed PCZT.
+///
+/// Keystone redacts sensitive fields (alpha, rseed, zip32_derivation, etc.) after signing,
+/// so a byte-diff between unsigned and signed PCZTs doesn't work. This function parses
+/// the signed PCZT structurally and reads the `spend_auth_sig` field directly.
+///
+/// Tries `action_index` first, then falls back to scanning all actions. The
+/// current governance PCZT has exactly one signable action.
+///
+/// Returns the 64-byte SpendAuthSig, or an error if no signed action is found.
+pub fn extract_spend_auth_sig(
+    signed_pczt_bytes: &[u8],
+    action_index: usize,
+) -> Result<[u8; 64], VotingError> {
+    let pczt = pczt::Pczt::parse(signed_pczt_bytes).map_err(|e| VotingError::Internal {
+        message: format!("Failed to parse signed PCZT: {:?}", e),
+    })?;
+
+    let (actions, protocol_name) = signed_pczt_actions(&pczt)?;
+
+    // Try the expected action index first.
+    if action_index < actions.len() {
+        if let Some(sig) = actions[action_index].spend().spend_auth_sig() {
+            return Ok(*sig);
+        }
+    }
+
+    // Fallback: scan all actions for a signature. This remains unambiguous
+    // because the governance PCZT has exactly one signable action.
+    for action in actions {
+        if let Some(sig) = action.spend().spend_auth_sig() {
+            return Ok(*sig);
+        }
+    }
+
+    Err(VotingError::Internal {
+        message: format!(
+            "No spend_auth_sig found in any of the {} {} actions in the signed PCZT",
+            actions.len(),
+            protocol_name
+        ),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use orchard::{
+        keys::SpendingKey,
+        note::{ExtractedNoteCommitment, Nullifier, TransmittedNoteCiphertext},
+        note_encryption::IronwoodDomain,
+        primitives::redpallas::{SpendAuth, VerificationKey},
+        value::ValueCommitment,
+        Action,
+    };
+    use zcash_note_encryption::try_output_recovery_with_ovk;
+
+    fn mock_note() -> NoteInfo {
+        NoteInfo {
+            commitment: vec![0x01; 32],
+            nullifier: vec![0x02; 32],
+            value: 15_000_000,
+            position: 42,
+            diversifier: vec![0; 11],
+            rho: vec![0; 32],
+            rseed: vec![0; 32],
+            scope: 0,
+            ufvk_str: String::new(),
+        }
+    }
+
+    fn mock_params() -> VotingRoundParams {
+        const MAINNET_NU5_SNAPSHOT_HEIGHT: u64 = 1_687_104;
+        VotingRoundParams {
+            // Hex string representing 32 bytes
+            vote_round_id: "0101010101010101010101010101010101010101010101010101010101010101"
+                .to_string(),
+            snapshot_height: MAINNET_NU5_SNAPSHOT_HEIGHT,
+            ea_pk: vec![0xEA; 32],
+            nc_root: vec![0x01; 32],
+            nullifier_imt_root: vec![0x02; 32],
+        }
+    }
+
+    fn mock_nu6_3_params() -> VotingRoundParams {
+        let mut params = mock_params();
+        params.snapshot_height = u64::from(crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT);
+        params
+    }
+
+    fn build_mock_nu6_3_pczt(notes: &[NoteInfo]) -> GovernancePczt {
+        build_governance_pczt(
+            notes,
+            &mock_nu6_3_params(),
+            VotingNetwork::Regtest,
+            &mock_fvk_bytes(),
+            &mock_hotkey_address(),
+            u32::from(BranchId::Nu6_3),
+            VotingNetwork::Regtest.network_type().coin_type(),
+            &MOCK_SEED_FP,
+            MOCK_ACCOUNT,
+            "Test Round",
+            &sample_padded_note_secrets(notes.len()).unwrap(),
+        )
+        .unwrap()
+    }
+
+    /// Derive a valid 96-byte FVK from a deterministic SpendingKey.
+    fn mock_fvk_bytes() -> Vec<u8> {
+        let sk = SpendingKey::from_bytes([0x42; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        fvk.to_bytes().to_vec()
+    }
+
+    /// Derive a valid 43-byte raw orchard address from a mock FVK.
+    fn mock_hotkey_address() -> Vec<u8> {
+        // Use a different key so the hotkey address differs from the sender
+        let sk = SpendingKey::from_bytes([0x43; 32]).expect("valid spending key");
+        let fvk = FullViewingKey::from(&sk);
+        let addr = fvk.address_at(0u32, Scope::External);
+        addr.to_raw_address_bytes().to_vec()
+    }
+
+    #[test]
+    fn test_action_bytes_canonical_encoding_order() {
+        let nf_signed = [0x01; 32];
+        let rk = [0x02; 32];
+        let cmx_new = [0x03; 32];
+        let van_comm = vec![0x04; 32];
+        let gov_nullifiers: Vec<Vec<u8>> = (0..BUNDLE_NOTE_SLOTS)
+            .map(|i| vec![0x05 + i as u8; 32])
+            .collect();
+        let vote_round_id = [0x09; 32];
+
+        let encoded = encode_delegation_action_bytes(
+            &nf_signed,
+            &rk,
+            &cmx_new,
+            &van_comm,
+            &gov_nullifiers,
+            &vote_round_id,
+        )
+        .unwrap();
+
+        assert_eq!(
+            encoded.len(),
+            32 * (BUNDLE_NOTE_SLOTS + DELEGATION_ACTION_FIXED_FIELD_COUNT)
+        );
+        assert_eq!(&encoded[0..32], &nf_signed);
+        assert_eq!(&encoded[32..64], &rk);
+        assert_eq!(&encoded[64..96], &cmx_new);
+        assert_eq!(&encoded[96..128], &van_comm);
+        for (i, gov_nullifier) in gov_nullifiers.iter().enumerate() {
+            let start = 128 + (i * 32);
+            assert_eq!(&encoded[start..start + 32], gov_nullifier);
+        }
+        let vote_round_id_start = 128 + (BUNDLE_NOTE_SLOTS * 32);
+        assert_eq!(
+            &encoded[vote_round_id_start..vote_round_id_start + 32],
+            &vote_round_id
+        );
+    }
+
+    #[test]
+    fn test_action_bytes_rejects_non_canonical_gov_nullifier_count() {
+        let encoded = encode_delegation_action_bytes(
+            &[0x01; 32],
+            &[0x02; 32],
+            &[0x03; 32],
+            &[0x04; 32],
+            &vec![vec![0x05; 32]; BUNDLE_NOTE_SLOTS - 1],
+            &[0x06; 32],
+        );
+        assert!(encoded.is_err());
+    }
+
+    // --- build_governance_pczt tests ---
+
+    /// NU5 mainnet consensus branch ID
+    const NU5_BRANCH_ID: u32 = 0xC2D6D0B4;
+    /// Mock seed fingerprint (32 bytes)
+    const MOCK_SEED_FP: [u8; 32] = [0xAA; 32];
+    /// Mock account index
+    const MOCK_ACCOUNT: u32 = 0;
+
+    #[test]
+    fn test_build_governance_pczt_one_note() {
+        let result = build_mock_nu6_3_pczt(&[mock_note()]);
+
+        // PCZT bytes are non-empty and parseable
+        assert!(!result.pczt_bytes.is_empty());
+        let parsed = pczt::Pczt::parse(&result.pczt_bytes);
+        assert!(
+            parsed.is_ok(),
+            "PCZT bytes should parse: {:?}",
+            parsed.err()
+        );
+
+        // rk is 32 bytes, non-zero
+        assert_eq!(result.rk.len(), 32);
+        assert_ne!(result.rk, vec![0u8; 32]);
+
+        // alpha is 32 bytes, non-zero
+        assert_eq!(result.alpha.len(), 32);
+        assert_ne!(result.alpha, vec![0u8; 32]);
+
+        // nf_signed is 32 bytes, non-zero
+        assert_eq!(result.nf_signed.len(), 32);
+        assert_ne!(result.nf_signed, vec![0u8; 32]);
+
+        // cmx_new is 32 bytes, non-zero
+        assert_eq!(result.cmx_new.len(), 32);
+        assert_ne!(result.cmx_new, vec![0u8; 32]);
+
+        // Gov nullifiers are padded to the circuit note-slot count.
+        assert_eq!(result.gov_nullifiers.len(), BUNDLE_NOTE_SLOTS);
+        for gn in &result.gov_nullifiers {
+            assert_eq!(gn.len(), 32);
+        }
+
+        // VAN is 32 bytes
+        assert_eq!(result.van.len(), 32);
+
+        // van_comm_rand is 32 bytes
+        assert_eq!(result.van_comm_rand.len(), 32);
+
+        // rho_signed is 32 bytes
+        assert_eq!(result.rho_signed.len(), 32);
+        assert_ne!(result.rho_signed, vec![0u8; 32]);
+
+        // One real note plus padded notes fills all circuit note slots.
+        assert_eq!(result.padded_cmx.len(), BUNDLE_NOTE_SLOTS - 1);
+
+        // rseed values are 32 bytes each
+        assert_eq!(result.rseed_signed.len(), 32);
+        assert_ne!(result.rseed_signed, vec![0u8; 32]);
+        assert_eq!(result.rseed_output.len(), 32);
+        assert_ne!(result.rseed_output, vec![0u8; 32]);
+
+        assert_eq!(
+            result.action_bytes.len(),
+            32 * (BUNDLE_NOTE_SLOTS + DELEGATION_ACTION_FIXED_FIELD_COUNT)
+        );
+
+        assert_eq!(result.action_index, 0);
+
+        // The parsed PCZT has one Ironwood action containing the real spend and output.
+        let pczt = parsed.unwrap();
+        assert!(pczt.orchard().actions().is_empty());
+        assert_eq!(pczt.ironwood().actions().len(), 1);
+        assert!(pczt.ironwood().anchor().is_none());
+        let governance_action = pczt
+            .ironwood()
+            .sole_action()
+            .expect("the Ironwood bundle has one action");
+        assert!(governance_action.spend().witness().is_none());
+        let output = governance_action.output();
+        let output_value = output
+            .value()
+            .as_ref()
+            .copied()
+            .expect("PCZT should expose the output value");
+        assert_eq!(output_value, NoteValue::ZERO.inner());
+
+        let hotkey_raw: [u8; 43] = mock_hotkey_address().try_into().unwrap();
+        let hotkey_addr = Address::from_raw_address_bytes(&hotkey_raw)
+            .into_option()
+            .expect("mock hotkey address is valid");
+        let expected_user_address = UnifiedAddress::from_receivers(Some(hotkey_addr), None, None)
+            .expect("an Orchard receiver forms a valid Unified Address")
+            .encode(&consensus_network_for_voting_network(
+                VotingNetwork::Regtest,
+            ));
+        assert_eq!(
+            output.user_address().as_deref(),
+            Some(expected_user_address.as_str())
+        );
+    }
+
+    #[test]
+    fn test_build_governance_pczt_action_index_points_to_paired_governance_action() {
+        for _ in 0..64 {
+            let result = build_mock_nu6_3_pczt(&[mock_note()]);
+
+            let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
+            let indexed_action = pczt
+                .ironwood()
+                .actions()
+                .get(result.action_index)
+                .expect("action_index should point to an Ironwood action");
+
+            assert_eq!(
+                indexed_action.spend().nullifier().to_vec(),
+                result.nf_signed
+            );
+            assert_eq!(
+                indexed_action.output().cmx().map(|cmx| cmx.to_vec()),
+                Some(result.cmx_new)
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_governance_pczt_rejects_nu6_3_branch_before_activation() {
+        let mut params = mock_params();
+        params.snapshot_height = u64::from(crate::types::REGTEST_NU6_3_ACTIVATION_HEIGHT) - 1;
+
+        let err = build_governance_pczt(
+            &[mock_note()],
+            &params,
+            VotingNetwork::Regtest,
+            &mock_fvk_bytes(),
+            &mock_hotkey_address(),
+            u32::from(BranchId::Nu6_3),
+            VotingNetwork::Regtest.network_type().coin_type(),
+            &MOCK_SEED_FP,
+            MOCK_ACCOUNT,
+            "Test Round",
+            &sample_padded_note_secrets(1).unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(
+            err.to_string().contains("does not match snapshot height"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn test_build_governance_pczt_uses_ironwood_for_nu6_3() {
+        let result = build_mock_nu6_3_pczt(&[mock_note()]);
+
+        let pczt = pczt::Pczt::parse(&result.pczt_bytes).unwrap();
+        assert_eq!(*pczt.global().tx_version(), 6);
+        assert_eq!(
+            *pczt.global().consensus_branch_id(),
+            u32::from(BranchId::Nu6_3)
+        );
+        assert_eq!(
+            pczt::common::determine_lock_time(pczt.global(), pczt.transparent().inputs()),
+            Some(0)
+        );
+        assert_eq!(*pczt.global().expiry_height(), 0);
+        assert!(pczt.transparent().inputs().is_empty());
+        assert!(pczt.transparent().outputs().is_empty());
+        assert!(pczt.sapling().spends().is_empty());
+        assert!(pczt.sapling().outputs().is_empty());
+        assert!(pczt.orchard().actions().is_empty());
+        assert_eq!(pczt.ironwood().actions().len(), 1);
+        assert_eq!(*pczt.ironwood().flags(), 0x07);
+        assert_eq!(*pczt.ironwood().value_sum(), (1, false));
+        crate::tx1::validate_tx1_effects(&result.tx1_effects).unwrap();
+
+        for (index, action) in pczt.ironwood().actions().iter().enumerate() {
+            let action_start = 1 + (index * crate::tx1::TX1_ACTION_EFFECTS_LEN);
+            let encoded = &result.tx1_effects
+                [action_start..action_start + crate::tx1::TX1_ACTION_EFFECTS_LEN];
+            let enc_ciphertext = action
+                .output()
+                .enc_ciphertext()
+                .clone()
+                .into_encrypted()
+                .unwrap();
+
+            assert_eq!(&encoded[0..32], action.cv_net().as_ref().unwrap());
+            assert_eq!(&encoded[32..64], action.spend().nullifier());
+            assert_eq!(&encoded[64..96], action.spend().rk());
+            assert_eq!(&encoded[96..128], action.output().cmx().as_ref().unwrap());
+            assert_eq!(&encoded[128..160], action.output().ephemeral_key());
+            assert_eq!(&encoded[160..740], enc_ciphertext.as_slice());
+            assert_eq!(&encoded[740..820], action.output().out_ciphertext());
+        }
+
+        let indexed_action = pczt
+            .ironwood()
+            .actions()
+            .get(result.action_index)
+            .expect("action_index should point to an Ironwood action");
+
+        assert_eq!(
+            indexed_action.spend().nullifier().to_vec(),
+            result.nf_signed
+        );
+        assert_eq!(
+            indexed_action.output().cmx().map(|cmx| cmx.to_vec()),
+            Some(result.cmx_new)
+        );
+    }
+
+    #[test]
+    fn test_governance_outputs_are_not_recoverable_with_account_ovk() {
+        let result = build_mock_nu6_3_pczt(&[mock_note()]);
+        let fvk = FullViewingKey::from_bytes(&mock_fvk_bytes().try_into().unwrap()).unwrap();
+        let ovk = fvk.to_ovk(Scope::External);
+
+        for index in 0..crate::tx1::TX1_ACTION_COUNT {
+            let start = 1 + index * crate::tx1::TX1_ACTION_EFFECTS_LEN;
+            let action = Action::from_parts(
+                Nullifier::from_bytes(
+                    result.tx1_effects[start + 32..start + 64]
+                        .try_into()
+                        .unwrap(),
+                )
+                .unwrap(),
+                VerificationKey::<SpendAuth>::try_from(
+                    <[u8; 32]>::try_from(&result.tx1_effects[start + 64..start + 96]).unwrap(),
+                )
+                .unwrap(),
+                ExtractedNoteCommitment::from_bytes(
+                    result.tx1_effects[start + 96..start + 128]
+                        .try_into()
+                        .unwrap(),
+                )
+                .unwrap(),
+                TransmittedNoteCiphertext {
+                    epk_bytes: result.tx1_effects[start + 128..start + 160]
+                        .try_into()
+                        .unwrap(),
+                    enc_ciphertext: result.tx1_effects[start + 160..start + 740]
+                        .try_into()
+                        .unwrap(),
+                    out_ciphertext: result.tx1_effects[start + 740..start + 820]
+                        .try_into()
+                        .unwrap(),
+                },
+                ValueCommitment::from_bytes(
+                    result.tx1_effects[start..start + 32].try_into().unwrap(),
+                )
+                .unwrap(),
+                (),
+            )
+            .unwrap();
+
+            assert!(
+                try_output_recovery_with_ovk(
+                    &IronwoodDomain::for_action(&action),
+                    &ovk,
+                    &action,
+                    action.cv_net(),
+                    &action.encrypted_note().out_ciphertext,
+                )
+                .is_none(),
+                "action {index} was recoverable with the governance account OVK"
+            );
+        }
+    }
+
+    #[test]
+    fn test_build_governance_pczt_rejects_coin_type_network_mismatch() {
+        let err = build_governance_pczt(
+            &[mock_note()],
+            &mock_params(),
+            VotingNetwork::Mainnet,
+            &mock_fvk_bytes(),
+            &mock_hotkey_address(),
+            NU5_BRANCH_ID,
+            VotingNetwork::Testnet.network_type().coin_type(),
+            &MOCK_SEED_FP,
+            MOCK_ACCOUNT,
+            "Test Round",
+            &sample_padded_note_secrets(1).unwrap(),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("coin_type"), "{err}");
+    }
+
+    #[test]
+    fn test_build_governance_pczt_padded_slots_match_synthetic_circuit_slots() {
+        let note = mock_note();
+        let params = mock_nu6_3_params();
+        let fvk_bytes = mock_fvk_bytes();
+        let result = build_mock_nu6_3_pczt(&[note.clone()]);
+
+        let fvk_96: [u8; 96] = fvk_bytes.clone().try_into().unwrap();
+        let fvk = FullViewingKey::from_bytes(&fvk_96).unwrap();
+        let nk_bytes = &fvk_bytes[32..64];
+        let vote_round_id_bytes = hex::decode(&params.vote_round_id).unwrap();
+        let vri_32: [u8; 32] = vote_round_id_bytes.try_into().unwrap();
+        let dom = crate::governance::compute_nullifier_domain(&vri_32).unwrap();
+
+        assert_eq!(result.padded_cmx.len(), BUNDLE_NOTE_SLOTS - 1);
+        assert_eq!(result.dummy_nullifiers.len(), BUNDLE_NOTE_SLOTS - 1);
+        assert_eq!(result.padded_note_secrets.len(), BUNDLE_NOTE_SLOTS - 1);
+
+        for (i_pad, (rho_bytes, rseed_bytes)) in result.padded_note_secrets.iter().enumerate() {
+            let i_slot = 1 + i_pad;
+            let rho_arr: [u8; 32] = rho_bytes.as_slice().try_into().unwrap();
+            let rseed_arr: [u8; 32] = rseed_bytes.as_slice().try_into().unwrap();
+            let rho = Rho::from_bytes(&rho_arr).unwrap();
+            let rseed = RandomSeed::from_bytes(rseed_arr, &rho).unwrap();
+            let parts = synthetic_padding_note_parts(&fvk, i_slot, rho, rseed).unwrap();
+            let gov_null =
+                crate::governance::derive_gov_nullifier(nk_bytes, &dom, &parts.nullifier).unwrap();
+
+            assert_eq!(result.padded_cmx[i_pad], parts.cmx.to_vec());
+            assert_eq!(result.dummy_nullifiers[i_pad], parts.nullifier.to_vec());
+            assert_eq!(result.gov_nullifiers[i_slot], gov_null);
+        }
+
+        let mut all_cmx = vec![note.commitment];
+        all_cmx.extend(result.padded_cmx.iter().cloned());
+        let expected_rho_signed = crate::governance::compute_rho_binding(
+            &all_cmx[0],
+            &all_cmx[1],
+            &all_cmx[2],
+            &all_cmx[3],
+            &all_cmx[4],
+            &result.van,
+            &vri_32,
+        )
+        .unwrap();
+        assert_eq!(result.rho_signed, expected_rho_signed);
+    }
+
+    #[test]
+    fn test_build_governance_pczt_full_note_slots() {
+        let notes: Vec<NoteInfo> = (0..BUNDLE_NOTE_SLOTS)
+            .map(|i| NoteInfo {
+                commitment: vec![i as u8 + 1; 32],
+                nullifier: vec![i as u8 + 0x10; 32],
+                value: 13_000_000,
+                position: i as u64,
+                diversifier: vec![0; 11],
+                rho: vec![0; 32],
+                rseed: vec![0; 32],
+                scope: 0,
+                ufvk_str: String::new(),
+            })
+            .collect();
+
+        let result = build_mock_nu6_3_pczt(&notes);
+
+        assert_eq!(result.gov_nullifiers.len(), BUNDLE_NOTE_SLOTS);
+        assert!(result.padded_cmx.is_empty());
+        assert!(result.dummy_nullifiers.is_empty());
+
+        // Gov nullifiers should all differ
+        for i in 0..BUNDLE_NOTE_SLOTS {
+            for j in (i + 1)..BUNDLE_NOTE_SLOTS {
+                assert_ne!(result.gov_nullifiers[i], result.gov_nullifiers[j]);
+            }
+        }
+    }
+
+    #[test]
+    fn test_build_governance_pczt_different_rk_each_call() {
+        let result1 = build_mock_nu6_3_pczt(&[mock_note()]);
+        let result2 = build_mock_nu6_3_pczt(&[mock_note()]);
+
+        // rk and alpha should differ due to randomization
+        assert_ne!(result1.rk, result2.rk);
+        assert_ne!(result1.alpha, result2.alpha);
+
+        // nf_signed should be deterministic (same rho_signed from same notes/params)
+        // but rho_signed differs because VAN includes random van_comm_rand
+        // So nf_signed will differ between calls
+    }
+}

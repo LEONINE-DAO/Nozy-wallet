@@ -34,4 +34,8 @@ zeroize = { version = "1", features = ["zeroize_derive"] }
 rand = "0.8"
 
 # Required (not optional): optional+cfg was building a binary that still reported sdk disabled.
-zcash_voting = "3.0.0-rc.3"
+# Patched locally so the NU7 cfg flag in the repo root `.cargo/config.toml` compiles.
+zcash_voting = { version = "3.0.0-rc.3", package = "zcash_voting" }
+
+[patch.crates-io]
+zcash_voting = { path = "vendor/zcash_voting" }

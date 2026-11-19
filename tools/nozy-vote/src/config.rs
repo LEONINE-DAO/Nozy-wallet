@@ -150,7 +150,10 @@ pub fn fetch_and_resolve(source: &str) -> Result<ResolvedConfig> {
     let dynamic: DynamicConfig =
         serde_json::from_slice(&dynamic_bytes).context("decode dynamic voting config")?;
     if dynamic.config_version != 1 {
-        bail!("unsupported dynamic config_version {}", dynamic.config_version);
+        bail!(
+            "unsupported dynamic config_version {}",
+            dynamic.config_version
+        );
     }
     if dynamic.vote_servers.is_empty() {
         bail!("dynamic config has no vote_servers");

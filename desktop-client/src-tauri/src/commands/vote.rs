@@ -107,9 +107,24 @@ fn resolve_nozy_vote_bin() -> Result<PathBuf, TauriError> {
 
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let sibling = dir.join(exe_name);
-            if sibling.is_file() {
-                return Ok(sibling);
+            let mut dirs = vec![dir.to_path_buf(), dir.join("resources")];
+            if let Some(parent) = dir.parent() {
+                dirs.push(parent.join("resources"));
+            }
+            for folder in dirs {
+                let sibling = folder.join(exe_name);
+                if sibling.is_file() {
+                    return Ok(sibling);
+                }
+                if let Ok(entries) = std::fs::read_dir(&folder) {
+                    for entry in entries.flatten() {
+                        let name = entry.file_name();
+                        let name = name.to_string_lossy();
+                        if name.starts_with("nozy-vote") && entry.path().is_file() {
+                            return Ok(entry.path());
+                        }
+                    }
+                }
             }
         }
     }

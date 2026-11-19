@@ -158,10 +158,7 @@ pub fn fetch_active_round(vote_server_urls: &[String]) -> Result<ActiveRound> {
 pub fn vote_round_id_hex(active: &ActiveRound) -> Result<String> {
     // Chain may send base64 or already-hex; accept both.
     if active.vote_round_id.len() == 64
-        && active
-            .vote_round_id
-            .chars()
-            .all(|c| c.is_ascii_hexdigit())
+        && active.vote_round_id.chars().all(|c| c.is_ascii_hexdigit())
     {
         return Ok(active.vote_round_id.to_ascii_lowercase());
     }
@@ -196,7 +193,8 @@ pub fn init_or_load_hotkey(data_dir: &Path, network: NetworkKind) -> Result<Voti
     }
     let hotkey = generate_random_voting_hotkey(network.to_sdk())
         .map_err(|e| anyhow!("generate hotkey: {e}"))?;
-    fs::write(&path, hotkey.stored_secret()).with_context(|| format!("write {}", path.display()))?;
+    fs::write(&path, hotkey.stored_secret())
+        .with_context(|| format!("write {}", path.display()))?;
     // Restrictive perms where possible (best-effort on Windows).
     #[cfg(unix)]
     {
@@ -422,14 +420,15 @@ pub fn load_sig_file(path: &Path) -> Result<SigFile> {
     let bytes = fs::read(path).with_context(|| format!("read {}", path.display()))?;
     let file: SigFile = serde_json::from_slice(&bytes)?;
     if file.format != SIG_FILE_FORMAT {
-        bail!("unsupported sig format {:?} (want {SIG_FILE_FORMAT})", file.format);
+        bail!(
+            "unsupported sig format {:?} (want {SIG_FILE_FORMAT})",
+            file.format
+        );
     }
     Ok(file)
 }
 
-pub fn connect_pir_client(
-    resolved: &ResolvedVotingConfig,
-) -> Result<PirClientBlocking> {
+pub fn connect_pir_client(resolved: &ResolvedVotingConfig) -> Result<PirClientBlocking> {
     use std::sync::Arc;
     use zcash_voting::prelude::connect_pir_blocking;
     use zcash_voting::HyperTransport;
@@ -456,8 +455,8 @@ pub fn pir_and_prove(
     pir: &PirClientBlocking,
     network: NetworkKind,
 ) -> Result<()> {
-    use zcash_voting::prelude::NoopProgressReporter;
     use zcash_voting::precompute::delegation_pir;
+    use zcash_voting::prelude::NoopProgressReporter;
 
     db.ensure_padded_secrets(round_id, 0, notes)
         .map_err(|e| anyhow!("ensure_padded_secrets: {e}"))?;
@@ -490,9 +489,7 @@ pub fn submit_delegation(
     vote_server_urls: &[String],
     sig: &SigFile,
 ) -> Result<String> {
-    use zcash_voting::prelude::{
-        delegation_submission, record_submission, DelegationSigner,
-    };
+    use zcash_voting::prelude::{delegation_submission, record_submission, DelegationSigner};
 
     let sighash: [u8; 32] = hex::decode(sig.sighash_hex.trim())?
         .try_into()
@@ -601,7 +598,9 @@ pub fn wait_tx_confirm(vote_server_urls: &[String], tx_hash: &str) -> Result<ser
     bail!("timed out waiting for tx {tx_hash} confirmation")
 }
 
-pub fn tx_events_from_response(v: &serde_json::Value) -> Result<Vec<zcash_voting::prelude::TxEvent>> {
+pub fn tx_events_from_response(
+    v: &serde_json::Value,
+) -> Result<Vec<zcash_voting::prelude::TxEvent>> {
     let events = v
         .get("events")
         .cloned()
@@ -646,8 +645,7 @@ pub fn derive_van_witness(
     use zcash_voting::prelude::{sync_vote_tree, van_witness};
     let anchor_height = sync_vote_tree(db, round_id, vote_server_url)
         .map_err(|e| anyhow!("sync_vote_tree: {e}"))?;
-    van_witness(db, round_id, bundle_index, anchor_height)
-        .map_err(|e| anyhow!("van_witness: {e}"))
+    van_witness(db, round_id, bundle_index, anchor_height).map_err(|e| anyhow!("van_witness: {e}"))
 }
 
 /// Parse `proposal_id=choice` pairs using ACTIVE round option counts.
@@ -672,8 +670,7 @@ pub fn drafts_from_choices(
             .iter()
             .find(|p| p.id == proposal_id)
             .ok_or_else(|| anyhow!("proposal_id {proposal_id} not in ACTIVE round"))?;
-        let num_options = u32::try_from(proposal.options.len())
-            .context("too many options")?;
+        let num_options = u32::try_from(proposal.options.len()).context("too many options")?;
         if choice >= num_options {
             bail!(
                 "choice {choice} out of range for Q{proposal_id} (0..{})",
@@ -708,10 +705,7 @@ pub fn submit_cast_vote(vote_server_urls: &[String], body: &str) -> Result<Strin
         .build()?;
     let mut last_err = None;
     for base in vote_server_urls {
-        let url = format!(
-            "{}/shielded-vote/v1/cast-vote",
-            base.trim_end_matches('/')
-        );
+        let url = format!("{}/shielded-vote/v1/cast-vote", base.trim_end_matches('/'));
         match client
             .post(&url)
             .header("Content-Type", "application/json")
@@ -817,9 +811,7 @@ pub fn cast_ballots(
     drafts: &[zcash_voting::prelude::DraftVote],
     no_wait: bool,
 ) -> Result<()> {
-    use zcash_voting::prelude::{
-        CommittedVote, NoopProgressReporter, VoteSigner,
-    };
+    use zcash_voting::prelude::{CommittedVote, NoopProgressReporter, VoteSigner};
 
     let rid = vote_round_id_hex(active)?;
     let server0 = vote_server_urls

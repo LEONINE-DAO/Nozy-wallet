@@ -1,0 +1,1044 @@
+use std::collections::HashMap;
+
+use ff::PrimeField;
+use halo2_proofs::{
+    pasta::EqAffine,
+    plonk,
+    poly::commitment::Params,
+    transcript::{Blake2bWrite, Challenge255},
+};
+use incrementalmerkletree::Hashable;
+use orchard::{
+    keys::{Diversifier, FullViewingKey, Scope, SpendValidatingKey},
+    note::{ExtractedNoteCommitment, NoteVersion, RandomSeed, Rho},
+    tree::{MerkleHashOrchard, MerklePath},
+    value::NoteValue,
+    NOTE_COMMITMENT_TREE_DEPTH,
+};
+use pasta_curves::{pallas, vesta};
+use rand::rngs::OsRng;
+use voting_circuits::delegation::{
+    build_delegation_bundle, delegation_cached_keys, ImtError, ImtProofData, ImtProvider,
+    PrecomputedRandomness, RealNoteInput,
+};
+use zcash_keys::keys::UnifiedFullViewingKey;
+
+use crate::governance::BUNDLE_NOTE_SLOTS;
+use crate::types::{
+    ct_option_to_result, validate_32_bytes, DelegationProgressReporter, DelegationProofResult,
+    Network, NoteInfo, VotingError, WitnessData,
+};
+
+// ================================================================
+// PIR-backed IMT Provider
+// ================================================================
+
+/// Convert an IMT proof from the PIR data crate into the circuit-crate `ImtProofData`.
+/// Both use the K=2 punctured-range format with `nf_bounds = [nf_lo, nf_mid, nf_hi]`.
+pub fn convert_pir_proof(pir: pir_client::ImtProofData) -> ImtProofData {
+    ImtProofData {
+        root: pir.root,
+        nf_bounds: pir.nf_bounds,
+        leaf_pos: pir.leaf_pos,
+        path: pir.path,
+    }
+}
+
+fn base_hex(value: pallas::Base) -> String {
+    hex::encode(value.to_repr())
+}
+
+fn validate_pir_proof_raw(
+    proof: &pir_client::ImtProofData,
+    nullifier: pallas::Base,
+    expected_root: pallas::Base,
+) -> Result<(), String> {
+    if !proof.verify(nullifier) {
+        return Err(
+            "PIR proof verification failed: Merkle path/root does not authenticate queried nullifier"
+                .to_string(),
+        );
+    }
+    if proof.root != expected_root {
+        return Err(format!(
+            "PIR proof root mismatch: expected {}, got {}",
+            base_hex(expected_root),
+            base_hex(proof.root)
+        ));
+    }
+    Ok(())
+}
+
+pub fn validate_and_convert_pir_proof(
+    proof: pir_client::ImtProofData,
+    nullifier: pallas::Base,
+    expected_root: pallas::Base,
+) -> Result<ImtProofData, VotingError> {
+    validate_pir_proof_raw(&proof, nullifier, expected_root)
+        .map_err(|message| VotingError::Internal { message })?;
+    Ok(convert_pir_proof(proof))
+}
+
+/// IMT provider that wraps pre-fetched proofs for real and padded notes.
+struct PirImtProvider {
+    root: pallas::Base,
+    cached: HashMap<[u8; 32], ImtProofData>,
+}
+
+impl ImtProvider for PirImtProvider {
+    fn root(&self) -> pallas::Base {
+        self.root
+    }
+
+    fn non_membership_proof(&self, nf: pallas::Base) -> Result<ImtProofData, ImtError> {
+        let key: [u8; 32] = nf.to_repr();
+        if let Some(proof) = self.cached.get(&key) {
+            return Ok(proof.clone());
+        }
+        Err(ImtError(format!(
+            "missing precomputed IMT proof for nullifier {}",
+            base_hex(nf)
+        )))
+    }
+}
+
+// ================================================================
+// Helpers
+// ================================================================
+
+/// Parse a 32-byte LE slice as a `pallas::Base` field element.
+fn bytes_to_base(bytes: &[u8], name: &str) -> Result<pallas::Base, VotingError> {
+    validate_32_bytes(bytes, name)?;
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(bytes);
+    let opt: Option<pallas::Base> = pallas::Base::from_repr(arr).into();
+    opt.ok_or_else(|| VotingError::InvalidInput {
+        message: format!("{name} is not a valid field element"),
+    })
+}
+
+/// Parse a 32-byte LE slice as a `pallas::Scalar`.
+fn bytes_to_scalar(bytes: &[u8], name: &str) -> Result<pallas::Scalar, VotingError> {
+    validate_32_bytes(bytes, name)?;
+    let mut arr = [0u8; 32];
+    arr.copy_from_slice(bytes);
+    let opt: Option<pallas::Scalar> = pallas::Scalar::from_repr(arr).into();
+    opt.ok_or_else(|| VotingError::InvalidInput {
+        message: format!("{name} is not a valid scalar"),
+    })
+}
+
+fn supported_note_versions() -> &'static [NoteVersion] {
+    &[NoteVersion::V3]
+}
+
+fn note_matches_stored_identity(
+    note: &orchard::Note,
+    fvk: &FullViewingKey,
+    full_note: &NoteInfo,
+) -> bool {
+    let commitment: ExtractedNoteCommitment = note.commitment().into();
+    commitment.to_bytes().as_slice() == full_note.commitment.as_slice()
+        && note.nullifier(fvk).to_bytes().as_slice() == full_note.nullifier.as_slice()
+}
+
+/// Reconstruct an `orchard::Note` from raw wallet DB fields.
+fn reconstruct_note(
+    full_note: &NoteInfo,
+    network: &Network,
+) -> Result<(orchard::Note, FullViewingKey), VotingError> {
+    let ufvk = UnifiedFullViewingKey::decode(network, &full_note.ufvk_str).map_err(|e| {
+        VotingError::Internal {
+            message: format!("failed to decode UFVK: {e}"),
+        }
+    })?;
+
+    let fvk = ufvk
+        .orchard()
+        .ok_or_else(|| VotingError::Internal {
+            message: "UFVK has no Orchard component".into(),
+        })?
+        .clone();
+
+    let scope = match full_note.scope {
+        0 => Scope::External,
+        1 => Scope::Internal,
+        _ => {
+            return Err(VotingError::Internal {
+                message: format!("unexpected scope code: {}", full_note.scope),
+            })
+        }
+    };
+
+    let diversifier_arr: [u8; 11] =
+        full_note
+            .diversifier
+            .as_slice()
+            .try_into()
+            .map_err(|_| VotingError::Internal {
+                message: format!(
+                    "diversifier must be 11 bytes, got {}",
+                    full_note.diversifier.len()
+                ),
+            })?;
+    let diversifier = Diversifier::from_bytes(diversifier_arr);
+    let address = fvk.address(diversifier, scope);
+
+    let rho_arr: [u8; 32] =
+        full_note
+            .rho
+            .as_slice()
+            .try_into()
+            .map_err(|_| VotingError::Internal {
+                message: format!("rho must be 32 bytes, got {}", full_note.rho.len()),
+            })?;
+    let rho: Rho = ct_option_to_result(Rho::from_bytes(&rho_arr), "invalid rho bytes")?;
+
+    let rseed_arr: [u8; 32] =
+        full_note
+            .rseed
+            .as_slice()
+            .try_into()
+            .map_err(|_| VotingError::Internal {
+                message: format!("rseed must be 32 bytes, got {}", full_note.rseed.len()),
+            })?;
+    let rseed: RandomSeed = ct_option_to_result(
+        RandomSeed::from_bytes(rseed_arr, &rho),
+        "invalid rseed bytes",
+    )?;
+
+    let note_value = NoteValue::from_raw(full_note.value);
+    let mut matched_note = None;
+    for version in supported_note_versions() {
+        let Some(candidate) = Option::<orchard::Note>::from(orchard::Note::from_parts(
+            address, note_value, rho, rseed, *version,
+        )) else {
+            continue;
+        };
+
+        if note_matches_stored_identity(&candidate, &fvk, full_note) {
+            if matched_note.is_some() {
+                return Err(VotingError::Internal {
+                    message: "note fields match multiple Orchard note versions".to_string(),
+                });
+            }
+            matched_note = Some(candidate);
+        }
+    }
+    let note = matched_note.ok_or_else(|| VotingError::Internal {
+        message: "reconstructed note does not match stored commitment/nullifier".to_string(),
+    })?;
+
+    Ok((note, fvk.clone()))
+}
+
+/// Parse a `WitnessData` into an orchard `MerklePath`.
+fn parse_merkle_path(witness: &WitnessData) -> Result<MerklePath, VotingError> {
+    if witness.auth_path.len() != NOTE_COMMITMENT_TREE_DEPTH {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "auth_path must have {} siblings, got {}",
+                NOTE_COMMITMENT_TREE_DEPTH,
+                witness.auth_path.len()
+            ),
+        });
+    }
+
+    let mut auth_path = [MerkleHashOrchard::empty_leaf(); NOTE_COMMITMENT_TREE_DEPTH];
+    for (i, sibling_bytes) in witness.auth_path.iter().enumerate() {
+        let arr: [u8; 32] =
+            sibling_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| VotingError::InvalidInput {
+                    message: format!(
+                        "auth_path[{i}] must be 32 bytes, got {}",
+                        sibling_bytes.len()
+                    ),
+                })?;
+        auth_path[i] = ct_option_to_result(
+            MerkleHashOrchard::from_bytes(&arr),
+            &format!("auth_path[{i}] is not a valid hash"),
+        )?;
+    }
+
+    let pos = u32::try_from(witness.position).map_err(|_| VotingError::InvalidInput {
+        message: format!("note position {} exceeds u32 range", witness.position),
+    })?;
+    Ok(MerklePath::from_parts(pos, auth_path))
+}
+
+// ================================================================
+// Main entry point
+// ================================================================
+
+// 64 MiB matches the existing proof/key warm-up threads and gives Halo2
+// synthesis/keygen enough headroom on simulator builds with smaller defaults.
+const DELEGATION_STACK_BYTES: usize = 64 * 1024 * 1024;
+
+type DelegationKeys = (
+    Params<EqAffine>,
+    plonk::ProvingKey<EqAffine>,
+    plonk::VerifyingKey<EqAffine>,
+);
+
+fn delegation_cached_keys_large_stack() -> Result<&'static DelegationKeys, VotingError> {
+    // Defense in depth: warm_proving_caches() should normally populate this,
+    // but cold callers still get large-stack keygen if warm-up was skipped.
+    std::thread::Builder::new()
+        .name("delegation-key-cache".to_string())
+        .stack_size(DELEGATION_STACK_BYTES)
+        .spawn(|| {
+            delegation_cached_keys().map_err(|e| VotingError::ProofFailed {
+                message: format!("delegation key generation failed: {e}"),
+            })
+        })
+        .map_err(|e| VotingError::Internal {
+            message: format!("failed to spawn delegation key cache thread: {e}"),
+        })?
+        .join()
+        .map_err(|_| VotingError::Internal {
+            message: "delegation key cache thread panicked".to_string(),
+        })?
+}
+
+/// Build and prove the delegation ZKP (#1).
+///
+/// Constructs the circuit from wallet notes, Merkle witnesses, and
+/// IMT exclusion proofs (fetched via PIR), then generates a Halo2 proof.
+///
+/// # Arguments
+///
+/// - `full_notes`: wallet notes up to [`BUNDLE_NOTE_SLOTS`] (from
+///   `get_wallet_notes_at_snapshot`).
+/// - `hotkey_raw_address`: 43-byte raw Orchard address of the voting hotkey.
+/// - `alpha_bytes`: 32-byte spend auth randomizer scalar.
+/// - `van_comm_rand_bytes`: 32-byte governance commitment blinding factor.
+/// - `vote_round_id_bytes`: 32-byte voting round identifier.
+/// - `merkle_witnesses`: Merkle inclusion proofs for each note (from `generate_note_witnesses`).
+/// - `imt_proofs`: Pre-fetched IMT exclusion proofs (one per real note, from PIR client).
+/// - `extra_imt_proofs`: Additional pre-fetched IMT proofs keyed by nullifier,
+///   currently used for padded dummy notes.
+/// - `network`: network used for UFVK decoding; matches the SDK / wallet DB.
+/// - `progress`: Progress callback.
+#[allow(clippy::too_many_arguments)]
+pub fn build_and_prove_delegation(
+    full_notes: &[NoteInfo],
+    hotkey_raw_address: &[u8],
+    alpha_bytes: &[u8],
+    van_comm_rand_bytes: &[u8],
+    vote_round_id_bytes: &[u8],
+    merkle_witnesses: &[WitnessData],
+    imt_proofs: &[ImtProofData],
+    extra_imt_proofs: &[([u8; 32], ImtProofData)],
+    network: Network,
+    progress: &dyn DelegationProgressReporter,
+    precomputed_randomness: Option<&PrecomputedRandomness>,
+) -> Result<DelegationProofResult, VotingError> {
+    let n = full_notes.len();
+    if n == 0 || n > BUNDLE_NOTE_SLOTS {
+        return Err(VotingError::InvalidInput {
+            message: format!("expected 1..={BUNDLE_NOTE_SLOTS} notes, got {n}"),
+        });
+    }
+    if merkle_witnesses.len() != n {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "merkle_witnesses count ({}) must match notes count ({n})",
+                merkle_witnesses.len()
+            ),
+        });
+    }
+    if imt_proofs.len() != n {
+        return Err(VotingError::InvalidInput {
+            message: format!(
+                "imt_proofs count ({}) must match notes count ({n})",
+                imt_proofs.len()
+            ),
+        });
+    }
+
+    // Parse scalar/field inputs.
+    let alpha = bytes_to_scalar(alpha_bytes, "alpha")?;
+    let van_comm_rand = bytes_to_base(van_comm_rand_bytes, "van_comm_rand")?;
+    let vote_round_id = bytes_to_base(vote_round_id_bytes, "vote_round_id")?;
+
+    // Parse hotkey address (43-byte raw Orchard address).
+    let addr_arr: [u8; 43] =
+        hotkey_raw_address
+            .try_into()
+            .map_err(|_| VotingError::InvalidInput {
+                message: format!(
+                    "hotkey address must be 43 bytes, got {}",
+                    hotkey_raw_address.len()
+                ),
+            })?;
+    let output_recipient = ct_option_to_result(
+        orchard::Address::from_raw_address_bytes(&addr_arr),
+        "invalid hotkey address bytes",
+    )?;
+
+    // Reconstruct notes and parse Merkle paths + IMT proofs.
+    let mut real_inputs = Vec::with_capacity(n);
+    let mut imt_cache = HashMap::new();
+    for (nf, proof) in extra_imt_proofs {
+        imt_cache.insert(*nf, proof.clone());
+    }
+    let mut shared_fvk: Option<FullViewingKey> = None;
+    let mut nc_root: Option<pallas::Base> = None;
+    let mut nf_imt_root: Option<pallas::Base> = None;
+
+    for i in 0..n {
+        let (note, note_fvk) = reconstruct_note(&full_notes[i], &network)?;
+        let merkle_path = parse_merkle_path(&merkle_witnesses[i])?;
+        let imt_proof = imt_proofs[i].clone();
+
+        // All notes must share the same FVK (same account).
+        match &shared_fvk {
+            None => shared_fvk = Some(note_fvk.clone()),
+            Some(existing) => {
+                if existing.to_bytes() != note_fvk.to_bytes() {
+                    return Err(VotingError::InvalidInput {
+                        message: format!("note[{i}] has a different FVK than note[0]"),
+                    });
+                }
+            }
+        }
+
+        // Verify consistent roots.
+        let witness_root = bytes_to_base(&merkle_witnesses[i].root, &format!("witness[{i}].root"))?;
+        match nc_root {
+            None => nc_root = Some(witness_root),
+            Some(r) if r != witness_root => {
+                return Err(VotingError::InvalidInput {
+                    message: format!("witness[{i}] has a different nc_root than witness[0]"),
+                });
+            }
+            _ => {}
+        }
+        match nf_imt_root {
+            None => nf_imt_root = Some(imt_proof.root),
+            Some(r) if r != imt_proof.root => {
+                return Err(VotingError::InvalidInput {
+                    message: format!("imt_proof[{i}] has a different root than imt_proof[0]"),
+                });
+            }
+            _ => {}
+        }
+
+        // Cache this proof for the ServerImtProvider.
+        let nf = note.nullifier(&note_fvk);
+        imt_cache.insert(nf.to_bytes(), imt_proof.clone());
+
+        let scope = match full_notes[i].scope {
+            0 => Scope::External,
+            1 => Scope::Internal,
+            _ => {
+                return Err(VotingError::Internal {
+                    message: format!("unexpected scope code: {}", full_notes[i].scope),
+                })
+            }
+        };
+        real_inputs.push(RealNoteInput {
+            note,
+            fvk: note_fvk,
+            merkle_path,
+            imt_proof,
+            scope,
+        });
+    }
+
+    let fvk = shared_fvk.expect("guaranteed by n >= 1 check");
+    let nc_root = nc_root.expect("guaranteed by n >= 1 check");
+    let nf_imt_root = nf_imt_root.expect("guaranteed by n >= 1 check");
+
+    // Create IMT provider from pre-fetched proofs for real and padded notes.
+    let imt_provider = PirImtProvider {
+        root: nf_imt_root,
+        cached: imt_cache,
+    };
+
+    // Build the delegation bundle (circuit + instance).
+    let mut rng = OsRng;
+    let bundle = build_delegation_bundle(
+        real_inputs,
+        &fvk,
+        alpha,
+        output_recipient,
+        vote_round_id,
+        nc_root,
+        van_comm_rand,
+        &imt_provider,
+        &mut rng,
+        precomputed_randomness,
+    )
+    .map_err(|e| VotingError::ProofFailed {
+        message: format!("delegation bundle build failed: {e}"),
+    })?;
+
+    progress.on_progress(crate::delegate::DelegationProgress::ProofProgress(0.1));
+
+    // Fill the downstream cache on a large-stack thread when warm-up was missed.
+    let (params, pk, _vk) = delegation_cached_keys_large_stack()?;
+
+    progress.on_progress(crate::delegate::DelegationProgress::ProofProgress(0.5));
+
+    // Create the proof on a dedicated large-stack thread. For larger circuits,
+    // create_proof can also exhaust the default thread stack on simulator builds.
+    let instance_vec = bundle.instance.to_halo2_instance();
+    let circuit = bundle.circuit;
+    let proof_instance = instance_vec.clone();
+    let proof_bytes = std::thread::scope(|scope| -> Result<Vec<u8>, VotingError> {
+        let handle = std::thread::Builder::new()
+            .name("delegation-prove".to_string())
+            .stack_size(DELEGATION_STACK_BYTES)
+            .spawn_scoped(scope, move || -> Result<Vec<u8>, VotingError> {
+                let instance_refs: Vec<&[vesta::Scalar]> = vec![proof_instance.as_slice()];
+                let mut local_rng = OsRng;
+                let mut transcript =
+                    Blake2bWrite::<_, vesta::Affine, Challenge255<_>>::init(vec![]);
+                plonk::create_proof(
+                    params,
+                    pk,
+                    &[circuit],
+                    &[instance_refs.as_slice()],
+                    &mut local_rng,
+                    &mut transcript,
+                )
+                .map_err(|e| VotingError::ProofFailed {
+                    message: format!("create_proof failed: {e}"),
+                })?;
+                Ok(transcript.finalize())
+            })
+            .map_err(|e| VotingError::Internal {
+                message: format!("failed to spawn delegation proving thread: {e}"),
+            })?;
+        handle.join().map_err(|_| VotingError::Internal {
+            message: "delegation proving thread panicked".to_string(),
+        })?
+    })?;
+
+    progress.on_progress(crate::delegate::DelegationProgress::ProofProgress(1.0));
+
+    // Extract public inputs as 32-byte LE arrays.
+    let public_inputs: Vec<Vec<u8>> = instance_vec
+        .iter()
+        .map(|fe| fe.to_repr().to_vec())
+        .collect();
+
+    // Extract named outputs from the instance.
+    let ak: SpendValidatingKey = fvk.clone().into();
+    let rk_bytes: [u8; 32] = (&ak.randomize(&alpha)).into();
+
+    Ok(DelegationProofResult {
+        proof: proof_bytes,
+        public_inputs,
+        nf_signed: bundle.instance.nf_signed.to_bytes().to_vec(),
+        cmx_new: bundle.instance.cmx_new.to_repr().to_vec(),
+        gov_nullifiers: bundle
+            .instance
+            .gov_null
+            .iter()
+            .map(|g| g.to_repr().to_vec())
+            .collect(),
+        van_comm: bundle.instance.van_comm.to_repr().to_vec(),
+        rk: rk_bytes.to_vec(),
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::sync::Arc;
+
+    use ff::Field;
+    use incrementalmerkletree::{Hashable, Level};
+    use orchard::{
+        keys::Scope, note::commitment::ExtractedNoteCommitment, note::Rho, tree::MerkleHashOrchard,
+        value::NoteValue, NOTE_COMMITMENT_TREE_DEPTH as TEST_TREE_DEPTH,
+    };
+    use rand::RngCore;
+    use voting_circuits::delegation::SpacedLeafImtProvider;
+
+    struct TestReporter {
+        count: Arc<AtomicU32>,
+    }
+
+    impl crate::types::DelegationProgressReporter for TestReporter {
+        fn on_progress(&self, progress: crate::delegate::DelegationProgress) {
+            if matches!(
+                progress,
+                crate::delegate::DelegationProgress::ProofProgress(_)
+            ) {
+                self.count.fetch_add(1, Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn raw_pir_proof(proof: ImtProofData) -> pir_client::ImtProofData {
+        pir_client::ImtProofData {
+            root: proof.root,
+            nf_bounds: proof.nf_bounds,
+            leaf_pos: proof.leaf_pos,
+            path: proof.path,
+        }
+    }
+
+    #[test]
+    fn validate_and_convert_pir_proof_accepts_valid_proof() {
+        let imt = SpacedLeafImtProvider::new();
+        let nf = pallas::Base::one();
+        let root = imt.root();
+        let proof = raw_pir_proof(imt.non_membership_proof(nf).unwrap());
+
+        let converted = validate_and_convert_pir_proof(proof, nf, root).unwrap();
+
+        assert_eq!(converted.root, root);
+    }
+
+    #[test]
+    fn validate_and_convert_pir_proof_rejects_unverified_path() {
+        let imt = SpacedLeafImtProvider::new();
+        let nf = pallas::Base::one();
+        let root = imt.root();
+        let proof = raw_pir_proof(imt.non_membership_proof(nf).unwrap());
+        let boundary_value = pallas::Base::zero();
+
+        let err = validate_and_convert_pir_proof(proof, boundary_value, root).unwrap_err();
+
+        assert!(
+            err.to_string().contains("PIR proof verification failed"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn validate_and_convert_pir_proof_rejects_wrong_root() {
+        let imt = SpacedLeafImtProvider::new();
+        let nf = pallas::Base::one();
+        let proof = raw_pir_proof(imt.non_membership_proof(nf).unwrap());
+        let wrong_root = imt.root() + pallas::Base::one();
+
+        let err = validate_and_convert_pir_proof(proof, nf, wrong_root).unwrap_err();
+
+        assert!(
+            err.to_string().contains("PIR proof root mismatch"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
+    fn test_build_and_prove_validation() {
+        let reporter = TestReporter {
+            count: Arc::new(AtomicU32::new(0)),
+        };
+        // Empty notes should fail.
+        let result = build_and_prove_delegation(
+            &[],
+            &[0u8; 43],
+            &[0u8; 32],
+            &[0u8; 32],
+            &[0u8; 32],
+            &[],
+            &[],
+            &[],
+            Network::Testnet,
+            &reporter,
+            None,
+        );
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains(&format!("1..={BUNDLE_NOTE_SLOTS} notes")));
+    }
+
+    fn test_viewing_key(network: &Network) -> (String, FullViewingKey) {
+        use zcash_keys::keys::UnifiedSpendingKey;
+        use zip32::AccountId;
+
+        let seed = [0x42u8; 64];
+        let account = AccountId::try_from(0u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(network, &seed, account).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let ufvk_str = ufvk.encode(network);
+        let fvk = ufvk.orchard().unwrap().clone();
+        (ufvk_str, fvk)
+    }
+
+    fn random_seed_for_rho(rho: &Rho, rng: &mut impl RngCore) -> RandomSeed {
+        loop {
+            let mut bytes = [0u8; 32];
+            rng.fill_bytes(&mut bytes);
+            if let Some(rseed) = Option::<RandomSeed>::from(RandomSeed::from_bytes(bytes, rho)) {
+                break rseed;
+            }
+        }
+    }
+
+    fn test_note_with_version(
+        fvk: &FullViewingKey,
+        address: orchard::Address,
+        value: u64,
+        version: NoteVersion,
+        rng: &mut impl RngCore,
+    ) -> orchard::Note {
+        loop {
+            let (_, _, dummy_parent) = orchard::Note::dummy(&mut *rng, None, NoteVersion::V2);
+            let rho = Rho::from_nf_old(dummy_parent.nullifier(fvk));
+            let rseed = random_seed_for_rho(&rho, rng);
+            if let Some(note) = Option::<orchard::Note>::from(orchard::Note::from_parts(
+                address,
+                NoteValue::from_raw(value),
+                rho,
+                rseed,
+                version,
+            )) {
+                break note;
+            }
+        }
+    }
+
+    fn note_info_for_test_note(
+        note: &orchard::Note,
+        fvk: &FullViewingKey,
+        ufvk_str: String,
+        value: u64,
+    ) -> NoteInfo {
+        let cmx: ExtractedNoteCommitment = note.commitment().into();
+        NoteInfo {
+            commitment: cmx.to_bytes().to_vec(),
+            diversifier: note.recipient().diversifier().as_array().to_vec(),
+            value,
+            rho: note.rho().to_bytes().to_vec(),
+            rseed: note.rseed().as_bytes().to_vec(),
+            nullifier: note.nullifier(fvk).to_bytes().to_vec(),
+            position: 0,
+            scope: 0,
+            ufvk_str,
+        }
+    }
+
+    fn rebuild_test_note_with_version(
+        full_note: &NoteInfo,
+        network: &Network,
+        version: NoteVersion,
+    ) -> orchard::Note {
+        let ufvk = UnifiedFullViewingKey::decode(network, &full_note.ufvk_str).unwrap();
+        let fvk = ufvk.orchard().unwrap().clone();
+        let diversifier_arr: [u8; 11] = full_note.diversifier.as_slice().try_into().unwrap();
+        let address = fvk.address(Diversifier::from_bytes(diversifier_arr), Scope::External);
+        let rho_arr: [u8; 32] = full_note.rho.as_slice().try_into().unwrap();
+        let rho = Rho::from_bytes(&rho_arr).unwrap();
+        let rseed_arr: [u8; 32] = full_note.rseed.as_slice().try_into().unwrap();
+        let rseed = RandomSeed::from_bytes(rseed_arr, &rho).unwrap();
+        orchard::Note::from_parts(
+            address,
+            NoteValue::from_raw(full_note.value),
+            rho,
+            rseed,
+            version,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn reconstruct_note_accepts_regtest_network() {
+        let network = Network::Regtest;
+        let (ufvk_str, fvk) = test_viewing_key(&network);
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note_with_version(&fvk, address, 1, NoteVersion::V3, &mut rng);
+        let full_note = note_info_for_test_note(&note, &fvk, ufvk_str, 1);
+
+        let (rebuilt, rebuilt_fvk) = reconstruct_note(&full_note, &network).unwrap();
+
+        assert_eq!(rebuilt.version(), NoteVersion::V3);
+        assert_eq!(
+            ExtractedNoteCommitment::from(rebuilt.commitment()),
+            ExtractedNoteCommitment::from(note.commitment())
+        );
+        assert_eq!(rebuilt.nullifier(&rebuilt_fvk), note.nullifier(&fvk));
+    }
+
+    #[test]
+    fn reconstruct_note_infers_ironwood_note_version() {
+        let network = Network::Regtest;
+        let (ufvk_str, fvk) = test_viewing_key(&network);
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note_with_version(&fvk, address, 1, NoteVersion::V3, &mut rng);
+        let full_note = note_info_for_test_note(&note, &fvk, ufvk_str, 1);
+
+        let v2_candidate = rebuild_test_note_with_version(&full_note, &network, NoteVersion::V2);
+        assert_ne!(
+            ExtractedNoteCommitment::from(v2_candidate.commitment()),
+            ExtractedNoteCommitment::from(note.commitment())
+        );
+
+        let (rebuilt, rebuilt_fvk) = reconstruct_note(&full_note, &network).unwrap();
+
+        assert_eq!(rebuilt.version(), NoteVersion::V3);
+        assert_eq!(
+            ExtractedNoteCommitment::from(rebuilt.commitment()),
+            ExtractedNoteCommitment::from(note.commitment())
+        );
+        assert_eq!(rebuilt.nullifier(&rebuilt_fvk), note.nullifier(&fvk));
+    }
+
+    #[test]
+    fn reconstruct_note_rejects_mismatched_identity() {
+        let network = Network::Regtest;
+        let (ufvk_str, fvk) = test_viewing_key(&network);
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut rng = OsRng;
+        let note = test_note_with_version(&fvk, address, 1, NoteVersion::V2, &mut rng);
+        let mut full_note = note_info_for_test_note(&note, &fvk, ufvk_str, 1);
+        full_note.commitment[0] ^= 1;
+
+        let err = reconstruct_note(&full_note, &network).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .contains("reconstructed note does not match stored commitment/nullifier"),
+            "unexpected error: {err}"
+        );
+    }
+
+    /// Real Halo2 delegation proof end-to-end test.
+    ///
+    /// Creates synthetic wallet notes, builds a Merkle tree, constructs valid IMT
+    /// non-membership proofs as `ImtProofData`, and calls
+    /// `build_and_prove_delegation()` to generate a real Halo2 proof.
+    ///
+    /// Uses a full note-slot bundle to avoid padding (no PIR server needed for
+    /// padded notes).
+    /// Long-running due to keygen + proof generation.
+    ///
+    /// Run with: `cargo test -p zcash_voting test_real_delegation_proof -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn test_real_delegation_proof() {
+        use zcash_keys::keys::UnifiedSpendingKey;
+        use zcash_protocol::consensus::MAIN_NETWORK;
+        use zip32::AccountId;
+
+        println!("=== Real Delegation Proof Test ===");
+        println!("Setting up test keys...");
+
+        // 1. Deterministic test keys
+        let seed = [0x42u8; 32];
+        let account = AccountId::try_from(0u32).unwrap();
+        let usk = UnifiedSpendingKey::from_seed(&MAIN_NETWORK, &seed, account).unwrap();
+        let ufvk = usk.to_unified_full_viewing_key();
+        let ufvk_str = ufvk.encode(&MAIN_NETWORK);
+        let fvk = ufvk.orchard().unwrap().clone();
+
+        // 2. Hotkey (output note recipient)
+        let hotkey_seed = [0x43u8; 32];
+        let hotkey_usk =
+            UnifiedSpendingKey::from_seed(&MAIN_NETWORK, &hotkey_seed, account).unwrap();
+        let hotkey_fvk = hotkey_usk
+            .to_unified_full_viewing_key()
+            .orchard()
+            .unwrap()
+            .clone();
+        let hotkey_addr = hotkey_fvk.address_at(0u32, Scope::External);
+        let hotkey_raw_address = hotkey_addr.to_raw_address_bytes().to_vec();
+
+        // 3. Fill all note slots so no padding or IMT server is needed.
+        let mut rng = OsRng;
+        let note_values = vec![
+            (crate::governance::BALLOT_DIVISOR / BUNDLE_NOTE_SLOTS as u64) + 1;
+            BUNDLE_NOTE_SLOTS
+        ];
+        let address = fvk.address_at(0u32, Scope::External);
+
+        let mut notes = Vec::new();
+        for &v in &note_values {
+            // Voting notes are Ironwood/V3: `reconstruct_note` accepts no other
+            // version, and `voting-circuits` rejects non-V3 real notes.
+            let (_, _, dummy_parent) = orchard::Note::dummy(&mut rng, None, NoteVersion::V3);
+            let note = orchard::Note::new(
+                address,
+                NoteValue::from_raw(v),
+                Rho::from_nf_old(dummy_parent.nullifier(&fvk)),
+                NoteVersion::V3,
+                &mut rng,
+            );
+            notes.push(note);
+        }
+
+        println!(
+            "Created {} notes, total value: {} zatoshis",
+            notes.len(),
+            note_values.iter().sum::<u64>()
+        );
+        println!("Building Merkle tree...");
+
+        // 4. Build Merkle tree (5 leaves in a 32-level tree)
+        // Layout: 8-leaf subtree with 5 real leaves and 3 empty padding leaves.
+        let empty_leaf = MerkleHashOrchard::empty_leaf();
+        let mut leaves = [empty_leaf; 8];
+        for (i, note) in notes.iter().enumerate() {
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            leaves[i] = MerkleHashOrchard::from_cmx(&cmx);
+        }
+
+        // Level 0 pairs
+        let l1_0 = MerkleHashOrchard::combine(Level::from(0), &leaves[0], &leaves[1]);
+        let l1_1 = MerkleHashOrchard::combine(Level::from(0), &leaves[2], &leaves[3]);
+        let l1_2 = MerkleHashOrchard::combine(Level::from(0), &leaves[4], &leaves[5]);
+        let l1_3 = MerkleHashOrchard::combine(Level::from(0), &leaves[6], &leaves[7]);
+        // Level 1 pairs
+        let l2_0 = MerkleHashOrchard::combine(Level::from(1), &l1_0, &l1_1);
+        let l2_1 = MerkleHashOrchard::combine(Level::from(1), &l1_2, &l1_3);
+        // Level 2
+        let l3_0 = MerkleHashOrchard::combine(Level::from(2), &l2_0, &l2_1);
+
+        let mut current = l3_0;
+        for level in 3..TEST_TREE_DEPTH {
+            let sibling = MerkleHashOrchard::empty_root(Level::from(level as u8));
+            current = MerkleHashOrchard::combine(Level::from(level as u8), &current, &sibling);
+        }
+        let nc_root_bytes = current.to_bytes().to_vec();
+
+        // Build auth paths for each note
+        let l1 = [l1_0, l1_1, l1_2, l1_3];
+        let l2 = [l2_0, l2_1];
+        let mut merkle_witnesses = Vec::new();
+        for (i, note) in notes.iter().enumerate() {
+            let mut auth_path_hashes = [MerkleHashOrchard::empty_leaf(); TEST_TREE_DEPTH];
+            // Level 0 sibling: XOR bit 0
+            auth_path_hashes[0] = leaves[i ^ 1];
+            // Level 1 sibling: XOR bit 1
+            auth_path_hashes[1] = l1[(i >> 1) ^ 1];
+            // Level 2 sibling: XOR bit 2
+            auth_path_hashes[2] = l2[(i >> 2) ^ 1];
+            for level in 3..TEST_TREE_DEPTH {
+                auth_path_hashes[level] = MerkleHashOrchard::empty_root(Level::from(level as u8));
+            }
+
+            let cmx = ExtractedNoteCommitment::from(note.commitment());
+            merkle_witnesses.push(WitnessData {
+                note_commitment: MerkleHashOrchard::from_cmx(&cmx).to_bytes().to_vec(),
+                position: i as u64,
+                root: nc_root_bytes.clone(),
+                auth_path: auth_path_hashes
+                    .iter()
+                    .map(|h| h.to_bytes().to_vec())
+                    .collect(),
+            });
+        }
+
+        println!("Building IMT proofs...");
+
+        // 5. Build IMT non-membership proofs
+        let imt = SpacedLeafImtProvider::new();
+        let imt_proofs: Vec<ImtProofData> = notes
+            .iter()
+            .map(|note| {
+                let nf_bytes = note.nullifier(&fvk).to_bytes();
+                let nf_base: pallas::Base = pallas::Base::from_repr(nf_bytes).unwrap();
+                imt.non_membership_proof(nf_base).unwrap()
+            })
+            .collect();
+
+        // 6. Serialize notes into NoteInfo
+        let full_notes: Vec<NoteInfo> = notes
+            .iter()
+            .enumerate()
+            .map(|(i, note)| {
+                let cmx: orchard::note::ExtractedNoteCommitment = note.commitment().into();
+                NoteInfo {
+                    commitment: cmx.to_bytes().to_vec(),
+                    diversifier: note.recipient().diversifier().as_array().to_vec(),
+                    value: note_values[i],
+                    rho: note.rho().to_bytes().to_vec(),
+                    rseed: note.rseed().as_bytes().to_vec(),
+                    nullifier: note.nullifier(&fvk).to_bytes().to_vec(),
+                    position: i as u64,
+                    scope: 0,
+                    ufvk_str: ufvk_str.clone(),
+                }
+            })
+            .collect();
+
+        // 7. Generate random parameters
+        let alpha = pallas::Scalar::random(&mut rng);
+        let van_comm_rand = pallas::Base::random(&mut rng);
+        let vote_round_id = pallas::Base::random(&mut rng);
+
+        let count = Arc::new(AtomicU32::new(0));
+        let reporter = TestReporter {
+            count: count.clone(),
+        };
+
+        println!("Starting build_and_prove_delegation (keygen + proving)...");
+        println!("This will take a while (keygen + proving)...");
+
+        let start = std::time::Instant::now();
+        let result = build_and_prove_delegation(
+            &full_notes,
+            &hotkey_raw_address,
+            &alpha.to_repr(),
+            &van_comm_rand.to_repr(),
+            &vote_round_id.to_repr(),
+            &merkle_witnesses,
+            &imt_proofs,
+            &[],
+            Network::Mainnet,
+            &reporter,
+            None,
+        )
+        .expect("build_and_prove_delegation should succeed");
+        let elapsed = start.elapsed();
+
+        println!("Proof generated in {:.1}s", elapsed.as_secs_f64());
+
+        // 8. Verify result structure
+        assert!(!result.proof.is_empty(), "proof bytes should be non-empty");
+        assert_eq!(
+            result.public_inputs.len(),
+            14,
+            "should have 14 public inputs"
+        );
+        for (i, pi) in result.public_inputs.iter().enumerate() {
+            assert_eq!(pi.len(), 32, "public_input[{i}] should be 32 bytes");
+        }
+        assert_eq!(result.nf_signed.len(), 32, "nf_signed should be 32 bytes");
+        assert_eq!(result.cmx_new.len(), 32, "cmx_new should be 32 bytes");
+        assert_eq!(
+            result.gov_nullifiers.len(),
+            5,
+            "should have 5 gov nullifiers"
+        );
+        for (i, gn) in result.gov_nullifiers.iter().enumerate() {
+            assert_eq!(gn.len(), 32, "gov_nullifier[{i}] should be 32 bytes");
+        }
+        assert_eq!(result.van_comm.len(), 32, "van_comm should be 32 bytes");
+        assert_eq!(result.rk.len(), 32, "rk should be 32 bytes");
+
+        // Verify proof is NOT the old mock pattern
+        assert_ne!(
+            &result.proof[..result.proof.len().min(256)],
+            &vec![0xAB; result.proof.len().min(256)][..],
+            "proof should not be mock data"
+        );
+
+        // Verify progress was reported (at least 3 calls: 0.1, 0.5, 1.0)
+        let progress_count = count.load(Ordering::Relaxed);
+        assert!(
+            progress_count >= 3,
+            "expected at least 3 progress callbacks, got {progress_count}"
+        );
+
+        println!("=== Test passed ===");
+        println!("  Proof size: {} bytes", result.proof.len());
+        println!("  Progress callbacks: {progress_count}");
+    }
+}

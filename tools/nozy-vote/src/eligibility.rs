@@ -1,4 +1,6 @@
-//! NU7 coinholder vote calendar (forum thread #56912, updated end date Sep 14).
+//! Fallback calendar for the first NU7 coinholder vote (forum thread #56912).
+//!
+//! A later active Valar round overrides these dates in `flow::status_snapshot`.
 
 use chrono::{DateTime, Utc};
 

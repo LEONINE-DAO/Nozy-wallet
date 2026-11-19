@@ -1,6 +1,7 @@
 //! High-level vote operations shared by CLI and desktop (and later FFI / api-server).
 
 use anyhow::{anyhow, bail, Context, Result};
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -12,10 +13,12 @@ use crate::urls;
 pub const DEFAULT_WALLET_ID: &str = "nozy";
 
 pub fn default_data_dir() -> Result<PathBuf> {
-    Ok(directories::ProjectDirs::from("org", "LeonineDAO", "NozyVote")
-        .context("resolve platform project dirs")?
-        .data_dir()
-        .to_path_buf())
+    Ok(
+        directories::ProjectDirs::from("org", "LeonineDAO", "NozyVote")
+            .context("resolve platform project dirs")?
+            .data_dir()
+            .to_path_buf(),
+    )
 }
 
 pub fn ensure_data_dir(override_dir: Option<PathBuf>) -> Result<PathBuf> {
@@ -23,8 +26,7 @@ pub fn ensure_data_dir(override_dir: Option<PathBuf>) -> Result<PathBuf> {
         Some(p) => p,
         None => default_data_dir()?,
     };
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("create data dir {}", dir.display()))?;
+    std::fs::create_dir_all(&dir).with_context(|| format!("create data dir {}", dir.display()))?;
     Ok(dir)
 }
 
@@ -86,9 +88,8 @@ pub fn status_snapshot(
         (false, None)
     };
     let hotkey_ready = sdk::hotkey_path(data_dir, network).is_file();
-    let active_rid = fetch_active_round_opt(env, static_source)
-        .ok()
-        .and_then(|r| sdk::vote_round_id_hex(&r).ok());
+    let active = fetch_active_round_opt(env, static_source).ok();
+    let active_rid = active.as_ref().and_then(|r| sdk::vote_round_id_hex(r).ok());
     let (signing_request_present, sig_present) = match &active_rid {
         Some(rid) => (
             signing_request_path(data_dir, rid).is_file(),
@@ -97,7 +98,7 @@ pub fn status_snapshot(
         None => (false, false),
     };
 
-    Ok(StatusSnapshot {
+    let mut status = StatusSnapshot {
         helper_version: env!("CARGO_PKG_VERSION").to_string(),
         env: env.as_str().to_string(),
         data_dir: data_dir.display().to_string(),
@@ -119,7 +120,43 @@ pub fn status_snapshot(
         hotkey_ready,
         signing_request_present,
         sig_present,
-    })
+    };
+    if let Some(active) = active {
+        apply_active_round(&mut status, &active, Utc::now());
+    }
+    Ok(status)
+}
+
+/// Replace the fallback NU7 calendar when Valar has a live round.
+///
+/// The August 2026 constants stay for offline status. An active round's
+/// snapshot height and `vote_end_time` are what the wallet should show.
+pub fn apply_active_round(status: &mut StatusSnapshot, active: &ActiveRound, now: DateTime<Utc>) {
+    let Some(end) = DateTime::<Utc>::from_timestamp(active.vote_end_time as i64, 0) else {
+        return;
+    };
+    let open = active.status == 1 && now <= end;
+    let title = active
+        .title
+        .as_deref()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .unwrap_or("Coinholder poll");
+    status.snapshot_utc = format!("height {}", active.snapshot_height);
+    status.vote_start_utc = "live".to_string();
+    status.vote_end_utc = end.to_rfc3339();
+    status.forum_url = String::new();
+    if open {
+        status.phase = "open".to_string();
+        status.phase_message = format!(
+            "{title} is open. Weight is spendable Ironwood at snapshot height {}. Delegate, then cast on this screen. Closes {}.",
+            active.snapshot_height,
+            end.format("%Y-%m-%d %H:%M UTC")
+        );
+    } else {
+        status.phase = "closed".to_string();
+        status.phase_message = format!("{title} is closed. Tallies: {}", eligibility::TALLY_URL);
+    }
 }
 
 fn fetch_active_round_opt(env: Environment, static_source: Option<&str>) -> Result<ActiveRound> {
@@ -161,8 +198,7 @@ pub fn prepare_round(
     if notes.is_empty() {
         bail!("note export contains no notes");
     }
-    let layout =
-        sdk::ensure_bundles_and_witnesses(&db, &params.vote_round_id, &notes, &witnesses)?;
+    let layout = sdk::ensure_bundles_and_witnesses(&db, &params.vote_round_id, &notes, &witnesses)?;
     Ok(PrepareResult {
         round_id: params.vote_round_id,
         snapshot_height: params.snapshot_height,
@@ -319,9 +355,7 @@ pub fn finish_delegation(
             Err(e) => {
                 // Still return the tx hash so the desktop can persist it and cast
                 // with --delegation-tx after the chain indexes the leaf.
-                eprintln!(
-                    "warning: delegation tx {tx_hash} submitted but VAN confirm failed: {e}"
-                );
+                eprintln!("warning: delegation tx {tx_hash} submitted but VAN confirm failed: {e}");
             }
         }
     }
@@ -370,4 +404,73 @@ pub fn cast_votes(
         round_id: rid,
         proposal_count: count,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sdk::ActiveRound;
+
+    fn sample_round(status: u32, vote_end_time: u64) -> ActiveRound {
+        ActiveRound {
+            vote_round_id: "abc".into(),
+            snapshot_height: 3_578_540,
+            snapshot_blockhash: None,
+            vote_end_time,
+            nullifier_imt_root: "n".into(),
+            nc_root: "r".into(),
+            status,
+            ea_pk: "k".into(),
+            title: Some("NU7.1 Poll".into()),
+            description: None,
+            proposals: Vec::new(),
+        }
+    }
+
+    fn closed_status() -> StatusSnapshot {
+        StatusSnapshot {
+            helper_version: "test".into(),
+            env: "prod".into(),
+            data_dir: ".".into(),
+            sdk_enabled: true,
+            static_source: "pin".into(),
+            snapshot_utc: eligibility::SNAPSHOT_UTC.into(),
+            vote_start_utc: eligibility::VOTE_START_UTC.into(),
+            vote_end_utc: eligibility::VOTE_END_UTC.into(),
+            phase: "closed".into(),
+            phase_message: "Voting window has ended.".into(),
+            forum_url: eligibility::FORUM_URL.into(),
+            notes_exported: false,
+            notes_count: None,
+            hotkey_ready: false,
+            signing_request_present: false,
+            sig_present: false,
+        }
+    }
+
+    #[test]
+    fn active_round_replaces_stale_nu7_calendar() {
+        let mut status = closed_status();
+        let now = DateTime::parse_from_rfc3339("2026-11-18T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        apply_active_round(&mut status, &sample_round(1, 1_796_093_940), now);
+        assert_eq!(status.phase, "open");
+        assert_eq!(status.snapshot_utc, "height 3578540");
+        assert!(status.vote_end_utc.starts_with("2026-12-01T02:59:00"));
+        assert!(status.phase_message.contains("NU7.1 Poll"));
+        assert!(status.phase_message.contains("3578540"));
+        assert!(status.forum_url.is_empty());
+    }
+
+    #[test]
+    fn ended_active_round_stays_closed() {
+        let mut status = closed_status();
+        let now = DateTime::parse_from_rfc3339("2026-12-01T03:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        apply_active_round(&mut status, &sample_round(1, 1_796_093_940), now);
+        assert_eq!(status.phase, "closed");
+        assert!(status.phase_message.contains("closed"));
+    }
 }
