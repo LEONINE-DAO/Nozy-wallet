@@ -216,6 +216,11 @@ Requires Ironwood notes with witnesses. See docs/reference/NU7_COINHOLDER_VOTE.m
     VoteExportNotes {
         #[arg(long, help = "Output JSON path (default: vote-notes.json in cwd)")]
         out: Option<String>,
+        #[arg(
+            long,
+            help = "Ironwood snapshot height. Default: height from `nozy-vote --env prod active`"
+        )]
+        snapshot_height: Option<u32>,
     },
 
     /// Sign a nozy-vote delegation PCZT sighash (keeps seed in `nozy`, not the helper).
@@ -1035,6 +1040,61 @@ async fn main() {
     }
 }
 
+fn nozy_vote_bin() -> Option<std::path::PathBuf> {
+    if let Ok(p) = std::env::var("NOZY_VOTE_BIN") {
+        let path = std::path::PathBuf::from(p);
+        if path.is_file() {
+            return Some(path);
+        }
+    }
+    let exe_name = if cfg!(windows) {
+        "nozy-vote.exe"
+    } else {
+        "nozy-vote"
+    };
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(dir) = exe.parent() {
+            let sibling = dir.join(exe_name);
+            if sibling.is_file() {
+                return Some(sibling);
+            }
+        }
+    }
+    [
+        "tools/nozy-vote/target/release",
+        "tools/nozy-vote/target/debug",
+    ]
+    .into_iter()
+    .map(|dir| std::path::PathBuf::from(dir).join(exe_name))
+    .find(|path| path.is_file())
+}
+
+fn active_vote_snapshot_height(bin: &std::path::Path) -> NozyResult<u32> {
+    let output = std::process::Command::new(bin)
+        .args(["--env", "prod", "active", "--json"])
+        .output()
+        .map_err(|e| NozyError::InvalidOperation(format!("spawn {}: {e}", bin.display())))?;
+    if !output.status.success() {
+        let err = String::from_utf8_lossy(&output.stderr);
+        let out = String::from_utf8_lossy(&output.stdout);
+        let detail = if !err.trim().is_empty() {
+            err.trim()
+        } else {
+            out.trim()
+        };
+        return Err(NozyError::InvalidOperation(format!(
+            "nozy-vote active failed: {detail}"
+        )));
+    }
+    let parsed: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|e| NozyError::InvalidOperation(format!("decode active round json: {e}")))?;
+    parsed
+        .get("snapshot_height")
+        .and_then(|h| h.as_u64())
+        .map(|h| h as u32)
+        .ok_or_else(|| NozyError::InvalidOperation("active round missing snapshot_height".into()))
+}
+
 async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> NozyResult<()> {
     let cli = Cli::parse();
 
@@ -1159,7 +1219,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     println!("\n💡 Share this address to receive ZEC.");
                     println!("   After a deposit confirms on-chain, run:");
                     println!("     nozy -m sync --to-tip");
-                    println!("   Plain `sync` only advances ~1000 blocks; --to-tip scans through chain tip.");
+                    println!(
+                        "   Plain `sync` only advances ~1000 blocks; --to-tip scans through chain tip."
+                    );
                 }
                 Err(e) => {
                     println!("❌ Failed to generate address: {}", e);
@@ -1205,7 +1267,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                         scan_end.saturating_sub(scan_start).saturating_add(1)
                     );
                 } else {
-                    println!("🔄 Sync to chain tip: advancing Orchard witnesses toward height {chain_tip}");
+                    println!(
+                        "🔄 Sync to chain tip: advancing Orchard witnesses toward height {chain_tip}"
+                    );
                 }
             }
 
@@ -1757,7 +1821,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
             );
         }
 
-        Commands::VoteExportNotes { out } => {
+        Commands::VoteExportNotes {
+            out,
+            snapshot_height,
+        } => {
             use std::path::PathBuf;
 
             let (wallet, _storage) = load_wallet().await?;
@@ -1767,13 +1834,25 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 NetworkType::Main
             };
             let out_path = PathBuf::from(out.unwrap_or_else(|| "vote-notes.json".into()));
-            use nozy::{
-                export_ironwood_vote_notes_at_snapshot, load_config, ZebraClient,
-                NU7_SNAPSHOT_HEIGHT_MAINNET,
-            };
+            use nozy::{export_ironwood_vote_notes_at_snapshot, load_config, ZebraClient};
             let config = load_config();
             let zebra = ZebraClient::from_config(&config);
-            let snapshot = NU7_SNAPSHOT_HEIGHT_MAINNET;
+            let snapshot = if let Some(height) = snapshot_height {
+                height
+            } else if cli.testnet {
+                return Err(NozyError::InvalidOperation(
+                    "testnet vote export needs --snapshot-height".into(),
+                ));
+            } else {
+                let bin = nozy_vote_bin().ok_or_else(|| {
+                    NozyError::InvalidOperation(
+                        "nozy-vote binary not found. Build tools/nozy-vote or set NOZY_VOTE_BIN, or pass --snapshot-height."
+                            .into(),
+                    )
+                })?;
+                println!("Reading snapshot height from {}…", bin.display());
+                active_vote_snapshot_height(&bin)?
+            };
             println!(
                 "Rebuilding Ironwood witnesses to snapshot height {snapshot} (may take several minutes)…"
             );
@@ -1987,7 +2066,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 "Mnemonic: {} (masked for security)",
                 display_mnemonic_safe(&wallet.get_mnemonic())
             );
-            println!("⚠️  For security, only partial mnemonic is shown. Use 'restore' command to see full mnemonic.");
+            println!(
+                "⚠️  For security, only partial mnemonic is shown. Use 'restore' command to see full mnemonic."
+            );
         }
 
         Commands::Config {
@@ -2142,7 +2223,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 println!("\nTo change settings:");
                 println!("  Backend switching:");
                 println!("    nozy config --use-zebra                    # Use standard Zebra");
-                println!("    nozy config --use-crosslink                 # Use Crosslink (experimental)");
+                println!(
+                    "    nozy config --use-crosslink                 # Use Crosslink (experimental)"
+                );
                 println!(
                     "    nozy config --set-crosslink-url <url>        # Set Crosslink node URL"
                 );
@@ -2323,7 +2406,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                 match builder.download_parameters().await {
                     Ok(_) => {
                         println!("✅ Orchard Halo 2 proving system ready!");
-                        println!("💡 Note: Orchard uses Halo 2 which does NOT require external parameters");
+                        println!(
+                            "💡 Note: Orchard uses Halo 2 which does NOT require external parameters"
+                        );
                         println!("   Your wallet is ready for shielded transactions");
                     }
                     Err(e) => {
@@ -3010,7 +3095,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
 
                     if addresses.is_empty() {
                         println!("📇 Address book is empty.");
-                        println!("   Use 'nozy address-book add --name <name> --address <address>' to add entries.");
+                        println!(
+                            "   Use 'nozy address-book add --name <name> --address <address>' to add entries."
+                        );
                     } else {
                         println!("📇 Address Book ({} entries)", addresses.len());
                         println!("{}", "=".repeat(80));
@@ -3667,9 +3754,10 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                                 addr
                             }
                             Err(e) => {
-                                return Err(NozyError::InvalidOperation(
-                                    format!("Failed to derive Secret Network address: {}. Please provide --address", e)
-                                ));
+                                return Err(NozyError::InvalidOperation(format!(
+                                    "Failed to derive Secret Network address: {}. Please provide --address",
+                                    e
+                                )));
                             }
                         }
                     } else {
@@ -3868,7 +3956,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             println!("📍 Your Secret Network address:");
                             println!("{}", address);
                             println!("\n💡 Share this address to receive native SCRT.");
-                            println!("   SNIP-20: the sender must use this address and the token contract.");
+                            println!(
+                                "   SNIP-20: the sender must use this address and the token contract."
+                            );
                             println!("   Derivation path: m/44'/529'/{}/0/{}", account, index);
                         }
                         Err(e) => {
@@ -4776,7 +4866,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                             println!("   Result: waiting for next ZIP 318 anchor bucket");
                         }
                         MigrationReadinessState::PresignedWaitingForBroadcast => {
-                            println!("   Result: presigned turnstile transaction waiting for bucket/window");
+                            println!(
+                                "   Result: presigned turnstile transaction waiting for bucket/window"
+                            );
                         }
                         MigrationReadinessState::ReadyToBroadcast => {
                             println!(
@@ -4858,7 +4950,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                                 }
                             }
                             MigrationReadinessState::SplitRequired => {
-                                println!("🧩 ZIP 318 note splitting is required before migration prebuild.");
+                                println!(
+                                    "🧩 ZIP 318 note splitting is required before migration prebuild."
+                                );
                                 if let Some(path) = result.schedule_path {
                                     println!("   Schedule: {}", path.display());
                                 }
@@ -4867,7 +4961,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                                 }
                             }
                             MigrationReadinessState::WaitingForWindow => {
-                                println!("⏳ Waiting for the next ZIP 318 anchor bucket before prebuild.");
+                                println!(
+                                    "⏳ Waiting for the next ZIP 318 anchor bucket before prebuild."
+                                );
                                 if let Some(path) = result.schedule_path {
                                     println!("   Schedule: {}", path.display());
                                 }
@@ -5288,7 +5384,9 @@ async fn execute_command(_command: Commands, mut config: nozy::WalletConfig) -> 
                     if json {
                         println!("{}", json_any(&result)?);
                     } else {
-                        println!("✅ Submitted — withdraw on a later Staking Day when listed under withdrawable.");
+                        println!(
+                            "✅ Submitted — withdraw on a later Staking Day when listed under withdrawable."
+                        );
                         println!("{}", json_any(&result)?);
                     }
                 }

@@ -16,7 +16,7 @@ use nozy_vote::{sdk, urls};
     name = "nozy-vote",
     about = "NozyWallet helper for Zcash coinholder voting (Valar Shielded Vote)",
     long_about = "CLI path for the NU7 coinholder vote.\n\
-Eligible weight = spendable Ironwood notes at the Aug 24 2026 19:00 UTC snapshot.\n\
+Eligible weight = spendable Ironwood notes at the active round's snapshot.\n\
 See README.md and issue #273."
 )]
 struct Cli {
@@ -128,16 +128,19 @@ fn main() -> Result<()> {
     match &cli.command {
         Commands::Status { json } => {
             let net = flow::parse_network("mainnet")?;
-            let snap = flow::status_snapshot(
-                cli.env,
-                cli.static_source.as_deref(),
-                &data_dir,
-                net,
-            )?;
+            let snap =
+                flow::status_snapshot(cli.env, cli.static_source.as_deref(), &data_dir, net)?;
             if *json {
                 println!("{}", serde_json::to_string_pretty(&snap)?);
             } else {
-                print_eligibility_banner();
+                println!("=== NozyWallet coinholder vote ===");
+                println!("phase:       {}", snap.phase);
+                println!("{}", snap.phase_message);
+                println!("snapshot:    {}", snap.snapshot_utc);
+                println!(
+                    "vote window: {} → {}",
+                    snap.vote_start_utc, snap.vote_end_utc
+                );
                 println!();
                 println!("helper: nozy-vote {}", snap.helper_version);
                 println!("env:    {}", snap.env);
@@ -223,10 +226,7 @@ fn main() -> Result<()> {
             println!("note: hotkey is app-owned randomness — not derived from your wallet seed.");
             Ok(())
         }
-        Commands::InitRound {
-            network,
-            wallet_id,
-        } => {
+        Commands::InitRound { network, wallet_id } => {
             let net = flow::parse_network(network)?;
             let (_resolved, servers) =
                 sdk::resolve_vote_server_urls(cli.env, cli.static_source.as_deref())?;

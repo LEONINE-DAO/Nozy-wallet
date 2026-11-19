@@ -1,11 +1,11 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/schema.json",
   "productName": "NozyWallet",
-  "version": "1.0.0-beta.9",
+  "version": "1.0.0-beta.10",
   "identifier": "com.nozywallet.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "node scripts/stage-nozy-vote.mjs && npm run dev",
+    "beforeBuildCommand": "node scripts/stage-nozy-vote.mjs && npm run build",
     "devUrl": "http://localhost:5173",
     "frontendDist": "../dist"
   },
@@ -28,6 +28,7 @@
     }
   },
   "bundle": {
+    "externalBin": ["binaries/nozy-vote"],
     "icon": [
       "icons/icon.png",
       "icons/icon.ico"

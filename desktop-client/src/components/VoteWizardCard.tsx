@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import { Button } from "./Button";
 import { FeatureShell, MetricTile, Panel } from "./FeatureSurface";
 import { walletApi } from "../lib/api";
-import type { VoteStatusResponse } from "../lib/types";
+import type { VoteActiveRound, VoteStatusResponse } from "../lib/types";
 import { formatErrorForDisplay } from "../utils/errors";
 
 type Busy =
@@ -13,10 +13,38 @@ type Busy =
   | "prepare"
   | "delegate"
   | "sign"
-  | "finish";
+  | "finish"
+  | "cast";
 
 interface VoteWizardCardProps {
   onNavigateIronwood?: () => void;
+}
+
+function roundClose(active: VoteActiveRound): Date | null {
+  const end = new Date(active.vote_end_time * 1000);
+  return Number.isNaN(end.getTime()) ? null : end;
+}
+
+function roundIsOpen(active: VoteActiveRound | null, now = Date.now()): boolean {
+  if (!active || active.status !== 1) return false;
+  const end = roundClose(active);
+  return end !== null && now <= end.getTime();
+}
+
+function calendarText(
+  status: VoteStatusResponse | null,
+  active: VoteActiveRound | null
+): string {
+  if (active && active.status === 1) {
+    const end = roundClose(active);
+    const endLabel = end ? end.toISOString().replace(".000Z", "Z") : String(active.vote_end_time);
+    const title = active.title?.trim() || "Coinholder poll";
+    return `${title} · snapshot height ${active.snapshot_height} · closes ${endLabel}`;
+  }
+  if (status?.snapshot_utc?.startsWith("height ")) {
+    return `Snapshot ${status.snapshot_utc} · closes ${status.vote_end_utc}`;
+  }
+  return `Snapshot ${status?.snapshot_utc ?? "…"} · Vote ${status?.vote_start_utc ?? "…"} → ${status?.vote_end_utc ?? "…"}`;
 }
 
 function StepRow({
@@ -49,6 +77,8 @@ function StepRow({
 export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
   const [env, setEnv] = useState<"prod" | "stage">("prod");
   const [status, setStatus] = useState<VoteStatusResponse | null>(null);
+  const [active, setActive] = useState<VoteActiveRound | null>(null);
+  const [choices, setChoices] = useState<Record<number, number>>({});
   const [busy, setBusy] = useState<Busy>(null);
   const [password, setPassword] = useState("");
   const [lastDelegationTx, setLastDelegationTx] = useState<string | null>(null);
@@ -59,6 +89,12 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
     try {
       const statusRes = await walletApi.voteStatus(env);
       setStatus(statusRes.data);
+      try {
+        const activeRes = await walletApi.voteActive(env);
+        setActive(activeRes.data);
+      } catch {
+        setActive(null);
+      }
       setLastUpdated(new Date());
     } catch (e) {
       toast.error(formatErrorForDisplay(e, "Failed to load vote status"));
@@ -70,6 +106,10 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setChoices({});
+  }, [active?.vote_round_id]);
 
   const run = async (kind: Busy, fn: () => Promise<void>) => {
     if (busy) return;
@@ -84,13 +124,22 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
     }
   };
 
-  const phaseLabel = status?.phase?.replace(/_/g, " ") ?? "—";
-  const phaseTone =
-    status?.phase === "voting_open"
-      ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
-      : status?.phase === "pre_snapshot"
-        ? "border-amber-400/35 bg-amber-500/15 text-amber-200"
-        : "border-white/10 bg-white/5 text-gray-300";
+  const liveOpen = roundIsOpen(active);
+  const phaseLabel = liveOpen ? "open" : (status?.phase?.replace(/_/g, " ") ?? "—");
+  const pollOpen = liveOpen || status?.phase === "open" || status?.phase === "voting_open";
+  const phaseMessage =
+    liveOpen && active
+      ? `${active.title?.trim() || "Coinholder poll"} is open. Weight is spendable Ironwood at snapshot height ${active.snapshot_height}. Delegate, then cast on this screen. Closes ${roundClose(active)?.toISOString().replace(".000Z", "Z")}.`
+      : status?.phase_message;
+  const phaseTone = pollOpen
+    ? "border-emerald-400/35 bg-emerald-500/15 text-emerald-200"
+    : status?.phase === "pre_snapshot"
+      ? "border-amber-400/35 bg-amber-500/15 text-amber-200"
+      : "border-white/10 bg-white/5 text-gray-300";
+  const proposals = active?.proposals ?? [];
+  const ballotComplete =
+    proposals.length > 0 && proposals.every((proposal) => choices[proposal.id] !== undefined);
+  const calendarLine = calendarText(status, active);
 
   const inputClass =
     "mt-1.5 w-full rounded-xl border border-white/10 bg-black/30 px-3.5 py-2.5 text-sm text-gray-100 placeholder:text-gray-500 shadow-inner shadow-black/20 transition focus:border-primary/40 focus:outline-none focus:ring-2 focus:ring-primary/20";
@@ -102,7 +151,7 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
         <div className="min-w-0 space-y-3">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full border border-primary/35 bg-primary/10 px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.22em] text-primary">
-              NU7
+              {active?.title?.trim() || "Vote"}
             </span>
             <span
               className={`rounded-full border px-3 py-1 text-[0.65rem] font-bold uppercase tracking-[0.16em] ${phaseTone}`}
@@ -157,12 +206,9 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
         <p className="text-[0.65rem] font-bold uppercase tracking-[0.2em] text-gray-400">
           Calendar
         </p>
-        <p className="mt-1 text-sm text-gray-200">
-          Snapshot {status?.snapshot_utc ?? "…"} · Vote {status?.vote_start_utc ?? "…"} →{" "}
-          {status?.vote_end_utc ?? "…"}
-        </p>
-        {status?.phase_message ? (
-          <p className="mt-2 text-sm leading-relaxed text-gray-300">{status.phase_message}</p>
+        <p className="mt-1 text-sm text-gray-200">{calendarLine}</p>
+        {phaseMessage ? (
+          <p className="mt-2 text-sm leading-relaxed text-gray-300">{phaseMessage}</p>
         ) : null}
       </div>
 
@@ -340,6 +386,90 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
         />
       </div>
 
+      {proposals.length > 0 ? (
+        <div className="relative mt-4 space-y-3">
+          <p className="text-[0.65rem] font-bold uppercase tracking-[0.18em] text-gray-400">
+            Ballot
+          </p>
+          {proposals.map((proposal) => (
+            <fieldset
+              key={proposal.id}
+              className="rounded-xl border border-white/8 bg-black/20 px-4 py-3"
+            >
+              <legend className="px-1 text-sm font-semibold text-gray-100">
+                {proposal.id}. {proposal.title}
+              </legend>
+              {proposal.description ? (
+                <p className="mt-1 max-h-36 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed text-gray-500">
+                  {proposal.description}
+                </p>
+              ) : null}
+              <div className="mt-3 flex flex-wrap gap-2">
+                {proposal.options.map((option, index) => {
+                  const optionIndex = option.index ?? index;
+                  const selected = choices[proposal.id] === optionIndex;
+                  return (
+                    <label
+                      key={`${proposal.id}-${optionIndex}`}
+                      className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-semibold ${
+                        selected
+                          ? "border-primary/50 bg-primary/15 text-primary-100"
+                          : "border-white/10 bg-white/5 text-gray-300"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        className="accent-primary"
+                        name={`proposal-${proposal.id}`}
+                        checked={selected}
+                        disabled={!!busy || !pollOpen}
+                        onChange={() =>
+                          setChoices((prev) => ({ ...prev, [proposal.id]: optionIndex }))
+                        }
+                      />
+                      {option.label}
+                    </label>
+                  );
+                })}
+              </div>
+            </fieldset>
+          ))}
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              size="sm"
+              disabled={!!busy || !pollOpen || !ballotComplete}
+              onClick={() =>
+                void run("cast", async () => {
+                  const selected: Record<string, number> = {};
+                  for (const proposal of proposals) {
+                    const choice = choices[proposal.id];
+                    if (choice === undefined) return;
+                    selected[String(proposal.id)] = choice;
+                  }
+                  const res = await walletApi.voteCast({
+                    env,
+                    choices: selected,
+                    delegation_tx: lastDelegationTx ?? undefined,
+                    wait: true,
+                  });
+                  toast.success(
+                    `Ballot cast · ${res.data.proposal_count} proposal${res.data.proposal_count === 1 ? "" : "s"}`
+                  );
+                })
+              }
+            >
+              {busy === "cast" ? "Casting…" : "Cast ballot"}
+            </Button>
+            <p className="text-xs text-gray-500">
+              {pollOpen
+                ? "Every proposal needs a choice. Delegation must already be confirmed."
+                : "This poll is not open."}
+            </p>
+          </div>
+        </div>
+      ) : null}
+
       {/* Unlock + links */}
       <div className="relative mt-4 grid gap-3 lg:grid-cols-2">
         <Panel title="Wallet unlock" subtitle="Only when export / sign prompts for it">
@@ -354,20 +484,18 @@ export function VoteWizardCard({ onNavigateIronwood }: VoteWizardCardProps) {
             />
           </label>
         </Panel>
-        <Panel title="After delegation" subtitle="Ballot choices live on the Valar vote servers">
+        <Panel title="After delegation" subtitle="Cast the open poll on this screen">
           {lastDelegationTx ? (
             <p className="mb-3 break-all font-mono text-xs text-emerald-200/90">
               Delegation tx: {lastDelegationTx}
             </p>
           ) : (
             <p className="mb-3 text-sm text-gray-400">
-              Finish steps 1–5 here. Cast your ballot with the official Valar tools or{" "}
-              <span className="font-mono text-gray-300">nozy-vote cast</span> once you know your
-              choices.
+              Finish steps 1–5, then mark every proposal above. The seed stays in this wallet.
             </p>
           )}
           <div className="flex flex-wrap gap-3">
-            {status?.forum_url ? (
+            {status?.forum_url && !liveOpen ? (
               <a
                 className="text-sm font-medium text-primary underline decoration-primary/40 underline-offset-2 hover:decoration-primary"
                 href={status.forum_url}

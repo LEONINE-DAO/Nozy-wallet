@@ -61,6 +61,8 @@ src-tauri/
 !desktop-client/src-tauri/**
 # Re-ignore build output (must come after un-ignore above)
 desktop-client/src-tauri/target/
+desktop-client/src-tauri/binaries/*
+!desktop-client/src-tauri/binaries/.gitkeep
 tauri-reference/
 react-native-0.73.11/
 rn-template.zip
