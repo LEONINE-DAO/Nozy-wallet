@@ -18,7 +18,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-router-dom": "7.18.5",
-    "tailwindcss": "^4.3.3"
+    "tailwindcss": "^4.3.5"
   },
   "overrides": {
     "react": "19.2.8",
